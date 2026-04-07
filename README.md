@@ -40,6 +40,29 @@ node dist/cli.js search "package.json"
 
 `scan` 在部分根路径不可读时会向 stderr 输出警告，并以退出码 **1** 表示存在警告（仍可能已写入部分结果）。
 
+## Web 界面（只读）
+
+先执行 `npm run build`（编译 CLI + 前端）。默认仅监听本机：
+
+```bash
+node dist/cli.js serve
+# 浏览器打开终端里打印的地址（含 SPA + /api）
+```
+
+开发时前后端分两个进程（Vite 将 `/api` 代理到 API 端口）：
+
+```bash
+npm run dev:ui
+```
+
+然后打开 Vite 提示的本地地址（一般为 `http://127.0.0.1:5173`）。仅跑 API、不加载页面时：
+
+```bash
+node dist/cli.js serve --api-only
+```
+
+产品说明与路由见 [`docs/PLAN.md`](docs/PLAN.md)。
+
 ## 测试
 
 ```bash
