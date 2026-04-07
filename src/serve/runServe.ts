@@ -4,6 +4,8 @@ import { createApp, resolveWebDist } from "./app.js";
 
 export type RunServeOptions = {
   db: Database.Database;
+  /** Optional Atuin history.db (read-only). */
+  atuin?: { db: Database.Database; path: string };
   host: string;
   port: number;
   /** Serve built SPA from `web/dist` (production). */
@@ -14,7 +16,7 @@ export type RunServeOptions = {
 export function runServe(opts: RunServeOptions): { url: string; close: () => void } {
   const cwd = opts.cwd ?? process.cwd();
   const staticRoot = opts.withStatic ? resolveWebDist(cwd) : undefined;
-  const app = createApp({ db: opts.db, staticRoot });
+  const app = createApp({ db: opts.db, atuin: opts.atuin, staticRoot });
   const server = serve(
     {
       fetch: app.fetch,

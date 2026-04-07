@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { Atuin } from "./pages/Atuin";
 import { FileView } from "./pages/FileView";
 import { RepoDetail } from "./pages/RepoDetail";
 import { Repos } from "./pages/Repos";
@@ -14,6 +15,7 @@ export function App() {
         <Route path="/repos/:id" element={<RepoDetail />} />
         <Route path="/repos/:id/file" element={<FileView />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/atuin" element={<Atuin />} />
       </Routes>
     </Layout>
   );
