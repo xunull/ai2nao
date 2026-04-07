@@ -4,7 +4,7 @@ import { zhCN } from "date-fns/locale";
 import { useMemo, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
-import { apiGet } from "../api";
+import { apiGet, apiPost } from "../api";
 
 type AtuinStatus = { enabled: false } | { enabled: true; path: string };
 
@@ -32,6 +32,47 @@ type DayRes = {
   timezone: string;
 };
 
+type DailySummaryStatus = {
+  enabled: boolean;
+  modelConfigured: boolean;
+  model: string | null;
+  cacheDbPath: string | null;
+};
+
+type DailySummaryPayload = {
+  summary: string;
+  nextUp: string | null;
+  workMode: "implementation" | "debugging" | "exploration" | null;
+  fragmentation: { label: "focused" | "mixed" | "fragmented"; summary: string } | null;
+  degraded: boolean;
+  degradeReason: string | null;
+  facts: {
+    date: string;
+    totalCommands: number;
+    distinctCwds: number;
+    repoMatches: number;
+    outsideIndexedRepos: number;
+    sparse: boolean;
+    recap: string;
+    topRepoLabel: string | null;
+    nextUpHint: string | null;
+    repoFacts: Array<{
+      repoId: number | null;
+      repoLabel: string;
+      matched: boolean;
+      commandCount: number;
+      sampleCommands: string[];
+      blurb: string | null;
+    }>;
+  };
+  meta: {
+    generatedAt: string;
+    model: string | null;
+    fromCache: boolean;
+    usedLlm: boolean;
+  };
+};
+
 function formatTime(ns: number): string {
   const ms = Math.floor(ns / 1_000_000);
   return new Date(ms).toLocaleString();
@@ -42,9 +83,20 @@ export function Atuin() {
     queryKey: ["atuin-status"],
     queryFn: () => apiGet<AtuinStatus>("/api/atuin/status"),
   });
+  const summaryStatus = useQuery({
+    queryKey: ["daily-summary-status"],
+    queryFn: () => apiGet<DailySummaryStatus>("/api/daily-summary/status"),
+  });
 
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState<Date | undefined>(() => new Date());
+  const [summariesByDate, setSummariesByDate] = useState<
+    Record<string, DailySummaryPayload | undefined>
+  >({});
+  const [loadingByDate, setLoadingByDate] = useState<Record<string, boolean>>({});
+  const [summaryErrorsByDate, setSummaryErrorsByDate] = useState<
+    Record<string, string | undefined>
+  >({});
 
   const y = month.getFullYear();
   const m = month.getMonth() + 1;
@@ -74,12 +126,38 @@ export function Atuin() {
   }, [countByDay]);
 
   const selectedStr = selected ? format(selected, "yyyy-MM-dd") : "";
+  const summaryForSelected = selectedStr ? summariesByDate[selectedStr] : undefined;
+  const summaryLoading = !!(selectedStr && loadingByDate[selectedStr]);
+  const summaryError = selectedStr ? summaryErrorsByDate[selectedStr] : undefined;
 
   const dayQ = useQuery({
     queryKey: ["atuin-day", selectedStr],
     queryFn: () => apiGet<DayRes>(`/api/atuin/day?date=${encodeURIComponent(selectedStr)}`),
     enabled: !!selectedStr && status.data?.enabled === true,
   });
+  async function triggerSummary(refresh: boolean) {
+    if (!selectedStr) return;
+    const date = selectedStr;
+    setLoadingByDate((prev) => ({ ...prev, [date]: true }));
+    setSummaryErrorsByDate((prev) => ({ ...prev, [date]: undefined }));
+    try {
+      const payload = await apiPost<DailySummaryPayload>("/api/daily-summary", {
+        date,
+        refresh,
+      });
+      setSummariesByDate((prev) => ({
+        ...prev,
+        [payload.facts.date]: payload,
+      }));
+    } catch (error) {
+      setSummaryErrorsByDate((prev) => ({
+        ...prev,
+        [date]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoadingByDate((prev) => ({ ...prev, [date]: false }));
+    }
+  }
 
   if (status.isLoading) {
     return <p className="text-[var(--muted)]">加载中…</p>;
@@ -157,6 +235,129 @@ export function Atuin() {
         </div>
 
         <div className="flex-1 min-w-0 space-y-3 w-full">
+          <div className="rounded border border-[var(--border)] bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-medium">每日摘要</h2>
+                <p className="text-sm text-[var(--muted)] mt-1">
+                  这是基于今天 shell 活动的推断层，不是审计日志。
+                </p>
+              </div>
+              {summaryStatus.data?.enabled ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                    onClick={() => void triggerSummary(false)}
+                    disabled={!selectedStr || summaryLoading}
+                  >
+                    生成摘要
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                    onClick={() => void triggerSummary(true)}
+                    disabled={!selectedStr || summaryLoading}
+                  >
+                    刷新摘要
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {!summaryStatus.data?.enabled ? (
+              <p className="text-sm text-[var(--muted)]">
+                当前服务未启用每日摘要。启动时加上{" "}
+                <code className="rounded bg-neutral-100 px-1">
+                  ai2nao serve --daily-summary
+                </code>
+                。
+              </p>
+            ) : summaryError ? (
+              <p className="text-sm text-red-600">{summaryError}</p>
+            ) : summaryLoading && summaryForSelected ? (
+              <p className="text-sm text-[var(--muted)]">正在刷新摘要…</p>
+            ) : null}
+            {summaryStatus.data?.enabled && !summaryStatus.data.modelConfigured ? (
+              <p className="text-xs text-[var(--muted)]">
+                本地 LLM 尚未配置，当前会退化为 factual recap。
+              </p>
+            ) : null}
+            {summaryForSelected ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-sm leading-6">{summaryForSelected.summary}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
+                    <span>
+                      {summaryForSelected.meta.fromCache ? "缓存结果" : "新生成"}
+                    </span>
+                    <span>
+                      {summaryForSelected.meta.usedLlm
+                        ? `LLM: ${summaryForSelected.meta.model ?? "configured"}`
+                        : "facts only"}
+                    </span>
+                    {summaryForSelected.degraded ? (
+                      <span>degrade: {summaryForSelected.degradeReason}</span>
+                    ) : null}
+                  </div>
+                </div>
+                {summaryForSelected.nextUp ? (
+                  <div>
+                    <h3 className="text-sm font-medium">明日接力棒</h3>
+                    <p className="text-sm text-[var(--muted)] mt-1">
+                      {summaryForSelected.nextUp}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {summaryForSelected.workMode ? (
+                    <span className="rounded bg-neutral-100 px-2 py-1">
+                      workMode: {summaryForSelected.workMode}
+                    </span>
+                  ) : null}
+                  {summaryForSelected.fragmentation ? (
+                    <span className="rounded bg-neutral-100 px-2 py-1">
+                      fragmentation: {summaryForSelected.fragmentation.label}
+                    </span>
+                  ) : null}
+                </div>
+                {summaryForSelected.fragmentation ? (
+                  <p className="text-xs text-[var(--muted)]">
+                    {summaryForSelected.fragmentation.summary}
+                  </p>
+                ) : null}
+                <div className="rounded bg-neutral-50 p-3 text-xs text-[var(--muted)] space-y-2">
+                  <p>
+                    {summaryForSelected.facts.totalCommands} 条命令，涉及{" "}
+                    {summaryForSelected.facts.distinctCwds} 个目录，命中{" "}
+                    {summaryForSelected.facts.repoFacts.length} 个主要工作区。
+                  </p>
+                  {summaryForSelected.facts.repoFacts.length > 0 ? (
+                    <ul className="space-y-2">
+                      {summaryForSelected.facts.repoFacts.map((repo) => (
+                        <li key={`${summaryForSelected.facts.date}-${repo.repoLabel}`}>
+                          <div className="font-medium text-[var(--fg)]">
+                            {repo.repoLabel} · {repo.commandCount} 条命令
+                          </div>
+                          {repo.blurb ? <div>{repo.blurb}</div> : null}
+                          {repo.sampleCommands.length > 0 ? (
+                            <div className="font-mono break-all">
+                              {repo.sampleCommands.join(" | ")}
+                            </div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </div>
+            ) : summaryStatus.data?.enabled ? (
+              <p className="text-sm text-[var(--muted)]">
+                {selectedStr
+                  ? "选择一天后，显式点击“生成摘要”或“刷新摘要”。"
+                  : "先选择日期，再生成摘要。"}
+              </p>
+            ) : null}
+          </div>
           <h2 className="text-lg font-medium">
             {selectedStr ? `${selectedStr} 的命令` : "选择日期"}
           </h2>

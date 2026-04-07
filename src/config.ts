@@ -27,3 +27,9 @@ export function defaultDbPath(): string {
   if (!home) return ".ai2nao/index.db";
   return `${home}/.ai2nao/index.db`;
 }
+
+export function defaultDailySummaryDbPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/daily-summary.db";
+  return `${home}/.ai2nao/daily-summary.db`;
+}

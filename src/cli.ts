@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { Command } from "commander";
 import { join, resolve } from "node:path";
-import { defaultDbPath } from "./config.js";
+import { openDailySummaryCacheDatabase } from "./dailySummary/cache.js";
+import {
+  defaultDailySummaryDbPath,
+  defaultDbPath,
+} from "./config.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
@@ -122,6 +126,29 @@ program
     "--atuin-db <path>",
     "Atuin history.db (omit to use ~/.local/share/atuin/history.db if exists)"
   )
+  .option(
+    "--daily-summary",
+    "enable explicit daily summary generation for /atuin",
+    false
+  )
+  .option(
+    "--daily-summary-db <path>",
+    "daily summary cache SQLite path",
+    defaultDailySummaryDbPath()
+  )
+  .option(
+    "--llm-base-url <url>",
+    "OpenAI-compatible local LLM base URL (or AI2NAO_LLM_BASE_URL)"
+  )
+  .option(
+    "--llm-model <name>",
+    "local LLM model name (or AI2NAO_LLM_MODEL)"
+  )
+  .option(
+    "--llm-timeout-ms <ms>",
+    "daily summary LLM timeout in milliseconds",
+    process.env.AI2NAO_LLM_TIMEOUT_MS ?? "30000"
+  )
   .action(
     (opts: {
       db: string;
@@ -129,6 +156,11 @@ program
       port: string;
       apiOnly: boolean;
       atuinDb?: string;
+      dailySummary: boolean;
+      dailySummaryDb: string;
+      llmBaseUrl?: string;
+      llmModel?: string;
+      llmTimeoutMs: string;
     }) => {
       let db;
       try {
@@ -140,6 +172,20 @@ program
       }
 
       let atuin: { db: ReturnType<typeof openReadOnlyDatabase>; path: string } | undefined;
+      let dailySummary:
+        | {
+            cacheDb: ReturnType<typeof openDailySummaryCacheDatabase>;
+            runtime: {
+              enabled: boolean;
+              cacheDbPath: string;
+              llm: {
+                baseUrl: string | null;
+                model: string | null;
+                timeoutMs: number;
+              };
+            };
+          }
+        | undefined;
       const explicitAtuin = opts.atuinDb?.trim();
       const defaultAtuinPath = join(homedir(), ".local/share/atuin/history.db");
       const atuinPath = explicitAtuin ? resolve(explicitAtuin) : defaultAtuinPath;
@@ -161,12 +207,37 @@ program
         }
       }
 
+      if (opts.dailySummary) {
+        const cacheDbPath = resolve(opts.dailySummaryDb);
+        const llmBaseUrl =
+          opts.llmBaseUrl?.trim() || process.env.AI2NAO_LLM_BASE_URL || null;
+        const llmModel =
+          opts.llmModel?.trim() || process.env.AI2NAO_LLM_MODEL || null;
+        const llmTimeoutMs = Math.max(
+          1_000,
+          parseInt(opts.llmTimeoutMs, 10) || 30_000
+        );
+        dailySummary = {
+          cacheDb: openDailySummaryCacheDatabase(cacheDbPath),
+          runtime: {
+            enabled: true,
+            cacheDbPath,
+            llm: {
+              baseUrl: llmBaseUrl,
+              model: llmModel,
+              timeoutMs: llmTimeoutMs,
+            },
+          },
+        };
+      }
+
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
       const dist = resolveWebDist(process.cwd());
       const withStatic = !opts.apiOnly && existsSync(dist);
       const { url, close } = runServe({
         db,
         atuin,
+        dailySummary,
         host: opts.host,
         port,
         withStatic,
@@ -178,6 +249,16 @@ program
           "API only. Run `npm run dev:ui` (Vite proxies /api) or `npm run build:web` then serve again for SPA."
         );
       }
+      if (dailySummary) {
+        console.error(
+          `Daily summary enabled. Cache DB: ${dailySummary.runtime.cacheDbPath}`
+        );
+        if (!dailySummary.runtime.llm.baseUrl || !dailySummary.runtime.llm.model) {
+          console.error(
+            "Daily summary LLM not fully configured. Requests will degrade to factual recap until --llm-base-url and --llm-model (or env vars) are provided."
+          );
+        }
+      }
       const shutdown = () => {
         try {
           close();
@@ -185,7 +266,11 @@ program
           try {
             atuin?.db.close();
           } finally {
-            db.close();
+            try {
+              dailySummary?.cacheDb.close();
+            } finally {
+              db.close();
+            }
           }
         }
       };

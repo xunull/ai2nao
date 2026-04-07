@@ -1,8 +1,8 @@
 import { readdirSync, statSync, readFileSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { DEFAULT_EXCLUDE_DIR_NAMES } from "../config.js";
 import { readOriginUrl } from "../git/parseConfig.js";
+import { canonicalizePath } from "../path/canonical.js";
 
 export type DiscoveredRepo = {
   rootCanonical: string;
@@ -21,9 +21,8 @@ export function discoverGitRepos(
   options?: { excludeDirNames?: Set<string> }
 ): DiscoveredRepo[] {
   const excludeNames = options?.excludeDirNames ?? DEFAULT_EXCLUDE_DIR_NAMES;
-  const resolvedRoot = resolve(root);
-  if (!existsSync(resolvedRoot)) return [];
-  const base = realpathSync(resolvedRoot);
+  const base = canonicalizePath(root);
+  if (!base || !existsSync(base)) return [];
   const seen = new Set<string>();
   const out: DiscoveredRepo[] = [];
 
@@ -36,10 +35,8 @@ export function discoverGitRepos(
     }
     for (const ent of entries) {
       if (ent.name === ".git" && ent.isDirectory()) {
-        let canon: string;
-        try {
-          canon = realpathSync(dir);
-        } catch {
+        const canon = canonicalizePath(dir);
+        if (!canon) {
           return;
         }
         if (!seen.has(canon)) {

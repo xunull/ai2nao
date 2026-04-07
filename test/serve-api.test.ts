@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { openDailySummaryCacheDatabase } from "../src/dailySummary/cache.js";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase, openReadOnlyDatabase } from "../src/store/open.js";
 import { runScan } from "../src/scan/runScan.js";
@@ -129,6 +130,140 @@ describe("Hono read-only API", () => {
       const dj = (await dRes.json()) as { entries: { command: string }[] };
       expect(dj.entries.some((e) => e.command === "echo hi")).toBe(true);
     } finally {
+      atuinDb.close();
+      db.close();
+    }
+  });
+
+  it("POST /api/daily-summary generates and caches a summary", async () => {
+    const base = join(tmpdir(), `ai2nao-summary-${Date.now()}`);
+    mkdirSync(base, { recursive: true });
+    const repo = join(base, "proj");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    writeFileSync(
+      join(repo, "package.json"),
+      JSON.stringify({
+        name: "proj",
+        description: "A sample project for testing",
+      }),
+      "utf8"
+    );
+
+    const dbPath = join(base, "idx.db");
+    const dbw = openDatabase(dbPath);
+    runScan(dbw, [base], ["package.json"]);
+    dbw.close();
+
+    const atuinPath = join(base, "history.db");
+    const aw = new Database(atuinPath);
+    aw.exec(`
+      CREATE TABLE history (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        exit INTEGER NOT NULL,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        session TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        author TEXT,
+        intent TEXT,
+        deleted_at INTEGER
+      );
+    `);
+    const nowNs = Date.now() * 1_000_000;
+    aw.prepare(
+      `INSERT INTO history (id, timestamp, duration, exit, command, cwd, session, hostname)
+       VALUES (?, ?, 0, 0, ?, ?, 's', 'h')`
+    ).run("id-1", nowNs, "npm test", repo);
+    aw.prepare(
+      `INSERT INTO history (id, timestamp, duration, exit, command, cwd, session, hostname)
+       VALUES (?, ?, 0, 0, ?, ?, 's', 'h')`
+    ).run("id-2", nowNs + 1, "npm run build", repo);
+    aw.prepare(
+      `INSERT INTO history (id, timestamp, duration, exit, command, cwd, session, hostname)
+       VALUES (?, ?, 0, 0, ?, ?, 's', 'h')`
+    ).run("id-3", nowNs + 2, "git status", repo);
+    aw.close();
+
+    const db = openReadOnlyDatabase(dbPath);
+    const atuinDb = openReadOnlyDatabase(atuinPath);
+    const cacheDb = openDailySummaryCacheDatabase(join(base, "daily-summary.db"));
+    let llmCalls = 0;
+    try {
+      const app = createApp({
+        db,
+        atuin: { db: atuinDb, path: atuinPath },
+        dailySummary: {
+          cacheDb,
+          runtime: {
+            enabled: true,
+            cacheDbPath: join(base, "daily-summary.db"),
+            llm: {
+              baseUrl: "http://llm.test/v1",
+              model: "fake-model",
+              timeoutMs: 1_000,
+              fetchImpl: async () => {
+                llmCalls += 1;
+                return new Response(
+                  JSON.stringify({
+                    choices: [
+                      {
+                        message: {
+                          content: JSON.stringify({
+                            summary: "Worked mainly in proj.",
+                            nextUp: "Continue in proj tomorrow.",
+                            workMode: "implementation",
+                            primaryRepoLabel: "proj",
+                          }),
+                        },
+                      },
+                    ],
+                  }),
+                  {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                  }
+                );
+              },
+            },
+          },
+        },
+      });
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const first = await app.request("http://x/api/daily-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateStr, refresh: false }),
+      });
+      expect(first.status).toBe(200);
+      const firstJson = (await first.json()) as {
+        summary: string;
+        nextUp: string | null;
+        meta: { fromCache: boolean; usedLlm: boolean };
+        facts: { topRepoLabel: string | null };
+      };
+      expect(firstJson.summary).toContain("proj");
+      expect(firstJson.nextUp).toContain("proj");
+      expect(firstJson.meta.fromCache).toBe(false);
+      expect(firstJson.meta.usedLlm).toBe(true);
+      expect(firstJson.facts.topRepoLabel).toBe("proj");
+      expect(llmCalls).toBe(1);
+
+      const second = await app.request("http://x/api/daily-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateStr, refresh: false }),
+      });
+      expect(second.status).toBe(200);
+      const secondJson = (await second.json()) as {
+        meta: { fromCache: boolean };
+      };
+      expect(secondJson.meta.fromCache).toBe(true);
+      expect(llmCalls).toBe(1);
+    } finally {
+      cacheDb.close();
       atuinDb.close();
       db.close();
     }
