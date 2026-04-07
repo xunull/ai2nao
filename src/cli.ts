@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { defaultDbPath } from "./config.js";
 import { runScan } from "./scan/runScan.js";
-import { openDatabase } from "./store/open.js";
+import { runServe } from "./serve/runServe.js";
+import { resolveWebDist } from "./serve/app.js";
+import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 
 const program = new Command();
@@ -100,6 +103,61 @@ program
       } finally {
         db.close();
       }
+    }
+  );
+
+program
+  .command("serve")
+  .description("Read-only HTTP API + optional SPA (build web first for UI)")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--host <host>", "bind address", "127.0.0.1")
+  .option("--port <port>", "port", "8787")
+  .option(
+    "--api-only",
+    "only expose /api (do not serve web/dist even if present)",
+    false
+  )
+  .action(
+    (opts: { db: string; host: string; port: string; apiOnly: boolean }) => {
+      let db;
+      try {
+        db = openReadOnlyDatabase(opts.db);
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+        return;
+      }
+      const port = Math.max(1, parseInt(opts.port, 10) || 8787);
+      const dist = resolveWebDist(process.cwd());
+      const withStatic = !opts.apiOnly && existsSync(dist);
+      const { url, close } = runServe({
+        db,
+        host: opts.host,
+        port,
+        withStatic,
+        cwd: process.cwd(),
+      });
+      console.error(`Listening ${url}`);
+      if (!withStatic) {
+        console.error(
+          "API only. Run `npm run dev:ui` (Vite proxies /api) or `npm run build:web` then serve again for SPA."
+        );
+      }
+      const shutdown = () => {
+        try {
+          close();
+        } finally {
+          db.close();
+        }
+      };
+      process.on("SIGINT", () => {
+        shutdown();
+        process.exit(0);
+      });
+      process.on("SIGTERM", () => {
+        shutdown();
+        process.exit(0);
+      });
     }
   );
 

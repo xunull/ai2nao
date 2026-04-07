@@ -118,6 +118,7 @@ export function getStatusSummary(db: Database.Database): {
 }
 
 export type SearchHit = {
+  repo_id: number;
   repo_path: string;
   rel_path: string;
   snippet: string;
@@ -132,7 +133,7 @@ export function searchManifests(
   const rows = db
     .prepare(
       `
-      SELECT r.path_canonical AS repo_path, m.rel_path,
+      SELECT r.id AS repo_id, r.path_canonical AS repo_path, m.rel_path,
              snippet(manifest_fts, 1, '[', ']', '…', 32) AS snippet
       FROM manifest_fts
       JOIN manifest_files m ON m.id = manifest_fts.rowid
