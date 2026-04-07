@@ -68,6 +68,88 @@ describe("Atuin daily summary UI", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows a loading state while the first summary request is pending", async () => {
+    const currentDate = new Date();
+    const currentDateStr = formatLocalDate(currentDate);
+    const pendingSummary = deferredResponse<Response>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/atuin/status")) {
+        return new Response(JSON.stringify({ enabled: true, path: "/tmp/history.db" }));
+      }
+      if (url.endsWith("/api/daily-summary/status")) {
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            modelConfigured: true,
+            model: "fake-model",
+            cacheDbPath: "/tmp/daily-summary.db",
+          })
+        );
+      }
+      if (url.includes("/api/atuin/month")) {
+        return new Response(
+          JSON.stringify({
+            year: currentDate.getFullYear(),
+            month: currentDate.getMonth() + 1,
+            timezone: "local",
+            days: [{ day: currentDateStr, count: 2 }],
+          })
+        );
+      }
+      if (url.includes(`/api/atuin/day?date=${currentDateStr}`)) {
+        return new Response(
+          JSON.stringify({
+            date: currentDateStr,
+            timezone: "local",
+            entries: [
+              {
+                id: "1",
+                timestamp_ns: Date.now() * 1_000_000,
+                duration: 0,
+                exit: 0,
+                command: "npm test",
+                cwd: "/tmp/proj",
+                hostname: "h",
+                session: "s",
+              },
+            ],
+          })
+        );
+      }
+      if (url.endsWith("/api/daily-summary") && init?.method === "POST") {
+        return pendingSummary.promise;
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Atuin />
+      </QueryClientProvider>
+    );
+
+    await screen.findByText(`${currentDateStr} 的命令`);
+    await user.click(screen.getAllByRole("button", { name: "生成摘要" })[0]);
+
+    expect(await screen.findByText("正在生成摘要…")).toBeInTheDocument();
+
+    pendingSummary.resolve(
+      new Response(JSON.stringify(makeSummary(currentDateStr, "summary ready")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    expect(await screen.findByText("summary ready")).toBeInTheDocument();
+  });
+
   it("keeps the selected date as the source of truth under summary race conditions", async () => {
     const currentDate = new Date();
     const otherDate = new Date(currentDate);
@@ -171,13 +253,13 @@ describe("Atuin daily summary UI", () => {
     );
 
     await screen.findByText(`${currentDateStr} 的命令`);
-    await user.click(screen.getByRole("button", { name: "生成摘要" }));
+    await user.click(screen.getAllByRole("button", { name: "生成摘要" })[0]);
 
     await user.click(
-      screen.getByRole("button", { name: dayButtonLabel(otherDate) })
+      screen.getAllByRole("button", { name: dayButtonLabel(otherDate) })[0]
     );
     await screen.findByText(`${otherDateStr} 的命令`);
-    await user.click(screen.getByRole("button", { name: "生成摘要" }));
+    await user.click(screen.getAllByRole("button", { name: "生成摘要" })[0]);
 
     day16.resolve(
       new Response(JSON.stringify(makeSummary(otherDateStr, "summary for second date")), {
