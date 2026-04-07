@@ -251,7 +251,7 @@ export function Atuin() {
                     onClick={() => void triggerSummary(false)}
                     disabled={!selectedStr || summaryLoading}
                   >
-                    生成摘要
+                    {summaryLoading ? "生成中…" : "生成摘要"}
                   </button>
                   <button
                     type="button"
@@ -259,7 +259,7 @@ export function Atuin() {
                     onClick={() => void triggerSummary(true)}
                     disabled={!selectedStr || summaryLoading}
                   >
-                    刷新摘要
+                    {summaryLoading ? "刷新中…" : "刷新摘要"}
                   </button>
                 </div>
               ) : null}
@@ -282,7 +282,19 @@ export function Atuin() {
                 本地 LLM 尚未配置，当前会退化为 factual recap。
               </p>
             ) : null}
-            {summaryForSelected ? (
+            {summaryLoading && !summaryForSelected ? (
+              <div className="space-y-3" aria-live="polite">
+                <p className="text-sm text-[var(--muted)]">正在生成摘要…</p>
+                <div className="space-y-2">
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-neutral-100" />
+                  <div className="h-4 w-full animate-pulse rounded bg-neutral-100" />
+                  <div className="h-4 w-5/6 animate-pulse rounded bg-neutral-100" />
+                </div>
+                <div className="rounded bg-neutral-50 p-3 text-xs text-[var(--muted)]">
+                  正在整理今天的命令、目录归属和 repo 上下文。
+                </div>
+              </div>
+            ) : summaryForSelected ? (
               <div className="space-y-3">
                 <div className="space-y-1">
                   <p className="text-sm leading-6">{summaryForSelected.summary}</p>
