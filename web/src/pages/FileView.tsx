@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { JsonHighlighted } from "../components/JsonHighlighted";
 import { tryPrettyJson } from "../util/jsonFormat";
 import { shortPath } from "../util/path";
 
@@ -16,6 +17,9 @@ type Manifest = {
 };
 
 type Payload = { repo: Repo; manifest: Manifest };
+
+const preBoxClass =
+  "rounded border border-[var(--border)] bg-white p-4 text-xs overflow-x-auto max-h-[70vh] overflow-y-auto font-mono whitespace-pre-wrap";
 
 export function FileView() {
   const { id } = useParams();
@@ -93,9 +97,11 @@ export function FileView() {
           </button>
         </div>
       ) : null}
-      <pre className="rounded border border-[var(--border)] bg-white p-4 text-xs overflow-x-auto max-h-[70vh] overflow-y-auto font-mono whitespace-pre-wrap">
-        {displayBody}
-      </pre>
+      {isJson ? (
+        <JsonHighlighted code={displayBody} className={preBoxClass} />
+      ) : (
+        <pre className={preBoxClass}>{displayBody}</pre>
+      )}
     </div>
   );
 }
