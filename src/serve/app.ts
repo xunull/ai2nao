@@ -6,6 +6,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type Database from "better-sqlite3";
 import {
+  listAtuinHistoryForDay,
+  listAtuinHistoryMonthCounts,
+} from "../atuin/queries.js";
+import {
   getManifestByRepoAndRelPath,
   getRepoById,
   listManifestsForRepo,
@@ -20,6 +24,8 @@ export type ServeOptions = {
   db: Database.Database;
   /** Absolute path to `web/dist` when serving production build; omit in dev (Vite handles UI). */
   staticRoot?: string;
+  /** Optional read-only Atuin `history.db` (separate SQLite file). */
+  atuin?: { db: Database.Database; path: string };
 };
 
 function jsonErr(status: number, message: string) {
@@ -27,7 +33,7 @@ function jsonErr(status: number, message: string) {
 }
 
 export function createApp(opts: ServeOptions): Hono {
-  const { db } = opts;
+  const { db, atuin } = opts;
   const app = new Hono();
 
   app.use(
@@ -85,6 +91,57 @@ export function createApp(opts: ServeOptions): Hono {
       if (!manifest) return jsonErr(404, "manifest not found");
       return c.json({ repo, manifest });
     } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/atuin/status", (c) => {
+    try {
+      if (!atuin) {
+        return c.json({ enabled: false as const });
+      }
+      return c.json({ enabled: true as const, path: atuin.path });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/atuin/month", (c) => {
+    try {
+      if (!atuin) return jsonErr(503, "Atuin history not configured");
+      const y = parseInt(c.req.query("year") ?? "", 10);
+      const m = parseInt(c.req.query("month") ?? "", 10);
+      if (Number.isNaN(y) || y < 1970 || y > 2100) {
+        return jsonErr(400, "invalid year");
+      }
+      if (Number.isNaN(m) || m < 1 || m > 12) {
+        return jsonErr(400, "invalid month");
+      }
+      const days = listAtuinHistoryMonthCounts(atuin.db, y, m);
+      return c.json({
+        year: y,
+        month: m,
+        days,
+        timezone: "local",
+      });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/atuin/day", (c) => {
+    try {
+      if (!atuin) return jsonErr(503, "Atuin history not configured");
+      const date = (c.req.query("date") ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return jsonErr(400, "invalid date (use YYYY-MM-DD)");
+      }
+      const entries = listAtuinHistoryForDay(atuin.db, date);
+      return c.json({ date, entries, timezone: "local" });
+    } catch (e) {
+      if (e instanceof Error && e.message === "invalid date") {
+        return jsonErr(400, "invalid date");
+      }
       return jsonErr(500, String(e));
     }
   });

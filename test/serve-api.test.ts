@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase, openReadOnlyDatabase } from "../src/store/open.js";
@@ -57,6 +58,78 @@ describe("Hono read-only API", () => {
       );
       expect(s.status).toBe(200);
     } finally {
+      db.close();
+    }
+  });
+
+  it("GET /api/atuin/* with mock history.db", async () => {
+    const base = join(tmpdir(), `ai2nao-atuin-${Date.now()}`);
+    mkdirSync(base, { recursive: true });
+    const repo = join(base, "proj");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    writeFileSync(join(repo, "package.json"), '{"name":"x"}', "utf8");
+
+    const dbPath = join(base, "idx.db");
+    const dbw = openDatabase(dbPath);
+    runScan(dbw, [base], ["package.json"]);
+    dbw.close();
+
+    const atuinPath = join(base, "history.db");
+    const aw = new Database(atuinPath);
+    aw.exec(`
+      CREATE TABLE history (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        exit INTEGER NOT NULL,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        session TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        author TEXT,
+        intent TEXT,
+        deleted_at INTEGER
+      );
+    `);
+    const nowNs = Date.now() * 1_000_000;
+    aw.prepare(
+      `INSERT INTO history (id, timestamp, duration, exit, command, cwd, session, hostname)
+       VALUES (?, ?, 0, 0, 'echo hi', '/tmp', 's', 'h')`
+    ).run("id-1", nowNs);
+    aw.close();
+
+    const db = openReadOnlyDatabase(dbPath);
+    const atuinDb = openReadOnlyDatabase(atuinPath);
+    try {
+      const app = createApp({
+        db,
+        atuin: { db: atuinDb, path: atuinPath },
+      });
+      const st = await app.request("http://x/api/atuin/status");
+      expect(st.status).toBe(200);
+      const sj = (await st.json()) as { enabled: boolean };
+      expect(sj.enabled).toBe(true);
+
+      const y = new Date().getFullYear();
+      const mo = new Date().getMonth() + 1;
+      const moRes = await app.request(
+        `http://x/api/atuin/month?year=${y}&month=${mo}`
+      );
+      expect(moRes.status).toBe(200);
+      const mj = (await moRes.json()) as {
+        days: { day: string; count: number }[];
+      };
+      expect(mj.days.length).toBeGreaterThan(0);
+
+      const dayStr = mj.days[0].day;
+      const dRes = await app.request(
+        `http://x/api/atuin/day?date=${encodeURIComponent(dayStr)}`
+      );
+      expect(dRes.status).toBe(200);
+      const dj = (await dRes.json()) as { entries: { command: string }[] };
+      expect(dj.entries.some((e) => e.command === "echo hi")).toBe(true);
+    } finally {
+      atuinDb.close();
       db.close();
     }
   });

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { Command } from "commander";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { defaultDbPath } from "./config.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
@@ -117,8 +118,18 @@ program
     "only expose /api (do not serve web/dist even if present)",
     false
   )
+  .option(
+    "--atuin-db <path>",
+    "Atuin history.db (omit to use ~/.local/share/atuin/history.db if exists)"
+  )
   .action(
-    (opts: { db: string; host: string; port: string; apiOnly: boolean }) => {
+    (opts: {
+      db: string;
+      host: string;
+      port: string;
+      apiOnly: boolean;
+      atuinDb?: string;
+    }) => {
       let db;
       try {
         db = openReadOnlyDatabase(opts.db);
@@ -127,11 +138,35 @@ program
         process.exitCode = 1;
         return;
       }
+
+      let atuin: { db: ReturnType<typeof openReadOnlyDatabase>; path: string } | undefined;
+      const explicitAtuin = opts.atuinDb?.trim();
+      const defaultAtuinPath = join(homedir(), ".local/share/atuin/history.db");
+      const atuinPath = explicitAtuin ? resolve(explicitAtuin) : defaultAtuinPath;
+      if (!explicitAtuin && !existsSync(atuinPath)) {
+        atuin = undefined;
+      } else {
+        if (!existsSync(atuinPath)) {
+          console.error(`Atuin database not found: ${atuinPath}`);
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          atuin = { db: openReadOnlyDatabase(atuinPath), path: atuinPath };
+          console.error(`Atuin history.db: ${atuinPath}`);
+        } catch (e) {
+          console.error(String(e));
+          process.exitCode = 1;
+          return;
+        }
+      }
+
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
       const dist = resolveWebDist(process.cwd());
       const withStatic = !opts.apiOnly && existsSync(dist);
       const { url, close } = runServe({
         db,
+        atuin,
         host: opts.host,
         port,
         withStatic,
@@ -147,7 +182,11 @@ program
         try {
           close();
         } finally {
-          db.close();
+          try {
+            atuin?.db.close();
+          } finally {
+            db.close();
+          }
         }
       };
       process.on("SIGINT", () => {

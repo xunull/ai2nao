@@ -26,6 +26,9 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link className="text-[var(--accent)] hover:underline" to="/search">
               搜索
             </Link>
+            <Link className="text-[var(--accent)] hover:underline" to="/atuin">
+              Atuin
+            </Link>
           </nav>
           <form onSubmit={onSubmit} className="ml-auto flex gap-2">
             <input
