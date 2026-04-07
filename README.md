@@ -69,6 +69,11 @@ node dist/cli.js serve --api-only
 npm test
 ```
 
+export AI2NAO_LLM_BASE_URL=http://127.0.0.1:1234/v1
+export AI2NAO_LLM_MODEL="google/gemma-4-26b-a4b"
+
+ai2nao serve --daily-summary
+
 ## 许可
 
 MIT（见仓库内 `LICENSE`）。

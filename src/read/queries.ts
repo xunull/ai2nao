@@ -24,6 +24,11 @@ export type ManifestBodyRow = {
   body: string;
 };
 
+export type RepoMatchRow = {
+  id: number;
+  path_canonical: string;
+};
+
 export function listRepos(
   db: Database.Database,
   page: number,
@@ -61,6 +66,18 @@ export function getRepoById(
     )
     .get(id) as RepoRow | undefined;
   return row ?? null;
+}
+
+export function listRepoMatches(db: Database.Database): RepoMatchRow[] {
+  return db
+    .prepare(
+      `
+      SELECT id, path_canonical
+      FROM repos
+      ORDER BY LENGTH(path_canonical) DESC, path_canonical ASC
+    `
+    )
+    .all() as RepoMatchRow[];
 }
 
 export function listManifestsForRepo(

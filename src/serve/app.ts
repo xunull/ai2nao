@@ -10,6 +10,11 @@ import {
   listAtuinHistoryMonthCounts,
 } from "../atuin/queries.js";
 import {
+  generateDailySummary,
+  getDailySummaryStatus,
+  type DailySummaryRuntimeOptions,
+} from "../dailySummary/service.js";
+import {
   getManifestByRepoAndRelPath,
   getRepoById,
   listManifestsForRepo,
@@ -26,6 +31,10 @@ export type ServeOptions = {
   staticRoot?: string;
   /** Optional read-only Atuin `history.db` (separate SQLite file). */
   atuin?: { db: Database.Database; path: string };
+  dailySummary?: {
+    cacheDb: Database.Database | null;
+    runtime: DailySummaryRuntimeOptions;
+  };
 };
 
 function jsonErr(status: number, message: string) {
@@ -33,7 +42,7 @@ function jsonErr(status: number, message: string) {
 }
 
 export function createApp(opts: ServeOptions): Hono {
-  const { db, atuin } = opts;
+  const { db, atuin, dailySummary } = opts;
   const app = new Hono();
 
   app.use(
@@ -142,6 +151,49 @@ export function createApp(opts: ServeOptions): Hono {
       if (e instanceof Error && e.message === "invalid date") {
         return jsonErr(400, "invalid date");
       }
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/daily-summary/status", (c) => {
+    if (!dailySummary) {
+      return c.json({
+        enabled: false as const,
+        modelConfigured: false as const,
+        model: null,
+        cacheDbPath: null,
+      });
+    }
+    return c.json(getDailySummaryStatus(dailySummary.runtime));
+  });
+
+  app.post("/api/daily-summary", async (c) => {
+    try {
+      if (!dailySummary?.runtime.enabled) {
+        return jsonErr(503, "Daily summary is not enabled for this server");
+      }
+      if (!atuin) return jsonErr(503, "Atuin history not configured");
+
+      const body = (await c.req.json().catch(() => ({}))) as {
+        date?: unknown;
+        refresh?: unknown;
+      };
+      const date = typeof body.date === "string" ? body.date.trim() : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return jsonErr(400, "invalid date (use YYYY-MM-DD)");
+      }
+
+      const entries = listAtuinHistoryForDay(atuin.db, date);
+      const payload = await generateDailySummary({
+        date,
+        refresh: body.refresh === true,
+        indexDb: db,
+        atuinEntries: entries,
+        cacheDb: dailySummary.cacheDb,
+        runtime: dailySummary.runtime,
+      });
+      return c.json(payload);
+    } catch (e) {
       return jsonErr(500, String(e));
     }
   });
