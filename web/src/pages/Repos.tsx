@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { shortPath } from "../util/path";
+
+const PAGE_SIZE = 25;
 
 type Status = {
   repos: number;
@@ -28,15 +31,50 @@ type RepoList = {
   limit: number;
 };
 
+function parsePage(raw: string | null): number {
+  const n = parseInt(raw ?? "1", 10);
+  if (Number.isNaN(n) || n < 1) return 1;
+  return n;
+}
+
 export function Repos() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePage(searchParams.get("page"));
+
   const status = useQuery({
     queryKey: ["status"],
     queryFn: () => apiGet<Status>("/api/status"),
   });
   const list = useQuery({
-    queryKey: ["repos", 1],
-    queryFn: () => apiGet<RepoList>("/api/repos?page=1&limit=100"),
+    queryKey: ["repos", page, PAGE_SIZE],
+    queryFn: () =>
+      apiGet<RepoList>(
+        `/api/repos?page=${page}&limit=${PAGE_SIZE}`
+      ),
   });
+
+  const totalPages = list.data
+    ? Math.max(1, Math.ceil(list.data.total / PAGE_SIZE))
+    : 1;
+  const displayPage = Math.min(Math.max(1, page), totalPages);
+
+  useEffect(() => {
+    if (!list.data) return;
+    if (page !== displayPage) {
+      const sp = new URLSearchParams(searchParams);
+      if (displayPage <= 1) sp.delete("page");
+      else sp.set("page", String(displayPage));
+      setSearchParams(sp, { replace: true });
+    }
+  }, [list.data, page, displayPage, searchParams, setSearchParams]);
+
+  function setPage(p: number) {
+    const next = Math.max(1, Math.min(p, totalPages));
+    const sp = new URLSearchParams(searchParams);
+    if (next <= 1) sp.delete("page");
+    else sp.set("page", String(next));
+    setSearchParams(sp, { replace: true });
+  }
 
   if (status.isLoading || list.isLoading) {
     return <p className="text-[var(--muted)]">加载中…</p>;
@@ -59,6 +97,7 @@ export function Repos() {
   const s = status.data!;
   const l = list.data!;
   const empty = l.total === 0;
+  const showPager = !empty && totalPages > 1;
 
   return (
     <div className="space-y-6">
@@ -94,38 +133,69 @@ export function Repos() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
-          <table className="min-w-full text-sm">
-            <thead className="bg-neutral-50 text-left">
-              <tr>
-                <th className="px-3 py-2 font-medium">路径</th>
-                <th className="px-3 py-2 font-medium">origin</th>
-                <th className="px-3 py-2 font-medium">最后扫描</th>
-              </tr>
-            </thead>
-            <tbody>
-              {l.repos.map((r) => (
-                <tr key={r.id} className="border-t border-[var(--border)]">
-                  <td className="px-3 py-2">
-                    <Link
-                      className="text-[var(--accent)] hover:underline"
-                      to={`/repos/${r.id}`}
-                      title={r.path_canonical}
-                    >
-                      {shortPath(r.path_canonical)}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-[var(--muted)] max-w-[240px] truncate">
-                    {r.origin_url ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
-                    {r.last_scanned_at ?? "—"}
-                  </td>
+        <>
+          <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
+            <table className="min-w-full text-sm">
+              <thead className="bg-neutral-50 text-left">
+                <tr>
+                  <th className="px-3 py-2 font-medium">路径</th>
+                  <th className="px-3 py-2 font-medium">origin</th>
+                  <th className="px-3 py-2 font-medium">最后扫描</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {l.repos.map((r) => (
+                  <tr key={r.id} className="border-t border-[var(--border)]">
+                    <td className="px-3 py-2">
+                      <Link
+                        className="text-[var(--accent)] hover:underline"
+                        to={`/repos/${r.id}`}
+                        title={r.path_canonical}
+                      >
+                        {shortPath(r.path_canonical)}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-[var(--muted)] max-w-[240px] truncate">
+                      {r.origin_url ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
+                      {r.last_scanned_at ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
+            <span>
+              共 {l.total} 条，每页 {PAGE_SIZE} 条
+              {showPager
+                ? ` · 第 ${displayPage} / ${totalPages} 页`
+                : null}
+            </span>
+            {showPager ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                  disabled={displayPage <= 1}
+                  onClick={() => setPage(displayPage - 1)}
+                >
+                  上一页
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                  disabled={displayPage >= totalPages}
+                  onClick={() => setPage(displayPage + 1)}
+                >
+                  下一页
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   );

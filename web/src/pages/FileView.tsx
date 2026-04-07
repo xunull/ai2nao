@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { tryPrettyJson } from "../util/jsonFormat";
 import { shortPath } from "../util/path";
 
 type Repo = {
@@ -19,6 +21,7 @@ export function FileView() {
   const { id } = useParams();
   const [search] = useSearchParams();
   const relPath = search.get("path") ?? "";
+  const [jsonMode, setJsonMode] = useState<"pretty" | "raw">("pretty");
 
   const q = useQuery({
     queryKey: ["manifest", id, relPath],
@@ -28,6 +31,11 @@ export function FileView() {
       ),
     enabled: !!id && !!relPath,
   });
+
+  const pretty = useMemo(() => {
+    if (!q.data) return null;
+    return tryPrettyJson(q.data.manifest.body);
+  }, [q.data]);
 
   if (!id || !relPath) {
     return <p className="text-[var(--muted)]">路径无效</p>;
@@ -41,6 +49,9 @@ export function FileView() {
     );
   }
   const { repo, manifest } = q.data!;
+  const displayBody =
+    pretty && jsonMode === "pretty" ? pretty : manifest.body;
+  const isJson = pretty !== null;
 
   return (
     <div className="space-y-4">
@@ -56,8 +67,34 @@ export function FileView() {
       <p className="text-xs text-[var(--muted)]" title={repo.path_canonical}>
         {shortPath(repo.path_canonical)}
       </p>
+      {isJson ? (
+        <div className="flex gap-2 text-sm">
+          <button
+            type="button"
+            className={`rounded px-3 py-1.5 border ${
+              jsonMode === "pretty"
+                ? "border-[var(--accent)] bg-blue-50 text-[var(--accent)]"
+                : "border-[var(--border)] bg-white text-[var(--muted)]"
+            }`}
+            onClick={() => setJsonMode("pretty")}
+          >
+            格式化 JSON
+          </button>
+          <button
+            type="button"
+            className={`rounded px-3 py-1.5 border ${
+              jsonMode === "raw"
+                ? "border-[var(--accent)] bg-blue-50 text-[var(--accent)]"
+                : "border-[var(--border)] bg-white text-[var(--muted)]"
+            }`}
+            onClick={() => setJsonMode("raw")}
+          >
+            原始文本
+          </button>
+        </div>
+      ) : null}
       <pre className="rounded border border-[var(--border)] bg-white p-4 text-xs overflow-x-auto max-h-[70vh] overflow-y-auto font-mono whitespace-pre-wrap">
-        {manifest.body}
+        {displayBody}
       </pre>
     </div>
   );
