@@ -29,6 +29,12 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link className="text-[var(--accent)] hover:underline" to="/atuin">
               Atuin
             </Link>
+            <Link
+              className="text-[var(--accent)] hover:underline"
+              to="/downloads"
+            >
+              下载
+            </Link>
           </nav>
           <form onSubmit={onSubmit} className="ml-auto flex gap-2">
             <input
@@ -49,7 +55,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </header>
       <main className="mx-auto max-w-6xl w-full px-4 py-6 flex-1">{children}</main>
       <footer className="border-t border-[var(--border)] text-xs text-[var(--muted)] py-3 text-center">
-        仅本机索引查看（只读）
+        本机索引；下载页写入需运行带可写库的 serve
       </footer>
     </div>
   );

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -14,6 +14,15 @@ import {
   getDailySummaryStatus,
   type DailySummaryRuntimeOptions,
 } from "../dailySummary/service.js";
+import {
+  defaultDownloadRoots,
+  isDownloadsIndexingSupported,
+} from "../downloads/roots.js";
+import {
+  listDownloadsForDay,
+  listDownloadsMonthCounts,
+} from "../downloads/queries.js";
+import { scanDownloads } from "../downloads/scan.js";
 import {
   getManifestByRepoAndRelPath,
   getRepoById,
@@ -49,7 +58,7 @@ export function createApp(opts: ServeOptions): Hono {
     "/api/*",
     cors({
       origin: ["http://127.0.0.1:5173", "http://localhost:5173"],
-      allowMethods: ["GET", "OPTIONS"],
+      allowMethods: ["GET", "POST", "OPTIONS"],
     })
   );
 
@@ -193,6 +202,76 @@ export function createApp(opts: ServeOptions): Hono {
         runtime: dailySummary.runtime,
       });
       return c.json(payload);
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/downloads/status", (c) => {
+    const supported = isDownloadsIndexingSupported();
+    const defaultRoots = defaultDownloadRoots();
+    return c.json({
+      supported,
+      defaultRoots,
+      platform: process.platform,
+    });
+  });
+
+  app.get("/api/downloads/month", (c) => {
+    try {
+      const y = parseInt(c.req.query("year") ?? "", 10);
+      const m = parseInt(c.req.query("month") ?? "", 10);
+      if (Number.isNaN(y) || y < 1970 || y > 2100) {
+        return jsonErr(400, "invalid year");
+      }
+      if (Number.isNaN(m) || m < 1 || m > 12) {
+        return jsonErr(400, "invalid month");
+      }
+      const days = listDownloadsMonthCounts(db, y, m);
+      return c.json({
+        year: y,
+        month: m,
+        days,
+        timezone: "local",
+      });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/downloads/day", (c) => {
+    try {
+      const date = (c.req.query("date") ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return jsonErr(400, "invalid date (use YYYY-MM-DD)");
+      }
+      const entries = listDownloadsForDay(db, date);
+      return c.json({ date, entries, timezone: "local" });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.post("/api/downloads/scan", async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        roots?: unknown;
+      };
+      let roots: string[] = defaultDownloadRoots();
+      if (Array.isArray(body.roots) && body.roots.length > 0) {
+        roots = body.roots
+          .filter((x): x is string => typeof x === "string")
+          .map((r) => resolve(r.trim()))
+          .filter((r) => r.length > 0);
+      }
+      if (roots.length === 0) {
+        return jsonErr(
+          400,
+          "no download roots (unsupported platform or empty roots); pass { \"roots\": [\"/path\"] } to override"
+        );
+      }
+      const result = scanDownloads(db, roots);
+      return c.json({ ok: true, ...result });
     } catch (e) {
       return jsonErr(500, String(e));
     }
