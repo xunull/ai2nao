@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Atuin } from "./pages/Atuin";
+import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
 import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
@@ -20,6 +21,7 @@ export function App() {
         <Route path="/atuin" element={<Atuin />} />
         <Route path="/downloads" element={<Downloads />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
+        <Route path="/chrome-downloads" element={<ChromeDownloads />} />
       </Routes>
     </Layout>
   );

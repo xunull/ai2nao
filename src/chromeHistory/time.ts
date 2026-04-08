@@ -17,3 +17,30 @@ export function calendarDayLocalFromChromeUs(us: number): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${mo}-${day}`;
 }
+
+/**
+ * Chrome `downloads` row: use `end_time` when it is a positive WebKit microsecond timestamp;
+ * otherwise fall back to `start_time` (e.g. in-progress downloads).
+ */
+export function calendarDayLocalFromChromeDownload(
+  endTimeUs: number | null | undefined,
+  startTimeUs: number
+): string {
+  const end = endTimeUs ?? 0;
+  if (Number.isFinite(end) && end > 0) {
+    return calendarDayLocalFromChromeUs(end);
+  }
+  return calendarDayLocalFromChromeUs(startTimeUs);
+}
+
+/** Prefer `end_time` for display when valid; else `start_time` (WebKit µs → Unix ms). */
+export function chromeDownloadTimeUnixMs(
+  endTimeUs: number | null | undefined,
+  startTimeUs: number
+): number {
+  const end = endTimeUs ?? 0;
+  if (Number.isFinite(end) && end > 0) {
+    return chromeWebkitUsToUnixMs(end);
+  }
+  return chromeWebkitUsToUnixMs(startTimeUs);
+}

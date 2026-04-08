@@ -6,9 +6,11 @@
 2. stale cache 的 UI 体验
 3. README / LM Studio 使用文档
 4. 跨天工作线程
+5. Chrome 下载镜像 v2（URL 链与可点击源 URL）
+6. Chrome 下载镜像设计文档（`docs`）
 
 说明:
-当前这四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。
+前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。
 
 ## 证据可回看层
 
@@ -100,6 +102,50 @@ Depends on / blocked by:
 - 稳定的单日 `facts` 与 repo 命中
 - 已定义清楚的缓存指纹和版本元数据
 - 单日摘要质量边界已经通过测试验证
+
+## Chrome 下载镜像 v2：`downloads_url_chains` 与可点击源 URL
+
+What: 在 v1 仅镜像 Chromium `downloads` 表（及 `referrer` / `tab_url` 等字段）的基础上，读取 `downloads_url_chains`（或当前版本等价表），拼出重定向后的最终 URL，并在 Web 列表中提供可点击的「源地址」或完整链说明。
+
+Why: v1 可能无法代表用户实际点击的起始链接；补上 URL 链后，回看价值更接近 Chrome「下载内容」里的真实上下文。
+
+Pros:
+- 列表信息与浏览器下载管理器更一致
+- 便于排查「从哪个页面触发的下载」
+
+Cons:
+- SQL 与同步逻辑变厚，需处理多版本 schema
+- 测试需要构造含 url chain 的 fixture
+
+Context:
+来自 `/gstack-plan-eng-review` 对 Chrome 下载镜像设计的后续项；与 office-hours 设计文档中的 Open Questions（`downloads_url_chains` v2）一致。
+
+Depends on / blocked by:
+- Chrome 下载镜像 v1 已合并（`chrome_downloads`、同步、API、`/chrome-downloads` 或等价路由）
+- 本机或 fixture 上对真实 `History` 的 `.schema downloads_url_chains` 真源
+
+Priority: Phase 2（v1 之后）
+
+## Chrome 下载镜像：设计文档（docs）
+
+What: 新增 `docs/chrome-downloads-design.md`（或与 `docs/downloads-design.md` 互链一小节），写清：数据源（`History` 内 `downloads`）、只增不删、与 `download_files` 的区别、默认路径与 profile、`sync`/`watch` 与 `chrome-history` 的关系、API 与页面路由。
+
+Why: 下载目录索引已有 `docs/downloads-design.md`；Chrome 下载镜像若无对等文档，后续自己或贡献者容易混淆两条「下载」能力。
+
+Pros:
+- 与仓库现有设计规格风格一致
+- 降低 onboarding 与 PR 审查成本
+
+Cons:
+- 需与实现及 CLI 帮助保持同步，否则会 stale
+
+Context:
+来自 `/gstack-plan-eng-review` 的文档类 TODO；可在 v1 实现 PR 中顺手落地，也可在 v1 merge 后单独补。
+
+Depends on / blocked by:
+- Chrome 下载镜像 v1 行为基本定型（命令名、路由、字段）
+
+Priority: P2（建议在 v1 合入前后一周内补齐）
 
 ## 下载目录索引：下载过程中 birthtime / mtime 抖动
 
