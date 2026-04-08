@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Atuin } from "./pages/Atuin";
+import { ChromeHistory } from "./pages/ChromeHistory";
 import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
 import { RepoDetail } from "./pages/RepoDetail";
@@ -18,6 +19,7 @@ export function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/atuin" element={<Atuin />} />
         <Route path="/downloads" element={<Downloads />} />
+        <Route path="/chrome-history" element={<ChromeHistory />} />
       </Routes>
     </Layout>
   );

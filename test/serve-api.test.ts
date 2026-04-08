@@ -7,6 +7,7 @@ import { openDailySummaryCacheDatabase } from "../src/dailySummary/cache.js";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase, openReadOnlyDatabase } from "../src/store/open.js";
 import { runScan } from "../src/scan/runScan.js";
+import { chromeWebkitUsToUnixMs } from "../src/chromeHistory/time.js";
 
 describe("Hono read-only API", () => {
   it("GET /api/status and /api/repos", async () => {
@@ -323,6 +324,99 @@ describe("Hono read-only API", () => {
         entries: { rel_path: string }[];
       };
       expect(dj.entries.some((e) => e.rel_path === "x.bin")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("POST /api/chrome-history/sync and GET month/day", async () => {
+    const base = join(tmpdir(), `ai2nao-chrome-api-${Date.now()}`);
+    mkdirSync(base, { recursive: true });
+    const repo = join(base, "proj");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    writeFileSync(join(repo, "package.json"), '{"name":"x"}', "utf8");
+
+    const chromeHist = join(base, "History");
+    const hw = new Database(chromeHist);
+    hw.exec(`
+      CREATE TABLE urls (
+        id INTEGER PRIMARY KEY,
+        url LONGVARCHAR NOT NULL,
+        title LONGVARCHAR,
+        visit_count INTEGER DEFAULT 0 NOT NULL,
+        typed_count INTEGER DEFAULT 0 NOT NULL,
+        last_visit_time INTEGER DEFAULT 0 NOT NULL,
+        hidden INTEGER DEFAULT 0 NOT NULL
+      );
+      CREATE TABLE visits (
+        id INTEGER PRIMARY KEY,
+        url INTEGER NOT NULL,
+        visit_time INTEGER NOT NULL,
+        from_visit INTEGER,
+        transition INTEGER DEFAULT 0 NOT NULL,
+        segment_id INTEGER,
+        visit_duration INTEGER DEFAULT 0 NOT NULL
+      );
+    `);
+    const webkitEpochMs = Date.UTC(1601, 0, 1);
+    const visitUs = Math.round((Date.now() - webkitEpochMs) * 1000);
+    hw.prepare(
+      `INSERT INTO urls (id, url, title, visit_count, typed_count, last_visit_time, hidden)
+       VALUES (1, 'https://example.com/sync-test', 'Sync Test', 1, 0, ?, 0)`
+    ).run(visitUs);
+    hw.prepare(
+      `INSERT INTO visits (id, url, visit_time, from_visit, transition, segment_id, visit_duration)
+       VALUES (1, 1, ?, NULL, 805306368, NULL, 0)`
+    ).run(visitUs);
+    hw.close();
+
+    const dbPath = join(base, "idx.db");
+    const dbw = openDatabase(dbPath);
+    runScan(dbw, [base], ["package.json"]);
+    dbw.close();
+
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const sync = await app.request("http://x/api/chrome-history/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile: "Default",
+          historyPath: chromeHist,
+        }),
+      });
+      expect(sync.status).toBe(200);
+      const sj = (await sync.json()) as {
+        insertedVisits: number;
+        errors: string[];
+      };
+      expect(sj.errors.length).toBe(0);
+      expect(sj.insertedVisits).toBe(1);
+
+      const visitLocal = new Date(chromeWebkitUsToUnixMs(visitUs));
+      const dayStr = `${visitLocal.getFullYear()}-${String(visitLocal.getMonth() + 1).padStart(2, "0")}-${String(visitLocal.getDate()).padStart(2, "0")}`;
+      const y = visitLocal.getFullYear();
+      const m = visitLocal.getMonth() + 1;
+      const moRes = await app.request(
+        `http://x/api/chrome-history/month?year=${y}&month=${m}&profile=Default`
+      );
+      expect(moRes.status).toBe(200);
+      const mj = (await moRes.json()) as {
+        days: { day: string; count: number }[];
+      };
+      expect(mj.days.some((d) => d.day === dayStr && d.count >= 1)).toBe(
+        true
+      );
+
+      const dRes = await app.request(
+        `http://x/api/chrome-history/day?date=${encodeURIComponent(dayStr)}&profile=Default`
+      );
+      expect(dRes.status).toBe(200);
+      const dj = (await dRes.json()) as {
+        entries: { url: string; visit_time_unix_ms: number }[];
+      };
+      expect(dj.entries.some((e) => e.url.includes("sync-test"))).toBe(true);
     } finally {
       db.close();
     }
