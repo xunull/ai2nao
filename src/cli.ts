@@ -218,25 +218,33 @@ downloadsCmd
 const chromeHistoryCmd = program
   .command("chrome-history")
   .description(
-    "Mirror Chrome History SQLite into the index DB (insert-only); use with chrome-history:watch in package.json"
+    "Mirror Chrome History SQLite (visits + downloads tables) into the index DB (insert-only); use with chrome-history:watch in package.json"
   );
 
 chromeHistoryCmd
   .command("sync")
-  .description("Copy Chrome History to a temp file, read new visits, INSERT OR IGNORE into index DB")
+  .description(
+    "Copy Chrome History to a temp file, read new visits and downloads, INSERT OR IGNORE into index DB"
+  )
   .option("--db <path>", "SQLite database path", defaultDbPath())
   .option("--profile <name>", "Chrome profile folder name", "Default")
   .option(
     "--history-path <path>",
-    "path to Chrome `History` file (default: platform default for profile)"
+    "path to Chrome `History` file (default: first existing Chromium-family path for profile)"
   )
   .option("--json", "print machine-readable JSON", false)
+  .option(
+    "--verbose",
+    "print snapshot / WAL / downloads diagnostics (stderr)",
+    false
+  )
   .action(
     (opts: {
       db: string;
       profile: string;
       historyPath?: string;
       json: boolean;
+      verbose: boolean;
     }) => {
       if (!isChromeHistoryIndexingSupported()) {
         console.error("Chrome history path: unsupported platform.");
@@ -256,14 +264,19 @@ chromeHistoryCmd
       }
       const db = openDatabase(opts.db);
       try {
-        const result = syncChromeHistory(db, historyPath, profile);
+        const result = syncChromeHistory(db, historyPath, profile, {
+          verbose: opts.verbose,
+        });
         if (opts.json) {
           console.log(JSON.stringify({ ok: true, ...result }, null, 2));
         } else {
           console.error(
-            `Chrome history sync [${profile}]: inserted ${result.insertedVisits} visit(s), ${result.insertedUrls} new url row(s), skipped ${result.skippedVisits} duplicate visit(s).`
+            `Chrome history sync [${profile}]: visits +${result.insertedVisits} (urls +${result.insertedUrls}), skipped ${result.skippedVisits} duplicate visit(s); downloads +${result.insertedDownloads}, skipped ${result.skippedDownloads} duplicate download(s).`
           );
           console.error(`Source: ${result.sourcePath}`);
+          if (opts.verbose && result.debug) {
+            console.error("Diagnostics:", JSON.stringify(result.debug, null, 2));
+          }
           for (const err of result.errors) console.error(`warning: ${err}`);
         }
         process.exitCode = result.errors.length ? 1 : 0;
@@ -317,7 +330,7 @@ chromeHistoryCmd
           const result = syncChromeHistory(db, historyPath, profile);
           const ts = new Date().toISOString();
           console.error(
-            `[${ts}] chrome-history watch [${profile}]: inserted ${result.insertedVisits} visit(s), skipped ${result.skippedVisits}`
+            `[${ts}] chrome-history watch [${profile}]: visits +${result.insertedVisits} / skipped ${result.skippedVisits}; downloads +${result.insertedDownloads} / skipped ${result.skippedDownloads}`
           );
           for (const err of result.errors) console.error(`warning: ${err}`);
         } finally {

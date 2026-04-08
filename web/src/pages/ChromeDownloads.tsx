@@ -5,9 +5,9 @@ import { useMemo, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import { apiGet, apiPost } from "../api";
-import { formatFileTimeMs } from "../util/formatDisplay";
+import { formatByteSize, formatFileTimeMs } from "../util/formatDisplay";
 
-type ChromeHistoryStatus = {
+type ChromeDownloadsStatus = {
   supported: boolean;
   profile: string;
   defaultHistoryPath: string | null;
@@ -23,15 +23,18 @@ type MonthRes = {
 };
 
 type DayEntry = {
-  visit_id: number;
-  url_id: number;
-  url: string;
-  title: string | null;
-  visit_time: number;
-  visit_time_unix_ms: number;
-  transition: number | null;
+  download_id: number;
+  target_path: string | null;
+  current_path: string | null;
+  mime_type: string | null;
+  tab_url: string | null;
+  state: number | null;
+  received_bytes: number | null;
+  total_bytes: number | null;
   calendar_day: string;
-  inserted_at: string;
+  time_unix_ms: number;
+  start_time_unix_ms: number;
+  end_time_unix_ms: number | null;
 };
 
 type DayRes = {
@@ -57,7 +60,14 @@ function enc(s: string): string {
   return encodeURIComponent(s);
 }
 
-export function ChromeHistory() {
+function pickPath(e: DayEntry): string {
+  const t = e.target_path?.trim();
+  if (t) return t;
+  const c = e.current_path?.trim();
+  return c ?? "（无路径）";
+}
+
+export function ChromeDownloads() {
   const queryClient = useQueryClient();
   const [profile, setProfile] = useState("Default");
   const [profileDraft, setProfileDraft] = useState("Default");
@@ -67,10 +77,10 @@ export function ChromeHistory() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const status = useQuery({
-    queryKey: ["chrome-history-status", profile],
+    queryKey: ["chrome-downloads-status", profile],
     queryFn: () =>
-      apiGet<ChromeHistoryStatus>(
-        `/api/chrome-history/status?profile=${enc(profile)}`
+      apiGet<ChromeDownloadsStatus>(
+        `/api/chrome-downloads/status?profile=${enc(profile)}`
       ),
   });
 
@@ -78,10 +88,10 @@ export function ChromeHistory() {
   const m = month.getMonth() + 1;
 
   const monthQ = useQuery({
-    queryKey: ["chrome-history-month", profile, y, m],
+    queryKey: ["chrome-downloads-month", profile, y, m],
     queryFn: () =>
       apiGet<MonthRes>(
-        `/api/chrome-history/month?year=${y}&month=${m}&profile=${enc(profile)}`
+        `/api/chrome-downloads/month?year=${y}&month=${m}&profile=${enc(profile)}`
       ),
   });
 
@@ -93,7 +103,7 @@ export function ChromeHistory() {
     return map;
   }, [monthQ.data]);
 
-  const datesWithVisits = useMemo(() => {
+  const datesWithDownloads = useMemo(() => {
     const out: Date[] = [];
     for (const [day, c] of countByDay) {
       if (c <= 0) continue;
@@ -106,10 +116,10 @@ export function ChromeHistory() {
   const selectedStr = selected ? format(selected, "yyyy-MM-dd") : "";
 
   const dayQ = useQuery({
-    queryKey: ["chrome-history-day", profile, selectedStr],
+    queryKey: ["chrome-downloads-day", profile, selectedStr],
     queryFn: () =>
       apiGet<DayRes>(
-        `/api/chrome-history/day?date=${enc(selectedStr)}&profile=${enc(profile)}`
+        `/api/chrome-downloads/day?date=${enc(selectedStr)}&profile=${enc(profile)}`
       ),
     enabled: !!selectedStr,
   });
@@ -124,7 +134,7 @@ export function ChromeHistory() {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const r = await apiPost<SyncRes>("/api/chrome-history/sync", {
+      const r = await apiPost<SyncRes>("/api/chrome-downloads/sync", {
         profile,
       });
       const errPart =
@@ -132,8 +142,8 @@ export function ChromeHistory() {
       setSyncMsg(
         `同步完成：访问 +${r.insertedVisits}（URL 行 +${r.insertedUrls}），跳过访问 ${r.skippedVisits}；下载 +${r.insertedDownloads}，跳过 ${r.skippedDownloads}。${errPart}`
       );
-      await queryClient.invalidateQueries({ queryKey: ["chrome-history-month"] });
-      await queryClient.invalidateQueries({ queryKey: ["chrome-history-day"] });
+      await queryClient.invalidateQueries({ queryKey: ["chrome-downloads-month"] });
+      await queryClient.invalidateQueries({ queryKey: ["chrome-downloads-day"] });
     } catch (e) {
       setSyncMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -157,19 +167,20 @@ export function ChromeHistory() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Chrome 历史</h1>
+        <h1 className="text-xl font-semibold">Chrome 下载记录</h1>
         <p className="text-sm text-[var(--muted)] mt-2">
           从本机 Chrome{" "}
           <code className="rounded bg-neutral-100 px-1 text-xs">History</code>{" "}
-          SQLite 增量镜像到索引库（仅插入、不删除）。与{" "}
+          的 <code className="rounded bg-neutral-100 px-1 text-xs">downloads</code>{" "}
+          表增量镜像到索引库（仅插入、不删除）。与访问历史在同一轮{" "}
           <code className="rounded bg-neutral-100 px-1 text-xs">
-            npm run chrome-history:watch
+            chrome-history sync
           </code>{" "}
-          使用同一套逻辑；下方「立即同步」相当于一次{" "}
+          中写入；此处「立即同步」与{" "}
           <code className="rounded bg-neutral-100 px-1 text-xs">
-            ai2nao chrome-history sync
-          </code>
-          。
+            POST /api/chrome-downloads/sync
+          </code>{" "}
+          等价。
         </p>
         <div className="mt-3 flex flex-wrap gap-2 items-center text-sm">
           <label className="text-[var(--muted)]">Profile 目录名</label>
@@ -190,19 +201,18 @@ export function ChromeHistory() {
         {status.data?.defaultHistoryPath ? (
           <p className="text-xs text-[var(--muted)] mt-2 break-all">
             默认 History 路径：{status.data.defaultHistoryPath}
-            （若装有多个 Chromium 系浏览器，会选磁盘上最近更新的那个{" "}
-            <code className="rounded bg-neutral-100 px-1">History</code>{" "}
-            文件；不对时用 CLI/API 指定路径。）
+            （多浏览器并存时选最近更新的{" "}
+            <code className="rounded bg-neutral-100 px-1">History</code>；可
+            <code className="rounded bg-neutral-100 px-1">
+              --history-path
+            </code>{" "}
+            或 API 覆盖。）
           </p>
         ) : null}
         {unsupported ? (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3 mt-3">
             当前系统（{status.data.platform}
-            ）未内置 Chrome History 默认路径。可在 API{" "}
-            <code className="rounded bg-white px-1">
-              POST /api/chrome-history/sync
-            </code>{" "}
-            中传入{" "}
+            ）未内置 Chrome History 默认路径。可在同步请求中传入{" "}
             <code className="rounded bg-white px-1">
               {`{ "profile": "…", "historyPath": "/path/to/History" }`}
             </code>
@@ -235,11 +245,11 @@ export function ChromeHistory() {
             onSelect={setSelected}
             locale={zhCN}
             modifiers={{
-              hasVisits: datesWithVisits,
+              hasDownloads: datesWithDownloads,
             }}
             modifiersClassNames={{
-              hasVisits:
-                "!bg-sky-100 !text-sky-900 font-medium ring-1 ring-sky-200",
+              hasDownloads:
+                "!bg-emerald-100 !text-emerald-900 font-medium ring-1 ring-emerald-200",
             }}
           />
           {monthQ.isLoading ? (
@@ -271,27 +281,31 @@ export function ChromeHistory() {
               <ul className="mt-3 space-y-2 text-sm max-h-[28rem] overflow-y-auto">
                 {(dayQ.data?.entries ?? []).length === 0 ? (
                   <li className="text-[var(--muted)]">
-                    当日无记录（可先同步或确认 Profile 与 Chrome 是否写入该库）。
+                    当日无记录（可先同步或确认 Profile）。
                   </li>
                 ) : (
                   dayQ.data?.entries.map((e) => (
                     <li
-                      key={e.visit_id}
+                      key={e.download_id}
                       className="border-b border-[var(--border)] pb-2 last:border-0"
                     >
-                      <a
-                        href={e.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[var(--accent)] hover:underline break-all"
-                      >
-                        {e.title?.trim() ? e.title : e.url}
-                      </a>
-                      <div className="text-xs text-[var(--muted)] mt-1 font-mono break-all">
-                        {e.url}
+                      <div className="font-medium break-all">{pickPath(e)}</div>
+                      {e.tab_url ? (
+                        <div className="text-xs text-[var(--muted)] mt-1 break-all">
+                          页签 {e.tab_url}
+                        </div>
+                      ) : null}
+                      <div className="text-xs text-[var(--muted)] mt-1">
+                        {e.mime_type ? `${e.mime_type} · ` : null}
+                        {e.received_bytes != null && e.total_bytes != null
+                          ? `${formatByteSize(e.received_bytes)} / ${formatByteSize(e.total_bytes)}`
+                          : e.total_bytes != null
+                            ? formatByteSize(e.total_bytes)
+                            : null}
+                        {e.state != null ? ` · 状态 ${e.state}` : null}
                       </div>
                       <div className="text-xs text-[var(--muted)] mt-1">
-                        访问时间 {formatFileTimeMs(e.visit_time_unix_ms)}
+                        时间 {formatFileTimeMs(e.time_unix_ms)}
                       </div>
                     </li>
                   ))
