@@ -11,7 +11,7 @@ export function openDatabase(dbPath: string): Database.Database {
   return db;
 }
 
-/** Read-only open for the web server (no migrations; CLI must have created the DB). */
+/** Read-only open for tests or tools that must not migrate or write the main index. */
 export function openReadOnlyDatabase(dbPath: string): Database.Database {
   if (!existsSync(dbPath)) {
     throw new Error(`Database file not found: ${dbPath}`);

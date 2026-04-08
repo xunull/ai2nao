@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -11,6 +11,7 @@ export function migrate(db: Database.Database): void {
     .get() as { 1: number } | undefined;
   if (!exists) {
     applyV1(db);
+    applyV2(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -18,8 +19,16 @@ export function migrate(db: Database.Database): void {
     | undefined;
   const v = row?.version ?? 0;
   if (v < 1) applyV1(db);
-  if (v > CURRENT_VERSION) {
-    throw new Error(`Database schema newer than this binary (version ${v}); upgrade ai2nao`);
+  if (v < 2) applyV2(db);
+  const vAfter = (
+    db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
+      version: number;
+    }
+  ).version;
+  if (vAfter > CURRENT_VERSION) {
+    throw new Error(
+      `Database schema newer than this binary (version ${vAfter}); upgrade ai2nao`
+    );
   }
 }
 
@@ -68,5 +77,26 @@ function applyV1(db: Database.Database): void {
     END;
 
     UPDATE meta_schema SET version = 1 WHERE id = 1;
+  `);
+}
+
+/** Download folder file snapshots (insert-only; dedupe via UNIQUE). */
+function applyV2(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS download_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      root_path TEXT NOT NULL,
+      rel_path TEXT NOT NULL,
+      file_birthtime_ms INTEGER NOT NULL,
+      file_mtime_ms INTEGER,
+      size_bytes INTEGER,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      UNIQUE(root_path, rel_path, file_birthtime_ms)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_download_files_day ON download_files(calendar_day);
+
+    UPDATE meta_schema SET version = 2 WHERE id = 1;
   `);
 }

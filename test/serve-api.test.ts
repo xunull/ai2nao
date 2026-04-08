@@ -268,4 +268,63 @@ describe("Hono read-only API", () => {
       db.close();
     }
   });
+
+  it("POST /api/downloads/scan and GET month/day", async () => {
+    const base = join(tmpdir(), `ai2nao-dl-api-${Date.now()}`);
+    const repo = join(base, "proj");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    writeFileSync(
+      join(repo, ".git", "config"),
+      '[remote "origin"]\n\turl = https://example.com/x.git\n',
+      "utf8"
+    );
+    writeFileSync(join(repo, "package.json"), '{"name":"x"}', "utf8");
+
+    const dl = join(base, "fake-downloads");
+    mkdirSync(dl, { recursive: true });
+    writeFileSync(join(dl, "x.bin"), "x", "utf8");
+
+    const dbPath = join(base, "idx.db");
+    const dbw = openDatabase(dbPath);
+    runScan(dbw, [base], ["package.json"]);
+    dbw.close();
+
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const scan = await app.request("http://x/api/downloads/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roots: [dl] }),
+      });
+      expect(scan.status).toBe(200);
+      const sj = (await scan.json()) as { inserted: number; skipped: number };
+      expect(sj.inserted).toBe(1);
+      expect(sj.skipped).toBe(0);
+
+      const now = new Date();
+      const y = now.getFullYear();
+      const mo = now.getMonth() + 1;
+      const moRes = await app.request(
+        `http://x/api/downloads/month?year=${y}&month=${mo}`
+      );
+      expect(moRes.status).toBe(200);
+      const mj = (await moRes.json()) as {
+        days: { day: string; count: number }[];
+      };
+      expect(mj.days.some((d) => d.count >= 1)).toBe(true);
+      const dayStr = mj.days.find((d) => d.count >= 1)?.day;
+      expect(dayStr).toBeTruthy();
+      const dRes = await app.request(
+        `http://x/api/downloads/day?date=${encodeURIComponent(dayStr!)}`
+      );
+      expect(dRes.status).toBe(200);
+      const dj = (await dRes.json()) as {
+        entries: { rel_path: string }[];
+      };
+      expect(dj.entries.some((e) => e.rel_path === "x.bin")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
 });

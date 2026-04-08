@@ -14,6 +14,7 @@
     "dev:api": "tsx src/cli.ts serve --daily-summary --port 8787",
     "dev:web": "vite --config web/vite.config.ts --port 5173",
     "dev:ui": "concurrently -k \"npm run dev:api\" \"npm run dev:web\"",
+    "downloads:watch": "tsx src/cli.ts downloads watch --interval 30",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"
