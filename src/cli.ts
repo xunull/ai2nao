@@ -9,6 +9,11 @@ import {
   defaultDbPath,
 } from "./config.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
+import {
+  defaultChromeHistoryPath,
+  isChromeHistoryIndexingSupported,
+} from "./chromeHistory/paths.js";
+import { syncChromeHistory } from "./chromeHistory/sync.js";
 import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
@@ -209,6 +214,126 @@ downloadsCmd
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
   });
+
+const chromeHistoryCmd = program
+  .command("chrome-history")
+  .description(
+    "Mirror Chrome History SQLite into the index DB (insert-only); use with chrome-history:watch in package.json"
+  );
+
+chromeHistoryCmd
+  .command("sync")
+  .description("Copy Chrome History to a temp file, read new visits, INSERT OR IGNORE into index DB")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--profile <name>", "Chrome profile folder name", "Default")
+  .option(
+    "--history-path <path>",
+    "path to Chrome `History` file (default: platform default for profile)"
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    (opts: {
+      db: string;
+      profile: string;
+      historyPath?: string;
+      json: boolean;
+    }) => {
+      if (!isChromeHistoryIndexingSupported()) {
+        console.error("Chrome history path: unsupported platform.");
+        process.exitCode = 1;
+        return;
+      }
+      const profile = opts.profile.trim() || "Default";
+      const rawHistory = (opts.historyPath ?? "").trim();
+      const historyPath =
+        rawHistory.length > 0
+          ? resolve(rawHistory)
+          : defaultChromeHistoryPath(profile);
+      if (!historyPath) {
+        console.error("Could not resolve default Chrome History path.");
+        process.exitCode = 1;
+        return;
+      }
+      const db = openDatabase(opts.db);
+      try {
+        const result = syncChromeHistory(db, historyPath, profile);
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+        } else {
+          console.error(
+            `Chrome history sync [${profile}]: inserted ${result.insertedVisits} visit(s), ${result.insertedUrls} new url row(s), skipped ${result.skippedVisits} duplicate visit(s).`
+          );
+          console.error(`Source: ${result.sourcePath}`);
+          for (const err of result.errors) console.error(`warning: ${err}`);
+        }
+        process.exitCode = result.errors.length ? 1 : 0;
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+chromeHistoryCmd
+  .command("watch")
+  .description("Re-sync Chrome History on an interval (do not run two watch processes on the same DB)")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--profile <name>", "Chrome profile folder name", "Default")
+  .option(
+    "--history-path <path>",
+    "path to Chrome `History` file (default: platform default for profile)"
+  )
+  .option(
+    "--interval <sec>",
+    "seconds between syncs",
+    (v: string) => Math.max(5, parseInt(v, 10) || 30),
+    30
+  )
+  .action(
+    (opts: {
+      db: string;
+      profile: string;
+      historyPath?: string;
+      interval: number;
+    }) => {
+      if (!isChromeHistoryIndexingSupported()) {
+        console.error("Chrome history path: unsupported platform.");
+        process.exitCode = 1;
+        return;
+      }
+      const profile = opts.profile.trim() || "Default";
+      const rawHistoryWatch = (opts.historyPath ?? "").trim();
+      const historyPath =
+        rawHistoryWatch.length > 0
+          ? resolve(rawHistoryWatch)
+          : defaultChromeHistoryPath(profile);
+      if (!historyPath) {
+        console.error("Could not resolve default Chrome History path.");
+        process.exitCode = 1;
+        return;
+      }
+      const tick = () => {
+        const db = openDatabase(opts.db);
+        try {
+          const result = syncChromeHistory(db, historyPath, profile);
+          const ts = new Date().toISOString();
+          console.error(
+            `[${ts}] chrome-history watch [${profile}]: inserted ${result.insertedVisits} visit(s), skipped ${result.skippedVisits}`
+          );
+          for (const err of result.errors) console.error(`warning: ${err}`);
+        } finally {
+          db.close();
+        }
+      };
+      tick();
+      const id = setInterval(tick, opts.interval * 1000);
+      const stop = () => {
+        clearInterval(id);
+        process.exit(0);
+      };
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+    }
+  );
 
 program
   .command("serve")

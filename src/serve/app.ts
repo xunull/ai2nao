@@ -24,6 +24,16 @@ import {
 } from "../downloads/queries.js";
 import { scanDownloads } from "../downloads/scan.js";
 import {
+  defaultChromeHistoryPath,
+  isChromeHistoryIndexingSupported,
+} from "../chromeHistory/paths.js";
+import {
+  listChromeHistoryForDay,
+  listChromeHistoryMonthCounts,
+} from "../chromeHistory/queries.js";
+import { syncChromeHistory } from "../chromeHistory/sync.js";
+import { chromeWebkitUsToUnixMs } from "../chromeHistory/time.js";
+import {
   getManifestByRepoAndRelPath,
   getRepoById,
   listManifestsForRepo,
@@ -247,6 +257,94 @@ export function createApp(opts: ServeOptions): Hono {
       }
       const entries = listDownloadsForDay(db, date);
       return c.json({ date, entries, timezone: "local" });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  function chromeHistoryProfile(c: { req: { query: (k: string) => string | undefined } }): string {
+    const p = (c.req.query("profile") ?? "Default").trim();
+    return p.length > 0 ? p : "Default";
+  }
+
+  app.get("/api/chrome-history/status", (c) => {
+    const supported = isChromeHistoryIndexingSupported();
+    const profile = chromeHistoryProfile(c);
+    const defaultHistoryPath = defaultChromeHistoryPath(profile);
+    return c.json({
+      supported,
+      profile,
+      defaultHistoryPath,
+      platform: process.platform,
+    });
+  });
+
+  app.get("/api/chrome-history/month", (c) => {
+    try {
+      const y = parseInt(c.req.query("year") ?? "", 10);
+      const m = parseInt(c.req.query("month") ?? "", 10);
+      if (Number.isNaN(y) || y < 1970 || y > 2100) {
+        return jsonErr(400, "invalid year");
+      }
+      if (Number.isNaN(m) || m < 1 || m > 12) {
+        return jsonErr(400, "invalid month");
+      }
+      const profile = chromeHistoryProfile(c);
+      const days = listChromeHistoryMonthCounts(db, y, m, profile);
+      return c.json({
+        year: y,
+        month: m,
+        profile,
+        days,
+        timezone: "local",
+      });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/chrome-history/day", (c) => {
+    try {
+      const date = (c.req.query("date") ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return jsonErr(400, "invalid date (use YYYY-MM-DD)");
+      }
+      const profile = chromeHistoryProfile(c);
+      const rows = listChromeHistoryForDay(db, date, profile);
+      const entries = rows.map((r) => ({
+        ...r,
+        visit_time_unix_ms: chromeWebkitUsToUnixMs(r.visit_time),
+      }));
+      return c.json({ date, profile, entries, timezone: "local" });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.post("/api/chrome-history/sync", async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        profile?: unknown;
+        historyPath?: unknown;
+      };
+      const profile =
+        typeof body.profile === "string" && body.profile.trim().length > 0
+          ? body.profile.trim()
+          : "Default";
+      let historyPath: string | null = null;
+      if (typeof body.historyPath === "string" && body.historyPath.trim().length > 0) {
+        historyPath = resolve(body.historyPath.trim());
+      } else {
+        historyPath = defaultChromeHistoryPath(profile);
+      }
+      if (!historyPath) {
+        return jsonErr(
+          400,
+          "no default Chrome History path on this platform; pass { \"historyPath\": \"...\" }"
+        );
+      }
+      const result = syncChromeHistory(db, historyPath, profile);
+      return c.json({ ok: true, ...result });
     } catch (e) {
       return jsonErr(500, String(e));
     }

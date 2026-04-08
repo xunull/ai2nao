@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -12,6 +12,7 @@ export function migrate(db: Database.Database): void {
   if (!exists) {
     applyV1(db);
     applyV2(db);
+    applyV3(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -20,6 +21,7 @@ export function migrate(db: Database.Database): void {
   const v = row?.version ?? 0;
   if (v < 1) applyV1(db);
   if (v < 2) applyV2(db);
+  if (v < 3) applyV3(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -98,5 +100,42 @@ function applyV2(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_download_files_day ON download_files(calendar_day);
 
     UPDATE meta_schema SET version = 2 WHERE id = 1;
+  `);
+}
+
+/** Chrome History mirror (insert-only; dedupe via PRIMARY KEY on chrome visit id + profile). */
+function applyV3(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chrome_history_urls (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      visit_count INTEGER NOT NULL DEFAULT 0,
+      typed_count INTEGER NOT NULL DEFAULT 0,
+      last_visit_time INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS chrome_history_visits (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      url_id INTEGER NOT NULL,
+      visit_time INTEGER NOT NULL,
+      from_visit INTEGER,
+      transition INTEGER,
+      segment_id INTEGER,
+      visit_duration INTEGER,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visits_day
+      ON chrome_history_visits(calendar_day);
+
+    UPDATE meta_schema SET version = 3 WHERE id = 1;
   `);
 }
