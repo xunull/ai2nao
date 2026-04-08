@@ -357,6 +357,24 @@ describe("Hono read-only API", () => {
         segment_id INTEGER,
         visit_duration INTEGER DEFAULT 0 NOT NULL
       );
+      CREATE TABLE downloads (
+        id INTEGER PRIMARY KEY,
+        guid VARCHAR,
+        current_path LONGVARCHAR,
+        target_path LONGVARCHAR,
+        start_time INTEGER NOT NULL,
+        end_time INTEGER,
+        received_bytes INTEGER,
+        total_bytes INTEGER,
+        state INTEGER,
+        danger_type INTEGER,
+        interrupt_reason INTEGER,
+        mime_type VARCHAR,
+        referrer VARCHAR,
+        site_url LONGVARCHAR,
+        tab_url LONGVARCHAR,
+        tab_referrer_url LONGVARCHAR
+      );
     `);
     const webkitEpochMs = Date.UTC(1601, 0, 1);
     const visitUs = Math.round((Date.now() - webkitEpochMs) * 1000);
@@ -368,6 +386,18 @@ describe("Hono read-only API", () => {
       `INSERT INTO visits (id, url, visit_time, from_visit, transition, segment_id, visit_duration)
        VALUES (1, 1, ?, NULL, 805306368, NULL, 0)`
     ).run(visitUs);
+    hw.prepare(
+      `INSERT INTO downloads (
+        id, guid, current_path, target_path, start_time, end_time,
+        received_bytes, total_bytes, state, danger_type, interrupt_reason,
+        mime_type, referrer, site_url, tab_url, tab_referrer_url
+      ) VALUES (
+        1, 'g-sync', '/tmp/sync-dl-test.bin', '/tmp/sync-dl-test.bin', ?, ?,
+        12, 100, 1, 0, 0,
+        'application/octet-stream', 'https://ref.example', 'https://site.example',
+        'https://tab.example', ''
+      )`
+    ).run(visitUs, visitUs);
     hw.close();
 
     const dbPath = join(base, "idx.db");
@@ -389,10 +419,13 @@ describe("Hono read-only API", () => {
       expect(sync.status).toBe(200);
       const sj = (await sync.json()) as {
         insertedVisits: number;
+        insertedDownloads: number;
+        skippedDownloads: number;
         errors: string[];
       };
       expect(sj.errors.length).toBe(0);
       expect(sj.insertedVisits).toBe(1);
+      expect(sj.insertedDownloads).toBe(1);
 
       const visitLocal = new Date(chromeWebkitUsToUnixMs(visitUs));
       const dayStr = `${visitLocal.getFullYear()}-${String(visitLocal.getMonth() + 1).padStart(2, "0")}-${String(visitLocal.getDate()).padStart(2, "0")}`;
@@ -417,6 +450,19 @@ describe("Hono read-only API", () => {
         entries: { url: string; visit_time_unix_ms: number }[];
       };
       expect(dj.entries.some((e) => e.url.includes("sync-test"))).toBe(true);
+
+      const dlDay = await app.request(
+        `http://x/api/chrome-downloads/day?date=${encodeURIComponent(dayStr)}&profile=Default`
+      );
+      expect(dlDay.status).toBe(200);
+      const dlj = (await dlDay.json()) as {
+        entries: { target_path: string | null }[];
+      };
+      expect(
+        dlj.entries.some((e) =>
+          (e.target_path ?? "").includes("sync-dl-test")
+        )
+      ).toBe(true);
     } finally {
       db.close();
     }

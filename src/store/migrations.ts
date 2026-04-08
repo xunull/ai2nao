@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -13,6 +13,7 @@ export function migrate(db: Database.Database): void {
     applyV1(db);
     applyV2(db);
     applyV3(db);
+    applyV4(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -22,6 +23,7 @@ export function migrate(db: Database.Database): void {
   if (v < 1) applyV1(db);
   if (v < 2) applyV2(db);
   if (v < 3) applyV3(db);
+  if (v < 4) applyV4(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -137,5 +139,38 @@ function applyV3(db: Database.Database): void {
       ON chrome_history_visits(calendar_day);
 
     UPDATE meta_schema SET version = 3 WHERE id = 1;
+  `);
+}
+
+/** Chrome `History.downloads` mirror (insert-only; PRIMARY KEY profile + chrome download id). */
+function applyV4(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chrome_downloads (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      guid TEXT,
+      current_path TEXT,
+      target_path TEXT,
+      start_time INTEGER NOT NULL,
+      end_time INTEGER,
+      received_bytes INTEGER,
+      total_bytes INTEGER,
+      state INTEGER,
+      danger_type INTEGER,
+      interrupt_reason INTEGER,
+      mime_type TEXT,
+      referrer TEXT,
+      site_url TEXT,
+      tab_url TEXT,
+      tab_referrer_url TEXT,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_downloads_day
+      ON chrome_downloads(profile, calendar_day);
+
+    UPDATE meta_schema SET version = 4 WHERE id = 1;
   `);
 }

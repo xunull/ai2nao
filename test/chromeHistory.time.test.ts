@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calendarDayLocalFromChromeDownload,
   calendarDayLocalFromChromeUs,
   chromeWebkitUsToUnixMs,
 } from "../src/chromeHistory/time.js";
@@ -19,5 +20,22 @@ describe("chromeHistory time", () => {
   it("calendarDayLocalFromChromeUs returns YYYY-MM-DD", () => {
     const s = calendarDayLocalFromChromeUs(0);
     expect(/^\d{4}-\d{2}-\d{2}$/.test(s)).toBe(true);
+  });
+
+  it("calendarDayLocalFromChromeDownload uses end_time when positive", () => {
+    const dayUs = 86_400 * 1_000_000;
+    expect(calendarDayLocalFromChromeDownload(dayUs, 0)).toBe(
+      calendarDayLocalFromChromeUs(dayUs)
+    );
+  });
+
+  it("calendarDayLocalFromChromeDownload falls back to start_time when end invalid", () => {
+    const startUs = 86_400 * 2 * 1_000_000;
+    expect(calendarDayLocalFromChromeDownload(0, startUs)).toBe(
+      calendarDayLocalFromChromeUs(startUs)
+    );
+    expect(calendarDayLocalFromChromeDownload(undefined, startUs)).toBe(
+      calendarDayLocalFromChromeUs(startUs)
+    );
   });
 });
