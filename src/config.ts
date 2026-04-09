@@ -33,3 +33,10 @@ export function defaultDailySummaryDbPath(): string {
   if (!home) return ".ai2nao/daily-summary.db";
   return `${home}/.ai2nao/daily-summary.db`;
 }
+
+/** JSON config for the optional `/api/llm-chat` UI (OpenAI-compatible endpoints). */
+export function defaultLlmChatConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/llm-chat.json";
+  return `${home}/.ai2nao/llm-chat.json`;
+}

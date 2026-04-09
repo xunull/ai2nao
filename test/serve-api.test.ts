@@ -68,6 +68,12 @@ describe("Hono read-only API", () => {
       };
       expect(chj.platform).toBe(process.platform);
       expect(chj.workspaceStorage.length).toBeGreaterThan(0);
+
+      const llm = await app.request("http://x/api/llm-chat/status");
+      expect(llm.status).toBe(200);
+      const llmj = (await llm.json()) as { configured: boolean; configPath: string };
+      expect(typeof llmj.configured).toBe("boolean");
+      expect(llmj.configPath.length).toBeGreaterThan(0);
     } finally {
       db.close();
     }

@@ -1,0 +1,6 @@
+{
+  "provider": "openai-compatible",
+  "baseURL": "https://api.openai.com/v1",
+  "apiKey": "sk-your-key-here",
+  "model": "gpt-4o-mini"
+}
