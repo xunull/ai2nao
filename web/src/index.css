@@ -13,3 +13,10 @@
 body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
+
+/* Cursor 对话页：略加深可读性，与主站变量一致 */
+.cursor-chat-root {
+  --cursor-surface: #ffffff;
+  --cursor-elevated: #f8fafc;
+  --cursor-ring: rgb(37 99 235 / 0.12);
+}

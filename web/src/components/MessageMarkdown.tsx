@@ -9,11 +9,13 @@ type Props = {
 export function MessageMarkdown({ text }: Props) {
   const parts = splitMarkdownFences(text);
   if (parts.length === 0) {
-    return <p className="text-sm text-[var(--muted)]">（空）</p>;
+    return (
+      <p className="text-sm italic text-neutral-400">（空消息）</p>
+    );
   }
 
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 text-[0.9375rem] leading-relaxed">
       {parts.map((p, i) => {
         if (p.type === "text") {
           const v = p.value;
@@ -21,7 +23,7 @@ export function MessageMarkdown({ text }: Props) {
           return (
             <div
               key={i}
-              className="whitespace-pre-wrap break-words text-[var(--fg)] leading-relaxed"
+              className="whitespace-pre-wrap break-words text-neutral-800"
             >
               {v}
             </div>
@@ -30,10 +32,12 @@ export function MessageMarkdown({ text }: Props) {
         return (
           <div
             key={i}
-            className="rounded-md border border-[var(--border)] overflow-hidden shadow-sm"
+            className="overflow-hidden rounded-xl border border-neutral-200/90 shadow-sm ring-1 ring-black/[0.03]"
           >
-            <div className="text-xs px-2 py-1 bg-neutral-100 text-neutral-600 border-b border-[var(--border)] font-mono">
-              {p.lang || "code"}
+            <div className="flex items-center gap-2 border-b border-neutral-200/80 bg-neutral-50 px-3 py-2">
+              <span className="font-mono text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                {p.lang || "code"}
+              </span>
             </div>
             <CodeHighlighted code={p.value} language={p.lang} />
           </div>

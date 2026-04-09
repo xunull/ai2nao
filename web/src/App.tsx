@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { AiChat } from "./pages/AiChat";
 import { Atuin } from "./pages/Atuin";
 import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
@@ -26,6 +27,7 @@ export function App() {
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
         <Route path="/cursor-history" element={<CursorHistory />} />
         <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />
+        <Route path="/ai-chat" element={<AiChat />} />
       </Routes>
     </Layout>
   );

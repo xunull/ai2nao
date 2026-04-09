@@ -60,6 +60,7 @@ import {
   sessionToJson,
   workspaceToJson,
 } from "../cursorHistory/json.js";
+import { registerLlmChatRoutes } from "../llmChat/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -117,6 +118,8 @@ export function createApp(opts: ServeOptions): Hono {
       allowMethods: ["GET", "POST", "OPTIONS"],
     })
   );
+
+  registerLlmChatRoutes(app);
 
   app.get("/api/status", (c) => {
     try {
@@ -532,14 +535,40 @@ export function createApp(opts: ServeOptions): Hono {
         500,
         Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50)
       );
+      const offset = Math.max(
+        0,
+        Math.min(1_000_000, parseInt(c.req.query("offset") ?? "0", 10) || 0)
+      );
       const workspacePath = (c.req.query("workspace") ?? "").trim() || undefined;
-      const sessions = await listSessions(
-        { limit: all ? 0 : limit, all, workspacePath },
+      if (all) {
+        const sessions = await listSessions(
+          { limit: 0, all: true, workspacePath },
+          dataPath
+        );
+        return c.json({
+          ok: true,
+          sessions: sessions.map(sessionSummaryToJson),
+          total: sessions.length,
+          offset: 0,
+          limit: sessions.length,
+        });
+      }
+      const full = await listSessions(
+        { limit: 0, all: true, workspacePath },
         dataPath
       );
+      const lastPageStart =
+        full.length === 0
+          ? 0
+          : Math.max(0, (Math.ceil(full.length / limit) - 1) * limit);
+      const safeOffset = Math.min(offset, lastPageStart);
+      const page = full.slice(safeOffset, safeOffset + limit);
       return c.json({
         ok: true,
-        sessions: sessions.map(sessionSummaryToJson),
+        sessions: page.map(sessionSummaryToJson),
+        total: full.length,
+        offset: safeOffset,
+        limit,
       });
     } catch (e) {
       return cursorHistoryErr(e);
