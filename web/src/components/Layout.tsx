@@ -47,6 +47,12 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               Chrome 下载
             </Link>
+            <Link
+              className="text-[var(--accent)] hover:underline"
+              to="/cursor-history"
+            >
+              Cursor 对话
+            </Link>
           </nav>
           <form onSubmit={onSubmit} className="ml-auto flex gap-2">
             <input

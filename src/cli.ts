@@ -20,8 +20,23 @@ import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
+import {
+  expandPath,
+  findWorkspaces,
+  getCursorDataPath,
+  getSession,
+  listSessions,
+  listWorkspaces,
+  searchSessions,
+} from "./cursorHistory/index.js";
 
 const program = new Command();
+
+function parseCursorSessionArg(raw: string): number | string {
+  const t = raw.trim();
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  return t;
+}
 
 program
   .name("ai2nao")
@@ -521,5 +536,226 @@ program
       });
     }
   );
+
+const cursorHistoryCmd = program
+  .command("cursor-history")
+  .description(
+    "Read Cursor IDE local chat history (read-only; close Cursor if databases are locked)"
+  );
+
+cursorHistoryCmd
+  .command("workspaces")
+  .description("List workspaces under workspaceStorage that have chat sessions")
+  .option(
+    "--data-path <path>",
+    "Cursor workspaceStorage root (default: platform path or CURSOR_DATA_PATH)"
+  )
+  .option("--json", "print JSON", false)
+  .action(async (opts: { dataPath?: string; json: boolean }) => {
+    try {
+      const custom = opts.dataPath?.trim()
+        ? expandPath(opts.dataPath.trim())
+        : undefined;
+      const rows = await listWorkspaces(custom);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, workspaces: rows }, null, 2));
+      } else {
+        for (const w of rows) {
+          console.log(`${w.sessionCount}\t${w.path}\t${w.id}`);
+        }
+      }
+    } catch (e) {
+      console.error(String(e));
+      process.exitCode = 1;
+    }
+  });
+
+cursorHistoryCmd
+  .command("list")
+  .description("List chat sessions (deduped across workspaces)")
+  .option("--data-path <path>", "Cursor workspaceStorage root")
+  .option("--workspace <path>", "filter by workspace folder path")
+  .option("-n, --limit <n>", "max sessions (ignored with --all)", "50")
+  .option("--all", "list all sessions", false)
+  .option("--json", "print JSON", false)
+  .action(
+    async (opts: {
+      dataPath?: string;
+      workspace?: string;
+      limit: string;
+      all: boolean;
+      json: boolean;
+    }) => {
+      try {
+        const custom = opts.dataPath?.trim()
+          ? expandPath(opts.dataPath.trim())
+          : undefined;
+        const limit = Math.min(500, Math.max(1, parseInt(opts.limit, 10) || 50));
+        const sessions = await listSessions(
+          {
+            limit: opts.all ? 0 : limit,
+            all: opts.all,
+            workspacePath: opts.workspace?.trim() || undefined,
+          },
+          custom
+        );
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, sessions }, null, 2));
+        } else {
+          for (const s of sessions) {
+            const title = s.title ?? "(no title)";
+            console.log(
+              `${s.index}\t${s.id}\t${s.workspacePath}\t${title.slice(0, 60)}`
+            );
+          }
+        }
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+      }
+    }
+  );
+
+cursorHistoryCmd
+  .command("show")
+  .description("Show one session by 1-based index (from list) or composer id")
+  .argument("<id>", "index or composer UUID")
+  .option("--data-path <path>", "Cursor workspaceStorage root")
+  .option("--json", "print JSON (full messages)", false)
+  .action(
+    async (opts: { dataPath?: string; json: boolean }, id: string) => {
+      try {
+        const custom = opts.dataPath?.trim()
+          ? expandPath(opts.dataPath.trim())
+          : undefined;
+        const session = await getSession(parseCursorSessionArg(id), custom);
+        if (!session) {
+          console.error("Session not found.");
+          process.exitCode = 1;
+          return;
+        }
+        if (opts.json) {
+          const { sessionToJson } = await import("./cursorHistory/json.js");
+          console.log(JSON.stringify({ ok: true, session: sessionToJson(session) }, null, 2));
+        } else {
+          console.log(
+            `# ${session.title ?? "Untitled"}\n${session.workspacePath ?? ""}\nsource: ${session.source ?? ""}\n---`
+          );
+          for (const m of session.messages) {
+            const ts = m.timestamp.toISOString();
+            const who = m.role === "user" ? "User" : "Assistant";
+            console.log(`\n[${who}] ${ts}\n${m.content}`);
+          }
+        }
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+      }
+    }
+  );
+
+cursorHistoryCmd
+  .command("search")
+  .description("Search message text across sessions (with match snippets)")
+  .argument("<query>", "substring to find (case-insensitive)")
+  .option("--data-path <path>", "Cursor workspaceStorage root")
+  .option("--workspace <path>", "limit to workspace path")
+  .option("-n, --limit <n>", "max results", "30")
+  .option("-c, --context <n>", "snippet context chars", "80")
+  .option("--json", "print JSON", false)
+  .action(
+    async (
+      opts: {
+        dataPath?: string;
+        workspace?: string;
+        limit: string;
+        context: string;
+        json: boolean;
+      },
+      query: string
+    ) => {
+      const q = query.trim();
+      if (!q) {
+        console.error("Empty query.");
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const custom = opts.dataPath?.trim()
+          ? expandPath(opts.dataPath.trim())
+          : undefined;
+        const limit = Math.min(200, Math.max(1, parseInt(opts.limit, 10) || 30));
+        const contextChars = Math.min(
+          500,
+          Math.max(10, parseInt(opts.context, 10) || 80)
+        );
+        const results = await searchSessions(
+          q,
+          {
+            limit,
+            contextChars,
+            workspacePath: opts.workspace?.trim() || undefined,
+          },
+          custom
+        );
+        if (opts.json) {
+          const { searchResultToJson } = await import("./cursorHistory/json.js");
+          console.log(
+            JSON.stringify(
+              {
+                ok: true,
+                query: q,
+                results: results.map(searchResultToJson),
+              },
+              null,
+              2
+            )
+          );
+        } else {
+          for (const r of results) {
+            console.log(
+              `#${r.index} ${r.sessionId} (${r.matchCount} matches) ${r.workspacePath}`
+            );
+            for (const sn of r.snippets) {
+              console.log(`  [${sn.messageRole}] ${sn.text}`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+      }
+    }
+  );
+
+cursorHistoryCmd
+  .command("discover")
+  .description("Show default Cursor paths and workspace count (quick health check)")
+  .option("--data-path <path>", "override workspaceStorage root")
+  .option("--json", "print JSON", false)
+  .action(async (opts: { dataPath?: string; json: boolean }) => {
+    try {
+      const custom = opts.dataPath?.trim()
+        ? expandPath(opts.dataPath.trim())
+        : undefined;
+      const workspaces = await findWorkspaces(custom);
+      const base = getCursorDataPath(custom);
+      if (opts.json) {
+        console.log(
+          JSON.stringify(
+            { ok: true, workspaceStorage: base, workspaceCount: workspaces.length },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(`workspaceStorage: ${base}`);
+        console.error(`workspaces with sessions: ${workspaces.length}`);
+      }
+    } catch (e) {
+      console.error(String(e));
+      process.exitCode = 1;
+    }
+  });
 
 program.parse();

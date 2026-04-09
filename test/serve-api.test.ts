@@ -59,6 +59,15 @@ describe("Hono read-only API", () => {
         "http://x/api/search?q=name&limit=5"
       );
       expect(s.status).toBe(200);
+
+      const ch = await app.request("http://x/api/cursor-history/status");
+      expect(ch.status).toBe(200);
+      const chj = (await ch.json()) as {
+        workspaceStorage: string;
+        platform: string;
+      };
+      expect(chj.platform).toBe(process.platform);
+      expect(chj.workspaceStorage.length).toBeGreaterThan(0);
     } finally {
       db.close();
     }

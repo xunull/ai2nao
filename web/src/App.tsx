@@ -3,6 +3,8 @@ import { Layout } from "./components/Layout";
 import { Atuin } from "./pages/Atuin";
 import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
+import { CursorHistory } from "./pages/CursorHistory";
+import { CursorHistorySession } from "./pages/CursorHistorySession";
 import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
 import { RepoDetail } from "./pages/RepoDetail";
@@ -22,6 +24,8 @@ export function App() {
         <Route path="/downloads" element={<Downloads />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
+        <Route path="/cursor-history" element={<CursorHistory />} />
+        <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />
       </Routes>
     </Layout>
   );

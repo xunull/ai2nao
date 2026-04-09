@@ -1,0 +1,11 @@
+Third-party notice
+===================
+
+The Cursor chat history implementation under src/cursorHistory/ is derived from
+algorithm and data-structure knowledge of the open source project cursor-history
+(https://github.com/S2thend/cursor-history), used under the MIT License.
+
+The code in this repository was adapted for ai2nao (better-sqlite3 read-only,
+no backup-zip path, integration with this project’s CLI and HTTP API). The
+cursor-history/ directory in this repo, if present, is for human reference only
+and is not imported at build time.
