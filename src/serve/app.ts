@@ -45,9 +45,50 @@ import {
   listRepos,
 } from "../read/queries.js";
 import { getStatusSummary, searchManifests } from "../store/operations.js";
+import {
+  expandPath,
+  findWorkspaces,
+  getCursorDataPath,
+  getSession,
+  listSessions,
+  listWorkspaces,
+  searchSessions,
+} from "../cursorHistory/index.js";
+import {
+  searchResultToJson,
+  sessionSummaryToJson,
+  sessionToJson,
+  workspaceToJson,
+} from "../cursorHistory/json.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
+
+function cursorHistoryDataPath(raw: string | undefined): string | undefined {
+  const t = (raw ?? "").trim();
+  return t.length > 0 ? expandPath(t) : undefined;
+}
+
+function cursorHistoryIdentifier(param: string): number | string {
+  const t = param.trim();
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  try {
+    return decodeURIComponent(t);
+  } catch {
+    return t;
+  }
+}
+
+function cursorHistoryErr(e: unknown) {
+  const msg = String(e);
+  if (/SQLITE_BUSY|database is locked/i.test(msg)) {
+    return jsonErr(
+      503,
+      "Cursor SQLite database is locked; close Cursor IDE and retry."
+    );
+  }
+  return jsonErr(500, msg);
+}
 
 export type ServeOptions = {
   db: Database.Database;
@@ -441,6 +482,115 @@ export function createApp(opts: ServeOptions): Hono {
       return c.json({ ok: true, ...result });
     } catch (e) {
       return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/cursor-history/status", (c) => {
+    try {
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const base = getCursorDataPath(dataPath);
+      return c.json({
+        platform: process.platform,
+        workspaceStorage: base,
+        envCursorDataPath: Boolean(process.env.CURSOR_DATA_PATH),
+      });
+    } catch (e) {
+      return cursorHistoryErr(e);
+    }
+  });
+
+  app.get("/api/cursor-history/discover", async (c) => {
+    try {
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const workspaces = await findWorkspaces(dataPath);
+      return c.json({
+        ok: true,
+        workspaceStorage: getCursorDataPath(dataPath),
+        workspaceCount: workspaces.length,
+        workspaces: workspaces.map(workspaceToJson),
+      });
+    } catch (e) {
+      return cursorHistoryErr(e);
+    }
+  });
+
+  app.get("/api/cursor-history/workspaces", async (c) => {
+    try {
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const rows = await listWorkspaces(dataPath);
+      return c.json({ ok: true, workspaces: rows.map(workspaceToJson) });
+    } catch (e) {
+      return cursorHistoryErr(e);
+    }
+  });
+
+  app.get("/api/cursor-history/sessions", async (c) => {
+    try {
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const all = c.req.query("all") === "1" || c.req.query("all") === "true";
+      const limit = Math.min(
+        500,
+        Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50)
+      );
+      const workspacePath = (c.req.query("workspace") ?? "").trim() || undefined;
+      const sessions = await listSessions(
+        { limit: all ? 0 : limit, all, workspacePath },
+        dataPath
+      );
+      return c.json({
+        ok: true,
+        sessions: sessions.map(sessionSummaryToJson),
+      });
+    } catch (e) {
+      return cursorHistoryErr(e);
+    }
+  });
+
+  app.get("/api/cursor-history/sessions/:sessionId", async (c) => {
+    try {
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const session = await getSession(
+        cursorHistoryIdentifier(c.req.param("sessionId")),
+        dataPath
+      );
+      if (!session) {
+        return jsonErr(404, "session not found");
+      }
+      return c.json({ ok: true, session: sessionToJson(session) });
+    } catch (e) {
+      return cursorHistoryErr(e);
+    }
+  });
+
+  app.get("/api/cursor-history/search", async (c) => {
+    try {
+      const q = (c.req.query("q") ?? "").trim();
+      if (!q) return jsonErr(400, "missing q");
+      if (q.length > MAX_SEARCH_QUERY_LEN) {
+        return jsonErr(400, "query too long");
+      }
+      const dataPath = cursorHistoryDataPath(c.req.query("dataPath"));
+      const limit = Math.min(
+        200,
+        Math.max(1, parseInt(c.req.query("limit") ?? "30", 10) || 30)
+      );
+      const contextChars = Math.min(
+        500,
+        Math.max(10, parseInt(c.req.query("context") ?? "80", 10) || 80)
+      );
+      const workspacePath = (c.req.query("workspace") ?? "").trim() || undefined;
+      const results = await searchSessions(
+        q,
+        { limit, contextChars, workspacePath },
+        dataPath
+      );
+      return c.json({
+        ok: true,
+        q,
+        results: results.map(searchResultToJson),
+      });
+    } catch (e) {
+      return cursorHistoryErr(e);
     }
   });
 

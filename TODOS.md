@@ -8,9 +8,12 @@
 4. 跨天工作线程
 5. Chrome 下载镜像 v2（URL 链与可点击源 URL）
 6. Chrome 下载镜像设计文档（`docs`）
+7. Cursor 对话镜像 + FTS（`index.db`）
+8. Cursor 集成：LICENSE / NOTICE 与上游署名
+9. Cursor 设计文档修订（仅 `src/` 实现）
 
 说明:
-前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。
+前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。
 
 ## 证据可回看层
 
@@ -168,3 +171,67 @@ Depends on / blocked by:
 - 若有真实噪声样本（日志或复现路径）再定方案更稳
 
 Priority: P3（体验优化，非阻塞）
+
+## Cursor 对话镜像 + FTS（`index.db`）
+
+What: 将 Cursor `workspaceStorage` / `globalStorage` 中解析出的会话与消息（或稳定中间表示）**增量镜像**进 ai2nao 主库，必要时对正文建 **FTS5**，使命令行 `search` 或统一 API 能跨源检索，避免每次关键词搜索都全盘打开多个 `state.vscdb`。
+
+Why: 只读直连在会话多时延迟与 IO 放大；与 Chrome 历史的「先 sync 再查」心智一致，也有利于后续「证据可回看层」引用对话片段。
+
+Pros:
+- 搜索与列表性能可控，可做联合查询（repo 清单 + 对话等）
+- 离线备份主库即可带走索引视图（若设计允许）
+
+Cons:
+- 需要迁移脚本、去重键、与 Cursor 升级后 JSON 形状变更的兼容策略
+- 与「实时对话」之间必有同步滞后，产品上要说明
+
+Context:
+规划见 office-hours 设计文档中的 Approach A；工程评审确认**首版可在 `src/` 内先做只读全量能力**，镜像作为 Phase 2。参考实现逻辑仅作阅读，镜像代码仍写在 `src/`。
+
+Depends on / blocked by:
+- `src/cursorHistory` 输出结构稳定（会话 ID、bubble、时间戳字段）
+- 是否允许镜像存全文（隐私与磁盘）的产品决定
+
+Priority: P2（能力完备后的性能与一体化）
+
+## Cursor 集成：LICENSE / NOTICE 与上游署名
+
+What: 若从仓库内 `cursor-history/`（或上游 [cursor-history](https://github.com/S2thend/cursor-history)）**逐段移植**算法与结构，在仓库根 `LICENSE` 旁增加 **`NOTICE`**（或等价段落），列出第三方版权、许可链与来源链接；大段复制的文件头保留 SPDX / Copyright 注释。
+
+Why: 满足 MIT 等许可的署名义务，降低合规与发行风险。
+
+Pros:
+- 发版、被 fork、进企业环境时少扯皮
+- 贡献者能一眼看出哪段来自上游
+
+Cons:
+- 需要有人维护 NOTICE 与实现变更同步
+
+Context:
+当前规则：`cursor-history/` **仅参考、不得 runtime import**；在 `src/` 重写时仍可能「实质性相似」，署名是独立义务。
+
+Depends on / blocked by:
+- 明确哪些模块属于「移植」而非全新撰写（可在 PR 里标文件级）
+
+Priority: P1（建议在首版合入前或紧随其后的文档 PR 完成）
+
+## Cursor 设计文档修订（仅 `src/` 实现）
+
+What: 更新 `~/.gstack/projects/xunull-ai2nao/quincy-feat-cursor-history-design-20260408-222328.md`（或迁到仓库 `docs/` 下的正式路径）：删除或改写 **「`package.json` workspace / `file:./cursor-history` + 薄封装」** 的推荐路径；改为 **所有实现位于仓库根 `src/cursorHistory/`（或约定目录）**；补充与 Chrome 能力的产品差异（是否要先 sync）。
+
+Why: 原设计前提已被工程规则推翻；不修订会让后续评审与 onboarding 读到错误结论。
+
+Pros:
+- 与 `/gstack-plan-eng-review` 结论一致，减少执行分叉
+
+Cons:
+- gstack 目录下设计文需要手动同步或复制进 repo
+
+Context:
+若将设计文迁入 `docs/cursor-history-design.md`，README 可链到该文件作为单一事实来源。
+
+Depends on / blocked by:
+- 无硬依赖，可与实现 PR 并行
+
+Priority: P2（建议在主线开发启动后一周内对齐）
