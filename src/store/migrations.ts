@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -15,6 +15,7 @@ export function migrate(db: Database.Database): void {
     applyV3(db);
     applyV4(db);
     applyV5(db);
+    applyV6(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -26,6 +27,7 @@ export function migrate(db: Database.Database): void {
   if (v < 3) applyV3(db);
   if (v < 4) applyV4(db);
   if (v < 5) applyV5(db);
+  if (v < 6) applyV6(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -247,5 +249,48 @@ function applyV5(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 5 WHERE id = 1;
+  `);
+}
+
+/**
+ * GitHub tag pivot tables. Two concerns:
+ *
+ *   gh_tag_alias(from_tag → to_tag): local synonym map. Persistent asset;
+ *     never touched by `github sync`. Seeded by `ai2nao github tags alias seed`
+ *     (preset entries) and edited by `ai2nao github tags alias add/rm`
+ *     (user entries). Editing an alias does NOT auto-rebuild gh_repo_tag —
+ *     users must explicitly run `ai2nao github tags rebuild` after alias
+ *     edits (CLI prints a hint).
+ *
+ *   gh_repo_tag(repo_id, tag, source): canonical tag per starred repo, after
+ *     alias resolution. V1 scope is stars-only per design doc Premise 1, so
+ *     `repo_id` references `gh_star(repo_id)` rather than `gh_repo(id)` —
+ *     most of the repos you star are other people's, so they never land in
+ *     `gh_repo`. Table is named `gh_repo_tag` (not `gh_star_tag`) to leave
+ *     room for a future 'own-topic' source without a rename.
+ *
+ *   Rebuild strategy: see `rebuildRepoTags` in src/github/tags.ts.
+ */
+function applyV6(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gh_tag_alias (
+      from_tag   TEXT PRIMARY KEY,
+      to_tag     TEXT NOT NULL,
+      source     TEXT NOT NULL DEFAULT 'preset',
+      note       TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS gh_repo_tag (
+      repo_id INTEGER NOT NULL,
+      tag     TEXT NOT NULL,
+      source  TEXT NOT NULL,
+      PRIMARY KEY (repo_id, tag),
+      FOREIGN KEY (repo_id) REFERENCES gh_star(repo_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gh_repo_tag_tag ON gh_repo_tag(tag);
+
+    UPDATE meta_schema SET version = 6 WHERE id = 1;
   `);
 }
