@@ -14,6 +14,9 @@ import {
   isChromeHistoryIndexingSupported,
 } from "./chromeHistory/paths.js";
 import { syncChromeHistory } from "./chromeHistory/sync.js";
+import { loadGithubToken } from "./github/config.js";
+import { syncGithub } from "./github/sync.js";
+import { redactAuth } from "./github/fetcher.js";
 import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
@@ -362,6 +365,72 @@ chromeHistoryCmd
       process.on("SIGTERM", stop);
     }
   );
+
+const githubCmd = program
+  .command("github")
+  .description(
+    "Mirror your GitHub owned repos + stars + commit counts into the index DB (read-only mirror; requires GITHUB_TOKEN or ~/.ai2nao/github.json)"
+  );
+
+githubCmd
+  .command("sync")
+  .description(
+    "One-shot sync (incremental by default; use --full for a complete reindex). Reads token from GITHUB_TOKEN or ~/.ai2nao/github.json."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--full", "ignore watermarks and re-fetch everything", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action(async (opts: { db: string; full: boolean; json: boolean }) => {
+    const loaded = loadGithubToken();
+    if (!loaded) {
+      console.error(
+        "No GitHub token configured. Set GITHUB_TOKEN or create ~/.ai2nao/github.json with {\"token\":\"ghp_...\"} (chmod 0600)."
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = await syncGithub(db, {
+        token: loaded.token,
+        apiBase: loaded.config.apiBase,
+        mode: opts.full ? "full" : "incremental",
+        onProgress: (ev) => {
+          if (opts.json) return;
+          if (ev.phase === "login") {
+            console.error(`github: authenticated as ${ev.login}`);
+          } else if (ev.phase === "repos") {
+            console.error(
+              `github: repos fetched=${ev.fetched} upserted=${ev.upserted}`
+            );
+          } else if (ev.phase === "commit-counts") {
+            console.error(`github: commit counts ${ev.done}/${ev.total}`);
+          } else if (ev.phase === "stars") {
+            console.error(
+              `github: stars fetched=${ev.fetched} upserted=${ev.upserted}`
+            );
+          } else if (ev.phase === "done") {
+            console.error(`github: done in ${ev.durationMs}ms`);
+          }
+        },
+      });
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      } else {
+        console.error(
+          `github sync [${result.mode}]: repos +${result.reposUpserted}, stars +${result.starsUpserted}, commit_counts +${result.commitCountsUpdated} (failures ${result.commitCountFailures}), ${result.durationMs}ms`
+        );
+        for (const err of result.errors) console.error(`warning: ${err}`);
+      }
+      process.exitCode = result.errors.length ? 1 : 0;
+    } catch (e) {
+      const msg = redactAuth(e instanceof Error ? e.message : String(e));
+      console.error(`github sync failed: ${msg}`);
+      process.exitCode = 1;
+    } finally {
+      db.close();
+    }
+  });
 
 program
   .command("serve")

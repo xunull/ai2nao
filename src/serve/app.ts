@@ -61,6 +61,7 @@ import {
   workspaceToJson,
 } from "../cursorHistory/json.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
+import { registerGithubRoutes } from "../github/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -120,6 +121,7 @@ export function createApp(opts: ServeOptions): Hono {
   );
 
   registerLlmChatRoutes(app);
+  registerGithubRoutes(app, db);
 
   app.get("/api/status", (c) => {
     try {
