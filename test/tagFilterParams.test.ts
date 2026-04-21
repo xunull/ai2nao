@@ -60,6 +60,12 @@ describe("readTagFilterState", () => {
     expect(s.to).toBe("2024-06-01");
   });
 
+  it("treats whitespace-only from/to as absent", () => {
+    const s = readTagFilterState(p("from=%20&to=%20"));
+    expect(s.from).toBeNull();
+    expect(s.to).toBeNull();
+  });
+
   it("does not leak partial flag values (window=other ≠ 12m)", () => {
     expect(readTagFilterState(p("window=all")).windowTwelveMonths).toBe(false);
     expect(readTagFilterState(p("include_language=0")).includeLanguageFallback).toBe(
@@ -121,6 +127,15 @@ describe("removeTagFromParams / clearTagsInParams", () => {
     const next = clearTagsInParams(p("tags=python&mode=and"));
     expect(next.has("tags")).toBe(false);
     expect(next.get("mode")).toBe("and");
+  });
+});
+
+describe("setFlagInParams (from / to dates)", () => {
+  it("round-trips YYYY-MM-DD for heatmap + list filters", () => {
+    let next = setFlagInParams(p(""), "from", "2024-01-01");
+    next = setFlagInParams(next, "to", "2025-01-01");
+    expect(readTagFilterState(next).from).toBe("2024-01-01");
+    expect(readTagFilterState(next).to).toBe("2025-01-01");
   });
 });
 

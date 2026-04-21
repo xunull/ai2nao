@@ -12,6 +12,11 @@ type Props = {
   onWindowToggle: (v: boolean) => void;
   includeLanguageFallback: boolean;
   onIncludeLanguageToggle: (v: boolean) => void;
+  /** ISO date prefix `YYYY-MM-DD` or null — 作用于热力图与下方筛选列表的 star 时间窗。 */
+  from: string | null;
+  to: string | null;
+  onFromChange: (v: string | null) => void;
+  onToChange: (v: string | null) => void;
 };
 
 /**
@@ -30,6 +35,10 @@ export function TagFilterChips({
   onWindowToggle,
   includeLanguageFallback,
   onIncludeLanguageToggle,
+  from,
+  to,
+  onFromChange,
+  onToChange,
 }: Props) {
   return (
     <div className="rounded border border-[var(--border)] bg-white p-3 shadow-sm space-y-2">
@@ -106,6 +115,31 @@ export function TagFilterChips({
           <span>
             包含 <code className="bg-neutral-100 px-1 rounded">language:*</code> 回退标签
           </span>
+        </label>
+        <span className="hidden sm:inline text-[var(--muted)]">|</span>
+        <label className="flex flex-wrap items-center gap-2">
+          <span className="text-[var(--muted)]" title="star 时间不早于该日 00:00（UTC 日历日与本地一致）">
+            star 从
+          </span>
+          <input
+            type="date"
+            value={from ?? ""}
+            onChange={(e) =>
+              onFromChange(e.target.value.trim() || null)
+            }
+            className="rounded border border-[var(--border)] px-2 py-0.5 font-mono"
+          />
+          <span className="text-[var(--muted)]" title="star 时间严格早于该日 00:00（与 API 的半开区间一致）">
+            到（不含）
+          </span>
+          <input
+            type="date"
+            value={to ?? ""}
+            onChange={(e) =>
+              onToChange(e.target.value.trim() || null)
+            }
+            className="rounded border border-[var(--border)] px-2 py-0.5 font-mono"
+          />
         </label>
       </div>
     </div>

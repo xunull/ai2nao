@@ -89,6 +89,10 @@ export function GithubTags() {
         onIncludeLanguageToggle={(v) =>
           setFlag("include_language", v ? "1" : null)
         }
+        from={from}
+        to={to}
+        onFromChange={(v) => setFlag("from", v)}
+        onToChange={(v) => setFlag("to", v)}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">

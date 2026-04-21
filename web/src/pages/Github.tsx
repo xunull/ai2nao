@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiGet } from "../api";
 import { GithubHeatmap } from "../components/GithubHeatmap";
 import { GithubRepoCard } from "../components/GithubRepoCard";
@@ -108,7 +109,11 @@ export function Github() {
         <p className="text-sm text-[var(--muted)] mt-1">
           你创建过的仓库 + 你 star 过的仓库，按日历聚合。所有数据本地 SQLite，
           运行 <code className="bg-neutral-100 px-1 rounded">ai2nao github sync</code>{" "}
-          刷新。
+          刷新。想看 star 的 topic 标签透视与筛选，前往{" "}
+          <Link className="text-[var(--accent)] underline" to="/github/tags">
+            Star 标签透视
+          </Link>
+          。
         </p>
       </div>
 
