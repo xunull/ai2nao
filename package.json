@@ -19,6 +19,8 @@
     "downloads:watch": "tsx src/cli.ts downloads watch --interval 30",
     "chrome-history:sync": "tsx src/cli.ts chrome-history sync",
     "chrome-history:watch": "tsx src/cli.ts chrome-history watch --interval 30",
+    "github:sync": "tsx src/cli.ts github sync",
+    "github:sync:full": "tsx src/cli.ts github sync --full",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"

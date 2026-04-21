@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 5;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -14,6 +14,7 @@ export function migrate(db: Database.Database): void {
     applyV2(db);
     applyV3(db);
     applyV4(db);
+    applyV5(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -24,6 +25,7 @@ export function migrate(db: Database.Database): void {
   if (v < 2) applyV2(db);
   if (v < 3) applyV3(db);
   if (v < 4) applyV4(db);
+  if (v < 5) applyV5(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -172,5 +174,78 @@ function applyV4(db: Database.Database): void {
       ON chrome_downloads(profile, calendar_day);
 
     UPDATE meta_schema SET version = 4 WHERE id = 1;
+  `);
+}
+
+/**
+ * GitHub personal mirror: user's own repos, starred repos, per-repo commit counts,
+ * and sync-state watermarks. All four tables are upsert-friendly:
+ *   gh_repo.id      = GitHub numeric repo id (PRIMARY KEY, not autoincrement)
+ *   gh_commit_count = 1:1 with gh_repo (FK + ON DELETE CASCADE)
+ *   gh_star         = keyed by repo_id; we keep full_name/html_url so rows
+ *                     remain readable even if upstream gets transferred/renamed
+ *   gh_sync_state   = flat key/value bag for per-sync watermarks and status
+ *                     (last_full_sync_at, last_full_sync_error, etc.)
+ */
+function applyV5(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gh_repo (
+      id INTEGER PRIMARY KEY,
+      owner TEXT NOT NULL,
+      name TEXT NOT NULL,
+      full_name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      private INTEGER NOT NULL DEFAULT 0,
+      fork INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      default_branch TEXT,
+      html_url TEXT NOT NULL,
+      clone_url TEXT,
+      language TEXT,
+      topics_json TEXT NOT NULL DEFAULT '[]',
+      stargazers_count INTEGER NOT NULL DEFAULT 0,
+      forks_count INTEGER NOT NULL DEFAULT 0,
+      open_issues_count INTEGER NOT NULL DEFAULT 0,
+      size_kb INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      pushed_at TEXT,
+      inserted_at TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gh_repo_created_at ON gh_repo(created_at);
+    CREATE INDEX IF NOT EXISTS idx_gh_repo_updated_at ON gh_repo(updated_at);
+
+    CREATE TABLE IF NOT EXISTS gh_commit_count (
+      repo_id INTEGER PRIMARY KEY REFERENCES gh_repo(id) ON DELETE CASCADE,
+      count INTEGER,
+      default_branch TEXT,
+      error TEXT,
+      checked_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS gh_star (
+      repo_id INTEGER PRIMARY KEY,
+      owner TEXT NOT NULL,
+      name TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      description TEXT,
+      html_url TEXT NOT NULL,
+      language TEXT,
+      topics_json TEXT NOT NULL DEFAULT '[]',
+      stargazers_count INTEGER NOT NULL DEFAULT 0,
+      starred_at TEXT NOT NULL,
+      inserted_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gh_star_starred_at ON gh_star(starred_at);
+
+    CREATE TABLE IF NOT EXISTS gh_sync_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    UPDATE meta_schema SET version = 5 WHERE id = 1;
   `);
 }
