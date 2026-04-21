@@ -34,6 +34,11 @@ import {
   upsertRepo,
   upsertStar,
 } from "./queries.js";
+import {
+  rebuildAllRepoTags,
+  rebuildRepoTagsForIds,
+  type RebuildStats,
+} from "./tags.js";
 
 export type SyncMode = "full" | "incremental";
 
@@ -54,6 +59,7 @@ export type SyncProgress =
   | { phase: "repos"; fetched: number; upserted: number }
   | { phase: "commit-counts"; done: number; total: number }
   | { phase: "stars"; fetched: number; upserted: number }
+  | { phase: "tags-rebuild"; scanned: number; inserted: number }
   | { phase: "done"; durationMs: number };
 
 export type SyncGithubResult = {
@@ -63,6 +69,8 @@ export type SyncGithubResult = {
   starsUpserted: number;
   commitCountsUpdated: number;
   commitCountFailures: number;
+  /** Tag pivot rebuild stats; null if rebuild was skipped (no stars changed). */
+  tagsRebuild: RebuildStats | null;
   durationMs: number;
   errors: string[];
 };
@@ -196,11 +204,13 @@ export async function syncGithub(
       { sinceStarredAt, fetchImpl: opts.fetchImpl }
     );
     opts.onProgress?.({ phase: "stars", fetched: stars.length, upserted: 0 });
+    const upsertedStarIds: number[] = [];
     for (const s of stars) {
       try {
         const tx = db.transaction((row: GithubApiStar) => upsertStar(db, row, nowIso));
         tx(s);
         starsUpserted++;
+        upsertedStarIds.push(s.repo.id);
       } catch (e) {
         errors.push(
           `upsert star ${s.repo.full_name} failed: ${redactAuth(e instanceof Error ? e.message : String(e))}`
@@ -208,6 +218,35 @@ export async function syncGithub(
       }
     }
     opts.onProgress?.({ phase: "stars", fetched: stars.length, upserted: starsUpserted });
+
+    // Rebuild tag pivot table outside the upsert loops (synchronous SQLite,
+    // but kept as a separate phase so progress reporting stays readable).
+    //
+    // Full sync: nuke + rebuild from every star row — cheap even at 10k stars.
+    // Incremental sync: rebuild only repos we actually just upserted. Stars
+    //   that didn't change retain their existing gh_repo_tag rows.
+    //
+    // Note: alias edits do NOT trigger rebuild; users run `ai2nao github tags
+    // rebuild` explicitly after editing aliases.
+    let tagsRebuild: RebuildStats | null = null;
+    try {
+      if (opts.mode === "full") {
+        tagsRebuild = rebuildAllRepoTags(db);
+      } else if (upsertedStarIds.length > 0) {
+        tagsRebuild = rebuildRepoTagsForIds(db, upsertedStarIds);
+      }
+      if (tagsRebuild) {
+        opts.onProgress?.({
+          phase: "tags-rebuild",
+          scanned: tagsRebuild.starsScanned,
+          inserted: tagsRebuild.tagsInserted,
+        });
+      }
+    } catch (e) {
+      errors.push(
+        `tag rebuild failed: ${redactAuth(e instanceof Error ? e.message : String(e))}`
+      );
+    }
 
     const finishedIso = now().toISOString();
     const durationMs = now().getTime() - started.getTime();
@@ -233,6 +272,7 @@ export async function syncGithub(
       starsUpserted,
       commitCountsUpdated,
       commitCountFailures,
+      tagsRebuild,
       durationMs,
       errors,
     };

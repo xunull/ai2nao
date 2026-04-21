@@ -21,6 +21,8 @@
     "chrome-history:watch": "tsx src/cli.ts chrome-history watch --interval 30",
     "github:sync": "tsx src/cli.ts github sync",
     "github:sync:full": "tsx src/cli.ts github sync --full",
+    "github:tags:rebuild": "tsx src/cli.ts github tags rebuild",
+    "github:tags:alias:seed": "tsx src/cli.ts github tags alias seed",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"

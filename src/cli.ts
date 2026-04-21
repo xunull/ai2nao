@@ -17,6 +17,13 @@ import { syncChromeHistory } from "./chromeHistory/sync.js";
 import { loadGithubToken } from "./github/config.js";
 import { syncGithub } from "./github/sync.js";
 import { redactAuth } from "./github/fetcher.js";
+import {
+  listTagAliases,
+  rebuildAllRepoTags,
+  removeAlias,
+  seedTagAliases,
+  upsertUserAlias,
+} from "./github/tags.js";
 import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
@@ -409,6 +416,10 @@ githubCmd
             console.error(
               `github: stars fetched=${ev.fetched} upserted=${ev.upserted}`
             );
+          } else if (ev.phase === "tags-rebuild") {
+            console.error(
+              `github: tags rebuild scanned=${ev.scanned} inserted=${ev.inserted}`
+            );
           } else if (ev.phase === "done") {
             console.error(`github: done in ${ev.durationMs}ms`);
           }
@@ -417,8 +428,11 @@ githubCmd
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       } else {
+        const tagSuffix = result.tagsRebuild
+          ? `, tags ~${result.tagsRebuild.tagsInserted} (${result.tagsRebuild.starsScanned} stars)`
+          : "";
         console.error(
-          `github sync [${result.mode}]: repos +${result.reposUpserted}, stars +${result.starsUpserted}, commit_counts +${result.commitCountsUpdated} (failures ${result.commitCountFailures}), ${result.durationMs}ms`
+          `github sync [${result.mode}]: repos +${result.reposUpserted}, stars +${result.starsUpserted}, commit_counts +${result.commitCountsUpdated} (failures ${result.commitCountFailures})${tagSuffix}, ${result.durationMs}ms`
         );
         for (const err of result.errors) console.error(`warning: ${err}`);
       }
@@ -427,6 +441,166 @@ githubCmd
       const msg = redactAuth(e instanceof Error ? e.message : String(e));
       console.error(`github sync failed: ${msg}`);
       process.exitCode = 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const tagsCmd = githubCmd
+  .command("tags")
+  .description(
+    "Local tag-pivot commands. Rebuild canonical gh_repo_tag, manage the gh_tag_alias synonym map."
+  );
+
+tagsCmd
+  .command("rebuild")
+  .description(
+    "Rebuild gh_repo_tag from gh_star + gh_tag_alias (full). Run after editing aliases."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const stats = rebuildAllRepoTags(db);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, ...stats }, null, 2));
+      } else {
+        console.error(
+          `github tags rebuild: scanned ${stats.starsScanned} stars, inserted ${stats.tagsInserted} tag rows, ${stats.reposWithNoTags} stars had no tags.`
+        );
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+const aliasCmd = tagsCmd
+  .command("alias")
+  .description("Manage gh_tag_alias entries (preset seed + user overrides).");
+
+aliasCmd
+  .command("seed")
+  .description(
+    "Insert the bundled preset alias dictionary (INSERT OR IGNORE; safe to re-run)."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const inserted = seedTagAliases(db);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, inserted }, null, 2));
+      } else {
+        console.error(
+          `github tags alias seed: inserted ${inserted} new preset entries (existing rows preserved).`
+        );
+        if (inserted > 0) {
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply aliases to existing gh_repo_tag rows."
+          );
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+aliasCmd
+  .command("add <from> <to>")
+  .description("Add or overwrite a user alias (source becomes 'user').")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--note <text>", "short description for the override", "")
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    (
+      from: string,
+      to: string,
+      opts: { db: string; note: string; json: boolean }
+    ) => {
+      const db = openDatabase(opts.db);
+      try {
+        upsertUserAlias(db, from, to, opts.note.trim() || null);
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, from, to }, null, 2));
+        } else {
+          console.error(
+            `github tags alias add: ${from.toLowerCase()} → ${to.toLowerCase()}`
+          );
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply this alias."
+          );
+        }
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+aliasCmd
+  .command("list")
+  .description("List aliases (optionally filter by source).")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option(
+    "--source <kind>",
+    "filter: preset | user (omit for all)",
+    (v: string) => {
+      if (v !== "preset" && v !== "user") {
+        throw new Error("source must be 'preset' or 'user'");
+      }
+      return v;
+    }
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; source?: "preset" | "user"; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const rows = listTagAliases(db, opts.source);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, aliases: rows }, null, 2));
+      } else {
+        if (rows.length === 0) {
+          console.error("(no aliases)");
+        } else {
+          for (const r of rows) {
+            const note = r.note ? ` — ${r.note}` : "";
+            console.log(`${r.source}\t${r.from_tag} → ${r.to_tag}${note}`);
+          }
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+aliasCmd
+  .command("rm <from>")
+  .description("Remove an alias by from-tag.")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((from: string, opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const removed = removeAlias(db, from);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, removed }, null, 2));
+      } else {
+        console.error(
+          removed
+            ? `github tags alias rm: removed ${from.toLowerCase()}`
+            : `github tags alias rm: no alias found for ${from.toLowerCase()}`
+        );
+        if (removed) {
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply the change."
+          );
+        }
+      }
+      process.exitCode = removed ? 0 : 1;
     } finally {
       db.close();
     }
