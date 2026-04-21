@@ -40,3 +40,10 @@ export function defaultLlmChatConfigPath(): string {
   if (!home) return ".ai2nao/llm-chat.json";
   return `${home}/.ai2nao/llm-chat.json`;
 }
+
+/** JSON config for the GitHub personal mirror (token + optional settings). */
+export function defaultGithubConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/github.json";
+  return `${home}/.ai2nao/github.json`;
+}

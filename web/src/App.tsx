@@ -8,6 +8,7 @@ import { CursorHistory } from "./pages/CursorHistory";
 import { CursorHistorySession } from "./pages/CursorHistorySession";
 import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
+import { Github } from "./pages/Github";
 import { RepoDetail } from "./pages/RepoDetail";
 import { Repos } from "./pages/Repos";
 import { Search } from "./pages/Search";
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/cursor-history" element={<CursorHistory />} />
         <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />
         <Route path="/ai-chat" element={<AiChat />} />
+        <Route path="/github" element={<Github />} />
       </Routes>
     </Layout>
   );
