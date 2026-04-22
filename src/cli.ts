@@ -7,7 +7,15 @@ import { openDailySummaryCacheDatabase } from "./dailySummary/cache.js";
 import {
   defaultDailySummaryDbPath,
   defaultDbPath,
+  defaultRagDbPath,
 } from "./config.js";
+import {
+  readRagConfig,
+  readRagConfigFile,
+  resolveRagConfigPath,
+} from "./rag/config.js";
+import { ingestCorpus, type IngestFileProgress } from "./rag/ingest.js";
+import { openRagDatabase } from "./rag/open.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
   defaultChromeHistoryPath,
@@ -644,6 +652,11 @@ program
     "daily summary LLM timeout in milliseconds",
     process.env.AI2NAO_LLM_TIMEOUT_MS ?? "30000"
   )
+  .option(
+    "--rag-db <path>",
+    "RAG chunk SQLite (FTS5 + optional embeddings)",
+    defaultRagDbPath()
+  )
   .action(
     (opts: {
       db: string;
@@ -656,6 +669,7 @@ program
       llmBaseUrl?: string;
       llmModel?: string;
       llmTimeoutMs: string;
+      ragDb: string;
     }) => {
       let db;
       try {
@@ -726,6 +740,23 @@ program
         };
       }
 
+      let rag: { db: ReturnType<typeof openRagDatabase>; path: string } | undefined;
+      try {
+        const ragEnv = (process.env.AI2NAO_RAG_DB ?? "").trim();
+        const ragPath = ragEnv.length > 0 ? resolve(ragEnv) : resolve(opts.ragDb);
+        rag = { db: openRagDatabase(ragPath), path: ragPath };
+        console.error(`RAG index: ${ragPath}`);
+      } catch (e) {
+        console.error(`Failed to open RAG database: ${String(e)}`);
+        try {
+          db.close();
+        } catch {
+          /* ignore */
+        }
+        process.exitCode = 1;
+        return;
+      }
+
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
       const dist = resolveWebDist(process.cwd());
       const withStatic = !opts.apiOnly && existsSync(dist);
@@ -733,6 +764,7 @@ program
         db,
         atuin,
         dailySummary,
+        rag,
         host: opts.host,
         port,
         withStatic,
@@ -764,7 +796,11 @@ program
             try {
               dailySummary?.cacheDb.close();
             } finally {
-              db.close();
+              try {
+                rag?.db.close();
+              } finally {
+                db.close();
+              }
             }
           }
         }
@@ -777,6 +813,130 @@ program
         shutdown();
         process.exit(0);
       });
+    }
+  );
+
+/** 交互终端单行刷新；CI / 重定向 则定期换行，避免刷几千行。 */
+function createRagIngestProgressReporter() {
+  const tty = process.stderr.isTTY === true;
+  let lastNonTtyLog = 0;
+  return {
+    onProgress(p: IngestFileProgress) {
+      if (p.total <= 0) return;
+      const barW = 18;
+      const done = Math.min(barW, Math.round((p.current / p.total) * barW));
+      const bar = "#".repeat(done) + "-".repeat(barW - done);
+      const cols = process.stderr.columns ?? 100;
+      const pathMax = Math.max(16, cols - 36);
+      const tail =
+        p.relPath.length > pathMax
+          ? "…" + p.relPath.slice(-(pathMax - 1))
+          : p.relPath;
+      const n = `${String(p.current).padStart(String(p.total).length)}/${p.total}`;
+      const line = `RAG [${bar}] ${n} ${tail}`;
+      if (tty) {
+        process.stderr.write("\r\x1b[K" + line.slice(0, cols));
+      } else {
+        const t = Date.now();
+        if (
+          p.current === 1 ||
+          p.current === p.total ||
+          p.current % 50 === 0 ||
+          t - lastNonTtyLog > 12000
+        ) {
+          console.error(line);
+          lastNonTtyLog = t;
+        }
+      }
+    },
+    finish() {
+      if (tty) {
+        process.stderr.write("\n");
+      }
+    },
+  };
+}
+
+const ragCmd = program
+  .command("rag")
+  .description("Index local Markdown/text into the RAG database (FTS5 + optional embeddings)");
+
+ragCmd
+  .command("ingest")
+  .description(
+    "Scan corpus roots, chunk, and upsert into the RAG DB. Use --root to override paths in rag.json."
+  )
+  .option(
+    "-r, --root <path>",
+    "corpus root (repeatable; when set, overrides corpusRoots in rag.json)",
+    (v: string, prev: string[]) => [...prev, v],
+    [] as string[]
+  )
+  .option("--rag-db <path>", "RAG SQLite path", defaultRagDbPath())
+  .option(
+    "--config <path>",
+    "rag.json path (overrides AI2NAO_RAG_CONFIG / default)"
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    async (opts: {
+      root: string[];
+      ragDb: string;
+      config?: string;
+      json: boolean;
+    }) => {
+      const triedConfigPath = opts.config?.trim()
+        ? resolve(opts.config.trim())
+        : resolveRagConfigPath();
+      const cfg = opts.config?.trim()
+        ? readRagConfigFile(opts.config)
+        : readRagConfig();
+      if (!opts.json) {
+        if (!cfg) {
+          if (existsSync(triedConfigPath)) {
+            console.error(
+              `RAG: ${triedConfigPath} is not valid (require version: 1, non-empty corpusRoots, and parseable includeExtensions). See rag.config.example.json.`
+            );
+          } else {
+            console.error(
+              `RAG: no config at ${triedConfigPath}. Put corpusRoots there, or run with --config <path> or --root <dir>.`
+            );
+          }
+        }
+      }
+      const ragEnvIngest = (process.env.AI2NAO_RAG_DB ?? "").trim();
+      const dbPath =
+        ragEnvIngest.length > 0 ? resolve(ragEnvIngest) : resolve(opts.ragDb);
+      const db = openRagDatabase(dbPath);
+      const progress = !opts.json ? createRagIngestProgressReporter() : null;
+      try {
+        const result = await ingestCorpus(db, cfg, opts.root, {
+          onProgress: progress?.onProgress,
+        });
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              { ok: true, ...result, ragDb: dbPath, configPath: triedConfigPath },
+              null,
+              2
+            )
+          );
+        } else {
+          console.error(
+            `RAG ingest: ${result.roots} root(s), ${result.filesIndexed}/${result.filesSeen} file(s), ${result.chunksInserted} chunk(s) → ${dbPath}`
+          );
+          for (const err of result.errors) console.error(`warning: ${err}`);
+          if (result.roots > 0 && result.filesSeen === 0) {
+            console.error(
+              "RAG: 0 files matched. Check that files exist under the roots, includeExtensions (e.g. .md) matches your file types, and paths are not wrong."
+            );
+          }
+        }
+        process.exitCode = result.errors.length ? 1 : 0;
+      } finally {
+        progress?.finish();
+        db.close();
+      }
     }
   );
 
