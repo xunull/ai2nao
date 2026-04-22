@@ -11,6 +11,8 @@ export type RunServeOptions = {
     cacheDb: Database.Database | null;
     runtime: DailySummaryRuntimeOptions;
   };
+  /** Local RAG index (optional). */
+  rag?: { db: Database.Database; path: string };
   host: string;
   port: number;
   /** Serve built SPA from `web/dist` (production). */
@@ -25,6 +27,7 @@ export function runServe(opts: RunServeOptions): { url: string; close: () => voi
     db: opts.db,
     atuin: opts.atuin,
     dailySummary: opts.dailySummary,
+    rag: opts.rag,
     staticRoot,
   });
   const server = serve(
