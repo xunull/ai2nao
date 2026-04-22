@@ -59,6 +59,12 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link className="text-[var(--accent)] hover:underline" to="/github">
               GitHub
             </Link>
+            <Link
+              className="text-[var(--accent)] hover:underline"
+              to="/github/tags"
+            >
+              Star Tag
+            </Link>
           </nav>
           <form onSubmit={onSubmit} className="ml-auto flex gap-2">
             <input

@@ -84,3 +84,58 @@ export type GhHeatmapBucket = {
 export type GhHeatmapRes = {
   buckets: GhHeatmapBucket[];
 };
+
+// ---------- Tag pivot (V1 — stars only) ----------
+
+export type GhTopTag = {
+  tag: string;
+  count: number;
+  last_starred_at: string | null;
+};
+
+export type GhTopTagsRes = {
+  items: GhTopTag[];
+};
+
+export type GhTagHeatmapRes = {
+  /** Time buckets, ascending: e.g. ['2024-01', '2024-02', …] */
+  xs: string[];
+  /** Tags, sorted by total count desc. */
+  ys: string[];
+  /** cells[i][j] = count for tag ys[i] in bucket xs[j]. */
+  cells: number[][];
+};
+
+export type GhTaggedRepo = {
+  repo_id: number;
+  owner: string;
+  name: string;
+  full_name: string;
+  description: string | null;
+  html_url: string;
+  language: string | null;
+  topics: string[];
+  stargazers_count: number;
+  starred_at: string;
+  matched_tags: string[];
+};
+
+export type GhTaggedReposRes = {
+  items: GhTaggedRepo[];
+  next_cursor: string | null;
+};
+
+export type GhTagAlias = {
+  from_tag: string;
+  to_tag: string;
+  source: "preset" | "user";
+  note: string | null;
+  created_at: string;
+};
+
+export type GhTagAliasesRes = {
+  items: GhTagAlias[];
+};
+
+export type TagFilterMode = "or" | "and";
+export type TagHeatmapGrain = "month" | "quarter" | "year";

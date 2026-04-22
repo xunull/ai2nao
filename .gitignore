@@ -8,3 +8,5 @@ web/dist
 
 # Local nested clone / reference, not part of this repo
 cursor-history/
+
+note.md 

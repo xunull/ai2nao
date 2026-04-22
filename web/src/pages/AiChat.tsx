@@ -12,6 +12,16 @@ type LlmChatStatus = {
   configPath: string;
 };
 
+type RagStatus = {
+  ok: true;
+  dbPath: string;
+  configPath: string;
+  configPresent: boolean;
+  corpusRoots: string[];
+  embeddingEnabled: boolean;
+  chunkCount: number;
+};
+
 function textFromMessage(m: UIMessage): string {
   return m.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -24,9 +34,17 @@ export function AiChat() {
   const [cfgErr, setCfgErr] = useState<string | null>(null);
   const [input, setInput] = useState("");
 
+  const [useRag, setUseRag] = useState(false);
+  const [rag, setRag] = useState<RagStatus | null>(null);
+  const [ragErr, setRagErr] = useState<string | null>(null);
+
   const transport = useMemo(
-    () => new DefaultChatTransport({ api: "/api/llm-chat" }),
-    []
+    () =>
+      new DefaultChatTransport({
+        api: "/api/llm-chat",
+        body: { useRag, ragTopK: 8 },
+      }),
+    [useRag]
   );
 
   const { messages, sendMessage, status, error, stop } = useChat({ transport });
@@ -44,6 +62,26 @@ export function AiChat() {
         if (!cancelled) {
           setCfg(null);
           setCfgErr(e instanceof Error ? e.message : String(e));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<RagStatus>("/api/rag/status")
+      .then((s) => {
+        if (!cancelled) {
+          setRag(s);
+          setRagErr(null);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setRag(null);
+          setRagErr(e instanceof Error ? e.message : String(e));
         }
       });
     return () => {
@@ -82,15 +120,59 @@ export function AiChat() {
           </p>
         </div>
       ) : cfg?.configured ? (
-        <p className="text-xs text-[var(--muted)]">
-          已配置 · 模型 <span className="font-mono">{cfg.model}</span>
-          {cfg.baseHost ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-[var(--muted)]">
+          <p>
+            已配置 · 模型 <span className="font-mono">{cfg.model}</span>
+            {cfg.baseHost ? (
+              <>
+                {" "}
+                · 主机 <span className="font-mono">{cfg.baseHost}</span>
+              </>
+            ) : null}
+          </p>
+          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="rounded border-[var(--border)]"
+              checked={useRag}
+              onChange={(e) => setUseRag(e.target.checked)}
+            />
+            <span>使用本地 RAG 索引</span>
+          </label>
+        </div>
+      ) : null}
+
+      {cfg?.configured ? (
+        <div className="rounded border border-[var(--border)] bg-zinc-50 text-xs text-[var(--muted)] p-2 space-y-1">
+          {ragErr ? (
+            <p>
+              <span className="text-amber-800">RAG 状态不可用：</span>
+              {ragErr}（需用能打开 RAG 库的 serve，例如本机{" "}
+              <code className="font-mono">ai2nao serve</code> 且成功挂载{" "}
+              <code className="font-mono">rag.db</code>）
+            </p>
+          ) : rag ? (
             <>
-              {" "}
-              · 主机 <span className="font-mono">{cfg.baseHost}</span>
+              <p>
+                本地索引约 <span className="font-mono text-[var(--fg)]">{rag.chunkCount}</span> 条
+                chunk
+                {rag.configPresent ? "（已读到 rag 配置）" : "（未找到 rag.json，仅影响检索/向量开关说明）"}。
+                {rag.embeddingEnabled ? " 已配置 embedding，检索会做向量融合。" : " 未开 embedding 时以关键词（FTS）为主。"}
+              </p>
+              {useRag && rag.chunkCount > 0 ? (
+                <p>
+                  勾选后：会用你<strong>发出去前的最后一条用户话</strong>去检索，把若干片段作为隐藏上下文发给模型；界面
+                  <strong>不会</strong>展示原文片段，因此感觉可能不明显。若与笔记用词差太远，可能几乎命中不到相关段。
+                </p>
+              ) : useRag && rag.chunkCount === 0 ? (
+                <p className="text-amber-800">
+                  已勾选 RAG，但当前库里没有 chunk。请先运行{" "}
+                  <code className="font-mono">ai2nao rag ingest</code>。
+                </p>
+              ) : null}
             </>
           ) : null}
-        </p>
+        </div>
       ) : null}
 
       <div className="rounded border border-[var(--border)] bg-white min-h-[240px] max-h-[55vh] overflow-y-auto p-3 space-y-3 text-sm">

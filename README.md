@@ -40,6 +40,17 @@ node dist/cli.js search "package.json"
 
 `scan` 在部分根路径不可读时会向 stderr 输出警告，并以退出码 **1** 表示存在警告（仍可能已写入部分结果）。
 
+## RAG（本地笔记 / 纯文本）
+
+为 **AI 对话**（`/api/llm-chat`）提供可选的本地检索：把多个目录下的 `.md` / `.txt` 切块写入独立库 **`~/.ai2nao/rag.db`**（**FTS5**；可在 `rag.json` 里打开 **embedding** 做字面 + 向量融合）。
+
+1. 复制 [`rag.config.example.json`](rag.config.example.json) 为 `~/.ai2nao/rag.json`，填写 `corpusRoots`（绝对路径）。开启 `embedding` 时：**OpenAI 官方 API** 请在 `embedding` 里填写 **`apiKey`**（与 `baseURL`、`model` 一致）。若不想把密钥写进文件，可省略 `apiKey`，改由环境变量 **`OPENAI_API_KEY`** / **`AI2NAO_LLM_API_KEY`** 或 `~/.ai2nao/llm-chat.json` 里的 `apiKey` 提供（与 [`src/rag/embeddings.ts`](src/rag/embeddings.ts) 中的回退顺序一致）。本机 LM Studio / Ollama 等通常无需密钥，可参考 [`rag.config.example.local-llm.json`](rag.config.example.local-llm.json)。也可用环境变量 **`AI2NAO_RAG_CORPUS_ROOT`** 追加一个语料根。
+2. 建索引：`npm run dev -- rag ingest` 或 `node dist/cli.js rag ingest --root /path/to/notes`
+3. 启动 API（`serve` 会打开 `rag.db`）：`node dist/cli.js serve`
+4. 在 Web「AI 对话」里勾选 **使用本地 RAG**，或请求体带 `"useRag": true`。
+
+状态：`GET /api/rag/status`。检索用**最后一条用户消息**做查询。`--rag-db` / **`AI2NAO_RAG_DB`** 可改 RAG 库路径。
+
 ## Web 界面（只读）
 
 先执行 `npm run build`（编译 CLI + 前端）。默认仅监听本机：

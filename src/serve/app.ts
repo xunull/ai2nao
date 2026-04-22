@@ -62,6 +62,7 @@ import {
 } from "../cursorHistory/json.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
+import { registerRagRoutes } from "../rag/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -102,6 +103,8 @@ export type ServeOptions = {
     cacheDb: Database.Database | null;
     runtime: DailySummaryRuntimeOptions;
   };
+  /** Optional RAG chunk index (`~/.ai2nao/rag.db`). */
+  rag?: { db: Database.Database; path: string };
 };
 
 function jsonErr(status: number, message: string) {
@@ -109,7 +112,7 @@ function jsonErr(status: number, message: string) {
 }
 
 export function createApp(opts: ServeOptions): Hono {
-  const { db, atuin, dailySummary } = opts;
+  const { db, atuin, dailySummary, rag } = opts;
   const app = new Hono();
 
   app.use(
@@ -120,7 +123,8 @@ export function createApp(opts: ServeOptions): Hono {
     })
   );
 
-  registerLlmChatRoutes(app);
+  registerLlmChatRoutes(app, { ragDb: rag?.db });
+  registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerGithubRoutes(app, db);
 
   app.get("/api/status", (c) => {
