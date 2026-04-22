@@ -47,3 +47,17 @@ export function defaultGithubConfigPath(): string {
   if (!home) return ".ai2nao/github.json";
   return `${home}/.ai2nao/github.json`;
 }
+
+/** JSON config for RAG corpus roots and optional embeddings (`~/.ai2nao/rag.json`). */
+export function defaultRagConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/rag.json";
+  return `${home}/.ai2nao/rag.json`;
+}
+
+/** Dedicated SQLite for RAG chunks + FTS5 (separate from main index.db). */
+export function defaultRagDbPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/rag.db";
+  return `${home}/.ai2nao/rag.db`;
+}

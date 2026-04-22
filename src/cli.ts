@@ -7,7 +7,15 @@ import { openDailySummaryCacheDatabase } from "./dailySummary/cache.js";
 import {
   defaultDailySummaryDbPath,
   defaultDbPath,
+  defaultRagDbPath,
 } from "./config.js";
+import {
+  readRagConfig,
+  readRagConfigFile,
+  resolveRagConfigPath,
+} from "./rag/config.js";
+import { ingestCorpus, type IngestFileProgress } from "./rag/ingest.js";
+import { openRagDatabase } from "./rag/open.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
   defaultChromeHistoryPath,
@@ -17,6 +25,13 @@ import { syncChromeHistory } from "./chromeHistory/sync.js";
 import { loadGithubToken } from "./github/config.js";
 import { syncGithub } from "./github/sync.js";
 import { redactAuth } from "./github/fetcher.js";
+import {
+  listTagAliases,
+  rebuildAllRepoTags,
+  removeAlias,
+  seedTagAliases,
+  upsertUserAlias,
+} from "./github/tags.js";
 import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
@@ -409,6 +424,10 @@ githubCmd
             console.error(
               `github: stars fetched=${ev.fetched} upserted=${ev.upserted}`
             );
+          } else if (ev.phase === "tags-rebuild") {
+            console.error(
+              `github: tags rebuild scanned=${ev.scanned} inserted=${ev.inserted}`
+            );
           } else if (ev.phase === "done") {
             console.error(`github: done in ${ev.durationMs}ms`);
           }
@@ -417,8 +436,11 @@ githubCmd
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       } else {
+        const tagSuffix = result.tagsRebuild
+          ? `, tags ~${result.tagsRebuild.tagsInserted} (${result.tagsRebuild.starsScanned} stars)`
+          : "";
         console.error(
-          `github sync [${result.mode}]: repos +${result.reposUpserted}, stars +${result.starsUpserted}, commit_counts +${result.commitCountsUpdated} (failures ${result.commitCountFailures}), ${result.durationMs}ms`
+          `github sync [${result.mode}]: repos +${result.reposUpserted}, stars +${result.starsUpserted}, commit_counts +${result.commitCountsUpdated} (failures ${result.commitCountFailures})${tagSuffix}, ${result.durationMs}ms`
         );
         for (const err of result.errors) console.error(`warning: ${err}`);
       }
@@ -427,6 +449,166 @@ githubCmd
       const msg = redactAuth(e instanceof Error ? e.message : String(e));
       console.error(`github sync failed: ${msg}`);
       process.exitCode = 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const tagsCmd = githubCmd
+  .command("tags")
+  .description(
+    "Local tag-pivot commands. Rebuild canonical gh_repo_tag, manage the gh_tag_alias synonym map."
+  );
+
+tagsCmd
+  .command("rebuild")
+  .description(
+    "Rebuild gh_repo_tag from gh_star + gh_tag_alias (full). Run after editing aliases."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const stats = rebuildAllRepoTags(db);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, ...stats }, null, 2));
+      } else {
+        console.error(
+          `github tags rebuild: scanned ${stats.starsScanned} stars, inserted ${stats.tagsInserted} tag rows, ${stats.reposWithNoTags} stars had no tags.`
+        );
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+const aliasCmd = tagsCmd
+  .command("alias")
+  .description("Manage gh_tag_alias entries (preset seed + user overrides).");
+
+aliasCmd
+  .command("seed")
+  .description(
+    "Insert the bundled preset alias dictionary (INSERT OR IGNORE; safe to re-run)."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const inserted = seedTagAliases(db);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, inserted }, null, 2));
+      } else {
+        console.error(
+          `github tags alias seed: inserted ${inserted} new preset entries (existing rows preserved).`
+        );
+        if (inserted > 0) {
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply aliases to existing gh_repo_tag rows."
+          );
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+aliasCmd
+  .command("add <from> <to>")
+  .description("Add or overwrite a user alias (source becomes 'user').")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--note <text>", "short description for the override", "")
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    (
+      from: string,
+      to: string,
+      opts: { db: string; note: string; json: boolean }
+    ) => {
+      const db = openDatabase(opts.db);
+      try {
+        upsertUserAlias(db, from, to, opts.note.trim() || null);
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, from, to }, null, 2));
+        } else {
+          console.error(
+            `github tags alias add: ${from.toLowerCase()} → ${to.toLowerCase()}`
+          );
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply this alias."
+          );
+        }
+      } catch (e) {
+        console.error(String(e));
+        process.exitCode = 1;
+      } finally {
+        db.close();
+      }
+    }
+  );
+
+aliasCmd
+  .command("list")
+  .description("List aliases (optionally filter by source).")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option(
+    "--source <kind>",
+    "filter: preset | user (omit for all)",
+    (v: string) => {
+      if (v !== "preset" && v !== "user") {
+        throw new Error("source must be 'preset' or 'user'");
+      }
+      return v;
+    }
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; source?: "preset" | "user"; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const rows = listTagAliases(db, opts.source);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, aliases: rows }, null, 2));
+      } else {
+        if (rows.length === 0) {
+          console.error("(no aliases)");
+        } else {
+          for (const r of rows) {
+            const note = r.note ? ` — ${r.note}` : "";
+            console.log(`${r.source}\t${r.from_tag} → ${r.to_tag}${note}`);
+          }
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+aliasCmd
+  .command("rm <from>")
+  .description("Remove an alias by from-tag.")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((from: string, opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const removed = removeAlias(db, from);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, removed }, null, 2));
+      } else {
+        console.error(
+          removed
+            ? `github tags alias rm: removed ${from.toLowerCase()}`
+            : `github tags alias rm: no alias found for ${from.toLowerCase()}`
+        );
+        if (removed) {
+          console.error(
+            "hint: run `ai2nao github tags rebuild` to apply the change."
+          );
+        }
+      }
+      process.exitCode = removed ? 0 : 1;
     } finally {
       db.close();
     }
@@ -470,6 +652,11 @@ program
     "daily summary LLM timeout in milliseconds",
     process.env.AI2NAO_LLM_TIMEOUT_MS ?? "30000"
   )
+  .option(
+    "--rag-db <path>",
+    "RAG chunk SQLite (FTS5 + optional embeddings)",
+    defaultRagDbPath()
+  )
   .action(
     (opts: {
       db: string;
@@ -482,6 +669,7 @@ program
       llmBaseUrl?: string;
       llmModel?: string;
       llmTimeoutMs: string;
+      ragDb: string;
     }) => {
       let db;
       try {
@@ -552,6 +740,23 @@ program
         };
       }
 
+      let rag: { db: ReturnType<typeof openRagDatabase>; path: string } | undefined;
+      try {
+        const ragEnv = (process.env.AI2NAO_RAG_DB ?? "").trim();
+        const ragPath = ragEnv.length > 0 ? resolve(ragEnv) : resolve(opts.ragDb);
+        rag = { db: openRagDatabase(ragPath), path: ragPath };
+        console.error(`RAG index: ${ragPath}`);
+      } catch (e) {
+        console.error(`Failed to open RAG database: ${String(e)}`);
+        try {
+          db.close();
+        } catch {
+          /* ignore */
+        }
+        process.exitCode = 1;
+        return;
+      }
+
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
       const dist = resolveWebDist(process.cwd());
       const withStatic = !opts.apiOnly && existsSync(dist);
@@ -559,6 +764,7 @@ program
         db,
         atuin,
         dailySummary,
+        rag,
         host: opts.host,
         port,
         withStatic,
@@ -590,7 +796,11 @@ program
             try {
               dailySummary?.cacheDb.close();
             } finally {
-              db.close();
+              try {
+                rag?.db.close();
+              } finally {
+                db.close();
+              }
             }
           }
         }
@@ -603,6 +813,130 @@ program
         shutdown();
         process.exit(0);
       });
+    }
+  );
+
+/** 交互终端单行刷新；CI / 重定向 则定期换行，避免刷几千行。 */
+function createRagIngestProgressReporter() {
+  const tty = process.stderr.isTTY === true;
+  let lastNonTtyLog = 0;
+  return {
+    onProgress(p: IngestFileProgress) {
+      if (p.total <= 0) return;
+      const barW = 18;
+      const done = Math.min(barW, Math.round((p.current / p.total) * barW));
+      const bar = "#".repeat(done) + "-".repeat(barW - done);
+      const cols = process.stderr.columns ?? 100;
+      const pathMax = Math.max(16, cols - 36);
+      const tail =
+        p.relPath.length > pathMax
+          ? "…" + p.relPath.slice(-(pathMax - 1))
+          : p.relPath;
+      const n = `${String(p.current).padStart(String(p.total).length)}/${p.total}`;
+      const line = `RAG [${bar}] ${n} ${tail}`;
+      if (tty) {
+        process.stderr.write("\r\x1b[K" + line.slice(0, cols));
+      } else {
+        const t = Date.now();
+        if (
+          p.current === 1 ||
+          p.current === p.total ||
+          p.current % 50 === 0 ||
+          t - lastNonTtyLog > 12000
+        ) {
+          console.error(line);
+          lastNonTtyLog = t;
+        }
+      }
+    },
+    finish() {
+      if (tty) {
+        process.stderr.write("\n");
+      }
+    },
+  };
+}
+
+const ragCmd = program
+  .command("rag")
+  .description("Index local Markdown/text into the RAG database (FTS5 + optional embeddings)");
+
+ragCmd
+  .command("ingest")
+  .description(
+    "Scan corpus roots, chunk, and upsert into the RAG DB. Use --root to override paths in rag.json."
+  )
+  .option(
+    "-r, --root <path>",
+    "corpus root (repeatable; when set, overrides corpusRoots in rag.json)",
+    (v: string, prev: string[]) => [...prev, v],
+    [] as string[]
+  )
+  .option("--rag-db <path>", "RAG SQLite path", defaultRagDbPath())
+  .option(
+    "--config <path>",
+    "rag.json path (overrides AI2NAO_RAG_CONFIG / default)"
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    async (opts: {
+      root: string[];
+      ragDb: string;
+      config?: string;
+      json: boolean;
+    }) => {
+      const triedConfigPath = opts.config?.trim()
+        ? resolve(opts.config.trim())
+        : resolveRagConfigPath();
+      const cfg = opts.config?.trim()
+        ? readRagConfigFile(opts.config)
+        : readRagConfig();
+      if (!opts.json) {
+        if (!cfg) {
+          if (existsSync(triedConfigPath)) {
+            console.error(
+              `RAG: ${triedConfigPath} is not valid (require version: 1, non-empty corpusRoots, and parseable includeExtensions). See rag.config.example.json.`
+            );
+          } else {
+            console.error(
+              `RAG: no config at ${triedConfigPath}. Put corpusRoots there, or run with --config <path> or --root <dir>.`
+            );
+          }
+        }
+      }
+      const ragEnvIngest = (process.env.AI2NAO_RAG_DB ?? "").trim();
+      const dbPath =
+        ragEnvIngest.length > 0 ? resolve(ragEnvIngest) : resolve(opts.ragDb);
+      const db = openRagDatabase(dbPath);
+      const progress = !opts.json ? createRagIngestProgressReporter() : null;
+      try {
+        const result = await ingestCorpus(db, cfg, opts.root, {
+          onProgress: progress?.onProgress,
+        });
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              { ok: true, ...result, ragDb: dbPath, configPath: triedConfigPath },
+              null,
+              2
+            )
+          );
+        } else {
+          console.error(
+            `RAG ingest: ${result.roots} root(s), ${result.filesIndexed}/${result.filesSeen} file(s), ${result.chunksInserted} chunk(s) → ${dbPath}`
+          );
+          for (const err of result.errors) console.error(`warning: ${err}`);
+          if (result.roots > 0 && result.filesSeen === 0) {
+            console.error(
+              "RAG: 0 files matched. Check that files exist under the roots, includeExtensions (e.g. .md) matches your file types, and paths are not wrong."
+            );
+          }
+        }
+        process.exitCode = result.errors.length ? 1 : 0;
+      } finally {
+        progress?.finish();
+        db.close();
+      }
     }
   );
 

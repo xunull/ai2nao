@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "corpusRoots": ["/path/to/notes", "/path/to/second-vault"],
+  "includeExtensions": [".md", ".mdx", ".txt"],
+  "maxFileBytes": 8388608,
+  "respectDefaultExcludes": true,
+  "embedding": {
+    "enabled": true,
+    "baseURL": "https://api.openai.com/v1",
+    "model": "text-embedding-3-small",
+    "apiKey": "sk-proj-REPLACE_ME",
+    "maxBatchSize": 128
+  }
+}

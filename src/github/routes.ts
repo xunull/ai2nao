@@ -5,11 +5,17 @@
  * `registerLlmChatRoutes` pattern already in use.
  *
  * Endpoint map (all read-only for P0):
- *   GET /api/github/status     → token + sync-state banner
- *   GET /api/github/repos      → keyset-paginated owned repos + commit counts
- *   GET /api/github/stars      → keyset-paginated starred repos
- *   GET /api/github/heatmap    → [{day, repo_count, star_count}]
- *   GET /api/github/sync-state → raw gh_sync_state bag
+ *   GET /api/github/status       → token + sync-state banner
+ *   GET /api/github/repos        → keyset-paginated owned repos + commit counts
+ *   GET /api/github/stars        → keyset-paginated starred repos
+ *   GET /api/github/heatmap      → [{day, repo_count, star_count}]
+ *   GET /api/github/sync-state   → raw gh_sync_state bag
+ *
+ * Tag pivot (V1 — stars only):
+ *   GET /api/github/tags/top     → tag ranking
+ *   GET /api/github/tags/heatmap → tag × time 2D heatmap
+ *   GET /api/github/tags/repos   → keyset-paginated filtered repos
+ *   GET /api/github/tags/aliases → read-only list of gh_tag_alias
  */
 
 import type { Hono } from "hono";
@@ -23,6 +29,12 @@ import {
   listRepos,
   listStars,
 } from "./queries.js";
+import {
+  getTagTimeHeatmap,
+  getTopTags,
+  listTagAliases,
+  listTaggedRepos,
+} from "./tags.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
@@ -92,6 +104,103 @@ export function registerGithubRoutes(app: Hono, db: Database.Database): void {
       const until = (c.req.query("until") ?? "").trim() || null;
       const buckets = getHeatmapBuckets(db, since, until);
       return c.json({ buckets });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  // ---------- Tag pivot ----------
+
+  app.get("/api/github/tags/top", (c) => {
+    try {
+      const limit = Math.min(
+        500,
+        Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50)
+      );
+      const windowRaw = c.req.query("window");
+      const window = windowRaw === "12m" ? "12m" : "all";
+      const includeLanguageFallback = c.req.query("include_language") === "1";
+      const items = getTopTags(db, { limit, window, includeLanguageFallback });
+      return c.json({ items });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/github/tags/heatmap", (c) => {
+    try {
+      const topN = Math.min(
+        50,
+        Math.max(1, parseInt(c.req.query("top") ?? "15", 10) || 15)
+      );
+      const grainRaw = c.req.query("grain");
+      const grain =
+        grainRaw === "quarter" || grainRaw === "year" ? grainRaw : "month";
+      const from = (c.req.query("from") ?? "").trim() || null;
+      const to = (c.req.query("to") ?? "").trim() || null;
+      const includeLanguageFallback = c.req.query("include_language") === "1";
+      const tagsCsv = (c.req.query("tags") ?? "").trim();
+      const tags =
+        tagsCsv.length > 0
+          ? tagsCsv
+              .split(",")
+              .map((t) => t.trim())
+              .filter((t) => t.length > 0)
+          : undefined;
+      const result = getTagTimeHeatmap(db, {
+        topN,
+        grain,
+        from,
+        to,
+        includeLanguageFallback,
+        tags,
+      });
+      return c.json(result);
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/github/tags/repos", (c) => {
+    try {
+      const tagsCsv = (c.req.query("tags") ?? "").trim();
+      if (!tagsCsv) {
+        return c.json({ items: [], next_cursor: null });
+      }
+      const tags = tagsCsv
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+      const modeRaw = c.req.query("mode");
+      const mode = modeRaw === "and" ? "and" : "or";
+      const from = (c.req.query("from") ?? "").trim() || null;
+      const to = (c.req.query("to") ?? "").trim() || null;
+      const cursor = (c.req.query("cursor") ?? "").trim() || null;
+      const perPage = Math.min(
+        100,
+        Math.max(1, parseInt(c.req.query("per_page") ?? "30", 10) || 30)
+      );
+      const { items, nextCursor } = listTaggedRepos(db, {
+        tags,
+        mode,
+        from,
+        to,
+        cursor,
+        perPage,
+      });
+      return c.json({ items, next_cursor: nextCursor });
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.get("/api/github/tags/aliases", (c) => {
+    try {
+      const sourceRaw = c.req.query("source");
+      const source =
+        sourceRaw === "preset" || sourceRaw === "user" ? sourceRaw : undefined;
+      const items = listTagAliases(db, source);
+      return c.json({ items });
     } catch (e) {
       return jsonErr(500, String(e));
     }
