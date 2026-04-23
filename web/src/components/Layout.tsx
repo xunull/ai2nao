@@ -53,6 +53,12 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               Cursor 对话
             </Link>
+            <Link
+              className="text-[var(--accent)] hover:underline"
+              to="/claude-code-history"
+            >
+              Claude 对话
+            </Link>
             <Link className="text-[var(--accent)] hover:underline" to="/ai-chat">
               AI 对话
             </Link>
