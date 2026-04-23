@@ -4,6 +4,8 @@ import { AiChat } from "./pages/AiChat";
 import { Atuin } from "./pages/Atuin";
 import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
+import { ClaudeCodeHistory } from "./pages/ClaudeCodeHistory";
+import { ClaudeCodeHistorySession } from "./pages/ClaudeCodeHistorySession";
 import { CursorHistory } from "./pages/CursorHistory";
 import { CursorHistorySession } from "./pages/CursorHistorySession";
 import { Downloads } from "./pages/Downloads";
@@ -29,6 +31,11 @@ export function App() {
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
         <Route path="/cursor-history" element={<CursorHistory />} />
         <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />
+        <Route path="/claude-code-history" element={<ClaudeCodeHistory />} />
+        <Route
+          path="/claude-code-history/s/:sessionId"
+          element={<ClaudeCodeHistorySession />}
+        />
         <Route path="/ai-chat" element={<AiChat />} />
         <Route path="/github" element={<Github />} />
         <Route path="/github/tags" element={<GithubTags />} />

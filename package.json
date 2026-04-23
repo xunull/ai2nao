@@ -1,6 +1,6 @@
 {
   "name": "ai2nao",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first indexer for git repos and manifest files (README, package.json, …) with SQLite + FTS",
   "type": "module",
   "bin": {
