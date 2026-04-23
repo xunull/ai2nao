@@ -60,6 +60,13 @@ import {
   sessionToJson,
   workspaceToJson,
 } from "../cursorHistory/json.js";
+import {
+  ClaudeTranscriptTooLargeError,
+  listProjects,
+  listSessionSummaries,
+  loadSessionDetail,
+  resolveClaudeProjectsRoot,
+} from "../claudeCodeHistory/index.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
@@ -91,6 +98,18 @@ function cursorHistoryErr(e: unknown) {
     );
   }
   return jsonErr(500, msg);
+}
+
+function claudeCodeHistoryRoot(raw: string | undefined): string {
+  const t = (raw ?? "").trim();
+  return resolveClaudeProjectsRoot(t.length > 0 ? t : undefined);
+}
+
+function claudeCodeHistoryErr(e: unknown) {
+  if (e instanceof ClaudeTranscriptTooLargeError) {
+    return jsonErr(413, e.message);
+  }
+  return jsonErr(500, String(e));
 }
 
 export type ServeOptions = {
@@ -628,6 +647,82 @@ export function createApp(opts: ServeOptions): Hono {
       return cursorHistoryErr(e);
     }
   });
+
+  app.get("/api/claude-code-history/status", (c) => {
+    try {
+      const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
+      return c.json({
+        platform: process.platform,
+        projectsRoot: root,
+        envClaudeCodeProjectsRoot: Boolean(
+          process.env.CLAUDE_CODE_PROJECTS_ROOT
+        ),
+      });
+    } catch (e) {
+      return claudeCodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/claude-code-history/projects", async (c) => {
+    try {
+      const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
+      const projects = await listProjects(root);
+      return c.json({
+        ok: true,
+        projectsRoot: root,
+        projects: projects.map((p) => ({
+          id: p.id,
+          path: p.path,
+          sessionCount: p.sessionCount,
+          decodedWorkspacePath: p.decodedWorkspacePath,
+          slugDecodeIncomplete: p.slugDecodeIncomplete,
+        })),
+      });
+    } catch (e) {
+      return claudeCodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/claude-code-history/projects/:projectId/sessions", async (c) => {
+    try {
+      const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
+      const projectId = decodeURIComponent(c.req.param("projectId"));
+      const rows = await listSessionSummaries(root, projectId);
+      return c.json({
+        ok: true,
+        sessions: rows.map(sessionSummaryToJson),
+      });
+    } catch (e) {
+      return claudeCodeHistoryErr(e);
+    }
+  });
+
+  app.get(
+    "/api/claude-code-history/projects/:projectId/sessions/:sessionId",
+    async (c) => {
+      try {
+        const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
+        const projectId = decodeURIComponent(c.req.param("projectId"));
+        const sessionId = decodeURIComponent(c.req.param("sessionId"));
+        const detail = await loadSessionDetail(root, projectId, sessionId);
+        if (!detail) {
+          return jsonErr(404, "session not found");
+        }
+        const idx = Math.max(
+          0,
+          parseInt(c.req.query("index") ?? "0", 10) || 0
+        );
+        detail.session.index = idx;
+        return c.json({
+          ok: true,
+          session: sessionToJson(detail.session),
+          warnings: detail.warnings,
+        });
+      } catch (e) {
+        return claudeCodeHistoryErr(e);
+      }
+    }
+  );
 
   app.post("/api/downloads/scan", async (c) => {
     try {

@@ -55,7 +55,7 @@ export interface ChatSession {
   workspaceId: string;
   workspacePath?: string;
   /** Source data completeness: full global bubbles or degraded workspace fallback */
-  source?: 'global' | 'workspace-fallback';
+  source?: 'global' | 'workspace-fallback' | 'claude-code';
   /** Session-level token usage summary (optional, when available) */
   usage?: SessionUsage;
   /** Ordered bubble IDs of the current active conversation branch */
@@ -87,6 +87,10 @@ export interface Message {
     corrupted?: boolean;
     /** Original bubble type from database (for debugging) */
     bubbleType?: number;
+    /** Claude Code JSONL `type` when message is mapped from a transcript event */
+    claudeEventType?: string;
+    /** True when the row is a non-chat event folded into the timeline for auditability */
+    claudeAppendix?: boolean;
   };
 }
 
