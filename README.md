@@ -36,9 +36,23 @@ node dist/cli.js status
 
 # FTS5 检索（查询语法见 SQLite FTS5 文档）
 node dist/cli.js search "package.json"
+
+# 同步 macOS 已安装应用（/Applications、~/Applications、/System/Applications）
+node dist/cli.js apps sync
+
+# 清空 Mac 应用清单（需要显式确认）
+node dist/cli.js apps reset --yes
+
+# 同步 Homebrew 已安装 formula / cask
+node dist/cli.js brew sync
+
+# 清空 Homebrew 清单（需要显式确认）
+node dist/cli.js brew reset --yes
 ```
 
 `scan` 在部分根路径不可读时会向 stderr 输出警告，并以退出码 **1** 表示存在警告（仍可能已写入部分结果）。
+
+Mac 应用与 Homebrew 清单写入同一个 SQLite 库。Homebrew 同步优先使用 `brew info --json=v2 --installed`，并把结构化结果保存在 `brew_packages.raw_json`；当 JSON 命令不可用时会退回 `brew list --formula` / `brew list --cask`，同步状态标记为 `partial`。Brewfile 导出与 App/Cask 关联还不是当前事实来源，后续按 TODO 独立补齐。
 
 ## RAG（本地笔记 / 纯文本）
 

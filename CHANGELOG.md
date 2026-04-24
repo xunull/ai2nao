@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-04-24
+
+### Added
+
+- Mirror installed macOS applications into the local SQLite index, including bundle IDs, names, versions, paths, sync runs, reset support, and Web UI browsing.
+- Mirror installed Homebrew formulae and casks into the local SQLite index, preserving `brew info --json=v2 --installed` metadata when available and falling back to `brew list` with partial sync status.
+- Add grouped Web navigation for local inventory, browser traces, conversations, and code views.
+- Add npm scripts for the new software inventory commands: `apps:sync`, `apps:reset`, `brew:sync`, and `brew:reset`.
+
+### Changed
+
+- Extend the main API server with `/api/apps/*` and `/api/brew/*` endpoints, including pagination and strict query validation.
+- Document software inventory usage and the current boundaries around Brewfile export and App/Cask association.
+
 ## 0.1.1 — 2026-04-23
 
 ### Added
