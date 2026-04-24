@@ -69,6 +69,7 @@ node dist/cli.js brew reset --yes # 清空清单
 # Chrome 浏览器历史
 node dist/cli.js chrome-history sync
 node dist/cli.js chrome-history watch --interval 30
+node dist/cli.js chrome-history domains rebuild
 
 # GitHub 仓库 & Tags
 node dist/cli.js github sync
@@ -101,7 +102,13 @@ node dist/cli.js serve
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
 - **软件** — macOS 应用、Homebrew 包浏览
 - **对话** — Claude Code 对话历史
-- **浏览** — Chrome 历史、Atuin Shell 历史日历
+- **浏览** — Chrome 历史、Chrome 域名分析、Atuin Shell 历史日历
+
+Chrome 域名分析位于 `/chrome-history/domains`。它基于本地 Chrome History
+镜像生成可重建的域名透视表，支持 Top domains、日/周/月时间矩阵和访问记录
+钻取。`chrome-history sync` 会在原始访问写入后重建当前 profile 的域名层；
+如果只想重建分析层，可运行 `chrome-history domains rebuild`。原始浏览记录仍
+保留在本机 SQLite 中，域名层失败时不会回滚已同步的原始数据。
 
 开发时分两进程（Vite 代理 API）：
 
