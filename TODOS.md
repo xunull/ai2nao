@@ -17,6 +17,9 @@
 13. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
 14. Homebrew 清单：Brewfile 导出
 15. 软件清单：Mac App 与 Homebrew Cask 关联
+16. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
+17. Chrome History 域名透视 v2：CSV 导出
+18. Chrome History 域名透视 v2：真正增量派生
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十至十二项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十三项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
@@ -142,6 +145,75 @@ Depends on / blocked by:
 - 本机或 fixture 上对真实 `History` 的 `.schema downloads_url_chains` 真源
 
 Priority: Phase 2（v1 之后）
+
+## Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
+
+What: 在 v1 normalized host 的基础上，引入 Public Suffix List 或等价规则，新增 `registrable_domain` 字段用于更准确地聚合 `foo.github.io`、`example.co.uk` 等域名。
+
+Why: v1 按 host 聚合足够简单可信，但真实长期浏览数据里会出现大量子域名；注册域聚合能让 Top domains 更接近用户心智。
+
+Pros:
+- 提升域名归组准确性，减少 Top domains 被子域名拆碎
+- 可通过 `DOMAIN_RULE_VERSION` + rebuild 机制安全演进
+
+Cons:
+- 引入依赖或规则文件，规则解释成本更高
+- 规则变化会要求重建派生表，测试面变厚
+
+Context:
+来自 `/gstack-plan-eng-review` 对 Chrome History 域名透视计划的后续项。v1 明确不做 PSL，先用 normalized host 保持实现简单；如果真实使用中 Top domains 被子域名拆碎，再做本项。
+
+Depends on / blocked by:
+- Chrome History 域名透视 v1 已落地
+- `DOMAIN_RULE_VERSION` 与 rebuild 机制已可用
+
+Priority: P2
+
+## Chrome History 域名透视 v2：CSV 导出
+
+What: 为 Top domains、domain timeline、drilldown visits 提供 CSV 导出能力，可从 Web 下载或通过 CLI/API 输出。
+
+Why: 这是研究型功能，用户可能想把域名统计带到表格、笔记或外部分析工具里继续分析。
+
+Pros:
+- 增强开源/研究场景完整性
+- 复用已稳定的 API 查询，便于调试和分享本地结果
+
+Cons:
+- 需要确定导出范围、隐私提示和字段稳定性
+- 会增加 API/UI 状态与测试面
+
+Context:
+来自 `/gstack-plan-eng-review` 对 Chrome History 域名透视计划的后续项。v1 先把派生层、API、UI 查询口径打稳；CSV 不阻塞核心闭环。
+
+Depends on / blocked by:
+- `/api/chrome-history/domains/*` 接口稳定
+- 字段命名和 half-open date range 语义已写入 README 或设计文档
+
+Priority: P2
+
+## Chrome History 域名透视 v2：真正增量派生
+
+What: 用真正增量派生替代 v1 的 sync 后整 profile rebuild，只处理 `INSERT OR IGNORE` 后实际新增的 Chrome visits。
+
+Why: 如果本地 Chrome history 很大，每次 sync 后全量 rebuild 当前 profile 会变慢；增量派生可以让 watch/sync 更轻。
+
+Pros:
+- 大历史库下 sync/watch 更快
+- 减少每轮重算带来的 CPU/IO 成本
+
+Cons:
+- 要精确追踪实际新增 visits，避免为 skipped visits 生成派生行
+- 失败边界更复杂，需要保证 state 不会误报 fresh
+
+Context:
+来自 `/gstack-plan-eng-review` 对 Chrome History 域名透视计划的性能后续项。v1 已决定 rebuild-after-sync，并记录 `last_rebuild_duration_ms`、source/derived counts；只有真实数据证明 rebuild 慢，才值得升级。
+
+Depends on / blocked by:
+- v1 `last_rebuild_duration_ms` 指标跑出真实慢样本
+- freshness state 已覆盖 success、stale、error、count mismatch
+
+Priority: P2
 
 ## Chrome 下载镜像：设计文档（docs）
 
