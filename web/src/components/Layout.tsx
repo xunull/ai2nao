@@ -1,6 +1,42 @@
 import { FormEvent, type ReactNode, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+const navGroups = [
+  {
+    label: "本机",
+    items: [
+      { to: "/repos", label: "仓库" },
+      { to: "/downloads", label: "下载" },
+      { to: "/apps", label: "Mac 应用" },
+      { to: "/brew", label: "Homebrew" },
+      { to: "/atuin", label: "Atuin" },
+    ],
+  },
+  {
+    label: "浏览器",
+    items: [
+      { to: "/chrome-history", label: "Chrome 历史" },
+      { to: "/chrome-downloads", label: "Chrome 下载" },
+    ],
+  },
+  {
+    label: "对话",
+    items: [
+      { to: "/cursor-history", label: "Cursor" },
+      { to: "/claude-code-history", label: "Claude" },
+      { to: "/ai-chat", label: "AI 对话" },
+    ],
+  },
+  {
+    label: "代码",
+    items: [
+      { to: "/github", label: "GitHub" },
+      { to: "/github/tags", label: "Star Tag" },
+      { to: "/search", label: "搜索" },
+    ],
+  },
+];
+
 export function Layout({ children }: { children: ReactNode }) {
   const nav = useNavigate();
   const [q, setQ] = useState("");
@@ -19,58 +55,25 @@ export function Layout({ children }: { children: ReactNode }) {
           <Link to="/repos" className="font-semibold text-[var(--fg)]">
             ai2nao
           </Link>
-          <nav className="flex gap-4 text-sm">
-            <Link className="text-[var(--accent)] hover:underline" to="/repos">
-              仓库
-            </Link>
-            <Link className="text-[var(--accent)] hover:underline" to="/search">
-              搜索
-            </Link>
-            <Link className="text-[var(--accent)] hover:underline" to="/atuin">
-              Atuin
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/downloads"
-            >
-              下载
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/chrome-history"
-            >
-              Chrome 历史
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/chrome-downloads"
-            >
-              Chrome 下载
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/cursor-history"
-            >
-              Cursor 对话
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/claude-code-history"
-            >
-              Claude 对话
-            </Link>
-            <Link className="text-[var(--accent)] hover:underline" to="/ai-chat">
-              AI 对话
-            </Link>
-            <Link className="text-[var(--accent)] hover:underline" to="/github">
-              GitHub
-            </Link>
-            <Link
-              className="text-[var(--accent)] hover:underline"
-              to="/github/tags"
-            >
-              Star Tag
-            </Link>
+          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            {navGroups.map((group) => (
+              <div key={group.label} className="flex items-center gap-2">
+                <span className="text-[var(--muted)] text-xs">
+                  {group.label}
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  {group.items.map((item) => (
+                    <Link
+                      key={item.to}
+                      className="text-[var(--accent)] hover:underline"
+                      to={item.to}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </span>
+              </div>
+            ))}
           </nav>
           <form onSubmit={onSubmit} className="ml-auto flex gap-2">
             <input

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -16,6 +16,7 @@ export function migrate(db: Database.Database): void {
     applyV4(db);
     applyV5(db);
     applyV6(db);
+    applyV7(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -28,6 +29,7 @@ export function migrate(db: Database.Database): void {
   if (v < 4) applyV4(db);
   if (v < 5) applyV5(db);
   if (v < 6) applyV6(db);
+  if (v < 7) applyV7(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -292,5 +294,93 @@ function applyV6(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_gh_repo_tag_tag ON gh_repo_tag(tag);
 
     UPDATE meta_schema SET version = 6 WHERE id = 1;
+  `);
+}
+
+/** Local software inventory: macOS app bundles + Homebrew formulae/casks. */
+function applyV7(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mac_apps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bundle_id TEXT,
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      version TEXT,
+      short_version TEXT,
+      executable TEXT,
+      bundle_name TEXT,
+      bundle_display_name TEXT,
+      minimum_system_version TEXT,
+      category TEXT,
+      source_root TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(path)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mac_apps_bundle_id ON mac_apps(bundle_id);
+    CREATE INDEX IF NOT EXISTS idx_mac_apps_name ON mac_apps(name);
+    CREATE INDEX IF NOT EXISTS idx_mac_apps_source_root ON mac_apps(source_root);
+    CREATE INDEX IF NOT EXISTS idx_mac_apps_last_seen ON mac_apps(last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_mac_apps_missing_since ON mac_apps(missing_since);
+
+    CREATE TABLE IF NOT EXISTS brew_packages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL CHECK (kind IN ('formula', 'cask')),
+      name TEXT NOT NULL,
+      full_name TEXT,
+      installed_version TEXT,
+      current_version TEXT,
+      desc TEXT,
+      homepage TEXT,
+      tap TEXT,
+      installed_as_dependency INTEGER,
+      installed_on_request INTEGER,
+      outdated INTEGER NOT NULL DEFAULT 0,
+      caveats TEXT,
+      aliases_json TEXT NOT NULL DEFAULT '[]',
+      dependencies_json TEXT NOT NULL DEFAULT '[]',
+      raw_json TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(kind, name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_kind ON brew_packages(kind);
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_name ON brew_packages(name);
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_tap ON brew_packages(tap);
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_last_seen ON brew_packages(last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_missing_since ON brew_packages(missing_since);
+    CREATE INDEX IF NOT EXISTS idx_brew_packages_outdated ON brew_packages(outdated);
+
+    CREATE TABLE IF NOT EXISTS software_sync_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS software_sync_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL CHECK (source IN ('mac_apps', 'brew')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+      inserted INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      marked_missing INTEGER NOT NULL DEFAULT 0,
+      warnings_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_software_sync_runs_source_started
+      ON software_sync_runs(source, started_at);
+
+    UPDATE meta_schema SET version = 7 WHERE id = 1;
   `);
 }

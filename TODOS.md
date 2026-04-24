@@ -15,6 +15,8 @@
 11. RAG：黄金检索评测集（固定问句 + 期望命中；改融合/切块可回归）
 12. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
 13. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
+14. Homebrew 清单：Brewfile 导出
+15. 软件清单：Mac App 与 Homebrew Cask 关联
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十至十二项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十三项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
@@ -247,3 +249,55 @@ Depends on / blocked by:
 - 无硬依赖，可与实现 PR 并行
 
 Priority: P2（建议在主线开发启动后一周内对齐）
+
+## Homebrew 清单：Brewfile 导出
+
+What: 基于 `brew_packages` 中已同步的 formula / cask 生成 Brewfile，提供 CLI 导出入口（例如 `ai2nao brew export-brewfile`）或后续 UI 下载按钮。
+
+Why: 软件清单不只是“看见列表”；换机或重装时，用户需要可执行的迁移辅助。Homebrew 官方已有 `brew bundle` / `Brewfile`，ai2nao 应该生成辅助导出，而不是替代 Homebrew 的声明式安装系统。
+
+Pros:
+- 让 `/brew` 从只读目录升级成迁移工具
+- 复用已落库的 `brew_packages`，实现成本低
+- 与 Homebrew 生态对齐，不自创格式
+
+Cons:
+- 需要清楚标注这不是安装状态的唯一事实来源
+- 如果 `brew_packages` 来自降级同步，导出信息可能不完整
+
+Context:
+来自 `/plan-ceo-review` 对 macOS Apps + Homebrew inventory 计划的 SELECTIVE EXPANSION。用户选择 defer，不进入 v1。v1 先做可靠同步、分页 UI、`raw_json` 保存、`software_sync_runs` 和 reset 命令。
+
+Effort estimate: M（human）→ S（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- `brew_packages` v1 已落地并区分 `formula` / `cask`
+- README 已写清 ai2nao 与 Homebrew Bundle / Brewfile 的边界
+
+## 软件清单：Mac App 与 Homebrew Cask 关联
+
+What: 在 Mac App 清单和 Homebrew cask 清单之间建立可信关联，例如识别 `google-chrome` cask 对应 `Google Chrome.app`，让 UI 能显示“此 App 由 Homebrew 管理”。
+
+Why: 用户清理、迁移或排查软件来源时，需要知道一个 GUI 应用是手动安装、系统自带，还是由 Homebrew cask 管理。
+
+Pros:
+- 提升软件清单的解释力
+- 为 Brewfile 导出、迁移 checklist、卸载提示打基础
+- 能减少“同一个软件在两个页面重复出现但没有关系”的困惑
+
+Cons:
+- 名称匹配可能不可靠，错误关联会损害信任
+- 需要真实同步数据样本后再设计规则
+
+Context:
+来自 `/plan-ceo-review` 对 macOS Apps + Homebrew inventory 计划的 SELECTIVE EXPANSION。用户选择 defer，不进入 v1。v1 不做 fuzzy matching，避免让猜测污染本地资产数据。
+
+Effort estimate: M（human）→ S（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- `mac_apps` 与 `brew_packages` 已有足够真实数据
+- 先定义可信匹配规则：明确匹配、弱匹配、未匹配三态，不能把猜测显示成事实
