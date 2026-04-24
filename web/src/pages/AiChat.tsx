@@ -1,7 +1,22 @@
-import { useChat } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
-import { DefaultChatTransport } from "ai";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ActionBarPrimitive,
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+  ErrorPrimitive,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAui,
+  useAuiState,
+} from "@assistant-ui/react";
+import {
+  AssistantChatTransport,
+  useChatRuntime,
+} from "@assistant-ui/react-ai-sdk";
+import {
+  MarkdownTextPrimitive,
+  type MarkdownTextPrimitiveProps,
+} from "@assistant-ui/react-markdown";
+import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api";
 
 type LlmChatStatus = {
@@ -22,32 +37,271 @@ type RagStatus = {
   chunkCount: number;
 };
 
-function textFromMessage(m: UIMessage): string {
-  return m.parts
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("");
+const samplePrompts = [
+  "总结我今天的本机工作痕迹，按项目分组。",
+  "用本地 RAG 查一下最近关于 ai2nao 的设计决策。",
+  "帮我解释一段错误日志，并给出下一步排查顺序。",
+];
+
+function MarkdownText(props: MarkdownTextPrimitiveProps) {
+  return (
+    <MarkdownTextPrimitive
+      {...props}
+      className="prose prose-neutral max-w-none overflow-hidden break-words text-sm leading-7 prose-p:break-words prose-li:break-words prose-pre:my-3 prose-pre:max-w-full prose-pre:overflow-x-auto prose-pre:rounded-xl prose-pre:bg-neutral-950 prose-pre:p-4 prose-pre:text-neutral-50 prose-code:whitespace-pre-wrap prose-code:break-words prose-code:rounded prose-code:bg-neutral-100 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em]"
+    />
+  );
+}
+
+function AiChatEmptyState() {
+  const aui = useAui();
+
+  return (
+    <div className="mx-auto flex min-h-[42vh] max-w-2xl flex-col justify-center px-4 py-12">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-400">
+        本机优先 AI 工作台
+      </p>
+      <h2 className="mt-3 text-2xl font-semibold tracking-tight text-neutral-950">
+        问你的本机索引、笔记和工作痕迹。
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-neutral-600">
+        普通对话会直接发给已配置模型；开启 RAG 后，会先从本地文本索引里找证据，再把相关片段作为隐藏上下文发给模型。
+      </p>
+      <div className="mt-6 grid gap-2 sm:grid-cols-3">
+        {samplePrompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            className="min-h-24 rounded-xl border border-neutral-200 bg-white px-3 py-3 text-left text-sm leading-5 text-neutral-800 shadow-sm transition hover:border-blue-200 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            onClick={() => aui.thread().append(prompt)}
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiChatStatusBar({
+  cfg,
+  cfgErr,
+  rag,
+  ragErr,
+  useRag,
+  onUseRagChange,
+}: {
+  cfg: LlmChatStatus | null;
+  cfgErr: string | null;
+  rag: RagStatus | null;
+  ragErr: string | null;
+  useRag: boolean;
+  onUseRagChange: (value: boolean) => void;
+}) {
+  const ragReady = Boolean(rag && rag.chunkCount > 0);
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 text-sm">
+          {cfgErr ? (
+            <p className="text-red-700">无法读取模型状态：{cfgErr}</p>
+          ) : cfg?.configured ? (
+            <p className="truncate text-neutral-700">
+              <span className="font-medium text-neutral-950">已连接</span>
+              {cfg.model ? (
+                <>
+                  {" "}
+                  · <span className="font-mono text-xs">{cfg.model}</span>
+                </>
+              ) : null}
+              {cfg.baseHost ? (
+                <>
+                  {" "}
+                  · <span className="font-mono text-xs">{cfg.baseHost}</span>
+                </>
+              ) : null}
+            </p>
+          ) : cfg ? (
+            <p className="text-amber-800">尚未配置 LLM，聊天输入已暂停。</p>
+          ) : (
+            <p className="text-neutral-500">正在读取模型状态...</p>
+          )}
+        </div>
+
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            className="size-4 rounded border-neutral-300"
+            checked={useRag}
+            disabled={!cfg?.configured}
+            onChange={(e) => onUseRagChange(e.target.checked)}
+          />
+          <span>本地 RAG</span>
+          <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[11px] text-neutral-500">
+            {rag ? `${rag.chunkCount} chunks` : "unknown"}
+          </span>
+        </label>
+      </div>
+
+      {cfg && !cfg.configured ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+          <p>创建 LLM 配置后再开始对话：</p>
+          <code className="mt-1 block break-all font-mono">{cfg.configPath}</code>
+        </div>
+      ) : null}
+
+      {cfg?.configured && ragErr ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+          RAG 状态不可用：{ragErr}。普通对话仍可继续。
+        </p>
+      ) : null}
+
+      {cfg?.configured && useRag && rag && !ragReady ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+          已开启 RAG，但当前索引没有 chunk。先运行{" "}
+          <code className="font-mono">ai2nao rag ingest</code>。
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AiChatMessage() {
+  const role = useAuiState((s) => s.message.role);
+  const isUser = role === "user";
+
+  return (
+    <MessagePrimitive.Root
+      className={[
+        "group flex w-full min-w-0 overflow-hidden",
+        isUser ? "justify-end" : "justify-start",
+      ].join(" ")}
+    >
+      <article
+        className={[
+          "w-fit max-w-[min(46rem,92%)] min-w-0 overflow-hidden rounded-2xl px-4 py-3 text-sm shadow-sm",
+          isUser
+            ? "bg-slate-100 text-neutral-950"
+            : "border border-neutral-100 bg-white text-neutral-900 ring-1 ring-black/[0.03]",
+        ].join(" ")}
+      >
+        <header className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+          <span>{isUser ? "你" : "助手"}</span>
+          <MessagePrimitive.If last>
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 normal-case tracking-normal text-neutral-500">
+              最新
+            </span>
+          </MessagePrimitive.If>
+        </header>
+
+        <div className="min-w-0 max-w-full overflow-hidden break-words">
+          {isUser ? (
+            <MessagePrimitive.Parts />
+          ) : (
+            <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+          )}
+        </div>
+
+        <MessagePrimitive.Error>
+          <ErrorPrimitive.Root className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <ErrorPrimitive.Message />
+          </ErrorPrimitive.Root>
+        </MessagePrimitive.Error>
+
+        {!isUser ? (
+          <ActionBarPrimitive.Root
+            hideWhenRunning
+            autohide="not-last"
+            className="mt-3 flex gap-2 text-xs text-neutral-500 opacity-0 transition group-hover:opacity-100"
+          >
+            <ActionBarPrimitive.Copy className="rounded-md border border-neutral-200 bg-white px-2 py-1 hover:bg-neutral-50">
+              复制
+            </ActionBarPrimitive.Copy>
+            <ActionBarPrimitive.Reload className="rounded-md border border-neutral-200 bg-white px-2 py-1 hover:bg-neutral-50">
+              重试
+            </ActionBarPrimitive.Reload>
+          </ActionBarPrimitive.Root>
+        ) : null}
+      </article>
+    </MessagePrimitive.Root>
+  );
+}
+
+function AiChatComposer({ disabled }: { disabled: boolean }) {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+
+  return (
+    <ComposerPrimitive.Root className="rounded-2xl border border-neutral-200 bg-white p-2 shadow-lg shadow-neutral-200/50 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-500/10">
+      <ComposerPrimitive.Input
+        className="max-h-40 min-h-12 w-full resize-none bg-transparent px-2 py-2 text-sm leading-6 text-neutral-950 outline-none placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:opacity-60"
+        placeholder={disabled ? "配置 LLM 后即可开始对话" : "输入消息，Enter 发送，Shift+Enter 换行"}
+        submitMode="enter"
+        disabled={disabled}
+        aria-label="消息内容"
+      />
+      <div className="flex items-center justify-between px-1 pt-2">
+        <p className="text-xs text-neutral-400">本机 serve 转发请求，密钥不会进入前端构建产物。</p>
+        {isRunning ? (
+          <ComposerPrimitive.Cancel className="min-h-9 rounded-full border border-neutral-200 px-4 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50">
+            停止
+          </ComposerPrimitive.Cancel>
+        ) : (
+          <ComposerPrimitive.Send className="min-h-9 rounded-full bg-blue-600 px-4 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
+            发送
+          </ComposerPrimitive.Send>
+        )}
+      </div>
+    </ComposerPrimitive.Root>
+  );
+}
+
+function AiChatThread({ disabled }: { disabled: boolean }) {
+  return (
+    <ThreadPrimitive.Root className="flex min-h-[62vh] flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50/70">
+      <ThreadPrimitive.Viewport
+        turnAnchor="bottom"
+        autoScroll
+        className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto scroll-smooth"
+      >
+        <ThreadPrimitive.Empty>
+          <AiChatEmptyState />
+        </ThreadPrimitive.Empty>
+
+        <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-1 flex-col gap-4 px-4 py-6">
+          <ThreadPrimitive.Messages>
+            {() => <AiChatMessage />}
+          </ThreadPrimitive.Messages>
+        </div>
+
+        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 mt-auto border-t border-neutral-200 bg-neutral-50/90 px-3 py-3 backdrop-blur">
+          <div className="mx-auto max-w-4xl">
+            <ThreadPrimitive.ScrollToBottom className="mb-2 min-h-9 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50">
+              回到底部
+            </ThreadPrimitive.ScrollToBottom>
+            <AiChatComposer disabled={disabled} />
+          </div>
+        </ThreadPrimitive.ViewportFooter>
+      </ThreadPrimitive.Viewport>
+    </ThreadPrimitive.Root>
+  );
 }
 
 export function AiChat() {
   const [cfg, setCfg] = useState<LlmChatStatus | null>(null);
   const [cfgErr, setCfgErr] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-
   const [useRag, setUseRag] = useState(false);
   const [rag, setRag] = useState<RagStatus | null>(null);
   const [ragErr, setRagErr] = useState<string | null>(null);
 
   const transport = useMemo(
     () =>
-      new DefaultChatTransport({
+      new AssistantChatTransport({
         api: "/api/llm-chat",
         body: { useRag, ragTopK: 8 },
       }),
     [useRag]
   );
-
-  const { messages, sendMessage, status, error, stop } = useChat({ transport });
+  const runtime = useChatRuntime({ transport });
 
   useEffect(() => {
     let cancelled = false;
@@ -89,148 +343,31 @@ export function AiChat() {
     };
   }, []);
 
-  const busy = status === "streaming" || status === "submitted";
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const t = input.trim();
-    if (!t || busy) return;
-    void sendMessage({ text: t });
-    setInput("");
-  }
+  const disabled = cfg?.configured !== true;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-[var(--fg)]">AI 对话</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">
-          通过本机 serve 转发到你在配置文件里写的 OpenAI 兼容 API（含 LM Studio、Ollama
-          /v1 等）。密钥不会进前端构建产物。
-        </p>
-      </div>
-
-      {cfgErr ? (
-        <p className="text-sm text-red-600">无法读取状态：{cfgErr}</p>
-      ) : cfg && !cfg.configured ? (
-        <div className="rounded border border-amber-200 bg-amber-50 text-amber-950 text-sm p-3 space-y-1">
-          <p>尚未配置 LLM：在下列路径创建 JSON（可参考仓库根目录的 llm-chat.config.example.json）。</p>
-          <code className="text-xs block break-all">{cfg.configPath}</code>
-          <p className="text-xs">
-            也可用环境变量 <code>AI2NAO_LLM_CHAT_CONFIG</code> 指向自定义路径。
+    <AssistantRuntimeProvider runtime={runtime}>
+      <div className="cursor-chat-root space-y-4">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-950">
+            AI 对话
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-neutral-600">
+            面向本机资料的轻量聊天工作台。普通问题直接走模型；需要查本地笔记、项目文档和索引文本时打开 RAG。
           </p>
-        </div>
-      ) : cfg?.configured ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-[var(--muted)]">
-          <p>
-            已配置 · 模型 <span className="font-mono">{cfg.model}</span>
-            {cfg.baseHost ? (
-              <>
-                {" "}
-                · 主机 <span className="font-mono">{cfg.baseHost}</span>
-              </>
-            ) : null}
-          </p>
-          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="rounded border-[var(--border)]"
-              checked={useRag}
-              onChange={(e) => setUseRag(e.target.checked)}
-            />
-            <span>使用本地 RAG 索引</span>
-          </label>
-        </div>
-      ) : null}
+        </header>
 
-      {cfg?.configured ? (
-        <div className="rounded border border-[var(--border)] bg-zinc-50 text-xs text-[var(--muted)] p-2 space-y-1">
-          {ragErr ? (
-            <p>
-              <span className="text-amber-800">RAG 状态不可用：</span>
-              {ragErr}（需用能打开 RAG 库的 serve，例如本机{" "}
-              <code className="font-mono">ai2nao serve</code> 且成功挂载{" "}
-              <code className="font-mono">rag.db</code>）
-            </p>
-          ) : rag ? (
-            <>
-              <p>
-                本地索引约 <span className="font-mono text-[var(--fg)]">{rag.chunkCount}</span> 条
-                chunk
-                {rag.configPresent ? "（已读到 rag 配置）" : "（未找到 rag.json，仅影响检索/向量开关说明）"}。
-                {rag.embeddingEnabled ? " 已配置 embedding，检索会做向量融合。" : " 未开 embedding 时以关键词（FTS）为主。"}
-              </p>
-              {useRag && rag.chunkCount > 0 ? (
-                <p>
-                  勾选后：会用你<strong>发出去前的最后一条用户话</strong>去检索，把若干片段作为隐藏上下文发给模型；界面
-                  <strong>不会</strong>展示原文片段，因此感觉可能不明显。若与笔记用词差太远，可能几乎命中不到相关段。
-                </p>
-              ) : useRag && rag.chunkCount === 0 ? (
-                <p className="text-amber-800">
-                  已勾选 RAG，但当前库里没有 chunk。请先运行{" "}
-                  <code className="font-mono">ai2nao rag ingest</code>。
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="rounded border border-[var(--border)] bg-white min-h-[240px] max-h-[55vh] overflow-y-auto p-3 space-y-3 text-sm">
-        {messages.length === 0 ? (
-          <p className="text-[var(--muted)]">发送第一条消息开始对话。</p>
-        ) : (
-          messages.map((m) => (
-            <div
-              key={m.id}
-              className={
-                m.role === "user"
-                  ? "text-[var(--fg)]"
-                  : "text-[var(--fg)] border-l-2 border-[var(--accent)] pl-2"
-              }
-            >
-              <div className="text-xs font-medium text-[var(--muted)] mb-0.5">
-                {m.role === "user" ? "你" : "助手"}
-              </div>
-              <div className="whitespace-pre-wrap break-words">{textFromMessage(m)}</div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {error ? (
-        <p className="text-sm text-red-600" role="alert">
-          {error.message}
-        </p>
-      ) : null}
-
-      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <textarea
-          className="flex-1 rounded border border-[var(--border)] px-2 py-2 text-sm min-h-[4.5rem] resize-y"
-          placeholder="输入消息…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={busy}
-          aria-label="消息内容"
+        <AiChatStatusBar
+          cfg={cfg}
+          cfgErr={cfgErr}
+          rag={rag}
+          ragErr={ragErr}
+          useRag={useRag}
+          onUseRagChange={setUseRag}
         />
-        <div className="flex gap-2 shrink-0">
-          {busy ? (
-            <button
-              type="button"
-              className="rounded border border-[var(--border)] px-3 py-2 text-sm"
-              onClick={() => void stop()}
-            >
-              停止
-            </button>
-          ) : null}
-          <button
-            type="submit"
-            className="rounded bg-[var(--accent)] text-white px-4 py-2 text-sm disabled:opacity-50"
-            disabled={busy || !input.trim()}
-          >
-            发送
-          </button>
-        </div>
-      </form>
-    </div>
+
+        <AiChatThread disabled={disabled} />
+      </div>
+    </AssistantRuntimeProvider>
   );
 }
