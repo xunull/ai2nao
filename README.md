@@ -1,6 +1,6 @@
 # ai2nao
 
-本机优先的「数字痕迹」索引器（Wave 1）：在指定根目录下发现 Git 仓库，读取 `remote.origin` 与一组清单文件（README、`package.json`、`go.mod`、`pyproject.toml` 等），写入 **SQLite**，并对正文做 **FTS5** 全文检索。
+本地优先的个人数字痕迹索引器：Git 仓库清单、macOS 应用、Homebrew 包、浏览器历史、Shell 历史（Atuin）、Claude Code 对话，一站检索。
 
 数据默认落在 `~/.ai2nao/index.db`（可用 `--db` 覆盖）。
 
@@ -22,82 +22,108 @@ npm run build
 npm run dev -- scan --root .
 ```
 
-## 使用
+## 快速上手
 
 ```bash
-# 扫描当前目录树下所有 git 仓库（默认 DB：~/.ai2nao/index.db）
-node dist/cli.js scan
+# 1. 扫描 Git 仓库
+node dist/cli.js scan --root ~/projects
 
-# 指定多个根目录与数据库路径
-node dist/cli.js scan --root ~/projects --root ~/work --db ./.ai2nao/index.db
+# 2. 同步本地软件（可选）
+node dist/cli.js apps sync       # macOS 应用
+node dist/cli.js brew sync       # Homebrew 包
+
+# 3. 启动 Web 界面
+node dist/cli.js serve
+```
+
+## 命令概览
+
+### 仓库索引
+
+```bash
+# 扫描多个根目录
+node dist/cli.js scan --root ~/projects --root ~/work
 
 # 查看统计
 node dist/cli.js status
 
-# FTS5 检索（查询语法见 SQLite FTS5 文档）
+# FTS5 全文检索
 node dist/cli.js search "package.json"
-
-# 同步 macOS 已安装应用（/Applications、~/Applications、/System/Applications）
-node dist/cli.js apps sync
-
-# 清空 Mac 应用清单（需要显式确认）
-node dist/cli.js apps reset --yes
-
-# 同步 Homebrew 已安装 formula / cask
-node dist/cli.js brew sync
-
-# 清空 Homebrew 清单（需要显式确认）
-node dist/cli.js brew reset --yes
 ```
 
-`scan` 在部分根路径不可读时会向 stderr 输出警告，并以退出码 **1** 表示存在警告（仍可能已写入部分结果）。
+### 软件清单
 
-Mac 应用与 Homebrew 清单写入同一个 SQLite 库。Homebrew 同步优先使用 `brew info --json=v2 --installed`，并把结构化结果保存在 `brew_packages.raw_json`；当 JSON 命令不可用时会退回 `brew list --formula` / `brew list --cask`，同步状态标记为 `partial`。Brewfile 导出与 App/Cask 关联还不是当前事实来源，后续按 TODO 独立补齐。
+```bash
+# macOS 应用
+node dist/cli.js apps sync        # 同步已安装应用
+node dist/cli.js apps reset --yes  # 清空清单
 
-## RAG（本地笔记 / 纯文本）
+# Homebrew
+node dist/cli.js brew sync        # 同步 formula / cask
+node dist/cli.js brew reset --yes # 清空清单
+```
 
-为 **AI 对话**（`/api/llm-chat`）提供可选的本地检索：把多个目录下的 `.md` / `.txt` 切块写入独立库 **`~/.ai2nao/rag.db`**（**FTS5**；可在 `rag.json` 里打开 **embedding** 做字面 + 向量融合）。
+### 其他同步
 
-1. 复制 [`rag.config.example.json`](rag.config.example.json) 为 `~/.ai2nao/rag.json`，填写 `corpusRoots`（绝对路径）。开启 `embedding` 时：**OpenAI 官方 API** 请在 `embedding` 里填写 **`apiKey`**（与 `baseURL`、`model` 一致）。若不想把密钥写进文件，可省略 `apiKey`，改由环境变量 **`OPENAI_API_KEY`** / **`AI2NAO_LLM_API_KEY`** 或 `~/.ai2nao/llm-chat.json` 里的 `apiKey` 提供（与 [`src/rag/embeddings.ts`](src/rag/embeddings.ts) 中的回退顺序一致）。本机 LM Studio / Ollama 等通常无需密钥，可参考 [`rag.config.example.local-llm.json`](rag.config.example.local-llm.json)。也可用环境变量 **`AI2NAO_RAG_CORPUS_ROOT`** 追加一个语料根。
-2. 建索引：`npm run dev -- rag ingest` 或 `node dist/cli.js rag ingest --root /path/to/notes`
-3. 启动 API（`serve` 会打开 `rag.db`）：`node dist/cli.js serve`
-4. 在 Web「AI 对话」里勾选 **使用本地 RAG**，或请求体带 `"useRag": true`。
+```bash
+# Chrome 浏览器历史
+node dist/cli.js chrome-history sync
+node dist/cli.js chrome-history watch --interval 30
 
-状态：`GET /api/rag/status`。检索用**最后一条用户消息**做查询。`--rag-db` / **`AI2NAO_RAG_DB`** 可改 RAG 库路径。
+# GitHub 仓库 & Tags
+node dist/cli.js github sync
+node dist/cli.js github sync --full
+```
 
-## Web 界面（只读）
+### RAG 本地笔记
 
-先执行 `npm run build`（编译 CLI + 前端）。默认仅监听本机：
+```bash
+# 1. 复制配置
+cp rag.config.example.json ~/.ai2nao/rag.json
+# 编辑 ~/.ai2nao/rag.json，填写 corpusRoots
+
+# 2. 建索引
+node dist/cli.js rag ingest --root /path/to/notes
+
+# 3. 启动服务
+node dist/cli.js serve
+```
+
+## Web 界面
+
+启动服务后打开终端显示的地址（默认仅监听本机）：
 
 ```bash
 node dist/cli.js serve
-# 浏览器打开终端里打印的地址（含 SPA + /api）
 ```
 
-开发时前后端分两个进程（Vite 将 `/api` 代理到 API 端口）：
+**Web 功能**：
+- **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
+- **软件** — macOS 应用、Homebrew 包浏览
+- **对话** — Claude Code 对话历史
+- **浏览** — Chrome 历史、Atuin Shell 历史日历
+
+开发时分两进程（Vite 代理 API）：
 
 ```bash
 npm run dev:ui
 ```
 
-然后打开 Vite 提示的本地地址（一般为 `http://127.0.0.1:5173`）。仅跑 API、不加载页面时：
+## RAG（本地笔记 / 纯文本）
 
-```bash
-node dist/cli.js serve --api-only
-```
+为 AI 对话提供可选的本地检索：把 `.md` / `.txt` 切块写入 **`~/.ai2nao/rag.db`**（FTS5；可在 `rag.json` 里开启 embedding 做字面 + 向量融合）。
 
-产品说明与路由见 [`docs/PLAN.md`](docs/PLAN.md)。
+配置参考：
+- [`rag.config.example.json`](rag.config.example.json) — OpenAI API
+- [`rag.config.example.local-llm.json`](rag.config.example.local-llm.json) — LM Studio / Ollama
+
+环境变量回退：`OPENAI_API_KEY` / `AI2NAO_LLM_API_KEY`。
 
 ## 测试
 
 ```bash
 npm test
 ```
-
-export AI2NAO_LLM_BASE_URL=http://127.0.0.1:1234/v1
-export AI2NAO_LLM_MODEL="google/gemma-4-26b-a4b"
-
-ai2nao serve --daily-summary
 
 ## 许可
 
