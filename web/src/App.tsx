@@ -4,6 +4,7 @@ import { AiChat } from "./pages/AiChat";
 import { Atuin } from "./pages/Atuin";
 import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
+import { ChromeHistoryDomains } from "./pages/ChromeHistoryDomains";
 import { ClaudeCodeHistory } from "./pages/ClaudeCodeHistory";
 import { ClaudeCodeHistorySession } from "./pages/ClaudeCodeHistorySession";
 import { CursorHistory } from "./pages/CursorHistory";
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/apps" element={<MacApps />} />
         <Route path="/brew" element={<Homebrew />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
+        <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
         <Route path="/cursor-history" element={<CursorHistory />} />
         <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />

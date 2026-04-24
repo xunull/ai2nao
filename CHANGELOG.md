@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-04-24
+
+### Added
+
+- Analyze Chrome browsing history by domain with summary counts, top-domain ranking, day/week/month timelines, and drilldown to the exact visited URLs.
+- Add a rebuildable Chrome domain pivot table with freshness state, rule version tracking, source/derived row counts, and explicit rebuild errors.
+- Add `chrome-history domains rebuild` for manually rebuilding the domain analysis layer.
+- Add tests for URL normalization, domain pivot freshness, domain API routes, and URL-backed domain filters.
+
+### Changed
+
+- Rebuild the Chrome domain pivot after Chrome History sync, while keeping raw history sync results even if the derived analysis rebuild fails.
+- Move Chrome History and Chrome Downloads API routes into a dedicated route module so the server app stays thinner.
+
 ## 0.2.0 — 2026-04-24
 
 ### Added
