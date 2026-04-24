@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
+import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 7;
+const CURRENT_VERSION = 9;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -17,6 +18,8 @@ export function migrate(db: Database.Database): void {
     applyV5(db);
     applyV6(db);
     applyV7(db);
+    applyV8(db);
+    applyV9(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -30,6 +33,8 @@ export function migrate(db: Database.Database): void {
   if (v < 5) applyV5(db);
   if (v < 6) applyV6(db);
   if (v < 7) applyV7(db);
+  if (v < 8) applyV8(db);
+  if (v < 9) applyV9(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -382,5 +387,212 @@ function applyV7(db: Database.Database): void {
       ON software_sync_runs(source, started_at);
 
     UPDATE meta_schema SET version = 7 WHERE id = 1;
+  `);
+}
+
+/**
+ * Chrome History files can be rebuilt by Chrome, causing visits.id/downloads.id
+ * to start from a small value again. Scope those ids to a local source_id so the
+ * mirror remains insert-only across Chrome database resets.
+ */
+function applyV8(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chrome_history_urls_v8 (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      visit_count INTEGER NOT NULL DEFAULT 0,
+      typed_count INTEGER NOT NULL DEFAULT 0,
+      last_visit_time INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_id, id)
+    );
+
+    INSERT OR IGNORE INTO chrome_history_urls_v8 (
+      id, profile, source_id, url, title, visit_count, typed_count,
+      last_visit_time, hidden, inserted_at
+    )
+    SELECT id, profile, 'legacy', url, title, visit_count, typed_count,
+           last_visit_time, hidden, inserted_at
+    FROM chrome_history_urls;
+
+    DROP TABLE chrome_history_urls;
+    ALTER TABLE chrome_history_urls_v8 RENAME TO chrome_history_urls;
+
+    CREATE TABLE IF NOT EXISTS chrome_history_visits_v8 (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      url_id INTEGER NOT NULL,
+      visit_time INTEGER NOT NULL,
+      from_visit INTEGER,
+      transition INTEGER,
+      segment_id INTEGER,
+      visit_duration INTEGER,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_id, id)
+    );
+
+    INSERT OR IGNORE INTO chrome_history_visits_v8 (
+      id, profile, source_id, url_id, visit_time, from_visit, transition,
+      segment_id, visit_duration, calendar_day, inserted_at
+    )
+    SELECT id, profile, 'legacy', url_id, visit_time, from_visit, transition,
+           segment_id, visit_duration, calendar_day, inserted_at
+    FROM chrome_history_visits;
+
+    DROP TABLE chrome_history_visits;
+    ALTER TABLE chrome_history_visits_v8 RENAME TO chrome_history_visits;
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visits_day
+      ON chrome_history_visits(calendar_day);
+
+    CREATE TABLE IF NOT EXISTS chrome_downloads_v8 (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      guid TEXT,
+      current_path TEXT,
+      target_path TEXT,
+      start_time INTEGER NOT NULL,
+      end_time INTEGER,
+      received_bytes INTEGER,
+      total_bytes INTEGER,
+      state INTEGER,
+      danger_type INTEGER,
+      interrupt_reason INTEGER,
+      mime_type TEXT,
+      referrer TEXT,
+      site_url TEXT,
+      tab_url TEXT,
+      tab_referrer_url TEXT,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_id, id)
+    );
+
+    INSERT OR IGNORE INTO chrome_downloads_v8 (
+      id, profile, source_id, guid, current_path, target_path, start_time,
+      end_time, received_bytes, total_bytes, state, danger_type,
+      interrupt_reason, mime_type, referrer, site_url, tab_url,
+      tab_referrer_url, calendar_day, inserted_at
+    )
+    SELECT id, profile, 'legacy', guid, current_path, target_path, start_time,
+           end_time, received_bytes, total_bytes, state, danger_type,
+           interrupt_reason, mime_type, referrer, site_url, tab_url,
+           tab_referrer_url, calendar_day, inserted_at
+    FROM chrome_downloads;
+
+    DROP TABLE chrome_downloads;
+    ALTER TABLE chrome_downloads_v8 RENAME TO chrome_downloads;
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_downloads_day
+      ON chrome_downloads(profile, calendar_day);
+
+    CREATE TABLE IF NOT EXISTS chrome_history_sync_state (
+      profile TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      current_source_id TEXT NOT NULL,
+      max_visit_id INTEGER NOT NULL DEFAULT 0,
+      max_download_id INTEGER NOT NULL DEFAULT 0,
+      anchor_visit_id INTEGER,
+      anchor_visit_time INTEGER,
+      anchor_url TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_path)
+    );
+
+    UPDATE meta_schema SET version = 8 WHERE id = 1;
+  `);
+}
+
+/**
+ * Deduplicate Chrome visits by stable content, not only Chrome's local visit id.
+ * Chrome can delete/rebuild History and reuse ids; the content key lets a full
+ * rescan keep old mirror rows while skipping already-seen visits.
+ */
+function applyV9(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chrome_history_visits_v9 (
+      id INTEGER NOT NULL,
+      profile TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      content_key TEXT NOT NULL,
+      url_id INTEGER NOT NULL,
+      visit_time INTEGER NOT NULL,
+      from_visit INTEGER,
+      transition INTEGER,
+      segment_id INTEGER,
+      visit_duration INTEGER,
+      calendar_day TEXT NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_id, id),
+      UNIQUE(profile, content_key)
+    );
+  `);
+
+  const rows = db
+    .prepare(
+      `SELECT v.id, v.profile, v.source_id, v.url_id, v.visit_time,
+              v.from_visit, v.transition, v.segment_id, v.visit_duration,
+              v.calendar_day, v.inserted_at, u.url
+       FROM chrome_history_visits v
+       INNER JOIN chrome_history_urls u
+         ON u.profile = v.profile AND u.source_id = v.source_id AND u.id = v.url_id
+       ORDER BY v.inserted_at, v.profile, v.source_id, v.id`
+    )
+    .all() as {
+    id: number;
+    profile: string;
+    source_id: string;
+    url_id: number;
+    visit_time: number;
+    from_visit: number | null;
+    transition: number | null;
+    segment_id: number | null;
+    visit_duration: number | null;
+    calendar_day: string;
+    inserted_at: string;
+    url: string;
+  }[];
+
+  const insert = db.prepare(
+    `INSERT INTO chrome_history_visits_v9 (
+      id, profile, source_id, content_key, url_id, visit_time, from_visit,
+      transition, segment_id, visit_duration, calendar_day, inserted_at
+    ) VALUES (
+      @id, @profile, @source_id, @content_key, @url_id, @visit_time,
+      @from_visit, @transition, @segment_id, @visit_duration,
+      @calendar_day, @inserted_at
+    )`
+  );
+  const seen = new Set<string>();
+  const copyRows = db.transaction(() => {
+    for (const row of rows) {
+      const baseKey = chromeVisitContentKey(row);
+      const scopedKey = `${row.profile}\0${baseKey}`;
+      const contentKey = seen.has(scopedKey)
+        ? `${baseKey}:dup:${row.source_id}:${row.id}`
+        : baseKey;
+      seen.add(scopedKey);
+      insert.run({ ...row, content_key: contentKey });
+    }
+  });
+  copyRows();
+
+  db.exec(`
+    DROP TABLE chrome_history_visits;
+    ALTER TABLE chrome_history_visits_v9 RENAME TO chrome_history_visits;
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visits_day
+      ON chrome_history_visits(calendar_day);
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visits_content
+      ON chrome_history_visits(profile, content_key);
+
+    UPDATE meta_schema SET version = 9 WHERE id = 1;
   `);
 }

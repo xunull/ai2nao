@@ -9,11 +9,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import DatabaseCtor from "better-sqlite3";
-import { maxMirroredDownloadId, maxMirroredVisitId } from "./queries.js";
+import {
+  maxMirroredDownloadId,
+  maxMirroredVisitId,
+  maxMirroredVisitIdForProfile,
+} from "./queries.js";
+import { chromeVisitContentKey } from "./contentKey.js";
 import { calendarDayLocalFromChromeDownload, calendarDayLocalFromChromeUs } from "./time.js";
 
 /** Extra diagnostics when `verbose: true` (CLI `--verbose`). */
 export type SyncChromeHistoryDebug = {
+  currentSourceId: string;
+  sourceResetDetected: boolean;
+  sourceVisitCount: number;
+  sourceVisitMaxId: number;
+  mirrorMaxVisitIdBeforeSync: number;
   walFileCopied: boolean;
   shmFileCopied: boolean;
   journalMode: string;
@@ -26,6 +36,7 @@ export type SyncChromeHistoryDebug = {
 };
 
 export type SyncChromeHistoryOptions = {
+  full?: boolean;
   verbose?: boolean;
 };
 
@@ -57,6 +68,21 @@ type SourceVisitRow = {
   last_visit_time: number | null;
   hidden: number | null;
 };
+
+type SourceVisitAnchor = {
+  id: number;
+  visit_time: number;
+  url: string;
+} | null;
+
+type ChromeHistorySyncState = {
+  current_source_id: string;
+  max_visit_id: number;
+  max_download_id: number;
+  anchor_visit_id: number | null;
+  anchor_visit_time: number | null;
+  anchor_url: string | null;
+} | null;
 
 type SourceDownloadRow = {
   id: number;
@@ -176,6 +202,101 @@ function mapDownloadRow(row: Record<string, unknown>): SourceDownloadRow {
   };
 }
 
+function readSyncState(
+  db: Database.Database,
+  profile: string,
+  sourcePath: string
+): ChromeHistorySyncState {
+  return db
+    .prepare(
+      `SELECT current_source_id, max_visit_id, max_download_id,
+              anchor_visit_id, anchor_visit_time, anchor_url
+       FROM chrome_history_sync_state
+       WHERE profile = ? AND source_path = ?`
+    )
+    .get(profile, sourcePath) as ChromeHistorySyncState;
+}
+
+function upsertSyncState(
+  db: Database.Database,
+  profile: string,
+  sourcePath: string,
+  sourceId: string,
+  maxVisitId: number,
+  maxDownloadId: number,
+  anchor: SourceVisitAnchor,
+  updatedAt: string
+): void {
+  db.prepare(
+    `INSERT INTO chrome_history_sync_state (
+       profile, source_path, current_source_id, max_visit_id, max_download_id,
+       anchor_visit_id, anchor_visit_time, anchor_url, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(profile, source_path) DO UPDATE SET
+       current_source_id = excluded.current_source_id,
+       max_visit_id = excluded.max_visit_id,
+       max_download_id = excluded.max_download_id,
+       anchor_visit_id = excluded.anchor_visit_id,
+       anchor_visit_time = excluded.anchor_visit_time,
+       anchor_url = excluded.anchor_url,
+       updated_at = excluded.updated_at`
+  ).run(
+    profile,
+    sourcePath,
+    sourceId,
+    maxVisitId,
+    maxDownloadId,
+    anchor?.id ?? null,
+    anchor?.visit_time ?? null,
+    anchor?.url ?? null,
+    updatedAt
+  );
+}
+
+function sourceVisitStats(sourceDb: Database.Database): {
+  count: number;
+  maxId: number;
+} {
+  return sourceDb.prepare(
+    "SELECT COUNT(*) AS count, COALESCE(MAX(id), 0) AS maxId FROM visits"
+  ).get() as { count: number; maxId: number };
+}
+
+function sourceVisitAnchor(
+  sourceDb: Database.Database,
+  visitId: number
+): SourceVisitAnchor {
+  if (visitId <= 0) return null;
+  const row = sourceDb
+    .prepare(
+      `SELECT v.id AS id, v.visit_time AS visit_time, u.url AS url
+       FROM visits v
+       INNER JOIN urls u ON u.id = v.url
+       WHERE v.id = ?`
+    )
+    .get(visitId) as SourceVisitAnchor;
+  return row ?? null;
+}
+
+function stateAnchorWasReused(
+  sourceDb: Database.Database,
+  state: NonNullable<ChromeHistorySyncState>
+): boolean {
+  if (!state.anchor_visit_id || !state.anchor_visit_time || !state.anchor_url) {
+    return false;
+  }
+  const current = sourceVisitAnchor(sourceDb, state.anchor_visit_id);
+  if (!current) return false;
+  return (
+    current.visit_time !== state.anchor_visit_time ||
+    current.url !== state.anchor_url
+  );
+}
+
+function newSourceId(): string {
+  return `chrome-${randomUUID()}`;
+}
+
 /**
  * Chrome opens `History` with WAL. Copy `History`, `History-wal`, and `History-shm`
  * into one temp directory so SQLite can see recent rows.
@@ -239,6 +360,7 @@ export function syncChromeHistory(
   profile: string,
   options?: SyncChromeHistoryOptions
 ): SyncChromeHistoryResult {
+  const full = options?.full === true;
   const verbose = options?.verbose === true;
   const errors: string[] = [];
   let insertedUrls = 0;
@@ -284,8 +406,39 @@ export function syncChromeHistory(
     sourceDb.pragma("journal_mode", { simple: true }) ?? "?"
   );
 
-  const afterVisitId = maxMirroredVisitId(db, profile);
-  const afterDownloadId = maxMirroredDownloadId(db, profile);
+  let sourceVisitCount = 0;
+  let sourceVisitMaxId = 0;
+  try {
+    const stats = sourceVisitStats(sourceDb);
+    sourceVisitCount = stats.count;
+    sourceVisitMaxId = stats.maxId;
+  } catch (e) {
+    errors.push(`inspect Chrome visits table failed: ${String(e)}`);
+  }
+
+  const state = readSyncState(db, profile, sourceHistoryPath);
+  const legacyMirrorMaxVisitId = maxMirroredVisitIdForProfile(db, profile);
+  let currentSourceId = state?.current_source_id ?? "legacy";
+  let sourceResetDetected = false;
+  if (state) {
+    sourceResetDetected =
+      sourceVisitMaxId < state.max_visit_id ||
+      stateAnchorWasReused(sourceDb, state);
+    if (sourceResetDetected) currentSourceId = newSourceId();
+  } else if (
+    legacyMirrorMaxVisitId > 0 &&
+    sourceVisitMaxId < legacyMirrorMaxVisitId
+  ) {
+    sourceResetDetected = true;
+    currentSourceId = newSourceId();
+  }
+
+  const afterVisitId = full || sourceResetDetected
+    ? 0
+    : maxMirroredVisitId(db, profile, currentSourceId);
+  const afterDownloadId = full || sourceResetDetected
+    ? 0
+    : maxMirroredDownloadId(db, profile, currentSourceId);
 
   let downloadsSelectSql = "";
   let sourceDownloadCount = 0;
@@ -293,17 +446,17 @@ export function syncChromeHistory(
   try {
     const sel = downloadSelectList(sourceDb);
     downloadsSelectSql = `SELECT ${sel} FROM downloads WHERE id > ? ORDER BY id`;
+    sourceDownloadMaxId = (
+      sourceDb
+        .prepare("SELECT COALESCE(MAX(id), 0) AS m FROM downloads")
+        .get() as { m: number }
+    ).m;
     if (verbose) {
       sourceDownloadCount = (
         sourceDb.prepare("SELECT COUNT(*) AS c FROM downloads").get() as {
           c: number;
         }
       ).c;
-      sourceDownloadMaxId = (
-        sourceDb
-          .prepare("SELECT COALESCE(MAX(id), 0) AS m FROM downloads")
-          .get() as { m: number }
-      ).m;
     }
   } catch (e) {
     errors.push(`inspect Chrome downloads table failed: ${String(e)}`);
@@ -343,6 +496,11 @@ export function syncChromeHistory(
 
   if (verbose) {
     debug = {
+      currentSourceId,
+      sourceResetDetected,
+      sourceVisitCount,
+      sourceVisitMaxId,
+      mirrorMaxVisitIdBeforeSync: afterVisitId,
       walFileCopied: copiedWal,
       shmFileCopied: copiedShm,
       journalMode,
@@ -358,28 +516,28 @@ export function syncChromeHistory(
   const nowIso = new Date().toISOString();
   const insUrl = db.prepare(
     `INSERT OR IGNORE INTO chrome_history_urls (
-      id, profile, url, title, visit_count, typed_count, last_visit_time, hidden, inserted_at
+      id, profile, source_id, url, title, visit_count, typed_count, last_visit_time, hidden, inserted_at
     ) VALUES (
-      @id, @profile, @url, @title, @visit_count, @typed_count, @last_visit_time, @hidden, @inserted_at
+      @id, @profile, @source_id, @url, @title, @visit_count, @typed_count, @last_visit_time, @hidden, @inserted_at
     )`
   );
   const insVisit = db.prepare(
     `INSERT OR IGNORE INTO chrome_history_visits (
-      id, profile, url_id, visit_time, from_visit, transition, segment_id, visit_duration,
+      id, profile, source_id, content_key, url_id, visit_time, from_visit, transition, segment_id, visit_duration,
       calendar_day, inserted_at
     ) VALUES (
-      @id, @profile, @url_id, @visit_time, @from_visit, @transition, @segment_id, @visit_duration,
+      @id, @profile, @source_id, @content_key, @url_id, @visit_time, @from_visit, @transition, @segment_id, @visit_duration,
       @calendar_day, @inserted_at
     )`
   );
   const insDl = db.prepare(
     `INSERT OR IGNORE INTO chrome_downloads (
-      id, profile, guid, current_path, target_path, start_time, end_time,
+      id, profile, source_id, guid, current_path, target_path, start_time, end_time,
       received_bytes, total_bytes, state, danger_type, interrupt_reason,
       mime_type, referrer, site_url, tab_url, tab_referrer_url,
       calendar_day, inserted_at
     ) VALUES (
-      @id, @profile, @guid, @current_path, @target_path, @start_time, @end_time,
+      @id, @profile, @source_id, @guid, @current_path, @target_path, @start_time, @end_time,
       @received_bytes, @total_bytes, @state, @danger_type, @interrupt_reason,
       @mime_type, @referrer, @site_url, @tab_url, @tab_referrer_url,
       @calendar_day, @inserted_at
@@ -391,6 +549,7 @@ export function syncChromeHistory(
       const urlInfo = insUrl.run({
         id: r.url_id,
         profile,
+        source_id: currentSourceId,
         url: r.url,
         title: r.title,
         visit_count: r.visit_count ?? 0,
@@ -405,6 +564,8 @@ export function syncChromeHistory(
       const vInfo = insVisit.run({
         id: r.id,
         profile,
+        source_id: currentSourceId,
+        content_key: chromeVisitContentKey(r),
         url_id: r.url_id,
         visit_time: r.visit_time,
         from_visit: r.from_visit,
@@ -423,6 +584,7 @@ export function syncChromeHistory(
       const dInfo = insDl.run({
         id: d.id,
         profile,
+        source_id: currentSourceId,
         guid: d.guid,
         current_path: d.current_path,
         target_path: d.target_path,
@@ -444,6 +606,18 @@ export function syncChromeHistory(
       if (dInfo.changes > 0) insertedDownloads += 1;
       else skippedDownloads += 1;
     }
+
+    const newestVisit = sourceVisitAnchor(sourceDb, sourceVisitMaxId);
+    upsertSyncState(
+      db,
+      profile,
+      sourceHistoryPath,
+      currentSourceId,
+      Math.max(afterVisitId, sourceVisitMaxId),
+      Math.max(afterDownloadId, sourceDownloadMaxId),
+      newestVisit,
+      nowIso
+    );
   });
 
   try {

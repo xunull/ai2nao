@@ -4,6 +4,7 @@ export type ChromeHistoryMonthDay = { day: string; count: number };
 
 export type ChromeHistoryDayRow = {
   visit_id: number;
+  source_id: string;
   url_id: number;
   url: string;
   title: string | null;
@@ -40,11 +41,11 @@ export function listChromeHistoryForDay(
   return db
     .prepare(
       `SELECT v.id AS visit_id, v.url_id AS url_id, u.url AS url, u.title AS title,
-              v.visit_time AS visit_time, v.transition AS transition,
+              v.source_id AS source_id, v.visit_time AS visit_time, v.transition AS transition,
               v.calendar_day AS calendar_day, v.inserted_at AS inserted_at
        FROM chrome_history_visits v
        INNER JOIN chrome_history_urls u
-         ON u.profile = v.profile AND u.id = v.url_id
+         ON u.profile = v.profile AND u.source_id = v.source_id AND u.id = v.url_id
        WHERE v.profile = ? AND v.calendar_day = ?
        ORDER BY v.visit_time DESC`
     )
@@ -53,11 +54,28 @@ export function listChromeHistoryForDay(
 
 export function maxMirroredVisitId(
   db: Database.Database,
+  profile: string,
+  sourceId: string
+): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(MAX(id), 0) AS m
+       FROM chrome_history_visits
+       WHERE profile = ? AND source_id = ?`
+    )
+    .get(profile, sourceId) as { m: number };
+  return row.m;
+}
+
+export function maxMirroredVisitIdForProfile(
+  db: Database.Database,
   profile: string
 ): number {
   const row = db
     .prepare(
-      `SELECT COALESCE(MAX(id), 0) AS m FROM chrome_history_visits WHERE profile = ?`
+      `SELECT COALESCE(MAX(id), 0) AS m
+       FROM chrome_history_visits
+       WHERE profile = ?`
     )
     .get(profile) as { m: number };
   return row.m;
@@ -67,6 +85,7 @@ export type ChromeDownloadsMonthDay = { day: string; count: number };
 
 export type ChromeDownloadDayRow = {
   download_id: number;
+  source_id: string;
   guid: string | null;
   current_path: string | null;
   target_path: string | null;
@@ -112,7 +131,7 @@ export function listChromeDownloadsForDay(
 ): ChromeDownloadDayRow[] {
   return db
     .prepare(
-      `SELECT id AS download_id, guid, current_path, target_path, start_time, end_time,
+      `SELECT id AS download_id, source_id, guid, current_path, target_path, start_time, end_time,
               received_bytes, total_bytes, state, danger_type, interrupt_reason,
               mime_type, referrer, site_url, tab_url, tab_referrer_url,
               calendar_day, inserted_at
@@ -126,12 +145,15 @@ export function listChromeDownloadsForDay(
 
 export function maxMirroredDownloadId(
   db: Database.Database,
-  profile: string
+  profile: string,
+  sourceId: string
 ): number {
   const row = db
     .prepare(
-      `SELECT COALESCE(MAX(id), 0) AS m FROM chrome_downloads WHERE profile = ?`
+      `SELECT COALESCE(MAX(id), 0) AS m
+       FROM chrome_downloads
+       WHERE profile = ? AND source_id = ?`
     )
-    .get(profile) as { m: number };
+    .get(profile, sourceId) as { m: number };
   return row.m;
 }

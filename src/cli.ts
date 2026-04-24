@@ -270,6 +270,11 @@ chromeHistoryCmd
   )
   .option("--json", "print machine-readable JSON", false)
   .option(
+    "--full",
+    "scan all Chrome visits/downloads and dedupe by stored content keys",
+    false
+  )
+  .option(
     "--verbose",
     "print snapshot / WAL / downloads diagnostics (stderr)",
     false
@@ -280,6 +285,7 @@ chromeHistoryCmd
       profile: string;
       historyPath?: string;
       json: boolean;
+      full: boolean;
       verbose: boolean;
     }) => {
       if (!isChromeHistoryIndexingSupported()) {
@@ -301,6 +307,7 @@ chromeHistoryCmd
       const db = openDatabase(opts.db);
       try {
         const result = syncChromeHistory(db, historyPath, profile, {
+          full: opts.full,
           verbose: opts.verbose,
         });
         if (opts.json) {
