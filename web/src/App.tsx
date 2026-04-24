@@ -12,6 +12,8 @@ import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
 import { Github } from "./pages/Github";
 import { GithubTags } from "./pages/GithubTags";
+import { Homebrew } from "./pages/Homebrew";
+import { MacApps } from "./pages/MacApps";
 import { RepoDetail } from "./pages/RepoDetail";
 import { Repos } from "./pages/Repos";
 import { Search } from "./pages/Search";
@@ -27,6 +29,8 @@ export function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/atuin" element={<Atuin />} />
         <Route path="/downloads" element={<Downloads />} />
+        <Route path="/apps" element={<MacApps />} />
+        <Route path="/brew" element={<Homebrew />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
         <Route path="/cursor-history" element={<CursorHistory />} />
