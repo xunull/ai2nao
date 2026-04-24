@@ -36,6 +36,9 @@ import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
+import { syncBrewPackages } from "./software/brew/sync.js";
+import { syncMacApps } from "./software/macApps/sync.js";
+import { resetSoftwareSource } from "./software/reset.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -449,6 +452,129 @@ githubCmd
       const msg = redactAuth(e instanceof Error ? e.message : String(e));
       console.error(`github sync failed: ${msg}`);
       process.exitCode = 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const appsCmd = program
+  .command("apps")
+  .description("Mirror installed macOS .app bundles into the index DB");
+
+appsCmd
+  .command("sync")
+  .description("Scan macOS application roots and upsert app metadata")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option(
+    "-r, --root <path>",
+    "scan root (repeatable; CLI only; API uses default roots)",
+    (v: string, prev: string[]) => [...prev, v],
+    [] as string[]
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action(async (opts: { db: string; root: string[]; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = await syncMacApps(db, {
+        roots: opts.root.length ? opts.root.map((r) => resolve(r)) : undefined,
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.error(
+          `apps sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, warnings ${result.warnings.length}`
+        );
+        for (const w of result.warnings) console.error(`warning: ${w.message}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+appsCmd
+  .command("reset")
+  .description("Delete mirrored macOS app inventory rows and sync history")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--yes", "confirm destructive reset", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; yes: boolean; json: boolean }) => {
+    if (!opts.yes) {
+      const msg = "confirmation_required: re-run with --yes to delete app inventory rows";
+      if (opts.json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(msg);
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = resetSoftwareSource(db, "mac_apps");
+      if (opts.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      else {
+        console.error(
+          `apps reset: deleted ${result.deletedRows} rows, ${result.deletedRuns} run(s), ${result.deletedState} state row(s).`
+        );
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+const brewCmd = program
+  .command("brew")
+  .description("Mirror installed Homebrew formulae and casks into the index DB");
+
+brewCmd
+  .command("sync")
+  .description("Read local Homebrew inventory and upsert package metadata")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--brew <path>", "absolute path to brew executable (CLI only)")
+  .option("--json", "print machine-readable JSON", false)
+  .action(async (opts: { db: string; brew?: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = await syncBrewPackages(db, {
+        brewPath: opts.brew,
+        allowCustomBrewPath: Boolean(opts.brew),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.error(
+          `brew sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, warnings ${result.warnings.length}`
+        );
+        if (result.brewPath) console.error(`Source: ${result.brewPath}`);
+        for (const w of result.warnings) console.error(`warning: ${w.message}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+brewCmd
+  .command("reset")
+  .description("Delete mirrored Homebrew inventory rows and sync history")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--yes", "confirm destructive reset", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; yes: boolean; json: boolean }) => {
+    if (!opts.yes) {
+      const msg = "confirmation_required: re-run with --yes to delete brew inventory rows";
+      if (opts.json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(msg);
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = resetSoftwareSource(db, "brew");
+      if (opts.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      else {
+        console.error(
+          `brew reset: deleted ${result.deletedRows} rows, ${result.deletedRuns} run(s), ${result.deletedState} state row(s).`
+        );
+      }
     } finally {
       db.close();
     }

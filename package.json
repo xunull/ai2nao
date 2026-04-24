@@ -1,6 +1,6 @@
 {
   "name": "ai2nao",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local-first indexer for git repos and manifest files (README, package.json, …) with SQLite + FTS",
   "type": "module",
   "bin": {
@@ -17,6 +17,10 @@
     "dev:ui": "concurrently -k \"npm run dev:api\" \"npm run dev:web\"",
     "dev:ui:debug": "concurrently -k \"npm run dev:api:debug\" \"npm run dev:web\"",
     "downloads:watch": "tsx src/cli.ts downloads watch --interval 30",
+    "apps:sync": "tsx src/cli.ts apps sync",
+    "apps:reset": "tsx src/cli.ts apps reset --yes",
+    "brew:sync": "tsx src/cli.ts brew sync",
+    "brew:reset": "tsx src/cli.ts brew reset --yes",
     "chrome-history:sync": "tsx src/cli.ts chrome-history sync",
     "chrome-history:watch": "tsx src/cli.ts chrome-history watch --interval 30",
     "github:sync": "tsx src/cli.ts github sync",
