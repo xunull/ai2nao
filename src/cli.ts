@@ -22,6 +22,7 @@ import {
   isChromeHistoryIndexingSupported,
 } from "./chromeHistory/paths.js";
 import { syncChromeHistory } from "./chromeHistory/sync.js";
+import { rebuildChromeHistoryVisitDomains } from "./chromeHistory/domainPivot.js";
 import { loadGithubToken } from "./github/config.js";
 import { syncGithub } from "./github/sync.js";
 import { redactAuth } from "./github/fetcher.js";
@@ -317,6 +318,11 @@ chromeHistoryCmd
             `Chrome history sync [${profile}]: visits +${result.insertedVisits} (urls +${result.insertedUrls}), skipped ${result.skippedVisits} duplicate visit(s); downloads +${result.insertedDownloads}, skipped ${result.skippedDownloads} duplicate download(s).`
           );
           console.error(`Source: ${result.sourcePath}`);
+          if (result.domainRebuild) {
+            console.error(
+              `Domain pivot rebuild: ${result.domainRebuild.ok ? "ok" : "failed"} (${result.domainRebuild.derivedVisitCount}/${result.domainRebuild.sourceVisitCount} visits, ${result.domainRebuild.durationMs}ms).`
+            );
+          }
           if (opts.verbose && result.debug) {
             console.error("Diagnostics:", JSON.stringify(result.debug, null, 2));
           }
@@ -375,6 +381,11 @@ chromeHistoryCmd
           console.error(
             `[${ts}] chrome-history watch [${profile}]: visits +${result.insertedVisits} / skipped ${result.skippedVisits}; downloads +${result.insertedDownloads} / skipped ${result.skippedDownloads}`
           );
+          if (result.domainRebuild) {
+            console.error(
+              `[${ts}] chrome-history domains [${profile}]: ${result.domainRebuild.ok ? "ok" : "failed"} (${result.domainRebuild.derivedVisitCount}/${result.domainRebuild.sourceVisitCount})`
+            );
+          }
           for (const err of result.errors) console.error(`warning: ${err}`);
         } finally {
           db.close();
@@ -390,6 +401,35 @@ chromeHistoryCmd
       process.on("SIGTERM", stop);
     }
   );
+
+const chromeHistoryDomainsCmd = chromeHistoryCmd
+  .command("domains")
+  .description("Build and inspect the Chrome History domain pivot derived table");
+
+chromeHistoryDomainsCmd
+  .command("rebuild")
+  .description("Rebuild chrome_history_visit_domains for one Chrome profile")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--profile <name>", "Chrome profile folder name", "Default")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; profile: string; json: boolean }) => {
+    const profile = opts.profile.trim() || "Default";
+    const db = openDatabase(opts.db);
+    try {
+      const result = rebuildChromeHistoryVisitDomains(db, profile);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: result.ok, result }, null, 2));
+      } else {
+        console.error(
+          `Chrome history domain rebuild [${profile}]: ${result.ok ? "ok" : "failed"} (${result.derivedVisitCount}/${result.sourceVisitCount} visits, ${result.durationMs}ms).`
+        );
+        if (result.error) console.error(`error: ${result.error}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
 
 const githubCmd = program
   .command("github")

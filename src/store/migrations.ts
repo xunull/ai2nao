@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 9;
+const CURRENT_VERSION = 10;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -20,6 +20,7 @@ export function migrate(db: Database.Database): void {
     applyV7(db);
     applyV8(db);
     applyV9(db);
+    applyV10(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -35,6 +36,7 @@ export function migrate(db: Database.Database): void {
   if (v < 7) applyV7(db);
   if (v < 8) applyV8(db);
   if (v < 9) applyV9(db);
+  if (v < 10) applyV10(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -594,5 +596,52 @@ function applyV9(db: Database.Database): void {
       ON chrome_history_visits(profile, content_key);
 
     UPDATE meta_schema SET version = 9 WHERE id = 1;
+  `);
+}
+
+/**
+ * Chrome History domain pivot. Raw visits remain the source of truth; this
+ * projection is rebuildable and carries freshness state for UI trust signals.
+ */
+function applyV10(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chrome_history_visit_domains (
+      profile TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      visit_id INTEGER NOT NULL,
+      url_id INTEGER NOT NULL,
+      content_key TEXT NOT NULL,
+      url_kind TEXT NOT NULL,
+      scheme TEXT,
+      host TEXT,
+      domain TEXT,
+      origin TEXT,
+      calendar_day TEXT NOT NULL,
+      visit_time INTEGER NOT NULL,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (profile, source_id, visit_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visit_domains_profile_domain_day
+      ON chrome_history_visit_domains(profile, domain, calendar_day);
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visit_domains_profile_day
+      ON chrome_history_visit_domains(profile, calendar_day);
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visit_domains_profile_kind
+      ON chrome_history_visit_domains(profile, url_kind);
+    CREATE INDEX IF NOT EXISTS idx_chrome_history_visit_domains_content
+      ON chrome_history_visit_domains(profile, content_key);
+
+    CREATE TABLE IF NOT EXISTS chrome_history_domain_state (
+      profile TEXT PRIMARY KEY,
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_visit_count INTEGER NOT NULL DEFAULT 0,
+      derived_visit_count INTEGER NOT NULL DEFAULT 0,
+      last_rebuild_duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 10 WHERE id = 1;
   `);
 }

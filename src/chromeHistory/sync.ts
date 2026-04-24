@@ -14,6 +14,10 @@ import {
   maxMirroredVisitId,
   maxMirroredVisitIdForProfile,
 } from "./queries.js";
+import {
+  rebuildChromeHistoryVisitDomains,
+  type RebuildChromeHistoryDomainsResult,
+} from "./domainPivot.js";
 import { chromeVisitContentKey } from "./contentKey.js";
 import { calendarDayLocalFromChromeDownload, calendarDayLocalFromChromeUs } from "./time.js";
 
@@ -50,6 +54,7 @@ export type SyncChromeHistoryResult = {
   insertedDownloads: number;
   skippedDownloads: number;
   errors: string[];
+  domainRebuild: RebuildChromeHistoryDomainsResult | null;
   debug?: SyncChromeHistoryDebug;
 };
 
@@ -138,6 +143,7 @@ function emptyResult(
     insertedDownloads: 0,
     skippedDownloads: 0,
     errors,
+    domainRebuild: null,
   };
 }
 
@@ -629,6 +635,11 @@ export function syncChromeHistory(
     rmSnapshotDir(snapDir);
   }
 
+  const domainRebuild = rebuildChromeHistoryVisitDomains(db, profile);
+  if (!domainRebuild.ok) {
+    errors.push(`Chrome history domain rebuild failed: ${domainRebuild.error}`);
+  }
+
   const result: SyncChromeHistoryResult = {
     profile,
     sourcePath: sourceHistoryPath,
@@ -639,6 +650,7 @@ export function syncChromeHistory(
     insertedDownloads,
     skippedDownloads,
     errors,
+    domainRebuild,
   };
   if (debug) result.debug = debug;
   return result;

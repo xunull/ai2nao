@@ -16,6 +16,7 @@ const navGroups = [
     label: "浏览器",
     items: [
       { to: "/chrome-history", label: "Chrome 历史" },
+      { to: "/chrome-history/domains", label: "Chrome 域名" },
       { to: "/chrome-downloads", label: "Chrome 下载" },
     ],
   },
