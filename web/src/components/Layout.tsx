@@ -8,6 +8,7 @@ const navGroups = [
       { to: "/repos", label: "仓库" },
       { to: "/downloads", label: "下载" },
       { to: "/apps", label: "Mac 应用" },
+      { to: "/vscode", label: "VS Code" },
       { to: "/brew", label: "Homebrew" },
       { to: "/atuin", label: "Atuin" },
     ],
