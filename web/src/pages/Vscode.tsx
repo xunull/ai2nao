@@ -104,7 +104,7 @@ export function Vscode() {
             if (!syncM.isPending) syncM.mutate();
           }}
           disabled={syncM.isPending || statusQ.data?.supported === false}
-          className="rounded bg-[var(--accent)] text-white px-4 py-2 text-sm disabled:opacity-50"
+          className="min-h-11 rounded bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-50"
         >
           {syncM.isPending ? "同步中…" : "立即同步"}
         </button>
@@ -113,29 +113,38 @@ export function Vscode() {
         ) : null}
       </div>
 
-      <form onSubmit={onSearch} className="flex flex-wrap gap-2 items-center">
-        <input
-          className="rounded border border-[var(--border)] px-3 py-2 text-sm min-w-[18rem]"
-          placeholder="搜索项目、路径或远程类型"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <button className="rounded border border-[var(--border)] px-3 py-2 text-sm">搜索</button>
-        <select
-          className="rounded border border-[var(--border)] px-3 py-2 text-sm bg-white"
-          value={scope}
-          onChange={(e) => {
-            setOffset(0);
-            setScope(e.target.value as "all" | "local" | "remote");
-          }}
-        >
-          <option value="all">全部</option>
-          <option value="local">本地</option>
-          <option value="remote">远程</option>
-        </select>
-        <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+      <form onSubmit={onSearch} className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+          搜索范围
+          <input
+            className="min-h-11 min-w-[18rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+            placeholder="项目、路径或远程类型"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </label>
+        <button className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm">
+          搜索
+        </button>
+        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+          类型
+          <select
+            className="min-h-11 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--fg)]"
+            value={scope}
+            onChange={(e) => {
+              setOffset(0);
+              setScope(e.target.value as "all" | "local" | "remote");
+            }}
+          >
+            <option value="all">全部</option>
+            <option value="local">本地</option>
+            <option value="remote">远程</option>
+          </select>
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]">
           <input
             type="checkbox"
+            className="size-4"
             checked={includeMissing}
             onChange={(e) => {
               setOffset(0);
@@ -151,14 +160,14 @@ export function Vscode() {
 
       <div className="flex gap-2">
         <button
-          className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
+          className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm disabled:opacity-50"
           disabled={offset === 0}
           onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
         >
           上一页
         </button>
         <button
-          className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
+          className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm disabled:opacity-50"
           disabled={!entriesQ.data || offset + PAGE_SIZE >= entriesQ.data.total}
           onClick={() => setOffset(offset + PAGE_SIZE)}
         >
