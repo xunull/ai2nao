@@ -54,6 +54,7 @@ export function Vscode() {
   const [scope, setScope] = useState<"all" | "local" | "remote">("all");
   const [includeMissing, setIncludeMissing] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const common = `limit=${PAGE_SIZE}&offset=${offset}&scope=${scope}&includeMissing=${
     includeMissing ? "1" : "0"
@@ -73,10 +74,14 @@ export function Vscode() {
   });
   const syncM = useMutation({
     mutationFn: () => apiPost("/api/vscode/sync", { app: "code" }),
+    onMutate: () => {
+      setSyncNotice(null);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["vscode-status"] });
       await queryClient.invalidateQueries({ queryKey: ["vscode-projects"] });
       await queryClient.invalidateQueries({ queryKey: ["vscode-entries"] });
+      setSyncNotice(`同步完成：${new Date().toLocaleTimeString()}`);
     },
   });
 
@@ -111,6 +116,7 @@ export function Vscode() {
         {syncM.isError ? (
           <span className="text-sm text-red-700">{String((syncM.error as Error).message)}</span>
         ) : null}
+        {syncNotice ? <span className="text-sm text-emerald-700">{syncNotice}</span> : null}
       </div>
 
       <form onSubmit={onSearch} className="flex flex-wrap items-end gap-3">
