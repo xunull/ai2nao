@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 10;
+const CURRENT_VERSION = 11;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -21,6 +21,7 @@ export function migrate(db: Database.Database): void {
     applyV8(db);
     applyV9(db);
     applyV10(db);
+    applyV11(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -37,6 +38,7 @@ export function migrate(db: Database.Database): void {
   if (v < 8) applyV8(db);
   if (v < 9) applyV9(db);
   if (v < 10) applyV10(db);
+  if (v < 11) applyV11(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -643,5 +645,52 @@ function applyV10(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 10 WHERE id = 1;
+  `);
+}
+
+/** VS Code recent work context mirror. */
+function applyV11(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vscode_recent_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      app TEXT NOT NULL CHECK (app IN ('code', 'code-insiders', 'vscodium', 'cursor')),
+      profile TEXT NOT NULL DEFAULT 'default',
+      kind TEXT NOT NULL CHECK (kind IN ('folder', 'file', 'workspace')),
+      recent_index INTEGER NOT NULL,
+      uri_redacted TEXT NOT NULL,
+      path TEXT,
+      label TEXT,
+      remote_type TEXT,
+      remote_authority_hash TEXT,
+      remote_path_hash TEXT,
+      exists_on_disk INTEGER,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(app, profile, uri_redacted)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_app_profile_rank
+      ON vscode_recent_entries(app, profile, recent_index);
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_app_profile_last_seen
+      ON vscode_recent_entries(app, profile, last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_kind
+      ON vscode_recent_entries(app, profile, kind);
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_missing_since
+      ON vscode_recent_entries(missing_since);
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_path
+      ON vscode_recent_entries(path);
+    CREATE INDEX IF NOT EXISTS idx_vscode_recent_remote
+      ON vscode_recent_entries(remote_type, remote_authority_hash);
+
+    CREATE TABLE IF NOT EXISTS vscode_sync_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 11 WHERE id = 1;
   `);
 }

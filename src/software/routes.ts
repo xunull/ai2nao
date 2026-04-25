@@ -5,9 +5,7 @@ import type { BrewPackageKind } from "./brew/parse.js";
 import { syncBrewPackages } from "./brew/sync.js";
 import { getMacAppsStatus, listMacApps } from "./macApps/queries.js";
 import { syncMacApps } from "./macApps/sync.js";
-
-const MAX_Q_LEN = 400;
-const MAX_LIMIT = 100;
+import { cleanOptionalString, parseListQuery } from "../serve/listQuery.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
@@ -54,41 +52,4 @@ export function registerSoftwareRoutes(app: Hono, db: Database.Database): void {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
     }
   });
-}
-
-function parseListQuery(query: (key: string) => string | undefined):
-  | {
-      q?: string;
-      includeMissing: boolean;
-      limit: number;
-      offset: number;
-    }
-  | { error: string } {
-  const q = cleanOptionalString(query("q"));
-  if (q && q.length > MAX_Q_LEN) return { error: "query too long" };
-  const limitParsed = parseNonNegativeInt(query("limit") ?? "50");
-  const offsetParsed = parseNonNegativeInt(query("offset") ?? "0");
-  if (limitParsed == null || limitParsed < 1) return { error: "invalid limit" };
-  if (offsetParsed == null || offsetParsed < 0 || offsetParsed > 1_000_000) {
-    return { error: "invalid offset" };
-  }
-  const includeRaw = query("includeMissing");
-  const includeMissing = includeRaw === "1" || includeRaw === "true";
-  return {
-    q,
-    includeMissing,
-    limit: Math.min(MAX_LIMIT, limitParsed),
-    offset: offsetParsed,
-  };
-}
-
-function cleanOptionalString(v: string | undefined): string | undefined {
-  const t = (v ?? "").trim();
-  return t.length > 0 ? t : undefined;
-}
-
-function parseNonNegativeInt(v: string): number | null {
-  const t = v.trim();
-  if (!/^\d+$/.test(t)) return null;
-  return Number(t);
 }

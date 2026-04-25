@@ -40,6 +40,11 @@ import { resolveWebDist } from "./serve/app.js";
 import { syncBrewPackages } from "./software/brew/sync.js";
 import { syncMacApps } from "./software/macApps/sync.js";
 import { resetSoftwareSource } from "./software/reset.js";
+import { getVscodeMirrorStatus } from "./vscode/queries.js";
+import { resetVscodeRecent } from "./vscode/reset.js";
+import { syncVscodeRecent } from "./vscode/sync.js";
+import { parseVscodeAppId } from "./vscode/paths.js";
+import { listVscodeWindowProjects } from "./vscode/windowState.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -620,6 +625,122 @@ brewCmd
       else {
         console.error(
           `brew reset: deleted ${result.deletedRows} rows, ${result.deletedRuns} run(s), ${result.deletedState} state row(s).`
+        );
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+const vscodeCmd = program
+  .command("vscode")
+  .description("Mirror VS Code recently opened files and folders from state.vscdb");
+
+vscodeCmd
+  .command("windows")
+  .description("Read storage.json windowsState and print currently restorable VS Code projects")
+  .option("--app <app>", "VS Code app id: code, code-insiders, vscodium, cursor", "code")
+  .option("--storage <path>", "storage.json path for tests or one-off inspection")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { app: string; storage?: string; json: boolean }) => {
+    if (!parseVscodeAppId(opts.app)) {
+      console.error("invalid app");
+      process.exitCode = 1;
+      return;
+    }
+    const result = listVscodeWindowProjects({ app: opts.app, storagePath: opts.storage });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.error(`vscode windows [${result.app}]: ${result.projects.length} project window(s)`);
+      console.error(`Source: ${result.storagePath ?? "(unsupported)"}`);
+      for (const warning of result.warnings) console.error(`warning: ${warning}`);
+      for (const project of result.projects) {
+        const marker = project.source === "lastActiveWindow" ? "*" : "-";
+        const location = project.path ?? project.uri ?? "(empty)";
+        console.log(`${marker} ${project.label} [${project.kind}] ${location}`);
+      }
+    }
+    process.exitCode = result.ok ? 0 : 1;
+  });
+
+vscodeCmd
+  .command("status")
+  .description("Show VS Code recent-work mirror status")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--app <app>", "VS Code app id: code, code-insiders, vscodium, cursor", "code")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; app: string; json: boolean }) => {
+    if (!parseVscodeAppId(opts.app)) {
+      console.error("invalid app");
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = getVscodeMirrorStatus(db, { app: opts.app });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.error(
+          `vscode status [${result.app}]: active ${result.counts.active}, missing ${result.counts.missing}, remote ${result.counts.remote}`
+        );
+        console.error(`Source: ${result.statePath ?? "(unsupported)"}`);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+vscodeCmd
+  .command("sync")
+  .description("Read VS Code state.vscdb and upsert recent files/folders")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--app <app>", "VS Code app id: code, code-insiders, vscodium, cursor", "code")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; app: string; json: boolean }) => {
+    if (!parseVscodeAppId(opts.app)) {
+      console.error("invalid app");
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = syncVscodeRecent(db, { app: opts.app });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.error(
+          `vscode sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, entries ${result.totalEntries}, warnings ${result.warnings.length}`
+        );
+        if (result.sourcePath) console.error(`Source: ${result.sourcePath}`);
+        for (const w of result.warnings) console.error(`warning: ${w.message}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+vscodeCmd
+  .command("reset")
+  .description("Delete mirrored VS Code recent-work rows and privacy salt")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--yes", "confirm destructive reset", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; yes: boolean; json: boolean }) => {
+    if (!opts.yes) {
+      const msg = "confirmation_required: re-run with --yes to delete VS Code recent-work rows";
+      if (opts.json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(msg);
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = resetVscodeRecent(db);
+      if (opts.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      else {
+        console.error(
+          `vscode reset: deleted ${result.deletedRows} rows and ${result.deletedState} state row(s).`
         );
       }
     } finally {
