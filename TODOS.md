@@ -20,6 +20,7 @@
 16. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
 17. Chrome History 域名透视 v2：CSV 导出
 18. Chrome History 域名透视 v2：真正增量派生
+19. VS Code terminal dirs 工作信号（显式 opt-in）
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十至十二项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十三项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
@@ -257,6 +258,32 @@ Depends on / blocked by:
 - 若有真实噪声样本（日志或复现路径）再定方案更稳
 
 Priority: P3（体验优化，非阻塞）
+
+## VS Code terminal dirs 工作信号（显式 opt-in）
+
+What: 在 VS Code recent 工作项目入口稳定后，读取 `state.vscdb` 中的 `terminal.history.entries.dirs`，把 VS Code terminal 曾经进入过的目录作为项目活跃度信号。该功能必须显式开启，不能默认抓取。
+
+Why: VS Code recent list 只能说明“打开过哪里”；terminal dirs 能补充“终端实际在哪些目录工作过”。两者结合后，ai2nao 的最近工作项目排序和每日摘要会更接近真实开发活动。
+
+Pros:
+- 提升项目活跃度判断，不只依赖 recent list 顺序
+- 可与 Atuin shell history、repo index、Claude/Cursor 对话做交叉验证
+- 为未来本机工作记忆层提供高信号数据
+
+Cons:
+- 目录路径可能包含客户名、挂载路径、服务器路径等敏感信息
+- 需要隐私说明、显式 opt-in、脱敏/过滤策略和一键清理
+- 会增加 sync、UI、测试面，不能混进 VS Code recent v1
+
+Context:
+来自 `/plan-ceo-review` 对 VS Code recent 工作项目功能的 scope expansion。用户已选择 defer terminal dirs：当前 PR 只做 `history.recentlyOpenedPathsList`、repo 关联、remote 安全摘要、missing 状态、项目聚合视图；terminal dirs 单独设计后再做。
+
+Depends on / blocked by:
+- VS Code recent 工作项目 v1 已落地并验证隐私边界
+- 已有明确的 opt-in 配置与 UI/CLI 提示
+- 对路径脱敏、repo 关联、清理/reset 的策略已定
+
+Priority: P2
 
 ## Cursor 对话镜像 + FTS（`index.db`）
 

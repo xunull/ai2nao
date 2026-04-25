@@ -57,6 +57,7 @@ import { registerLlmChatRoutes } from "../llmChat/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
 import { registerSoftwareRoutes } from "../software/routes.js";
+import { registerVscodeRoutes } from "../vscode/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -134,6 +135,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerGithubRoutes(app, db);
   registerSoftwareRoutes(app, db);
   registerChromeHistoryRoutes(app, db);
+  registerVscodeRoutes(app, db);
 
   app.get("/api/status", (c) => {
     try {

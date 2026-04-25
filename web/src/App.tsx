@@ -15,6 +15,7 @@ import { Github } from "./pages/Github";
 import { GithubTags } from "./pages/GithubTags";
 import { Homebrew } from "./pages/Homebrew";
 import { MacApps } from "./pages/MacApps";
+import { Vscode } from "./pages/Vscode";
 import { RepoDetail } from "./pages/RepoDetail";
 import { Repos } from "./pages/Repos";
 import { Search } from "./pages/Search";
@@ -31,6 +32,7 @@ export function App() {
         <Route path="/atuin" element={<Atuin />} />
         <Route path="/downloads" element={<Downloads />} />
         <Route path="/apps" element={<MacApps />} />
+        <Route path="/vscode" element={<Vscode />} />
         <Route path="/brew" element={<Homebrew />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
         <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />

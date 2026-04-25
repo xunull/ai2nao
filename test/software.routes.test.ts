@@ -34,6 +34,13 @@ describe("software routes", () => {
 
       const malformedLimit = await app.request("http://x/api/apps?limit=1abc");
       expect(malformedLimit.status).toBe(400);
+
+      const badOffset = await app.request("http://x/api/brew/packages?offset=1000001");
+      expect(badOffset.status).toBe(400);
+
+      const capped = await app.request("http://x/api/brew/packages?limit=1000");
+      const cappedBody = (await capped.json()) as { limit: number };
+      expect(cappedBody.limit).toBe(100);
     } finally {
       db.close();
     }
