@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 — 2026-04-25
+
+### Added
+
+- Mirror VS Code recently opened files, folders, and workspaces from `state.vscdb` into the local index.
+- Add the `/vscode` web page with recent project aggregation, raw entry inspection, filters, and guarded sync.
+- Add `ai2nao vscode sync`, `ai2nao vscode status`, `ai2nao vscode reset`, and `ai2nao vscode windows` for VS Code work context workflows.
+- Add safe remote workspace summaries that hash remote authority and path values before storage or display.
+- Document useful `state.vscdb` signals and privacy boundaries for future VS Code work-context features.
+
+### Changed
+
+- Share bounded list query parsing between software inventory routes and the new VS Code routes.
+- Extend the local database schema for VS Code recent work entries and sync state.
+
 ## 0.3.0 — 2026-04-24
 
 ### Added
