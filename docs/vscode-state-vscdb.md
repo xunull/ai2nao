@@ -322,9 +322,9 @@ history.recentlyOpenedPathsList
 
 目标：
 
-- CLI：`ai2nao vscode sync`
-- API：`GET /api/vscode/recent`
-- Web：`/vscode`
+- CLI：`ai2nao vscode sync`、`ai2nao cursor projects sync`
+- API：`GET /api/vscode/recent?app=code|cursor`
+- Web：`/vscode`、`/cursor-projects`
 - 只读、快照、幂等同步。
 
 ### v1.1：terminal dirs
