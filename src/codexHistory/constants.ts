@@ -1,0 +1,5 @@
+export const MAX_CODEX_JSONL_BYTES = 15 * 1024 * 1024;
+export const MAX_CODEX_JSONL_LINES = 80_000;
+export const MAX_CODEX_FALLBACK_FILES = 1000;
+export const CODEX_PREVIEW_BYTES = 96 * 1024;
+export const CODEX_ROOT_ENV = "CODEX_HOME";
