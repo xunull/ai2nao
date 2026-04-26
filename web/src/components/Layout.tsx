@@ -9,6 +9,7 @@ const navGroups = [
       { to: "/downloads", label: "下载" },
       { to: "/apps", label: "Mac 应用" },
       { to: "/vscode", label: "VS Code" },
+      { to: "/cursor-projects", label: "Cursor 项目" },
       { to: "/brew", label: "Homebrew" },
       { to: "/atuin", label: "Atuin" },
     ],
@@ -24,7 +25,7 @@ const navGroups = [
   {
     label: "对话",
     items: [
-      { to: "/cursor-history", label: "Cursor" },
+      { to: "/cursor-history", label: "Cursor 对话" },
       { to: "/claude-code-history", label: "Claude" },
       { to: "/ai-chat", label: "AI 对话" },
     ],
