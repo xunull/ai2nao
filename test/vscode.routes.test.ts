@@ -35,4 +35,29 @@ describe("VS Code routes", () => {
       db.close();
     }
   });
+
+  it("returns Cursor projects without leaking Code rows", async () => {
+    const base = join(tmpdir(), `ai2nao-vscode-routes-cursor-${Date.now()}`);
+    mkdirSync(base, { recursive: true });
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const insert = db.prepare(
+        `INSERT INTO vscode_recent_entries (
+          app, profile, kind, recent_index, uri_redacted, path, label,
+          exists_on_disk, first_seen_at, last_seen_at, inserted_at, updated_at
+        ) VALUES (?, 'default', 'folder', 0, ?, ?, ?, 1, 'now', 'now', 'now', 'now')`
+      );
+      insert.run("code", "file:///tmp/code", "/tmp/code", "code");
+      insert.run("cursor", "file:///tmp/cursor", "/tmp/cursor", "cursor");
+      const app = createApp({ db });
+
+      const res = await app.request("http://x/api/vscode/recent-projects?app=cursor");
+      expect(res.status).toBe(200);
+      const body = await res.json() as { rows: Array<{ label: string; app: string }> };
+
+      expect(body.rows).toEqual([expect.objectContaining({ label: "cursor", app: "cursor" })]);
+    } finally {
+      db.close();
+    }
+  });
 });

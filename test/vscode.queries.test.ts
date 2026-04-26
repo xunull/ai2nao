@@ -44,4 +44,32 @@ describe("VS Code recent project queries", () => {
       db.close();
     }
   });
+
+  it("filters project aggregation by app", () => {
+    const base = join(tmpdir(), `ai2nao-vscode-queries-app-${Date.now()}`);
+    mkdirSync(base, { recursive: true });
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const insert = db.prepare(
+        `INSERT INTO vscode_recent_entries (
+          app, profile, kind, recent_index, uri_redacted, path, label,
+          exists_on_disk, first_seen_at, last_seen_at, inserted_at, updated_at
+        ) VALUES (?, 'default', 'folder', 0, ?, ?, ?, 1, 'now', 'now', 'now', 'now')`
+      );
+      insert.run("code", "file:///tmp/code-only", "/tmp/code-only", "code-only");
+      insert.run("cursor", "file:///tmp/cursor-only", "/tmp/cursor-only", "cursor-only");
+
+      const res = listVscodeRecentProjects(db, {
+        app: "cursor",
+        includeMissing: false,
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(res.rows.map((row) => row.label)).toEqual(["cursor-only"]);
+      expect(res.rows[0].app).toBe("cursor");
+    } finally {
+      db.close();
+    }
+  });
 });

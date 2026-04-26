@@ -6,13 +6,14 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CursorProjects } from "../web/src/pages/CursorProjects";
 import { Vscode } from "../web/src/pages/Vscode";
 
-function renderPage() {
+function renderPage(page = <Vscode />) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <Vscode />
+      {page}
     </QueryClientProvider>
   );
 }
@@ -32,7 +33,7 @@ describe("VS Code page", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith("/api/vscode/status")) {
+        if (url.endsWith("/api/vscode/status?app=code")) {
           return new Response(
             JSON.stringify({
               app: "code",
@@ -109,7 +110,7 @@ describe("VS Code page", () => {
     });
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/api/vscode/status")) {
+      if (url.endsWith("/api/vscode/status?app=code")) {
         return new Response(
           JSON.stringify({
             app: "code",
@@ -138,5 +139,46 @@ describe("VS Code page", () => {
     expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/vscode/sync"))).toHaveLength(1);
     expect(await screen.findByRole("button", { name: "同步中…" })).toBeDisabled();
     resolveSync();
+  });
+
+  it("renders Cursor copy and sends app=cursor for queries and sync", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/vscode/status?app=cursor")) {
+        return new Response(
+          JSON.stringify({
+            app: "cursor",
+            supported: true,
+            statePath: "/tmp/cursor/state.vscdb",
+            exists: true,
+            counts: { total: 0, active: 0, missing: 0, remote: 0 },
+            lastSeenAt: null,
+          })
+        );
+      }
+      if (url.includes("/api/vscode/recent-projects?")) {
+        expect(url).toContain("app=cursor");
+        return new Response(JSON.stringify({ rows: [], total: 0, limit: 50, offset: 0 }));
+      }
+      if (url.includes("/api/vscode/recent?")) {
+        expect(url).toContain("app=cursor");
+        return new Response(JSON.stringify({ rows: [], total: 0, limit: 50, offset: 0 }));
+      }
+      if (url.endsWith("/api/vscode/sync") && init?.method === "POST") {
+        expect(init.body).toBe(JSON.stringify({ app: "cursor" }));
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(<CursorProjects />);
+
+    expect(await screen.findByText("Cursor 打开项目")).toBeInTheDocument();
+    expect(await screen.findByText(/Cursor 最近记录/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "同步 Cursor 项目" }));
+
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/api/vscode/sync"))).toBe(true);
   });
 });

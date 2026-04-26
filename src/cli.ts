@@ -45,6 +45,8 @@ import { resetVscodeRecent } from "./vscode/reset.js";
 import { syncVscodeRecent } from "./vscode/sync.js";
 import { parseVscodeAppId } from "./vscode/paths.js";
 import { listVscodeWindowProjects } from "./vscode/windowState.js";
+import { vscodeAppLabel } from "./vscode/labels.js";
+import type { VscodeAppId } from "./vscode/types.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -63,6 +65,27 @@ function parseCursorSessionArg(raw: string): number | string {
   const t = raw.trim();
   if (/^\d+$/.test(t)) return parseInt(t, 10);
   return t;
+}
+
+function printEditorMirrorStatus(app: VscodeAppId, result: ReturnType<typeof getVscodeMirrorStatus>): void {
+  console.error(
+    `${vscodeAppLabel(app).toLowerCase()} projects status [${result.app}]: active ${result.counts.active}, missing ${result.counts.missing}, remote ${result.counts.remote}`
+  );
+  console.error(`Source: ${result.statePath ?? "(unsupported)"}`);
+}
+
+function printEditorSyncResult(result: ReturnType<typeof syncVscodeRecent>): void {
+  console.error(
+    `${vscodeAppLabel(result.app).toLowerCase()} projects sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, entries ${result.totalEntries}, warnings ${result.warnings.length}`
+  );
+  if (result.sourcePath) console.error(`Source: ${result.sourcePath}`);
+  for (const w of result.warnings) console.error(`warning: ${w.message}`);
+}
+
+function printEditorResetResult(result: ReturnType<typeof resetVscodeRecent>): void {
+  console.error(
+    `${vscodeAppLabel(result.app).toLowerCase()} projects reset: deleted ${result.deletedRows} rows and ${result.deletedState} state row(s).`
+  );
 }
 
 program
@@ -680,12 +703,7 @@ vscodeCmd
     try {
       const result = getVscodeMirrorStatus(db, { app: opts.app });
       if (opts.json) console.log(JSON.stringify(result, null, 2));
-      else {
-        console.error(
-          `vscode status [${result.app}]: active ${result.counts.active}, missing ${result.counts.missing}, remote ${result.counts.remote}`
-        );
-        console.error(`Source: ${result.statePath ?? "(unsupported)"}`);
-      }
+      else printEditorMirrorStatus(result.app, result);
     } finally {
       db.close();
     }
@@ -707,13 +725,7 @@ vscodeCmd
     try {
       const result = syncVscodeRecent(db, { app: opts.app });
       if (opts.json) console.log(JSON.stringify(result, null, 2));
-      else {
-        console.error(
-          `vscode sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, entries ${result.totalEntries}, warnings ${result.warnings.length}`
-        );
-        if (result.sourcePath) console.error(`Source: ${result.sourcePath}`);
-        for (const w of result.warnings) console.error(`warning: ${w.message}`);
-      }
+      else printEditorSyncResult(result);
       process.exitCode = result.ok ? 0 : 1;
     } finally {
       db.close();
@@ -722,13 +734,20 @@ vscodeCmd
 
 vscodeCmd
   .command("reset")
-  .description("Delete mirrored VS Code recent-work rows and privacy salt")
+  .description("Delete mirrored VS Code recent-work rows")
   .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--app <app>", "VS Code app id: code, code-insiders, vscodium, cursor", "code")
   .option("--yes", "confirm destructive reset", false)
   .option("--json", "print machine-readable JSON", false)
-  .action((opts: { db: string; yes: boolean; json: boolean }) => {
+  .action((opts: { db: string; app: string; yes: boolean; json: boolean }) => {
+    const app = parseVscodeAppId(opts.app);
+    if (!app) {
+      console.error("invalid app");
+      process.exitCode = 1;
+      return;
+    }
     if (!opts.yes) {
-      const msg = "confirmation_required: re-run with --yes to delete VS Code recent-work rows";
+      const msg = `confirmation_required: re-run with --yes to delete ${vscodeAppLabel(app)} recent-work rows`;
       if (opts.json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
       else console.error(msg);
       process.exitCode = 1;
@@ -736,13 +755,74 @@ vscodeCmd
     }
     const db = openDatabase(opts.db);
     try {
-      const result = resetVscodeRecent(db);
+      const result = resetVscodeRecent(db, { app });
       if (opts.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2));
-      else {
-        console.error(
-          `vscode reset: deleted ${result.deletedRows} rows and ${result.deletedState} state row(s).`
-        );
-      }
+      else printEditorResetResult(result);
+    } finally {
+      db.close();
+    }
+  });
+
+const cursorCmd = program
+  .command("cursor")
+  .description("Cursor IDE local data tools");
+
+const cursorProjectsCmd = cursorCmd
+  .command("projects")
+  .description("Mirror Cursor recently opened files and folders from state.vscdb");
+
+cursorProjectsCmd
+  .command("status")
+  .description("Show Cursor opened-project mirror status")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = getVscodeMirrorStatus(db, { app: "cursor" });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printEditorMirrorStatus("cursor", result);
+    } finally {
+      db.close();
+    }
+  });
+
+cursorProjectsCmd
+  .command("sync")
+  .description("Read Cursor state.vscdb and upsert recently opened projects")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = syncVscodeRecent(db, { app: "cursor" });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else printEditorSyncResult(result);
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+cursorProjectsCmd
+  .command("reset")
+  .description("Delete mirrored Cursor opened-project rows")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--yes", "confirm destructive reset", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; yes: boolean; json: boolean }) => {
+    if (!opts.yes) {
+      const msg = "confirmation_required: re-run with --yes to delete Cursor opened-project rows";
+      if (opts.json) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(msg);
+      process.exitCode = 1;
+      return;
+    }
+    const db = openDatabase(opts.db);
+    try {
+      const result = resetVscodeRecent(db, { app: "cursor" });
+      if (opts.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      else printEditorResetResult(result);
     } finally {
       db.close();
     }

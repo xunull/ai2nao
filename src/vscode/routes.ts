@@ -4,6 +4,7 @@ import { cleanOptionalString, parseListQuery } from "../serve/listQuery.js";
 import { getVscodeMirrorStatus, listVscodeRecentEntries, listVscodeRecentProjects } from "./queries.js";
 import { parseVscodeAppId } from "./paths.js";
 import { syncVscodeRecent } from "./sync.js";
+import { vscodeAppLabel } from "./labels.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
@@ -66,9 +67,10 @@ export function registerVscodeRoutes(app: Hono, db: Database.Database): void {
     try {
       const body = await safeJson(c.req.raw);
       const appId = typeof body.app === "string" ? body.app : "code";
-      if (!parseVscodeAppId(appId)) return jsonErr(400, "invalid app");
-      const result = syncVscodeRecent(db, { app: appId });
-      if (!result.ok) return jsonErr(500, result.warnings[0]?.message ?? "VS Code sync failed");
+      const parsedApp = parseVscodeAppId(appId);
+      if (!parsedApp) return jsonErr(400, "invalid app");
+      const result = syncVscodeRecent(db, { app: parsedApp });
+      if (!result.ok) return jsonErr(500, result.warnings[0]?.message ?? `${vscodeAppLabel(parsedApp)} sync failed`);
       return c.json(result);
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
