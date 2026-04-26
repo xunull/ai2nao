@@ -94,4 +94,22 @@ describe("VS Code recent sync", () => {
       db.close();
     }
   });
+
+  it("uses Cursor-specific messages without creating privacy state on invalid Cursor source shape", () => {
+    const base = makeBase("cursor-sync-invalid-shape");
+    const badState = join(base, "bad-cursor-shape.vscdb");
+    makeStateDb(badState, JSON.stringify({ nope: [] }));
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const failed = syncVscodeRecent(db, { app: "cursor", sourcePath: badState });
+      expect(failed.ok).toBe(false);
+      expect(failed.warnings[0]?.message).toContain("Cursor recent list");
+      const state = db.prepare("SELECT COUNT(*) AS n FROM vscode_sync_state").get() as { n: number };
+      const rows = db.prepare("SELECT COUNT(*) AS n FROM vscode_recent_entries").get() as { n: number };
+      expect(state.n).toBe(0);
+      expect(rows.n).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
 });
