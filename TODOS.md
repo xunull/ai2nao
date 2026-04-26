@@ -11,19 +11,20 @@
 7. Cursor 对话镜像 + FTS（`index.db`）
 8. Cursor 集成：LICENSE / NOTICE 与上游署名
 9. Cursor 设计文档修订（仅 `src/` 实现）
-10. RAG：双路检索调试视图（同一查询下展示 FTS 与向量 topK/分数，利于录屏与排错）
-11. RAG：黄金检索评测集（固定问句 + 期望命中；改融合/切块可回归）
-12. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
-13. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
-14. Homebrew 清单：Brewfile 导出
-15. 软件清单：Mac App 与 Homebrew Cask 关联
-16. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
-17. Chrome History 域名透视 v2：CSV 导出
-18. Chrome History 域名透视 v2：真正增量派生
-19. VS Code terminal dirs 工作信号（显式 opt-in）
+10. Cursor opened projects：显示关联 chat session counts
+11. RAG：双路检索调试视图（同一查询下展示 FTS 与向量 topK/分数，利于录屏与排错）
+12. RAG：黄金检索评测集（固定问句 + 期望命中；改融合/切块可回归）
+13. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
+14. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
+15. Homebrew 清单：Brewfile 导出
+16. 软件清单：Mac App 与 Homebrew Cask 关联
+17. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
+18. Chrome History 域名透视 v2：CSV 导出
+19. Chrome History 域名透视 v2：真正增量派生
+20. VS Code terminal dirs 工作信号（显式 opt-in）
 
 说明:
-前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十至十二项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十三项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
+前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
 
 ## Claude Code 本地对话（v1）
 
@@ -348,6 +349,31 @@ Depends on / blocked by:
 - 无硬依赖，可与实现 PR 并行
 
 Priority: P2（建议在主线开发启动后一周内对齐）
+
+## Cursor opened projects：显示关联 chat session counts
+
+What: 在 `/cursor-projects` 的项目列表中显示每个项目关联的 Cursor chat session 数量，并允许后续进入对应对话证据。
+
+Why: 打开项目只能说明“编辑器接触过这里”；chat session counts 能说明“AI 对话是否真的围绕这个项目发生过”，让工作上下文更接近真实活动。
+
+Pros:
+- 把 Cursor opened projects 从路径列表升级成工作证据入口
+- 能复用未来稳定的 `src/cursorHistory` DTO 和路径归因结果
+- 为后续项目时间线、证据可回看层、跨源检索提供连接点
+
+Cons:
+- 会引入 Cursor chat 扫描、路径匹配和聚合性能风险
+- 如果过早实现，会把 `/cursor-projects` v1 从轻量 mirror 扩成多源关联功能
+
+Context:
+`/cursor-projects` v1 只复用 `src/vscode/*` recent mirror，通过 `app='cursor'` 展示 Cursor 打开的项目。CEO review 和 Eng review 都决定先不把 `src/cursorHistory/*` 拉进首版，避免 DTO、路径归因、性能边界一起扩 scope。等 Cursor chat 输出结构稳定后，再按 repo/path canonicalization 规则把 session counts 挂到项目行上。
+
+Depends on / blocked by:
+- `/cursor-projects` v1 已落地，且 app-scoped query/sync/reset 测试通过
+- `src/cursorHistory` 会话 DTO、时间戳、项目路径归因稳定
+- 大量 session 下的聚合性能边界已验证
+
+Priority: P2
 
 ## Homebrew 清单：Brewfile 导出
 
