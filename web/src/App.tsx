@@ -7,6 +7,8 @@ import { ChromeHistory } from "./pages/ChromeHistory";
 import { ChromeHistoryDomains } from "./pages/ChromeHistoryDomains";
 import { ClaudeCodeHistory } from "./pages/ClaudeCodeHistory";
 import { ClaudeCodeHistorySession } from "./pages/ClaudeCodeHistorySession";
+import { CodexHistory } from "./pages/CodexHistory";
+import { CodexHistorySession } from "./pages/CodexHistorySession";
 import { CursorHistory } from "./pages/CursorHistory";
 import { CursorHistorySession } from "./pages/CursorHistorySession";
 import { CursorProjects } from "./pages/CursorProjects";
@@ -46,6 +48,8 @@ export function App() {
           path="/claude-code-history/s/:sessionId"
           element={<ClaudeCodeHistorySession />}
         />
+        <Route path="/codex-history" element={<CodexHistory />} />
+        <Route path="/codex-history/s/:sessionId" element={<CodexHistorySession />} />
         <Route path="/ai-chat" element={<AiChat />} />
         <Route path="/github" element={<Github />} />
         <Route path="/github/tags" element={<GithubTags />} />
