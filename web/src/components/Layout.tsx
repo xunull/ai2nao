@@ -1,5 +1,5 @@
 import { FormEvent, type ReactNode, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 
 const navGroups = [
   {
@@ -9,6 +9,7 @@ const navGroups = [
       { to: "/downloads", label: "下载" },
       { to: "/apps", label: "Mac 应用" },
       { to: "/vscode", label: "VS Code" },
+      { to: "/cursor-projects", label: "Cursor 项目" },
       { to: "/brew", label: "Homebrew" },
       { to: "/atuin", label: "Atuin" },
     ],
@@ -24,7 +25,7 @@ const navGroups = [
   {
     label: "对话",
     items: [
-      { to: "/cursor-history", label: "Cursor" },
+      { to: "/cursor-history", label: "Cursor 对话" },
       { to: "/claude-code-history", label: "Claude" },
       { to: "/ai-chat", label: "AI 对话" },
     ],
@@ -65,29 +66,34 @@ export function Layout({ children }: { children: ReactNode }) {
                 </span>
                 <span className="flex flex-wrap gap-2">
                   {group.items.map((item) => (
-                    <Link
+                    <NavLink
                       key={item.to}
-                      className="text-[var(--accent)] hover:underline"
+                      className={({ isActive }) =>
+                        "inline-flex min-h-11 items-center rounded px-2 text-[var(--accent)] hover:bg-blue-50 hover:no-underline " +
+                        (isActive ? "bg-blue-50 font-semibold text-[var(--fg)]" : "")
+                      }
                       to={item.to}
                     >
                       {item.label}
-                    </Link>
+                    </NavLink>
                   ))}
                 </span>
               </div>
             ))}
           </nav>
-          <form onSubmit={onSubmit} className="ml-auto flex gap-2">
-            <input
-              className="rounded border border-[var(--border)] px-2 py-1 text-sm min-w-[12rem]"
-              placeholder="搜索…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              aria-label="跳转到搜索"
-            />
+          <form onSubmit={onSubmit} className="ml-auto flex items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+              全站搜索
+              <input
+                className="min-h-11 min-w-[12rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+                placeholder="仓库、文件、对话"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
             <button
               type="submit"
-              className="rounded bg-[var(--accent)] text-white px-3 py-1 text-sm"
+              className="min-h-11 rounded bg-[var(--accent)] px-4 py-2 text-sm text-white"
             >
               搜索
             </button>

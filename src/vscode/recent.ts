@@ -20,14 +20,15 @@ type RecentEntryLike = {
 
 export function parseRecentlyOpenedPathsList(
   raw: unknown,
-  salt: string
+  salt: string,
+  sourceLabel = "VS Code"
 ): { entries: ParsedVscodeRecentEntry[]; warnings: VscodeWarning[]; emptySnapshot: boolean } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new VscodeRecentParseError("VS Code recent list has invalid top-level shape");
+    throw new VscodeRecentParseError(`${sourceLabel} recent list has invalid top-level shape`);
   }
   const entriesRaw = (raw as { entries?: unknown }).entries;
   if (!Array.isArray(entriesRaw)) {
-    throw new VscodeRecentParseError("VS Code recent list is missing entries array");
+    throw new VscodeRecentParseError(`${sourceLabel} recent list is missing entries array`);
   }
   if (entriesRaw.length === 0) return { entries: [], warnings: [], emptySnapshot: true };
 
@@ -39,7 +40,7 @@ export function parseRecentlyOpenedPathsList(
     else {
       warnings.push({
         code: "entry_unknown_shape",
-        message: "Skipped VS Code recent entry with unknown shape",
+        message: `Skipped ${sourceLabel} recent entry with unknown shape`,
         context: { recentIndex: i },
       });
     }

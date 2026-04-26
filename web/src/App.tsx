@@ -9,6 +9,7 @@ import { ClaudeCodeHistory } from "./pages/ClaudeCodeHistory";
 import { ClaudeCodeHistorySession } from "./pages/ClaudeCodeHistorySession";
 import { CursorHistory } from "./pages/CursorHistory";
 import { CursorHistorySession } from "./pages/CursorHistorySession";
+import { CursorProjects } from "./pages/CursorProjects";
 import { Downloads } from "./pages/Downloads";
 import { FileView } from "./pages/FileView";
 import { Github } from "./pages/Github";
@@ -33,6 +34,7 @@ export function App() {
         <Route path="/downloads" element={<Downloads />} />
         <Route path="/apps" element={<MacApps />} />
         <Route path="/vscode" element={<Vscode />} />
+        <Route path="/cursor-projects" element={<CursorProjects />} />
         <Route path="/brew" element={<Homebrew />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
         <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />
