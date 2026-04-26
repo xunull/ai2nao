@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.3 — 2026-04-26
+
+### Added
+
+- Add `/codex-history` so users can browse local Codex threads from `~/.codex/state_5.sqlite` and open the matching rollout JSONL transcripts.
+- Add Codex conversation detail replay with message timelines, compact tool rows, failed command highlighting, and summary counts for tools, commands, failures, and touched files.
+- Add Codex filters for cwd, branch, model, and archived threads, with archived threads hidden by default.
+- Add diagnostics for degraded Codex metadata, including SQLite fallback state, missing transcripts, schema mismatch, scan truncation, and safe error kinds.
+- Add backend, API, and React regression tests for Codex history loading, fallback behavior, diagnostics, filters, archived toggles, and failed tool display.
+
+### Changed
+
+- Share local JSONL parsing between Claude Code and Codex readers so corrupt-line handling stays consistent across local AI transcript sources.
+- Extend the shared chat DTO with `source: "codex"` and source-specific metadata while keeping Cursor and Claude Code fields stable.
+
 ## 0.3.2 — 2026-04-26
 
 ### Added

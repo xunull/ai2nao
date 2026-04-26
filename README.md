@@ -1,6 +1,6 @@
 # ai2nao
 
-本地优先的个人数字痕迹索引器：Git 仓库清单、macOS 应用、Homebrew 包、浏览器历史、Shell 历史（Atuin）、VS Code / Cursor 打开项目、Claude Code 对话，一站检索。
+本地优先的个人数字痕迹索引器：Git 仓库清单、macOS 应用、Homebrew 包、浏览器历史、Shell 历史（Atuin）、VS Code / Cursor 打开项目、Claude Code / Codex 对话，一站检索。
 
 数据默认落在 `~/.ai2nao/index.db`（可用 `--db` 覆盖）。
 
@@ -107,8 +107,13 @@ node dist/cli.js serve
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
 - **软件** — macOS 应用、Homebrew 包浏览
 - **工作区** — VS Code 与 Cursor 最近打开的项目、文件、workspace
-- **对话** — Claude Code 对话历史
+- **对话** — Claude Code 与 Codex 本地对话历史
 - **浏览** — Chrome 历史、Chrome 域名分析、Atuin Shell 历史日历
+
+Codex 对话位于 `/codex-history`。它默认只读 `~/.codex/state_5.sqlite` 作为线程列表，
+再读取对应的 `~/.codex/sessions/**/rollout-*.jsonl` 作为详情正文；当 SQLite 不可用
+时会降级扫描 JSONL，并在页面上显示诊断原因。页面默认隐藏 archived 线程，可按 cwd、
+branch、model 过滤。
 
 Chrome 域名分析位于 `/chrome-history/domains`。它基于本地 Chrome History
 镜像生成可重建的域名透视表，支持 Top domains、日/周/月时间矩阵和访问记录

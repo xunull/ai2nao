@@ -53,6 +53,12 @@ import {
   loadSessionDetail,
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
+import {
+  listCodexSessionSummaries,
+  loadCodexSessionDetail,
+  resolveCodexRoot,
+} from "../codexHistory/index.js";
+import { isCodexHistoryError } from "../codexHistory/errors.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
@@ -96,6 +102,32 @@ function claudeCodeHistoryRoot(raw: string | undefined): string {
 function claudeCodeHistoryErr(e: unknown) {
   if (e instanceof ClaudeTranscriptTooLargeError) {
     return jsonErr(413, e.message);
+  }
+  return jsonErr(500, String(e));
+}
+
+function codexHistoryRoot(raw: string | undefined): string {
+  const t = (raw ?? "").trim();
+  return resolveCodexRoot(t.length > 0 ? t : undefined);
+}
+
+function boolQuery(raw: string | undefined): boolean | undefined {
+  if (raw == null) return undefined;
+  const t = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  if (["0", "false", "no", "off"].includes(t)) return false;
+  return undefined;
+}
+
+function intQuery(raw: string | undefined, fallback: number): number {
+  const n = parseInt(raw ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function codexHistoryErr(e: unknown) {
+  if (isCodexHistoryError(e)) {
+    const status = e.kind === "transcript-too-large" ? 413 : 500;
+    return jsonErr(status, e.message);
   }
   return jsonErr(500, String(e));
 }
@@ -537,6 +569,62 @@ export function createApp(opts: ServeOptions): Hono {
       }
     }
   );
+
+  app.get("/api/codex-history/status", (c) => {
+    try {
+      const root = codexHistoryRoot(c.req.query("codexRoot"));
+      return c.json({
+        platform: process.platform,
+        codexRoot: root,
+        sessionsRoot: join(root, "sessions"),
+        stateDbPath: join(root, "state_5.sqlite"),
+        envCodexHome: Boolean(process.env.CODEX_HOME),
+      });
+    } catch (e) {
+      return codexHistoryErr(e);
+    }
+  });
+
+  app.get("/api/codex-history/sessions", async (c) => {
+    try {
+      const root = c.req.query("codexRoot");
+      const result = await listCodexSessionSummaries(root, {
+        archived: boolQuery(c.req.query("archived")) ?? false,
+        cwd: c.req.query("cwd"),
+        gitBranch: c.req.query("gitBranch"),
+        model: c.req.query("model"),
+        limit: intQuery(c.req.query("limit"), 200),
+        maxFiles: intQuery(c.req.query("maxFiles"), 1000),
+      });
+      return c.json({
+        ...result,
+        sessions: result.sessions.map(sessionSummaryToJson),
+      });
+    } catch (e) {
+      return codexHistoryErr(e);
+    }
+  });
+
+  app.get("/api/codex-history/sessions/:sessionId", async (c) => {
+    try {
+      const root = c.req.query("codexRoot");
+      const sessionId = decodeURIComponent(c.req.param("sessionId"));
+      const detail = await loadCodexSessionDetail(root, sessionId);
+      if (!detail) {
+        return jsonErr(404, "session not found");
+      }
+      const idx = Math.max(0, parseInt(c.req.query("index") ?? "0", 10) || 0);
+      detail.session.index = idx;
+      return c.json({
+        ok: true,
+        session: sessionToJson(detail.session),
+        warnings: detail.warnings,
+        metrics: detail.metrics,
+      });
+    } catch (e) {
+      return codexHistoryErr(e);
+    }
+  });
 
   app.post("/api/downloads/scan", async (c) => {
     try {

@@ -25,6 +25,8 @@ export function sessionSummaryToJson(s: ChatSessionSummary) {
     workspaceId: s.workspaceId,
     workspacePath: s.workspacePath,
     preview: s.preview,
+    source: s.source,
+    metadata: s.metadata,
   };
 }
 
@@ -55,6 +57,7 @@ export function sessionToJson(s: ChatSession) {
     workspaceId: s.workspaceId,
     workspacePath: s.workspacePath,
     source: s.source,
+    metadata: s.metadata,
     usage: s.usage,
     activeBranchBubbleIds: s.activeBranchBubbleIds,
     messages: s.messages.map(messageToJson),

@@ -27,6 +27,7 @@ const navGroups = [
     items: [
       { to: "/cursor-history", label: "Cursor 对话" },
       { to: "/claude-code-history", label: "Claude" },
+      { to: "/codex-history", label: "Codex" },
       { to: "/ai-chat", label: "AI 对话" },
     ],
   },

@@ -55,7 +55,9 @@ export interface ChatSession {
   workspaceId: string;
   workspacePath?: string;
   /** Source data completeness: full global bubbles or degraded workspace fallback */
-  source?: 'global' | 'workspace-fallback' | 'claude-code';
+  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex';
+  /** Source-specific metadata. Keep shared fields above; put per-agent details here. */
+  metadata?: Record<string, unknown>;
   /** Session-level token usage summary (optional, when available) */
   usage?: SessionUsage;
   /** Ordered bubble IDs of the current active conversation branch */
@@ -91,6 +93,14 @@ export interface Message {
     claudeEventType?: string;
     /** True when the row is a non-chat event folded into the timeline for auditability */
     claudeAppendix?: boolean;
+    /** Codex JSONL event kind when message is mapped from a transcript event */
+    codexEventType?: string;
+    /** True when a Codex non-message event is folded into the timeline */
+    codexAppendix?: boolean;
+    /** True when a Codex tool event should render compactly by default */
+    codexToolEvent?: boolean;
+    /** True when a Codex command or tool event failed */
+    codexFailed?: boolean;
   };
 }
 
@@ -134,6 +144,8 @@ export interface ChatSessionSummary {
   workspaceId: string;
   workspacePath: string;
   preview: string;
+  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex';
+  metadata?: Record<string, unknown>;
 }
 
 /**
