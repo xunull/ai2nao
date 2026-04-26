@@ -426,3 +426,57 @@ Priority: P2
 Depends on / blocked by:
 - `mac_apps` 与 `brew_packages` 已有足够真实数据
 - 先定义可信匹配规则：明确匹配、弱匹配、未匹配三态，不能把猜测显示成事实
+
+## Codex 对话详情：单会话内搜索
+
+What: 为 `/codex-history/s/:sessionId` 增加单会话内搜索、高亮和 next/prev 跳转。
+
+Why: 长 Codex transcript 里查文件名、命令、错误输出会更快。
+
+Pros:
+- 提升长会话回看效率
+- 不需要后端 FTS，可复用详情页已加载消息
+- 和未来全局搜索互补，解决的是单会话内定位
+
+Cons:
+- 增加前端状态、可访问性和高亮测试
+- 不阻塞 Codex history v1
+
+Context:
+CEO review 已决定 v1 先做结构化展示、工具摘要栏、fallback 诊断和紧凑工具事件。单会话内搜索 defer 到 v1 之后，等真实 Codex 会话长度和 timeline 结构稳定后再做。
+
+Effort estimate: M（human）→ S（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- Codex history v1 已落地
+- 详情页 timeline 结构稳定
+- 工具事件折叠/展开规则已确定
+
+## AI 对话时间线：共享 AgentMessageTimeline 组件
+
+What: 抽取共享 `AgentMessageTimeline` 或等价组件，统一 Claude Code / Codex / 后续 AI 对话来源的消息渲染。
+
+Why: 避免 markdown、tool event、warning、thinking、metadata badge 样式在多个页面分叉。
+
+Pros:
+- 降低长期 UI 维护成本
+- 为未来统一 Agent History 页面铺路
+- 让工具事件、warning、thinking 折叠等体验保持一致
+
+Cons:
+- 过早抽象会误伤现有 Claude/Cursor 页面
+- 需要等 Codex timeline 需求稳定后再抽，否则接口会反复改
+
+Context:
+CEO review 已明确不进 Codex history v1。当前 v1 应先实现 Codex 自己的 timeline 规则，尤其是紧凑折叠工具事件和失败命令高亮。等真实使用反馈稳定后，再抽共享组件。
+
+Effort estimate: L（human）→ M（CC+gstack）
+
+Priority: P2/P3
+
+Depends on / blocked by:
+- Codex history v1 已落地
+- Claude Code 和 Codex 的 timeline 差异已通过真实使用验证
+- 至少一次 UI 回归测试覆盖现有对话详情页
