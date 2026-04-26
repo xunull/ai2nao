@@ -7,6 +7,7 @@ import { defaultVscodeStatePath, parseVscodeAppId } from "./paths.js";
 import { parseRecentlyOpenedPathsList, VscodeRecentParseError } from "./recent.js";
 import { copyVscodeStateSnapshot, removeVscodeSnapshot, VscodeSourceMissingError } from "./snapshot.js";
 import { getOrCreateRemoteHashSalt } from "./state.js";
+import { vscodeAppLabel } from "./labels.js";
 import type { ParsedVscodeRecentEntry, VscodeAppId, VscodeWarning } from "./types.js";
 
 export type SyncVscodeRecentOptions = {
@@ -37,7 +38,8 @@ export function syncVscodeRecent(
   opts: SyncVscodeRecentOptions = {}
 ): VscodeSyncResult {
   const app = parseVscodeAppId(opts.app ?? "code");
-  if (!app) throw new Error("invalid VS Code app");
+  if (!app) throw new Error("invalid editor app");
+  const appLabel = vscodeAppLabel(app);
   const profile = cleanProfile(opts.profile);
   const sourcePath = opts.sourcePath ?? defaultVscodeStatePath(app);
   const nowIso = (opts.now ?? new Date()).toISOString();
@@ -49,7 +51,7 @@ export function syncVscodeRecent(
   };
   if (!sourcePath) {
     return failed(base, [
-      { code: "source_missing", message: "Current platform has no known VS Code state.vscdb path" },
+      { code: "source_missing", message: `Current platform has no known ${appLabel} state.vscdb path` },
     ]);
   }
 
@@ -66,7 +68,7 @@ export function syncVscodeRecent(
         updated: 0,
         markedMissing: 0,
         totalEntries: 0,
-        warnings: [{ code: "key_missing", message: `${RECENT_KEY} was not found in VS Code state` }],
+        warnings: [{ code: "key_missing", message: `${RECENT_KEY} was not found in ${appLabel} state` }],
       };
     }
 
@@ -79,20 +81,20 @@ export function syncVscodeRecent(
       ]);
     }
 
-    const shapeError = validateRecentListShape(decoded);
+    const shapeError = validateRecentListShape(decoded, appLabel);
     if (shapeError) {
       return failed(base, [{ code: "key_missing", message: shapeError }]);
     }
 
     const salt = getOrCreateRemoteHashSalt(db, nowIso);
-    const parsed = parseRecentlyOpenedPathsList(decoded, salt);
+    const parsed = parseRecentlyOpenedPathsList(decoded, salt, appLabel);
     const entries = parsed.entries.map((entry) => enrichEntry(entry, existsPath));
     const remoteCount = entries.filter((entry) => entry.remoteType != null).length;
     const warnings = [...parsed.warnings];
     if (remoteCount > 0) {
       warnings.push({
         code: "remote_redacted",
-        message: "Remote VS Code URI authorities and paths were hashed before storage",
+        message: `Remote ${appLabel} URI authorities and paths were hashed before storage`,
         context: { count: remoteCount },
       });
     }
@@ -130,12 +132,12 @@ function readRecentlyOpenedValue(snapshotPath: string): string | null {
   }
 }
 
-function validateRecentListShape(raw: unknown): string | null {
+function validateRecentListShape(raw: unknown, sourceLabel: string): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return "VS Code recent list has invalid top-level shape";
+    return `${sourceLabel} recent list has invalid top-level shape`;
   }
   if (!Array.isArray((raw as { entries?: unknown }).entries)) {
-    return "VS Code recent list is missing entries array";
+    return `${sourceLabel} recent list is missing entries array`;
   }
   return null;
 }
