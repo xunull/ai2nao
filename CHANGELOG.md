@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.2 — 2026-04-26
+
+### Added
+
+- Add `/cursor-projects` so users can view Cursor recently opened projects with Cursor-specific status, filters, sync, and empty-state copy.
+- Add `ai2nao cursor projects status`, `ai2nao cursor projects sync`, and `ai2nao cursor projects reset` so Cursor users do not need to know the internal VS Code app flag.
+- Add app-isolation coverage for Cursor project queries, routes, sync failures, destructive reset, and CLI wrappers.
+
+### Changed
+
+- Reuse the VS Code recent-project UI through a shared editor recent page so VS Code and Cursor stay behaviorally aligned.
+- Make VS Code-family reset app-scoped and preserve the shared remote privacy salt, preventing Cursor cleanup from disturbing Code remote identifiers.
+- Use editor-aware labels in recent-list sync warnings and route errors so Cursor failures no longer speak in VS Code copy.
+
 ## 0.3.1 — 2026-04-25
 
 ### Added
