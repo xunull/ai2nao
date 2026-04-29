@@ -19,10 +19,10 @@ export function resetSoftwareSource(
         : db.prepare("DELETE FROM brew_packages").run().changes;
     const statePrefix = source === "mac_apps" ? "mac_apps.%" : "brew.%";
     const deletedState = db
-      .prepare("DELETE FROM software_sync_state WHERE key LIKE ?")
+      .prepare("DELETE FROM local_inventory_sync_state WHERE key LIKE ?")
       .run(statePrefix).changes;
     const deletedRuns = db
-      .prepare("DELETE FROM software_sync_runs WHERE source = ?")
+      .prepare("DELETE FROM local_inventory_sync_runs WHERE source = ?")
       .run(source).changes;
     return { source, deletedRows, deletedRuns, deletedState };
   });

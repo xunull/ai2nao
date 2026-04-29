@@ -4,8 +4,8 @@ import {
   runBoundedCommand,
   type BoundedCommandResult,
 } from "../command.js";
-import { finishSoftwareSyncRun, startSoftwareSyncRun } from "../syncRuns.js";
-import { setSoftwareSyncStateValue } from "../state.js";
+import { finishInventorySyncRun, startInventorySyncRun } from "../../localInventory/syncRuns.js";
+import { setInventorySyncStateValue } from "../../localInventory/state.js";
 import type { SoftwareWarning, SyncCounts } from "../types.js";
 import { findBrewExecutable, validateCliBrewPath } from "./executable.js";
 import {
@@ -49,7 +49,7 @@ export async function syncBrewPackages(
   } catch (e) {
     brewPath = null;
   }
-  const runId = startSoftwareSyncRun(db, "brew", { brewPath }, now());
+  const runId = startInventorySyncRun(db, "brew", { brewPath }, now());
   if (!brewPath) {
     return fail(db, runId, null, "Homebrew executable not found", now);
   }
@@ -63,7 +63,7 @@ export async function syncBrewPackages(
     const loaded = await loadBrewPackages(brewPath, commandRunner);
     const counts = upsertBrewPackages(db, loaded.packages, loaded.completedKinds, now().toISOString());
     const status = loaded.warnings.length > 0 ? "partial" : "success";
-    finishSoftwareSyncRun(db, runId, {
+    finishInventorySyncRun(db, runId, {
       status,
       ...counts,
       warningsCount: loaded.warnings.length,
@@ -71,9 +71,9 @@ export async function syncBrewPackages(
       metadata: { brewPath, fallback: loaded.fallback },
       now: now(),
     });
-    setSoftwareSyncStateValue(db, "brew.last_sync_at", now().toISOString());
-    setSoftwareSyncStateValue(db, "brew.executable_path", brewPath);
-    setSoftwareSyncStateValue(
+    setInventorySyncStateValue(db, "brew.last_sync_at", now().toISOString());
+    setInventorySyncStateValue(db, "brew.executable_path", brewPath);
+    setInventorySyncStateValue(
       db,
       "brew.last_sync_error",
       status === "partial" ? loaded.warnings.slice(0, 5).map((w) => w.message).join("\n") : null
@@ -206,7 +206,7 @@ function fail(
   message: string,
   now: () => Date
 ): SyncBrewResult {
-  finishSoftwareSyncRun(db, runId, {
+  finishInventorySyncRun(db, runId, {
     status: "failed",
     inserted: 0,
     updated: 0,
@@ -216,7 +216,7 @@ function fail(
     metadata: { brewPath },
     now: now(),
   });
-  setSoftwareSyncStateValue(db, "brew.last_sync_error", message);
+  setInventorySyncStateValue(db, "brew.last_sync_error", message);
   return {
     ok: false,
     status: "failed",
