@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6 — 2026-04-29
+
+### Changed
+
+- Split Web UI pages into lazy-loaded route chunks so the initial JavaScript bundle is much smaller and Vite no longer emits the large chunk warning.
+- Add App-level route coverage for lazy-loaded root redirects and the Atuin directory page.
+
 ## 0.3.5 — 2026-04-29
 
 ### Added
