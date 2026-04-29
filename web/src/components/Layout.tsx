@@ -13,6 +13,7 @@ const navGroups = [
       { to: "/brew", label: "Homebrew" },
       { to: "/huggingface-models", label: "HF 模型" },
       { to: "/atuin", label: "Atuin" },
+      { to: "/atuin/directories", label: "Atuin 目录" },
     ],
   },
   {

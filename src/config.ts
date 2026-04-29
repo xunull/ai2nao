@@ -34,6 +34,13 @@ export function defaultDailySummaryDbPath(): string {
   return `${home}/.ai2nao/daily-summary.db`;
 }
 
+/** Global ai2nao JSON config (`~/.ai2nao/config.json`). */
+export function defaultAi2naoConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/config.json";
+  return `${home}/.ai2nao/config.json`;
+}
+
 /** JSON config for the optional `/api/llm-chat` UI (OpenAI-compatible endpoints). */
 export function defaultLlmChatConfigPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
