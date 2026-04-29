@@ -344,6 +344,52 @@ describe("Hono read-only API", () => {
     }
   });
 
+  it("POST /api/huggingface/sync and GET status/models", async () => {
+    const base = join(tmpdir(), `ai2nao-hf-api-${Date.now()}`);
+    const root = join(base, "hub");
+    const model = join(root, "models--org--repo");
+    mkdirSync(join(model, "refs"), { recursive: true });
+    mkdirSync(join(model, "blobs"), { recursive: true });
+    mkdirSync(join(model, "snapshots", "abc123"), { recursive: true });
+    writeFileSync(join(model, "refs", "main"), "abc123\n", "utf8");
+    writeFileSync(join(model, "blobs", "blob-a"), "hello", "utf8");
+
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const app = createApp({ db });
+      const sync = await app.request("http://x/api/huggingface/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root }),
+      });
+      expect(sync.status).toBe(200);
+
+      const status = await app.request(
+        `http://x/api/huggingface/status?root=${encodeURIComponent(root)}`
+      );
+      expect(status.status).toBe(200);
+      const sj = (await status.json()) as { counts: { active: number; totalSizeBytes: number } };
+      expect(sj.counts.active).toBe(1);
+      expect(sj.counts.totalSizeBytes).toBe(5);
+
+      const list = await app.request(
+        `http://x/api/huggingface/models?root=${encodeURIComponent(root)}`
+      );
+      expect(list.status).toBe(200);
+      const lj = (await list.json()) as { rows: { repo_id: string }[] };
+      expect(lj.rows[0].repo_id).toBe("org/repo");
+
+      const invalid = await app.request("http://x/api/huggingface/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root: 123 }),
+      });
+      expect(invalid.status).toBe(400);
+    } finally {
+      db.close();
+    }
+  });
+
   it("POST /api/chrome-history/sync and GET month/day", async () => {
     const base = join(tmpdir(), `ai2nao-chrome-api-${Date.now()}`);
     mkdirSync(base, { recursive: true });
