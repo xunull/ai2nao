@@ -48,6 +48,10 @@ import { parseVscodeAppId } from "./vscode/paths.js";
 import { listVscodeWindowProjects } from "./vscode/windowState.js";
 import { vscodeAppLabel } from "./vscode/labels.js";
 import type { VscodeAppId } from "./vscode/types.js";
+import {
+  getDirectoryActivityStatus,
+  rebuildDirectoryActivity,
+} from "./atuin/directoryActivity/index.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -87,6 +91,10 @@ function printEditorResetResult(result: ReturnType<typeof resetVscodeRecent>): v
   console.error(
     `${vscodeAppLabel(result.app).toLowerCase()} projects reset: deleted ${result.deletedRows} rows and ${result.deletedState} state row(s).`
   );
+}
+
+function defaultAtuinHistoryPath(): string {
+  return join(homedir(), ".local/share/atuin/history.db");
 }
 
 program
@@ -1018,6 +1026,80 @@ aliasCmd
     }
   });
 
+const atuinCmd = program.command("atuin").description("Read Atuin shell history");
+const atuinDirectoriesCmd = atuinCmd
+  .command("directories")
+  .description("Inspect directory activity derived from Atuin history");
+
+atuinDirectoriesCmd
+  .command("status")
+  .description("Show Atuin directory activity projection freshness")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const status = getDirectoryActivityStatus(db);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, status }, null, 2));
+      } else {
+        console.log(`fresh: ${status.fresh ? "yes" : "no"}`);
+        console.log(`directories: ${status.currentDerivedDirectoryCount}`);
+        console.log(`commands: ${status.currentDerivedCommandCount}`);
+        console.log(`config: ${status.configPath}`);
+        if (status.staleReasons.length > 0) {
+          console.log(`stale: ${status.staleReasons.join(", ")}`);
+        }
+      }
+      process.exitCode = status.fresh ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+atuinDirectoriesCmd
+  .command("rebuild")
+  .description("Rebuild directory activity from read-only Atuin history.db")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option(
+    "--atuin-db <path>",
+    "Atuin history.db (default: ~/.local/share/atuin/history.db)"
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; atuinDb?: string; json: boolean }) => {
+    const atuinPath = opts.atuinDb?.trim()
+      ? resolve(opts.atuinDb.trim())
+      : defaultAtuinHistoryPath();
+    if (!existsSync(atuinPath)) {
+      const payload = {
+        ok: false,
+        error: { code: "not_configured", message: `Atuin database not found: ${atuinPath}` },
+      };
+      if (opts.json) console.log(JSON.stringify(payload, null, 2));
+      else console.error(payload.error.message);
+      process.exitCode = 1;
+      return;
+    }
+    const indexDb = openDatabase(opts.db);
+    const atuinDb = openReadOnlyDatabase(atuinPath);
+    try {
+      const result = rebuildDirectoryActivity({ indexDb, atuinDb });
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: result.ok, result }, null, 2));
+      } else if (result.ok) {
+        console.error(
+          `Atuin directory activity rebuilt: ${result.derivedDirectoryCount} dirs, ${result.derivedCommandCount} commands from ${result.sourceEntryCount} entries in ${result.durationMs}ms.`
+        );
+      } else {
+        console.error(`${result.errorCode}: ${result.error}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      atuinDb.close();
+      indexDb.close();
+    }
+  });
+
 program
   .command("serve")
   .description("HTTP API + optional SPA (index DB opened read-write for downloads ingest)")
@@ -1100,7 +1182,7 @@ program
           }
         | undefined;
       const explicitAtuin = opts.atuinDb?.trim();
-      const defaultAtuinPath = join(homedir(), ".local/share/atuin/history.db");
+      const defaultAtuinPath = defaultAtuinHistoryPath();
       const atuinPath = explicitAtuin ? resolve(explicitAtuin) : defaultAtuinPath;
       if (!explicitAtuin && !existsSync(atuinPath)) {
         atuin = undefined;

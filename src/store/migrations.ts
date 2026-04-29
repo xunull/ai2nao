@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 12;
+const CURRENT_VERSION = 13;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -23,6 +23,7 @@ export function migrate(db: Database.Database): void {
     applyV10(db);
     applyV11(db);
     applyV12(db);
+    applyV13(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -41,6 +42,7 @@ export function migrate(db: Database.Database): void {
   if (v < 10) applyV10(db);
   if (v < 11) applyV11(db);
   if (v < 12) applyV12(db);
+  if (v < 13) applyV13(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -783,5 +785,64 @@ function applyV12(db: Database.Database): void {
       ON huggingface_model_revisions(revision);
 
     UPDATE meta_schema SET version = 12 WHERE id = 1;
+  `);
+}
+
+/** Atuin directory activity projection, rebuilt from read-only Atuin history.db. */
+function applyV13(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS atuin_directory_activity_dirs (
+      cwd TEXT PRIMARY KEY,
+      raw_command_count INTEGER NOT NULL DEFAULT 0,
+      filtered_command_count INTEGER NOT NULL DEFAULT 0,
+      raw_failed_count INTEGER NOT NULL DEFAULT 0,
+      filtered_failed_count INTEGER NOT NULL DEFAULT 0,
+      first_timestamp_ns INTEGER,
+      last_timestamp_ns INTEGER,
+      last_exit INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_atuin_directory_activity_dirs_filtered
+      ON atuin_directory_activity_dirs(filtered_command_count DESC, last_timestamp_ns DESC);
+    CREATE INDEX IF NOT EXISTS idx_atuin_directory_activity_dirs_raw
+      ON atuin_directory_activity_dirs(raw_command_count DESC, last_timestamp_ns DESC);
+    CREATE INDEX IF NOT EXISTS idx_atuin_directory_activity_dirs_last
+      ON atuin_directory_activity_dirs(last_timestamp_ns DESC);
+
+    CREATE TABLE IF NOT EXISTS atuin_directory_activity_commands (
+      cwd TEXT NOT NULL,
+      command TEXT NOT NULL,
+      raw_count INTEGER NOT NULL DEFAULT 0,
+      filtered_count INTEGER NOT NULL DEFAULT 0,
+      raw_failed_count INTEGER NOT NULL DEFAULT 0,
+      filtered_failed_count INTEGER NOT NULL DEFAULT 0,
+      first_timestamp_ns INTEGER,
+      last_timestamp_ns INTEGER,
+      last_exit INTEGER,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (cwd, command)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_atuin_directory_activity_commands_filtered
+      ON atuin_directory_activity_commands(cwd, filtered_count DESC, last_timestamp_ns DESC);
+    CREATE INDEX IF NOT EXISTS idx_atuin_directory_activity_commands_raw
+      ON atuin_directory_activity_commands(cwd, raw_count DESC, last_timestamp_ns DESC);
+
+    CREATE TABLE IF NOT EXISTS atuin_directory_activity_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rule_version INTEGER NOT NULL,
+      filter_config_hash TEXT NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      error_code TEXT,
+      source_entry_count INTEGER NOT NULL DEFAULT 0,
+      derived_directory_count INTEGER NOT NULL DEFAULT 0,
+      derived_command_count INTEGER NOT NULL DEFAULT 0,
+      last_rebuild_duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 13 WHERE id = 1;
   `);
 }
