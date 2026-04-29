@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 11;
+const CURRENT_VERSION = 12;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -22,6 +22,7 @@ export function migrate(db: Database.Database): void {
     applyV9(db);
     applyV10(db);
     applyV11(db);
+    applyV12(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -39,6 +40,7 @@ export function migrate(db: Database.Database): void {
   if (v < 9) applyV9(db);
   if (v < 10) applyV10(db);
   if (v < 11) applyV11(db);
+  if (v < 12) applyV12(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -692,5 +694,94 @@ function applyV11(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 11 WHERE id = 1;
+  `);
+}
+
+/** Hugging Face Hub model cache inventory + generalized local inventory sync state. */
+function applyV12(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS local_inventory_sync_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    INSERT OR IGNORE INTO local_inventory_sync_state (key, value)
+    SELECT key, value FROM software_sync_state;
+
+    CREATE TABLE IF NOT EXISTS local_inventory_sync_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL CHECK (source IN ('mac_apps', 'brew', 'huggingface')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+      inserted INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      marked_missing INTEGER NOT NULL DEFAULT 0,
+      warnings_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    INSERT OR IGNORE INTO local_inventory_sync_runs (
+      id, source, started_at, finished_at, status, inserted, updated,
+      marked_missing, warnings_count, error_summary, metadata_json
+    )
+    SELECT id, source, started_at, finished_at, status, inserted, updated,
+           marked_missing, warnings_count, error_summary, metadata_json
+    FROM software_sync_runs;
+
+    CREATE INDEX IF NOT EXISTS idx_local_inventory_sync_runs_source_started
+      ON local_inventory_sync_runs(source, started_at);
+
+    CREATE TABLE IF NOT EXISTS huggingface_models (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_type TEXT NOT NULL DEFAULT 'model' CHECK (repo_type IN ('model', 'dataset', 'space')),
+      repo_id TEXT NOT NULL,
+      cache_root TEXT NOT NULL,
+      cache_dir TEXT NOT NULL,
+      refs_json TEXT NOT NULL DEFAULT '{}',
+      snapshot_count INTEGER NOT NULL DEFAULT 0,
+      blob_count INTEGER NOT NULL DEFAULT 0,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(cache_root, repo_type, repo_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_huggingface_models_repo
+      ON huggingface_models(repo_type, repo_id);
+    CREATE INDEX IF NOT EXISTS idx_huggingface_models_cache_root
+      ON huggingface_models(cache_root);
+    CREATE INDEX IF NOT EXISTS idx_huggingface_models_last_seen
+      ON huggingface_models(last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_huggingface_models_missing_since
+      ON huggingface_models(missing_since);
+    CREATE INDEX IF NOT EXISTS idx_huggingface_models_size
+      ON huggingface_models(size_bytes);
+
+    CREATE TABLE IF NOT EXISTS huggingface_model_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      model_id INTEGER NOT NULL REFERENCES huggingface_models(id) ON DELETE CASCADE,
+      revision TEXT NOT NULL,
+      snapshot_path TEXT NOT NULL,
+      refs_json TEXT NOT NULL DEFAULT '[]',
+      file_count INTEGER NOT NULL DEFAULT 0,
+      last_modified_ms INTEGER,
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(model_id, revision)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_huggingface_model_revisions_model
+      ON huggingface_model_revisions(model_id);
+    CREATE INDEX IF NOT EXISTS idx_huggingface_model_revisions_revision
+      ON huggingface_model_revisions(revision);
+
+    UPDATE meta_schema SET version = 12 WHERE id = 1;
   `);
 }

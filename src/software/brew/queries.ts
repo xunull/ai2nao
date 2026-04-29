@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import { getLatestSoftwareSyncRun } from "../syncRuns.js";
-import { getSoftwareSyncStateValue } from "../state.js";
+import { getLatestInventorySyncRun } from "../../localInventory/syncRuns.js";
+import { getInventorySyncStateValue } from "../../localInventory/state.js";
 import type { ListOptions, PageResult } from "../types.js";
 import type { BrewPackageKind } from "./parse.js";
 import { findBrewExecutable } from "./executable.js";
@@ -43,14 +43,14 @@ export function getBrewStatus(db: Database.Database) {
   return {
     platform: process.platform,
     detected: detectedPath != null,
-    brewPath: detectedPath ?? getSoftwareSyncStateValue(db, "brew.executable_path"),
+    brewPath: detectedPath ?? getInventorySyncStateValue(db, "brew.executable_path"),
     counts: {
       total: counts.total,
       formulae: counts.formulae ?? 0,
       casks: counts.casks ?? 0,
       missing: counts.missing ?? 0,
     },
-    lastRun: getLatestSoftwareSyncRun(db, "brew"),
+    lastRun: getLatestInventorySyncRun(db, "brew"),
   };
 }
 

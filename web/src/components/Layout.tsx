@@ -11,6 +11,7 @@ const navGroups = [
       { to: "/vscode", label: "VS Code" },
       { to: "/cursor-projects", label: "Cursor 项目" },
       { to: "/brew", label: "Homebrew" },
+      { to: "/huggingface-models", label: "HF 模型" },
       { to: "/atuin", label: "Atuin" },
     ],
   },

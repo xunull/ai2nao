@@ -1,6 +1,6 @@
 # ai2nao
 
-本地优先的个人数字痕迹索引器：Git 仓库清单、macOS 应用、Homebrew 包、浏览器历史、Shell 历史（Atuin）、VS Code / Cursor 打开项目、Claude Code / Codex 对话，一站检索。
+本地优先的个人数字痕迹索引器：Git 仓库清单、macOS 应用、Homebrew 包、Hugging Face 本地模型、浏览器历史、Shell 历史（Atuin）、VS Code / Cursor 打开项目、Claude Code / Codex 对话，一站检索。
 
 数据默认落在 `~/.ai2nao/index.db`（可用 `--db` 覆盖）。
 
@@ -79,6 +79,9 @@ node dist/cli.js chrome-history domains rebuild
 # GitHub 仓库 & Tags
 node dist/cli.js github sync
 node dist/cli.js github sync --full
+
+# Hugging Face 本地模型
+node dist/cli.js huggingface sync
 ```
 
 ### RAG 本地笔记
@@ -105,7 +108,7 @@ node dist/cli.js serve
 
 **Web 功能**：
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
-- **软件** — macOS 应用、Homebrew 包浏览
+- **软件** — macOS 应用、Homebrew 包、Hugging Face 本地模型浏览
 - **工作区** — VS Code 与 Cursor 最近打开的项目、文件、workspace
 - **对话** — Claude Code 与 Codex 本地对话历史
 - **浏览** — Chrome 历史、Chrome 域名分析、Atuin Shell 历史日历

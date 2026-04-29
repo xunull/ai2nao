@@ -1,18 +1,15 @@
-export type SoftwareSource = "mac_apps" | "brew";
+import type {
+  InventoryWarning,
+  LocalInventorySource,
+  SyncCounts,
+  SyncRunStatus,
+} from "../localInventory/types.js";
 
-export type SyncRunStatus = "running" | "success" | "partial" | "failed";
+export type SoftwareSource = Extract<LocalInventorySource, "mac_apps" | "brew">;
 
-export type SoftwareWarning = {
-  code: string;
-  message: string;
-  path?: string;
-};
+export type SoftwareWarning = InventoryWarning;
 
-export type SyncCounts = {
-  inserted: number;
-  updated: number;
-  markedMissing: number;
-};
+export type { SyncCounts, SyncRunStatus };
 
 export type ListOptions = {
   q?: string;

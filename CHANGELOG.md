@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4 — 2026-04-29
+
+### Added
+
+- Add a Hugging Face local model inventory that scans the local Hub cache, records downloaded model snapshots, refs, revision file counts, warning states, and deduplicated blob sizes.
+- Add `ai2nao huggingface sync` plus `/api/huggingface/status`, `/api/huggingface/models`, and `/api/huggingface/sync` so the inventory can be refreshed explicitly without background filesystem scans.
+- Add the `/huggingface-models` Web UI with cache-root filtering, model search, missing-model visibility, pagination, revision chips, modified dates, sync status, warning display, and local disk-usage summaries.
+- Add regression coverage for Hugging Face cache root resolution, cache scanning, sync state, API behavior, and the Web UI.
+
+### Changed
+
+- Generalize local inventory sync state and sync-run tracking so macOS apps, Homebrew packages, and Hugging Face models share the same run history infrastructure.
+
 ## 0.3.3 — 2026-04-26
 
 ### Added
