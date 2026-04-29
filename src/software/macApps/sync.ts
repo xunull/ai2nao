@@ -2,8 +2,8 @@ import type Database from "better-sqlite3";
 import { defaultMacAppRoots, isMacAppInventorySupported } from "./roots.js";
 import { scanMacApps, type ScanMacAppsOptions } from "./scan.js";
 import type { MacAppRecord } from "./plist.js";
-import { finishSoftwareSyncRun, startSoftwareSyncRun } from "../syncRuns.js";
-import { setSoftwareSyncStateValue } from "../state.js";
+import { finishInventorySyncRun, startInventorySyncRun } from "../../localInventory/syncRuns.js";
+import { setInventorySyncStateValue } from "../../localInventory/state.js";
 import type { SoftwareWarning, SyncCounts } from "../types.js";
 
 export type SyncMacAppsOptions = ScanMacAppsOptions & {
@@ -26,7 +26,7 @@ export async function syncMacApps(
 ): Promise<SyncMacAppsResult> {
   const now = opts.now ?? (() => new Date());
   const roots = opts.roots?.length ? opts.roots : defaultMacAppRoots();
-  const runId = startSoftwareSyncRun(db, "mac_apps", { roots }, now());
+  const runId = startInventorySyncRun(db, "mac_apps", { roots }, now());
 
   const platformSupported = opts.platformSupported ?? isMacAppInventorySupported();
   if (!platformSupported) {
@@ -47,7 +47,7 @@ export async function syncMacApps(
 
     const counts = upsertMacApps(db, scanned.apps, readableRoots, now().toISOString());
     const status = scanned.warnings.length > 0 ? "partial" : "success";
-    finishSoftwareSyncRun(db, runId, {
+    finishInventorySyncRun(db, runId, {
       status,
       ...counts,
       warningsCount: scanned.warnings.length,
@@ -55,8 +55,8 @@ export async function syncMacApps(
       metadata: { roots: scanned.roots },
       now: now(),
     });
-    setSoftwareSyncStateValue(db, "mac_apps.last_sync_at", now().toISOString());
-    setSoftwareSyncStateValue(
+    setInventorySyncStateValue(db, "mac_apps.last_sync_at", now().toISOString());
+    setInventorySyncStateValue(
       db,
       "mac_apps.last_sync_error",
       status === "partial" ? scanned.warnings.slice(0, 5).map((w) => w.message).join("\n") : null
@@ -140,7 +140,7 @@ function fail(
   now: () => Date,
   warnings: SoftwareWarning[] = []
 ): SyncMacAppsResult {
-  finishSoftwareSyncRun(db, runId, {
+  finishInventorySyncRun(db, runId, {
     status: "failed",
     inserted: 0,
     updated: 0,
@@ -150,7 +150,7 @@ function fail(
     metadata: { roots },
     now: now(),
   });
-  setSoftwareSyncStateValue(db, "mac_apps.last_sync_error", message);
+  setInventorySyncStateValue(db, "mac_apps.last_sync_error", message);
   return {
     ok: false,
     status: "failed",

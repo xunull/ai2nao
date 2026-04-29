@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { getLatestSoftwareSyncRun } from "../syncRuns.js";
+import { getLatestInventorySyncRun } from "../../localInventory/syncRuns.js";
 import type { ListOptions, PageResult } from "../types.js";
 import { defaultMacAppRoots, isMacAppInventorySupported } from "./roots.js";
 
@@ -36,7 +36,7 @@ export function getMacAppsStatus(db: Database.Database) {
       active: counts.active ?? 0,
       missing: counts.missing ?? 0,
     },
-    lastRun: getLatestSoftwareSyncRun(db, "mac_apps"),
+    lastRun: getLatestInventorySyncRun(db, "mac_apps"),
   };
 }
 
