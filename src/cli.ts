@@ -38,6 +38,7 @@ import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
 import { syncBrewPackages } from "./software/brew/sync.js";
+import { syncHuggingfaceModels } from "./huggingface/sync.js";
 import { syncMacApps } from "./software/macApps/sync.js";
 import { resetSoftwareSource } from "./software/reset.js";
 import { getVscodeMirrorStatus } from "./vscode/queries.js";
@@ -182,6 +183,35 @@ program
       }
     }
   );
+
+const huggingfaceCmd = program
+  .command("huggingface")
+  .description("Index locally cached Hugging Face Hub models");
+
+huggingfaceCmd
+  .command("sync")
+  .description("Scan Hugging Face Hub cache and record cached model metadata")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("-r, --root <path>", "Hub cache root (default: HF_HUB_CACHE, HF_HOME/hub, or ~/.cache/huggingface/hub)")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; root?: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = syncHuggingfaceModels(db, { root: opts.root });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.error(
+          `Hugging Face sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, warnings ${result.warnings.length}`
+        );
+        console.error(`Cache root: ${result.cacheRoot}`);
+        for (const w of result.warnings) console.error(`warning: ${w.message}`);
+      }
+      process.exitCode = result.ok && result.status !== "failed" ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
 
 const downloadsCmd = program
   .command("downloads")
