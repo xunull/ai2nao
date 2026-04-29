@@ -17,6 +17,7 @@ import { FileView } from "./pages/FileView";
 import { Github } from "./pages/Github";
 import { GithubTags } from "./pages/GithubTags";
 import { Homebrew } from "./pages/Homebrew";
+import { HuggingFaceModels } from "./pages/HuggingFaceModels";
 import { MacApps } from "./pages/MacApps";
 import { Vscode } from "./pages/Vscode";
 import { RepoDetail } from "./pages/RepoDetail";
@@ -38,6 +39,7 @@ export function App() {
         <Route path="/vscode" element={<Vscode />} />
         <Route path="/cursor-projects" element={<CursorProjects />} />
         <Route path="/brew" element={<Homebrew />} />
+        <Route path="/huggingface-models" element={<HuggingFaceModels />} />
         <Route path="/chrome-history" element={<ChromeHistory />} />
         <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />
         <Route path="/chrome-downloads" element={<ChromeDownloads />} />
