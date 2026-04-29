@@ -9,6 +9,7 @@ import {
   listAtuinHistoryForDay,
   listAtuinHistoryMonthCounts,
 } from "../atuin/queries.js";
+import { registerAtuinDirectoryActivityRoutes } from "../atuin/directoryActivity/routes.js";
 import {
   generateDailySummary,
   getDailySummaryStatus,
@@ -170,6 +171,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerSoftwareRoutes(app, db);
   registerChromeHistoryRoutes(app, db);
   registerVscodeRoutes(app, db);
+  registerAtuinDirectoryActivityRoutes(app, db, atuin);
 
   app.get("/api/status", (c) => {
     try {

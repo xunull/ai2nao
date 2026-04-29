@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { AiChat } from "./pages/AiChat";
 import { Atuin } from "./pages/Atuin";
+import { AtuinDirectories } from "./pages/AtuinDirectories";
 import { ChromeDownloads } from "./pages/ChromeDownloads";
 import { ChromeHistory } from "./pages/ChromeHistory";
 import { ChromeHistoryDomains } from "./pages/ChromeHistoryDomains";
@@ -34,6 +35,7 @@ export function App() {
         <Route path="/repos/:id/file" element={<FileView />} />
         <Route path="/search" element={<Search />} />
         <Route path="/atuin" element={<Atuin />} />
+        <Route path="/atuin/directories" element={<AtuinDirectories />} />
         <Route path="/downloads" element={<Downloads />} />
         <Route path="/apps" element={<MacApps />} />
         <Route path="/vscode" element={<Vscode />} />
