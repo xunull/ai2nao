@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.5 — 2026-04-29
+
+### Added
+
+- Add rebuildable Atuin directory activity analytics with raw and filtered command counts, freshness state, strict configuration parsing, and failure-safe derived tables.
+- Add `ai2nao atuin directories status` and `ai2nao atuin directories rebuild` plus `/api/atuin/directories/*` routes for status, rebuild, top directories, search, and per-directory command drilldown.
+- Add the `/atuin/directories` Web UI with raw/filtered mode switching, directory search, selected-directory command summaries, sync status, and stale-data messaging.
+- Add regression coverage for Atuin directory filtering, rebuild behavior, API validation, config parsing, and the Web UI.
+
+### Changed
+
+- Document Atuin directory analytics usage, freshness behavior, and low-information command filtering in the README.
+- Track follow-up work for stronger repo attribution and daily-summary evidence integration in `TODOS.md`.
+
 ## 0.3.4 — 2026-04-29
 
 ### Added

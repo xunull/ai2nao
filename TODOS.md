@@ -480,3 +480,57 @@ Depends on / blocked by:
 - Codex history v1 已落地
 - Claude Code 和 Codex 的 timeline 差异已通过真实使用验证
 - 至少一次 UI 回归测试覆盖现有对话详情页
+
+## Atuin 目录活动：repo 归属
+
+What: 在 Atuin 目录活动派生层落地后，把 `cwd` 映射到已索引 repo，让目录排行和详情能显示项目级标签。
+
+Why: 原始绝对路径可核对，但用户真正想识别的是“最近主要在哪些项目工作”。repo 归属能把长路径转成更可读的项目活动视图。
+
+Pros:
+- 提升目录活动页的可读性
+- 为跨源工作记忆、项目级摘要和证据层打基础
+- 让 ai2nao 相比 Atuin 原生命令搜索更有产品差异
+
+Cons:
+- 路径归属容易出错，错误归属会损害信任
+- 必须复用现有 path canonicalization 真源，不能临时写第二套 cwd 匹配逻辑
+
+Context:
+来自 `/plan-ceo-review` 对 Atuin 目录活动计划的 SELECTIVE EXPANSION。首版先做派生表、freshness、raw/filtered 口径、CLI/Web rebuild 和目录命令分析；repo 归属 defer 到派生层稳定后做。
+
+Effort estimate: M（human）→ S（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- Atuin 目录活动派生层已落地
+- `cwd`、raw/filtered count、目录命令聚合和 freshness 状态稳定
+- 复用 `src/scanner/discover.ts` / path canonicalization 相关规则，避免第二套目录归属口径
+
+## Atuin 目录活动：接入每日摘要证据层
+
+What: 让每日摘要引用 Atuin 目录活动派生事实，例如近期目录活跃度、命令样本、失败率和 freshness 状态，作为可回看的证据。
+
+Why: 每日摘要需要从“AI 说你做了什么”升级为“这些结论有可核对证据”。目录活动派生层正好能提供稳定、可解释的本机工作事实。
+
+Pros:
+- 提升每日摘要可信度
+- 复用目录活动派生层，让它成为工作记忆基础设施
+- 为未来跨天工作线程和证据可回看层提供更稳的数据来源
+
+Cons:
+- 会触碰 daily summary payload、缓存指纹、stale 语义和 UI 展示
+- 如果过早接入，会把目录页首版和摘要缓存复杂度绑在一起
+
+Context:
+来自 `/plan-ceo-review` 对 Atuin 目录活动计划的 SELECTIVE EXPANSION。用户选择 defer，不进入目录活动首版；它应归入既有“证据可回看层”路线，在目录派生层和摘要证据设计稳定后实现。
+
+Effort estimate: M（human）→ S（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- Atuin 目录活动派生层已落地
+- 每日摘要证据层设计稳定
+- 明确缓存指纹如何纳入目录活动 rule version、filter config hash 和 freshness 状态
