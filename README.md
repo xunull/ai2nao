@@ -86,6 +86,9 @@ node dist/cli.js github sync --full
 
 # Hugging Face 本地模型
 node dist/cli.js huggingface sync
+
+# LM Studio 本地模型
+node dist/cli.js lmstudio sync
 ```
 
 ### RAG 本地笔记
@@ -112,7 +115,7 @@ node dist/cli.js serve
 
 **Web 功能**：
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
-- **软件** — macOS 应用、Homebrew 包、Hugging Face 本地模型浏览
+- **软件** — macOS 应用、Homebrew 包、Hugging Face 与 LM Studio 本地模型浏览
 - **工作区** — VS Code 与 Cursor 最近打开的项目、文件、workspace
 - **对话** — Claude Code 与 Codex 本地对话历史
 - **浏览** — Chrome 历史、Chrome 域名分析、Atuin Shell 历史日历、Atuin 目录活动

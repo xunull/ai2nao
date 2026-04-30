@@ -39,6 +39,7 @@ import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
 import { syncBrewPackages } from "./software/brew/sync.js";
 import { syncHuggingfaceModels } from "./huggingface/sync.js";
+import { syncLmStudioModels } from "./lmstudio/sync.js";
 import { syncMacApps } from "./software/macApps/sync.js";
 import { resetSoftwareSource } from "./software/reset.js";
 import { getVscodeMirrorStatus } from "./vscode/queries.js";
@@ -213,6 +214,39 @@ huggingfaceCmd
           `Hugging Face sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, warnings ${result.warnings.length}`
         );
         console.error(`Cache root: ${result.cacheRoot}`);
+        for (const w of result.warnings) console.error(`warning: ${w.message}`);
+      }
+      process.exitCode = result.ok && result.status !== "failed" ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const lmstudioCmd = program
+  .command("lmstudio")
+  .description("Index locally downloaded LM Studio models");
+
+lmstudioCmd
+  .command("sync")
+  .description("Scan LM Studio models directory and record model metadata")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("-r, --root <path>", "LM Studio models root (default: LM Studio settings downloadsFolder or ~/.lmstudio/models)")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; root?: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const result = syncLmStudioModels(db, { root: opts.root });
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.error(
+          `LM Studio sync [${result.status}]: inserted ${result.inserted}, updated ${result.updated}, missing ${result.markedMissing}, warnings ${result.warnings.length}`
+        );
+        console.error(`Models root: ${result.modelsRoot}`);
+        if (result.settingsPath) console.error(`Settings: ${result.settingsPath}`);
+        for (const alt of result.alternativeRoots) {
+          console.error(`alternative root (${alt.source}): ${alt.modelsRoot}`);
+        }
         for (const w of result.warnings) console.error(`warning: ${w.message}`);
       }
       process.exitCode = result.ok && result.status !== "failed" ? 0 : 1;
