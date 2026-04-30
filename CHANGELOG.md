@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.7 — 2026-04-30
+
+### Added
+
+- Add an LM Studio local model inventory that resolves the active downloads folder from LM Studio settings, scans `publisher/model` directories, records model formats, sizes, warnings, and key model files.
+- Add `ai2nao lmstudio sync` plus `/api/lmstudio/status`, `/api/lmstudio/models`, and `/api/lmstudio/sync` for explicit local model refreshes.
+- Add the `/lmstudio-models` Web UI with root override, search, format filtering, missing-model visibility, pagination, sync status, warnings, and top-file summaries.
+- Add regression coverage for LM Studio root resolution, filesystem scanning, sync persistence, API behavior, and the Web UI.
+
+### Changed
+
+- Extend local inventory sync tracking so LM Studio sync runs share the same status history as macOS apps, Homebrew packages, and Hugging Face models.
+
 ## 0.3.6 — 2026-04-29
 
 ### Changed

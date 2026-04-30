@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 13;
+const CURRENT_VERSION = 14;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -24,6 +24,7 @@ export function migrate(db: Database.Database): void {
     applyV11(db);
     applyV12(db);
     applyV13(db);
+    applyV14(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -43,6 +44,7 @@ export function migrate(db: Database.Database): void {
   if (v < 11) applyV11(db);
   if (v < 12) applyV12(db);
   if (v < 13) applyV13(db);
+  if (v < 14) applyV14(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -844,5 +846,100 @@ function applyV13(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 13 WHERE id = 1;
+  `);
+}
+
+/** LM Studio downloaded model inventory, keyed by resolved models root + publisher/model. */
+function applyV14(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS local_inventory_sync_runs_v14 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL CHECK (source IN ('mac_apps', 'brew', 'huggingface', 'lmstudio')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+      inserted INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      marked_missing INTEGER NOT NULL DEFAULT 0,
+      warnings_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    INSERT OR IGNORE INTO local_inventory_sync_runs_v14 (
+      id, source, started_at, finished_at, status, inserted, updated,
+      marked_missing, warnings_count, error_summary, metadata_json
+    )
+    SELECT id, source, started_at, finished_at, status, inserted, updated,
+           marked_missing, warnings_count, error_summary, metadata_json
+    FROM local_inventory_sync_runs;
+
+    DROP TABLE local_inventory_sync_runs;
+    ALTER TABLE local_inventory_sync_runs_v14 RENAME TO local_inventory_sync_runs;
+
+    CREATE INDEX IF NOT EXISTS idx_local_inventory_sync_runs_source_started
+      ON local_inventory_sync_runs(source, started_at);
+
+    CREATE TABLE IF NOT EXISTS lmstudio_models (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      publisher TEXT NOT NULL,
+      model_name TEXT NOT NULL,
+      model_key TEXT NOT NULL,
+      models_root TEXT NOT NULL,
+      model_dir TEXT NOT NULL,
+      format TEXT NOT NULL CHECK (format IN ('gguf', 'mlx_safetensors', 'safetensors', 'mixed', 'unknown')),
+      weight_file_count INTEGER NOT NULL DEFAULT 0,
+      auxiliary_file_count INTEGER NOT NULL DEFAULT 0,
+      total_file_count INTEGER NOT NULL DEFAULT 0,
+      total_size_bytes INTEGER NOT NULL DEFAULT 0,
+      weight_size_bytes INTEGER NOT NULL DEFAULT 0,
+      primary_file TEXT,
+      config_json TEXT,
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      last_modified_ms INTEGER,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(models_root, model_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_root
+      ON lmstudio_models(models_root);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_key
+      ON lmstudio_models(model_key);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_missing_since
+      ON lmstudio_models(missing_since);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_size
+      ON lmstudio_models(total_size_bytes);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_format
+      ON lmstudio_models(format);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_models_last_seen
+      ON lmstudio_models(last_seen_at);
+
+    CREATE TABLE IF NOT EXISTS lmstudio_model_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      model_id INTEGER NOT NULL REFERENCES lmstudio_models(id) ON DELETE CASCADE,
+      rel_path TEXT NOT NULL,
+      file_kind TEXT NOT NULL CHECK (file_kind IN ('weight', 'auxiliary')),
+      format TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      target_path TEXT,
+      is_symlink INTEGER NOT NULL DEFAULT 0,
+      last_modified_ms INTEGER,
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      inserted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(model_id, rel_path)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_model_files_model
+      ON lmstudio_model_files(model_id);
+    CREATE INDEX IF NOT EXISTS idx_lmstudio_model_files_kind
+      ON lmstudio_model_files(model_id, file_kind);
+
+    UPDATE meta_schema SET version = 14 WHERE id = 1;
   `);
 }
