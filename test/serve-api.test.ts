@@ -390,6 +390,49 @@ describe("Hono read-only API", () => {
     }
   });
 
+  it("POST /api/lmstudio/sync and GET status/models", async () => {
+    const base = join(tmpdir(), `ai2nao-lm-api-${Date.now()}`);
+    const root = join(base, "models");
+    const model = join(root, "org", "repo-GGUF");
+    mkdirSync(model, { recursive: true });
+    writeFileSync(join(model, "repo-Q4_K_M.gguf"), "hello", "utf8");
+    writeFileSync(join(model, "mmproj-repo.gguf"), "mm", "utf8");
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const app = createApp({ db });
+      const sync = await app.request("http://x/api/lmstudio/sync", {
+        method: "POST",
+        body: JSON.stringify({ root }),
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(sync.status).toBe(200);
+      const syncJson = (await sync.json()) as { inserted: number; modelsRoot: string };
+      expect(syncJson.inserted).toBe(1);
+      expect(syncJson.modelsRoot).toBe(root);
+
+      const status = await app.request(`http://x/api/lmstudio/status?root=${encodeURIComponent(root)}`);
+      expect(status.status).toBe(200);
+      const statusJson = (await status.json()) as { counts: { active: number; totalSizeBytes: number } };
+      expect(statusJson.counts.active).toBe(1);
+      expect(statusJson.counts.totalSizeBytes).toBe(7);
+
+      const models = await app.request(`http://x/api/lmstudio/models?root=${encodeURIComponent(root)}&format=gguf&q=org`);
+      expect(models.status).toBe(200);
+      const modelsJson = (await models.json()) as { rows: { model_key: string; files: { rel_path: string }[] }[] };
+      expect(modelsJson.rows[0].model_key).toBe("org/repo-GGUF");
+      expect(modelsJson.rows[0].files.some((f) => f.rel_path === "repo-Q4_K_M.gguf")).toBe(true);
+
+      const invalid = await app.request("http://x/api/lmstudio/sync", {
+        method: "POST",
+        body: JSON.stringify({ root: 123 }),
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(invalid.status).toBe(400);
+    } finally {
+      db.close();
+    }
+  });
+
   it("POST /api/chrome-history/sync and GET month/day", async () => {
     const base = join(tmpdir(), `ai2nao-chrome-api-${Date.now()}`);
     mkdirSync(base, { recursive: true });

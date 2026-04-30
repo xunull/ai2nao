@@ -61,6 +61,7 @@ import {
 } from "../codexHistory/index.js";
 import { isCodexHistoryError } from "../codexHistory/errors.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
+import { registerLmStudioRoutes } from "../lmstudio/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
 import { registerHuggingfaceRoutes } from "../huggingface/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
@@ -168,6 +169,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerGithubRoutes(app, db);
   registerHuggingfaceRoutes(app, db);
+  registerLmStudioRoutes(app, db);
   registerSoftwareRoutes(app, db);
   registerChromeHistoryRoutes(app, db);
   registerVscodeRoutes(app, db);
