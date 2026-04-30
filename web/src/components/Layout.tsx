@@ -12,6 +12,7 @@ const navGroups = [
       { to: "/cursor-projects", label: "Cursor 项目" },
       { to: "/brew", label: "Homebrew" },
       { to: "/huggingface-models", label: "HF 模型" },
+      { to: "/lmstudio-models", label: "LM Studio" },
       { to: "/atuin", label: "Atuin" },
       { to: "/atuin/directories", label: "Atuin 目录" },
     ],
