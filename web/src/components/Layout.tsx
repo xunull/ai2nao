@@ -38,6 +38,7 @@ const navGroups = [
     label: "代码",
     items: [
       { to: "/github", label: "GitHub" },
+      { to: "/github/radar", label: "开源雷达" },
       { to: "/github/tags", label: "Star Tag" },
       { to: "/search", label: "搜索" },
     ],
