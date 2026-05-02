@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 14;
+const CURRENT_VERSION = 15;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -25,6 +25,7 @@ export function migrate(db: Database.Database): void {
     applyV12(db);
     applyV13(db);
     applyV14(db);
+    applyV15(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -45,6 +46,7 @@ export function migrate(db: Database.Database): void {
   if (v < 12) applyV12(db);
   if (v < 13) applyV13(db);
   if (v < 14) applyV14(db);
+  if (v < 15) applyV15(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -941,5 +943,37 @@ function applyV14(db: Database.Database): void {
       ON lmstudio_model_files(model_id, file_kind);
 
     UPDATE meta_schema SET version = 14 WHERE id = 1;
+  `);
+}
+
+/** GitHub open-source radar local notes and star health metadata. */
+function applyV15(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE gh_star ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE gh_star ADD COLUMN pushed_at TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_gh_star_pushed_at
+      ON gh_star(pushed_at);
+    CREATE INDEX IF NOT EXISTS idx_gh_star_archived
+      ON gh_star(archived);
+
+    CREATE TABLE IF NOT EXISTS gh_star_note (
+      repo_id INTEGER PRIMARY KEY,
+      reason TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'new'
+        CHECK (status IN ('new', 'reviewed', 'try_next', 'ignore', 'retired')),
+      last_reviewed_at TEXT,
+      source TEXT NOT NULL DEFAULT 'user'
+        CHECK (source IN ('user')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gh_star_note_status
+      ON gh_star_note(status);
+    CREATE INDEX IF NOT EXISTS idx_gh_star_note_last_reviewed
+      ON gh_star_note(last_reviewed_at);
+
+    UPDATE meta_schema SET version = 15 WHERE id = 1;
   `);
 }

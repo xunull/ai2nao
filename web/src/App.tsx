@@ -46,6 +46,9 @@ const FileView = lazy(() =>
   import("./pages/FileView").then((m) => ({ default: m.FileView }))
 );
 const Github = lazy(() => import("./pages/Github").then((m) => ({ default: m.Github })));
+const GithubRadar = lazy(() =>
+  import("./pages/GithubRadar").then((m) => ({ default: m.GithubRadar }))
+);
 const GithubTags = lazy(() =>
   import("./pages/GithubTags").then((m) => ({ default: m.GithubTags }))
 );
@@ -101,6 +104,7 @@ export function App() {
           <Route path="/codex-history/s/:sessionId" element={<CodexHistorySession />} />
           <Route path="/ai-chat" element={<AiChat />} />
           <Route path="/github" element={<Github />} />
+          <Route path="/github/radar" element={<GithubRadar />} />
           <Route path="/github/tags" element={<GithubTags />} />
         </Routes>
       </Suspense>

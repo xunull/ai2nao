@@ -63,6 +63,8 @@ export type GhStar = {
   topics: string[];
   stargazers_count: number;
   starred_at: string;
+  archived: boolean;
+  pushed_at: string | null;
 };
 
 export type GhReposRes = {
@@ -139,3 +141,78 @@ export type GhTagAliasesRes = {
 
 export type TagFilterMode = "or" | "and";
 export type TagHeatmapGrain = "month" | "quarter" | "year";
+
+// ---------- Open-source radar (local-only notes + derived signals) ----------
+
+export type GhStarNoteStatus =
+  | "new"
+  | "reviewed"
+  | "try_next"
+  | "ignore"
+  | "retired";
+
+export type GhRadarSignal =
+  | "archived"
+  | "stale"
+  | "needs_review"
+  | "missing_reason"
+  | "recently_starred"
+  | "active_recently";
+
+export type GhStarNote = {
+  repo_id: number;
+  reason: string;
+  status: GhStarNoteStatus;
+  last_reviewed_at: string | null;
+  source: "user";
+  created_at: string;
+  updated_at: string;
+};
+
+export type GhRadarRepo = GhStar & {
+  note: GhStarNote | null;
+  effective_status: GhStarNoteStatus;
+  signals: GhRadarSignal[];
+};
+
+export type GhRadarCluster = {
+  tag: string;
+  count: number;
+  missing_reason_count: number;
+  needs_review_count: number;
+  stale_count: number;
+  last_starred_at: string | null;
+};
+
+export type GhRadarOverviewRes = {
+  generated_at: string;
+  thresholds: {
+    stale_before: string;
+    needs_review_before: string;
+    recently_starred_since: string;
+    active_recently_since: string;
+  };
+  counts: {
+    total_stars: number;
+    missing_reason: number;
+    needs_review: number;
+    stale: number;
+    archived: number;
+    recently_starred: number;
+    active_recently: number;
+    try_next: number;
+  };
+  clusters: GhRadarCluster[];
+  language_only: GhRadarCluster[];
+  queues: {
+    missing_reason: GhRadarRepo[];
+    needs_review: GhRadarRepo[];
+    stale: GhRadarRepo[];
+    try_next: GhRadarRepo[];
+    recently_starred: GhRadarRepo[];
+  };
+};
+
+export type GhStarNoteRes = {
+  note: GhStarNote;
+};
