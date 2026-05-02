@@ -51,6 +51,8 @@ export type GhStarRow = {
   topics: string[];
   stargazers_count: number;
   starred_at: string;
+  archived: boolean;
+  pushed_at: string | null;
 };
 
 export type GhSyncState = {
@@ -209,6 +211,8 @@ type StarDbRow = {
   topics_json: string;
   stargazers_count: number;
   starred_at: string;
+  archived: number;
+  pushed_at: string | null;
 };
 
 function mapStarRow(r: StarDbRow): GhStarRow {
@@ -223,6 +227,8 @@ function mapStarRow(r: StarDbRow): GhStarRow {
     topics: parseTopicsSafe(r.topics_json, `gh_star.repo_id=${r.repo_id}`),
     stargazers_count: r.stargazers_count,
     starred_at: r.starred_at,
+    archived: r.archived !== 0,
+    pushed_at: r.pushed_at,
   };
 }
 
@@ -242,7 +248,7 @@ export function listStars(db: Database.Database, args: ListStarsArgs = {}): List
   const perPage = Math.min(100, Math.max(1, args.perPage ?? 30));
   const cursorSql = args.cursor != null ? " WHERE starred_at < ?" : "";
   const sql = `SELECT repo_id, owner, name, full_name, description, html_url, language,
-                      topics_json, stargazers_count, starred_at
+                      topics_json, stargazers_count, starred_at, archived, pushed_at
                FROM gh_star${cursorSql}
                ORDER BY starred_at DESC, repo_id DESC
                LIMIT ?`;
@@ -436,10 +442,10 @@ export function upsertStar(
   db.prepare(
     `INSERT INTO gh_star (
       repo_id, owner, name, full_name, description, html_url, language,
-      topics_json, stargazers_count, starred_at, inserted_at
+      topics_json, stargazers_count, starred_at, inserted_at, archived, pushed_at
     ) VALUES (
       @repo_id, @owner, @name, @full_name, @description, @html_url, @language,
-      @topics_json, @stargazers_count, @starred_at, @inserted_at
+      @topics_json, @stargazers_count, @starred_at, @inserted_at, @archived, @pushed_at
     )
     ON CONFLICT(repo_id) DO UPDATE SET
       owner = excluded.owner,
@@ -450,7 +456,9 @@ export function upsertStar(
       language = excluded.language,
       topics_json = excluded.topics_json,
       stargazers_count = excluded.stargazers_count,
-      starred_at = excluded.starred_at`
+      starred_at = excluded.starred_at,
+      archived = excluded.archived,
+      pushed_at = excluded.pushed_at`
   ).run({
     repo_id: s.repo.id,
     owner: s.repo.owner.login,
@@ -463,6 +471,8 @@ export function upsertStar(
     stargazers_count: s.repo.stargazers_count,
     starred_at: s.starred_at,
     inserted_at: nowIso,
+    archived: boolToInt(s.repo.archived),
+    pushed_at: s.repo.pushed_at,
   });
 }
 
