@@ -16,6 +16,10 @@
  *   GET /api/github/tags/heatmap → tag × time 2D heatmap
  *   GET /api/github/tags/repos   → keyset-paginated filtered repos
  *   GET /api/github/tags/aliases → read-only list of gh_tag_alias
+ *
+ * Radar (local-only user memory; never writes to GitHub):
+ *   GET  /api/github/radar                → overview DTO
+ *   POST /api/github/radar/notes/:repo_id → upsert local note/status
  */
 
 import type { Hono } from "hono";
@@ -29,6 +33,12 @@ import {
   listRepos,
   listStars,
 } from "./queries.js";
+import {
+  assertValidRepoId,
+  getRadarOverview,
+  isStarNoteStatus,
+  upsertStarNote,
+} from "./radar.js";
 import {
   getTagTimeHeatmap,
   getTopTags,
@@ -106,6 +116,55 @@ export function registerGithubRoutes(app: Hono, db: Database.Database): void {
       return c.json({ buckets });
     } catch (e) {
       return jsonErr(500, String(e));
+    }
+  });
+
+  // ---------- Open-source radar ----------
+
+  app.get("/api/github/radar", (c) => {
+    try {
+      const clusterLimit = parsePositiveInt(c.req.query("cluster_limit"));
+      const queueLimit = parsePositiveInt(c.req.query("queue_limit"));
+      return c.json(getRadarOverview(db, { clusterLimit, queueLimit }));
+    } catch (e) {
+      return jsonErr(500, String(e));
+    }
+  });
+
+  app.post("/api/github/radar/notes/:repo_id", async (c) => {
+    try {
+      const repoId = parseInt(c.req.param("repo_id"), 10);
+      assertValidRepoId(repoId);
+      const body = (await c.req.json().catch(() => null)) as
+        | { reason?: unknown; status?: unknown; last_reviewed_at?: unknown }
+        | null;
+      if (!body || !isStarNoteStatus(body.status)) {
+        return jsonErr(
+          400,
+          "status must be one of: new, reviewed, try_next, ignore, retired"
+        );
+      }
+      const reason =
+        typeof body.reason === "string" || body.reason == null
+          ? body.reason
+          : String(body.reason);
+      const lastReviewedAt =
+        typeof body.last_reviewed_at === "string" || body.last_reviewed_at == null
+          ? body.last_reviewed_at
+          : String(body.last_reviewed_at);
+      const note = upsertStarNote(db, {
+        repoId,
+        reason,
+        status: body.status,
+        lastReviewedAt,
+      });
+      return c.json({ note });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/repo_id must be a positive integer/.test(msg)) {
+        return jsonErr(400, msg);
+      }
+      return jsonErr(500, msg);
     }
   });
 
@@ -205,4 +264,10 @@ export function registerGithubRoutes(app: Hono, db: Database.Database): void {
       return jsonErr(500, String(e));
     }
   });
+}
+
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (raw == null || raw.trim() === "") return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
