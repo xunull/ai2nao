@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.8 — 2026-05-02
+
+### Added
+
+- Add the GitHub open-source radar so users can turn starred repositories into local review queues grouped by topic, freshness, and action status.
+- Add local-only star notes with collection reason, review status, and last-reviewed timestamps without writing anything back to GitHub.
+- Add `/api/github/radar`, `/api/github/radar/notes/:repo_id`, and the `/github/radar` Web UI for radar metrics, clusters, queues, and note editing.
+- Add regression coverage for radar schema migration, note validation, queue signals, API errors, and Web save behavior.
+- Document the radar design, data model, signals, API, UI, and v1 boundaries in `docs/github-open-source-radar.md`.
+
+### Changed
+
+- Store GitHub star archive and push timestamps during sync so stale and recently-active signals can be derived locally.
+
+### Removed
+
+- Remove the superseded Claude Code brainstorm and local-history plan documents from `docs/brainstorms` and `docs/plans`.
+
 ## 0.3.7 — 2026-04-30
 
 ### Added
