@@ -3,6 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost } from "../api";
 import type {
   GhRadarCluster,
+  GhRadarInsight,
+  GhRadarInsightFeedback,
+  GhRadarInsightFeedbackRes,
+  GhRadarInsightRefreshRes,
+  GhRadarInsightsRes,
   GhRadarOverviewRes,
   GhRadarRepo,
   GhStarNoteRes,
@@ -60,6 +65,11 @@ export function GithubRadar() {
     queryFn: () => apiGet<GhRadarOverviewRes>("/api/github/radar"),
     enabled: statusQ.data?.token.configured === true,
   });
+  const insightsQ = useQuery({
+    queryKey: ["github-radar-insights"],
+    queryFn: () => apiGet<GhRadarInsightsRes>("/api/github/radar/insights"),
+    enabled: statusQ.data?.token.configured === true,
+  });
 
   if (statusQ.isLoading) {
     return <p className="text-sm text-[var(--muted)]">加载中…</p>;
@@ -90,16 +100,27 @@ export function GithubRadar() {
         </section>
       ) : radarQ.isLoading ? (
         <p className="text-sm text-[var(--muted)]">加载雷达…</p>
-      ) : radarQ.isError ? (
-        <ErrorBox message={String((radarQ.error as Error).message)} />
-      ) : radarQ.data ? (
-        <RadarBody data={radarQ.data} />
+      ) : radarQ.isError || insightsQ.isError ? (
+        <ErrorBox
+          message={String(
+            ((radarQ.error ?? insightsQ.error) as Error | null)?.message ??
+              "加载雷达失败"
+          )}
+        />
+      ) : radarQ.data && insightsQ.data ? (
+        <RadarBody data={radarQ.data} insights={insightsQ.data} />
       ) : null}
     </div>
   );
 }
 
-function RadarBody({ data }: { data: GhRadarOverviewRes }) {
+function RadarBody({
+  data,
+  insights,
+}: {
+  data: GhRadarOverviewRes;
+  insights: GhRadarInsightsRes;
+}) {
   const totalQueued = useMemo(
     () =>
       data.counts.missing_reason +
@@ -121,25 +142,264 @@ function RadarBody({ data }: { data: GhRadarOverviewRes }) {
 
   return (
     <div className="space-y-5">
-      <section className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
-        <Metric label="Star" value={data.counts.total_stars} />
-        <Metric label="待补理由" value={data.counts.missing_reason} />
-        <Metric label="需复盘" value={data.counts.needs_review} />
-        <Metric label="过期" value={data.counts.stale} />
-        <Metric label="归档" value={data.counts.archived} />
-        <Metric label="最近收藏" value={data.counts.recently_starred} />
-        <Metric label="最近活跃" value={data.counts.active_recently} />
-        <Metric label="行动队列" value={totalQueued} />
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-4">
-        <div className="space-y-4">
-          <ClusterPanel title="主题方向" clusters={data.clusters} />
-          <ClusterPanel title="仅语言分组" clusters={data.language_only} muted />
+      <InsightStatusBar insights={insights} />
+      <CurrentClues insights={insights} />
+      <SecondaryInsightSections insights={insights} />
+      <details className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer text-sm font-medium">
+          旧雷达队列 · 待补 {data.counts.missing_reason} · 复盘{" "}
+          {data.counts.needs_review} · 过期 {data.counts.stale} · 下一步{" "}
+          {data.counts.try_next}
+        </summary>
+        <div className="mt-4 space-y-4">
+          <section className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+            <Metric label="Star" value={data.counts.total_stars} />
+            <Metric label="待补理由" value={data.counts.missing_reason} />
+            <Metric label="需复盘" value={data.counts.needs_review} />
+            <Metric label="过期" value={data.counts.stale} />
+            <Metric label="归档" value={data.counts.archived} />
+            <Metric label="最近收藏" value={data.counts.recently_starred} />
+            <Metric label="最近活跃" value={data.counts.active_recently} />
+            <Metric label="行动队列" value={totalQueued} />
+          </section>
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-4">
+            <div className="space-y-4">
+              <ClusterPanel title="主题方向" clusters={data.clusters} />
+              <ClusterPanel title="仅语言分组" clusters={data.language_only} muted />
+            </div>
+            <QueuePanel queues={data.queues} />
+          </div>
         </div>
-        <QueuePanel queues={data.queues} />
-      </div>
+      </details>
     </div>
+  );
+}
+
+function InsightStatusBar({ insights }: { insights: GhRadarInsightsRes }) {
+  const queryClient = useQueryClient();
+  const refresh = useMutation({
+    mutationFn: () =>
+      apiPost<GhRadarInsightRefreshRes>("/api/github/radar/insights/refresh", {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["github-radar-insights"] });
+    },
+  });
+  const status = refresh.isPending ? "refresh_in_progress" : insights.meta.status;
+  return (
+    <section
+      role="status"
+      className="rounded border border-[var(--border)] bg-white px-4 py-3 shadow-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>{statusLabelForInsight(status)}</Badge>
+            <span className="text-sm text-[var(--fg)]">
+              {statusMessage(status)}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-[var(--muted)]">
+            {insights.meta.generated_at
+              ? `已更新 ${formatDay(insights.meta.generated_at)} · ${insights.meta.metrics?.insight_count ?? 0} 条线索 · ${insights.meta.metrics?.duration_ms ?? 0}ms`
+              : "尚未生成洞察快照"}
+          </div>
+          {insights.meta.warnings.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-xs text-amber-700">
+              {insights.meta.warnings.map((w) => (
+                <li key={`${w.code}-${w.message}`}>{w.message}</li>
+              ))}
+            </ul>
+          ) : null}
+          {refresh.isError ? (
+            <p className="mt-2 text-xs text-red-600">
+              {String((refresh.error as Error)?.message ?? "刷新失败")}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="min-h-10 rounded bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          disabled={refresh.isPending}
+          onClick={() => refresh.mutate()}
+        >
+          {refresh.isPending ? "刷新中" : insights.meta.status === "error" ? "重试刷新" : "刷新线索"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function CurrentClues({ insights }: { insights: GhRadarInsightsRes }) {
+  if (insights.meta.status === "empty") {
+    return (
+      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm text-sm text-[var(--muted)]">
+        开源雷达需要本地 GitHub Star 数据。先运行{" "}
+        <code className="bg-neutral-100 px-1 rounded">ai2nao github sync --full</code>{" "}
+        ，再回来生成线索。同步只写入本地 SQLite，不会修改 GitHub。
+      </section>
+    );
+  }
+  if (insights.current_clues.length === 0) {
+    return (
+      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm text-sm text-[var(--muted)]">
+        目前没有足够强的当前工作线索。可以刷新一次，或先继续保留旧雷达队列。
+      </section>
+    );
+  }
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-medium">现在值得看的线索</h2>
+      {insights.current_clues.map((insight) => (
+        <InsightCard key={insight.fingerprint} insight={insight} />
+      ))}
+    </section>
+  );
+}
+
+function SecondaryInsightSections({ insights }: { insights: GhRadarInsightsRes }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <InsightList title="重新变得有用" items={insights.rediscovered} />
+      <InsightList title="可能该降级关注" items={insights.retire_candidates} />
+      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-medium">技术品味画像</h2>
+        {insights.taste_profile ? (
+          <div className="mt-3">
+            <p className="text-sm">{insights.taste_profile.title}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {insights.taste_profile.terms.map((t) => (
+                <Badge key={t}>{t}</Badge>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-[var(--muted)]">暂无足够主题数据。</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function InsightList({
+  title,
+  items,
+}: {
+  title: string;
+  items: GhRadarInsight[];
+}) {
+  return (
+    <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+      <h2 className="text-sm font-medium">{title}</h2>
+      {items.length === 0 ? (
+        <p className="mt-2 text-sm text-[var(--muted)]">暂无线索。</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {items.slice(0, 4).map((insight) => (
+            <li key={insight.fingerprint} className="text-sm">
+              <div className="font-medium">{insight.title}</div>
+              <div className="mt-1 text-xs text-[var(--muted)]">
+                {evidenceSummary(insight)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function InsightCard({ insight }: { insight: GhRadarInsight }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const feedback = useMutation({
+    mutationFn: (value: GhRadarInsightFeedback) =>
+      apiPost<GhRadarInsightFeedbackRes>("/api/github/radar/insights/feedback", {
+        target_type: "insight",
+        target_id: insight.fingerprint,
+        feedback: value,
+        insight_fingerprint: insight.fingerprint,
+        repo_id: insight.repo_ids[0] ?? null,
+        terms: insight.terms,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["github-radar-insights"] });
+    },
+  });
+  const drawerId = `evidence-${insight.fingerprint}`;
+  return (
+    <article className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>{healthLabel(insight.health)}</Badge>
+          <Badge>{kindLabel(insight.kind)}</Badge>
+          <span className="text-xs text-[var(--muted)]">
+            score {insight.score}
+          </span>
+        </div>
+        <h3 className="text-base font-semibold">{insight.title}</h3>
+        <p className="text-sm text-[var(--muted)]">{insight.summary}</p>
+        <div className="text-xs text-[var(--muted)]">
+          {evidenceSummary(insight)}
+        </div>
+      </header>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={drawerId}
+          className="min-h-10 rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-neutral-50"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "收起证据" : "查看证据"}
+        </button>
+        {(["useful", "wrong", "later", "ignore"] as GhRadarInsightFeedback[]).map(
+          (value) => (
+            <button
+              key={value}
+              type="button"
+              className="min-h-10 rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              disabled={feedback.isPending}
+              onClick={() => feedback.mutate(value)}
+            >
+              {feedbackLabel(value)}
+            </button>
+          )
+        )}
+      </div>
+      {feedback.isError ? (
+        <p className="mt-2 text-xs text-red-600">
+          {String((feedback.error as Error)?.message ?? "反馈失败")}
+        </p>
+      ) : null}
+      {open ? (
+        <div
+          id={drawerId}
+          className="mt-3 rounded border border-[var(--border)] bg-neutral-50 p-3"
+        >
+          <p className="text-xs text-[var(--muted)]">{insight.health_reason}</p>
+          <ul className="mt-2 space-y-2">
+            {insight.evidence.map((e, idx) => (
+              <li key={`${e.source_kind}-${idx}`} className="text-sm">
+                <div className="font-medium">
+                  {sourceKindLabel(e.source_kind)} · {e.label}
+                </div>
+                <div className="mt-1 text-xs text-[var(--muted)]">
+                  {e.source_path ? `${e.source_path} · ` : ""}
+                  weight {e.weight}
+                </div>
+                {e.matched_terms.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {e.matched_terms.map((t) => (
+                      <Badge key={t}>{t}</Badge>
+                    ))}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -371,6 +631,115 @@ function signalLabel(signal: string): string {
       return "近期活跃";
     default:
       return signal;
+  }
+}
+
+function statusLabelForInsight(status: string): string {
+  switch (status) {
+    case "fresh":
+      return "已更新";
+    case "stale":
+      return "可能过期";
+    case "partial":
+      return "部分更新";
+    case "empty":
+      return "无数据";
+    case "error":
+      return "出错";
+    case "refresh_in_progress":
+      return "刷新中";
+    default:
+      return status;
+  }
+}
+
+function statusMessage(status: string): string {
+  switch (status) {
+    case "fresh":
+      return "线索已更新，基于本地 Star、topics 和当前工作上下文。";
+    case "stale":
+      return "当前工作上下文已变化，这些线索可能需要重新生成。";
+    case "partial":
+      return "部分上下文读取失败，线索仍可参考，但证据不完整。";
+    case "empty":
+      return "还没有 Star 数据。先运行 GitHub sync，再生成线索。";
+    case "error":
+      return "这次没有生成新线索。旧线索仍保留，修复后可重试。";
+    case "refresh_in_progress":
+      return "正在生成线索，当前页面先保留已有结果。";
+    default:
+      return status;
+  }
+}
+
+function evidenceSummary(insight: GhRadarInsight): string {
+  const kinds = [...new Set(insight.evidence.map((e) => sourceKindLabel(e.source_kind)))];
+  return `${insight.evidence.length} 个证据 · ${healthLabel(insight.health)} · ${kinds.slice(0, 3).join(" / ") || "repo"}`;
+}
+
+function healthLabel(health: string): string {
+  switch (health) {
+    case "strong":
+      return "strong";
+    case "partial":
+      return "partial";
+    case "weak":
+      return "weak";
+    case "stale":
+      return "stale";
+    case "suppressed":
+      return "suppressed";
+    default:
+      return health;
+  }
+}
+
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case "recommended_now":
+      return "当前线索";
+    case "rediscovered":
+      return "重新发现";
+    case "retire_candidate":
+      return "降级候选";
+    case "taste_profile":
+      return "品味画像";
+    default:
+      return kind;
+  }
+}
+
+function feedbackLabel(feedback: GhRadarInsightFeedback): string {
+  switch (feedback) {
+    case "useful":
+      return "有用";
+    case "wrong":
+      return "不准";
+    case "later":
+      return "以后看";
+    case "ignore":
+      return "忽略";
+  }
+}
+
+function sourceKindLabel(kind: string): string {
+  switch (kind) {
+    case "todo":
+      return "TODO";
+    case "doc":
+      return "docs";
+    case "git_commit":
+      return "commit";
+    case "branch":
+      return "branch";
+    case "repo_fact":
+      return "repo";
+    case "topic":
+      return "topics";
+    case "feedback":
+      return "feedback";
+    default:
+      return kind;
   }
 }
 

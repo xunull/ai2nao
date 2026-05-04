@@ -1,5 +1,5 @@
 import { readdirSync, statSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { DEFAULT_EXCLUDE_DIR_NAMES } from "../config.js";
 import { readOriginUrl } from "../git/parseConfig.js";
 import { canonicalizePath } from "../path/canonical.js";
@@ -85,4 +85,61 @@ export function readManifestIfPresent(
     size_bytes: st.size,
     body,
   };
+}
+
+export type MarkdownDocScanResult = {
+  docs: string[];
+  skipped: number;
+};
+
+export function listMarkdownDocs(
+  repoRoot: string,
+  docsRootRel: string,
+  options: {
+    maxDocs: number;
+    maxDocBytes: number;
+    excludeDirNames?: Set<string>;
+  }
+): MarkdownDocScanResult {
+  const excludeNames = options.excludeDirNames ?? DEFAULT_EXCLUDE_DIR_NAMES;
+  const docsRoot = join(repoRoot, docsRootRel);
+  if (!existsSync(docsRoot)) return { docs: [], skipped: 0 };
+  const docs: string[] = [];
+  let skipped = 0;
+  const stack = [docsRoot];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      skipped++;
+      continue;
+    }
+    for (const ent of entries) {
+      if (ent.isDirectory()) {
+        if (!shouldSkipDir(ent.name, excludeNames)) stack.push(join(dir, ent.name));
+        continue;
+      }
+      if (!ent.isFile() || !ent.name.endsWith(".md")) continue;
+      const abs = join(dir, ent.name);
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        skipped++;
+        continue;
+      }
+      if (st.size > options.maxDocBytes) {
+        skipped++;
+        continue;
+      }
+      if (docs.length >= options.maxDocs) {
+        skipped++;
+        continue;
+      }
+      docs.push(relative(repoRoot, abs));
+    }
+  }
+  return { docs: docs.sort(), skipped };
 }

@@ -20,6 +20,9 @@
  * Radar (local-only user memory; never writes to GitHub):
  *   GET  /api/github/radar                → overview DTO
  *   POST /api/github/radar/notes/:repo_id → upsert local note/status
+ *   GET  /api/github/radar/insights       → materialized insight snapshot
+ *   POST /api/github/radar/insights/refresh → refresh insight snapshot
+ *   POST /api/github/radar/insights/feedback → record insight feedback
  */
 
 import type { Hono } from "hono";
@@ -39,6 +42,12 @@ import {
   isStarNoteStatus,
   upsertStarNote,
 } from "./radar.js";
+import {
+  getRadarInsights,
+  refreshRadarInsights,
+  saveRadarInsightFeedback,
+} from "./radarInsights/snapshot.js";
+import { isRadarInsightFeedback } from "./radarInsights/types.js";
 import {
   getTagTimeHeatmap,
   getTopTags,
@@ -165,6 +174,76 @@ export function registerGithubRoutes(app: Hono, db: Database.Database): void {
         return jsonErr(400, msg);
       }
       return jsonErr(500, msg);
+    }
+  });
+
+  app.get("/api/github/radar/insights", (c) => {
+    try {
+      return c.json(getRadarInsights(db));
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  app.post("/api/github/radar/insights/refresh", (c) => {
+    try {
+      const result = refreshRadarInsights(db);
+      if (!result.ok && result.status === "refresh_in_progress") {
+        return c.json(result, 409);
+      }
+      if (!result.ok) {
+        return c.json(result, 500);
+      }
+      return c.json(result);
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  app.post("/api/github/radar/insights/feedback", async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => null)) as
+        | {
+            target_type?: unknown;
+            target_id?: unknown;
+            feedback?: unknown;
+            insight_fingerprint?: unknown;
+            repo_id?: unknown;
+            terms?: unknown;
+          }
+        | null;
+      if (
+        !body ||
+        (body.target_type !== "insight" && body.target_type !== "repo") ||
+        typeof body.target_id !== "string" ||
+        !isRadarInsightFeedback(body.feedback)
+      ) {
+        return jsonErr(
+          400,
+          "target_type, target_id, and feedback are required"
+        );
+      }
+      const repoId =
+        typeof body.repo_id === "number" && Number.isInteger(body.repo_id)
+          ? body.repo_id
+          : null;
+      const terms = Array.isArray(body.terms)
+        ? body.terms.filter((t): t is string => typeof t === "string")
+        : [];
+      const saved = saveRadarInsightFeedback(db, {
+        target_type: body.target_type,
+        target_id: body.target_id,
+        feedback: body.feedback,
+        insight_fingerprint:
+          typeof body.insight_fingerprint === "string"
+            ? body.insight_fingerprint
+            : null,
+        repo_id: repoId,
+        terms,
+      });
+      return c.json(saved);
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
     }
   });
 
