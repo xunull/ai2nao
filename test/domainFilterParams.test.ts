@@ -6,6 +6,7 @@ import {
   setDomainBucketRangeInParams,
   setDomainListInParams,
   setDomainParam,
+  setSingleDomainInParams,
   toggleDomainInParams,
 } from "../web/src/lib/domainFilterParams.js";
 
@@ -54,6 +55,16 @@ describe("domain filter URL helpers", () => {
     expect(readDomainFilterState(next).from).toBe("2026-04-01");
     next = setDomainParam(next, "from", "");
     expect(next.has("from")).toBe(false);
+  });
+
+  it("sets a single search domain without preserving older selections", () => {
+    const next = setSingleDomainInParams(
+      p("domains=example.com,a.test&q=agent"),
+      " MP.Weixin.QQ.com "
+    );
+    expect(next.get("domains")).toBe("mp.weixin.qq.com");
+    expect(next.get("q")).toBe("agent");
+    expect(setSingleDomainInParams(next, "").has("domains")).toBe(false);
   });
 
   it("expands clicked timeline buckets into half-open ranges", () => {

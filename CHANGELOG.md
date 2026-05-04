@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.10 — 2026-05-04
+
+### Added
+
+- Add Chrome History domain search controls for filtering visits by domain and URL or title keyword.
+- Add a one-click WeChat article filter for `mp.weixin.qq.com` visits, including literal `__biz` query matching.
+- Add regression coverage for domain URL state, WeChat filtering, literal LIKE matching, manual domain entry, and visit row rendering.
+
+### Changed
+
+- Rework `/chrome-history/domains` into a PC-focused workbench with search and visit results first, and domain ranking plus the time matrix as supporting analysis.
+- Document that this project only targets PC desktop usage, so UI layout decisions should optimize desktop information density rather than mobile access.
+
 ## 0.3.9 — 2026-05-04
 
 ### Added
