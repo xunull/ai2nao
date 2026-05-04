@@ -162,6 +162,18 @@ describe("Chrome History domain pivot", () => {
         title: "Percent article",
         day: "2026-04-01",
       });
+      insertVisit(db, {
+        id: 4,
+        url: "https://mp.weixin.qq.com/s?plain=1",
+        title: "Literal 100% title",
+        day: "2026-04-01",
+      });
+      insertVisit(db, {
+        id: 5,
+        url: "https://mp.weixin.qq.com/s?slash=1",
+        title: String.raw`Path C:\notes article`,
+        day: "2026-04-01",
+      });
       rebuildChromeHistoryVisitDomains(db, "Default");
 
       const biz = listChromeHistoryDomainVisits(db, {
@@ -176,7 +188,14 @@ describe("Chrome History domain pivot", () => {
         domain: "mp.weixin.qq.com",
         q: "100%",
       });
-      expect(percent.items.map((item) => item.visit_id)).toEqual([3]);
+      expect(percent.items.map((item) => item.visit_id)).toEqual([4, 3]);
+
+      const titleSlash = listChromeHistoryDomainVisits(db, {
+        profile: "Default",
+        domain: "mp.weixin.qq.com",
+        q: String.raw`C:\notes`,
+      });
+      expect(titleSlash.items.map((item) => item.visit_id)).toEqual([5]);
     } finally {
       db.close();
     }
