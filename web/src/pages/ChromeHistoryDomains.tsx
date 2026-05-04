@@ -337,21 +337,34 @@ export function ChromeHistoryDomains() {
   const stale = domainStatus ? !domainStatus.fresh : true;
   const wechatMode = activeDomain === WECHAT_ARTICLE_DOMAIN;
   const visitsCount = visits.data?.items.length ?? 0;
+  const activeTopDomain = activeDomain
+    ? top.data?.items.find((item) => item.domain === activeDomain)
+    : null;
+  const scopeLabel = activeDomain ?? "全部域名";
 
   return (
-    <div className="space-y-4">
-      <header className="border-b border-[var(--border)] pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="min-w-[1180px] space-y-3">
+      <header className="border-b border-[var(--border)] pb-3">
+        <div className="grid grid-cols-[minmax(260px,1fr)_auto] items-start gap-6">
           <div>
-            <h1 className="text-xl font-semibold">Chrome 域名</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              搜索访问记录，按域名查看来源、热度和时间分布。
-            </p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-semibold">Chrome 域名</h1>
+              <span className={`rounded border px-2 py-1 text-xs ${badge.cls}`}>
+                {badge.text}
+              </span>
+            </div>
+            <div className="mt-2 flex items-center gap-4 text-xs text-[var(--muted)]">
+              <span>Profile: {state.profile}</span>
+              <span>{effectiveFrom} 至 {state.to ?? "现在"}</span>
+              <span>当前: {scopeLabel}</span>
+              {domainStatus?.state?.last_rebuilt_at ? (
+                <span>
+                  上次重建 {new Date(domainStatus.state.last_rebuilt_at).toLocaleString()}
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className={`rounded border px-2 py-1 text-xs ${badge.cls}`}>
-              {badge.text}
-            </span>
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               className="rounded bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
@@ -370,70 +383,59 @@ export function ChromeHistoryDomains() {
             </button>
           </div>
         </div>
-        {domainStatus?.state?.last_rebuilt_at ? (
-          <div className="mt-2 text-xs text-[var(--muted)]">
-            上次重建 {new Date(domainStatus.state.last_rebuilt_at).toLocaleString()}
-          </div>
-        ) : null}
       </header>
 
-      <section className="border border-[var(--border)] bg-white p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">搜索访问记录</h2>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              {effectiveFrom} 至 {state.to ?? "现在"}，当前匹配 {visitsCount} 条
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-900 hover:bg-blue-100"
-            onClick={() => setSearchDomain(WECHAT_ARTICLE_DOMAIN)}
-          >
-            微信文章
-          </button>
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(320px,2fr)_150px_150px_130px_96px]">
+      <section className="border border-[var(--border)] bg-white">
+        <div className="grid grid-cols-[260px_minmax(360px,1fr)_132px_132px_112px_88px_auto_auto] items-end gap-2 border-b border-[var(--border)] px-3 py-3">
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">域名</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              域名
+            </span>
             <input
-              className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm"
               placeholder="mp.weixin.qq.com"
               value={activeDomain ?? ""}
               onChange={(e) => setSearchDomain(e.target.value)}
             />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">搜索 URL / 标题</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              搜索 URL / 标题
+            </span>
             <input
-              className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm"
               value={state.q ?? ""}
               onChange={(e) => setScalar("q", e.target.value)}
             />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">From</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              From
+            </span>
             <input
               type="date"
-              className="mt-1 w-full rounded border border-[var(--border)] px-2 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-2 text-sm"
               value={effectiveFrom}
               onChange={(e) => setScalar("from", e.target.value)}
             />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">To</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              To
+            </span>
             <input
               type="date"
-              className="mt-1 w-full rounded border border-[var(--border)] px-2 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-2 text-sm"
               value={state.to ?? ""}
               onChange={(e) => setScalar("to", e.target.value)}
             />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">Kind</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              Kind
+            </span>
             <select
-              className="mt-1 w-full rounded border border-[var(--border)] px-2 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-2 text-sm"
               value={state.kind}
               onChange={(e) => setScalar("kind", e.target.value as DomainUrlKind)}
             >
@@ -447,9 +449,11 @@ export function ChromeHistoryDomains() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-[var(--muted)]">Grain</span>
+            <span className="block text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              Grain
+            </span>
             <select
-              className="mt-1 w-full rounded border border-[var(--border)] px-2 py-2 text-sm"
+              className="mt-1 h-9 w-full rounded border border-[var(--border)] px-2 text-sm"
               value={state.grain}
               onChange={(e) =>
                 setScalar("grain", e.target.value as DomainTimelineGrain)
@@ -460,27 +464,56 @@ export function ChromeHistoryDomains() {
               <option value="month">月</option>
             </select>
           </label>
+          <button
+            type="button"
+            className="h-9 rounded border border-blue-200 bg-blue-50 px-3 text-sm text-blue-900 hover:bg-blue-100"
+            onClick={() => setSearchDomain(WECHAT_ARTICLE_DOMAIN)}
+          >
+            微信文章
+          </button>
+          {state.domains.length || state.q ? (
+            <button
+              type="button"
+              className="h-9 rounded border border-[var(--border)] px-3 text-sm text-[var(--accent)]"
+              onClick={() => {
+                const next = clearDomainsInParams(setDomainParam(searchParams, "q", null));
+                update(next);
+              }}
+            >
+              清空
+            </button>
+          ) : null}
         </div>
-
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="w-44 text-sm">
-            <span className="block text-xs text-[var(--muted)]">Profile</span>
+        <div className="grid grid-cols-[180px_repeat(4,minmax(0,1fr))] items-center border-b border-[var(--border)] bg-neutral-50/70 px-3 py-2 text-xs">
+          <label className="flex items-center gap-2">
+            <span className="text-[var(--muted)]">Profile</span>
             <input
-              className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+              className="h-7 w-28 rounded border border-[var(--border)] bg-white px-2 text-xs"
               value={profileDraft}
               onChange={(e) => setProfileDraft(e.target.value)}
               onBlur={applyProfile}
             />
           </label>
-          {state.domains.length ? (
-            <button
-              type="button"
-              className="rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--accent)]"
-              onClick={() => update(clearDomainsInParams(searchParams))}
-            >
-              清空域名
-            </button>
-          ) : null}
+          <div>
+            <span className="text-[var(--muted)]">域名数 </span>
+            <span className="font-semibold tabular-nums">{summary.data?.unique_domains ?? "..."}</span>
+          </div>
+          <div>
+            <span className="text-[var(--muted)]">访问数 </span>
+            <span className="font-semibold tabular-nums">{summary.data?.total_visits ?? "..."}</span>
+          </div>
+          <div className="truncate">
+            <span className="text-[var(--muted)]">最高频 </span>
+            <span className="font-semibold">{summary.data?.top_domain?.domain ?? "无"}</span>
+          </div>
+          <div>
+            <span className="text-[var(--muted)]">原始/派生 </span>
+            <span className="font-semibold tabular-nums">
+              {domainStatus
+                ? `${domainStatus.currentSourceVisitCount}/${domainStatus.currentDerivedVisitCount}`
+                : "..."}
+            </span>
+          </div>
         </div>
       </section>
 
@@ -497,157 +530,140 @@ export function ChromeHistoryDomains() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-        <div className="border border-[var(--border)] bg-white px-4 py-3">
-          <div className="text-xs text-[var(--muted)]">域名数</div>
-          <div className="mt-1 text-lg font-semibold tabular-nums">
-            {summary.data?.unique_domains ?? "..."}
+      <div className={`grid grid-cols-[300px_minmax(520px,1fr)_360px] gap-3 ${stale ? "opacity-75" : ""}`}>
+        <aside className="min-h-[680px] border border-[var(--border)] bg-white">
+          <div className="flex h-11 items-center justify-between border-b border-[var(--border)] px-3">
+            <h2 className="text-sm font-semibold">域名排行</h2>
+            <span className="text-xs text-[var(--muted)]">Top 30</span>
           </div>
-        </div>
-        <div className="border border-[var(--border)] bg-white px-4 py-3">
-          <div className="text-xs text-[var(--muted)]">访问数</div>
-          <div className="mt-1 text-lg font-semibold tabular-nums">
-            {summary.data?.total_visits ?? "..."}
-          </div>
-        </div>
-        <div className="border border-[var(--border)] bg-white px-4 py-3">
-          <div className="text-xs text-[var(--muted)]">最高频域名</div>
-          <div className="mt-1 truncate text-lg font-semibold">
-            {summary.data?.top_domain?.domain ?? "无"}
-          </div>
-        </div>
-        <div className="border border-[var(--border)] bg-white px-4 py-3">
-          <div className="text-xs text-[var(--muted)]">原始/派生</div>
-          <div className="mt-1 text-lg font-semibold tabular-nums">
-            {domainStatus
-              ? `${domainStatus.currentSourceVisitCount}/${domainStatus.currentDerivedVisitCount}`
-              : "..."}
-          </div>
-        </div>
-      </div>
-
-      <div className={`grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] ${stale ? "opacity-75" : ""}`}>
-        <main className="min-w-0 space-y-4">
-          <section className="border border-[var(--border)] bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {wechatMode ? "微信文章访问" : "访问明细"}
-                  {!wechatMode && activeDomain ? `：${activeDomain}` : ""}
-                </h2>
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  {effectiveFrom} 至 {state.to ?? "现在"}
-                </p>
-              </div>
-              <span className="text-xs text-[var(--muted)]">
-                最多显示 50 条
-              </span>
-            </div>
-            <div className="divide-y divide-neutral-100">
-              {(visits.data?.items ?? []).map((item) => (
-                <a
-                  key={`${item.source_id}-${item.visit_id}`}
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block px-4 py-3 hover:bg-neutral-50"
-                >
-                  <div className="grid gap-2 text-sm xl:grid-cols-[104px_minmax(0,1fr)_84px]">
-                    <span className="text-xs text-[var(--muted)]">
-                      {item.calendar_day}
-                    </span>
-                    <span className="min-w-0 truncate font-medium">
-                      {item.title || item.url}
-                    </span>
-                    <span className="text-xs tabular-nums text-[var(--muted)] xl:text-right">
-                      {formatFileTimeMs(item.visit_time_unix_ms)}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate text-xs text-[var(--muted)]">
-                    {item.url}
-                  </div>
-                </a>
-              ))}
-              {visits.data?.items.length === 0 ? (
-                <p className="px-4 py-10 text-center text-sm text-[var(--muted)]">
-                  {wechatMode ? "没有匹配的微信文章访问。" : "没有匹配的访问。"}
-                </p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="border border-[var(--border)] bg-white p-4">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold">时间矩阵</h2>
-              {state.domains.map((domain) => (
-                <button
-                  key={domain}
-                  type="button"
-                  className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-900"
-                  onClick={() =>
-                    update(
-                      setDomainListInParams(
-                        searchParams,
-                        state.domains.filter((d) => d !== domain)
-                      )
-                    )
-                  }
-                >
-                  {domain}
-                </button>
-              ))}
-            </div>
-            <Heatmap
-              data={timeline.data}
-              grain={state.grain}
-              onCell={(domain, bucket) => {
-                const next = setDomainBucketRangeInParams(
-                  setDomainListInParams(searchParams, [domain]),
-                  state.grain,
-                  bucket
-                );
-                update(next);
-              }}
-            />
-          </section>
-        </main>
-
-        <aside className="border border-[var(--border)] bg-white">
-          <div className="border-b border-[var(--border)] px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">域名排行</h2>
-              {state.domains.length ? (
-                <button
-                  type="button"
-                  className="text-xs text-[var(--accent)]"
-                  onClick={() => update(clearDomainsInParams(searchParams))}
-                >
-                  清空
-                </button>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-[var(--muted)]">点击域名切换筛选</p>
-          </div>
-          <div className="max-h-[680px] overflow-auto">
+          <div className="h-[636px] overflow-auto">
             {(top.data?.items ?? []).map((item) => {
               const selected = state.domains.includes(item.domain);
               return (
                 <button
                   key={item.domain}
                   type="button"
-                  className={`flex w-full items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3 text-left text-sm hover:bg-neutral-50 ${
-                    selected ? "bg-blue-50 text-blue-900" : ""
+                  className={`grid w-full grid-cols-[minmax(0,1fr)_64px] items-center gap-2 border-b border-neutral-100 px-3 py-2.5 text-left text-sm hover:bg-neutral-50 ${
+                    selected ? "bg-blue-50 text-blue-950 shadow-[inset_3px_0_0_#2563eb]" : ""
                   }`}
                   onClick={() => update(toggleDomainInParams(searchParams, item.domain))}
                 >
                   <span className="min-w-0 truncate">{item.domain}</span>
-                  <span className="shrink-0 tabular-nums text-[var(--muted)]">
+                  <span className="text-right tabular-nums text-[var(--muted)]">
                     {item.count}
                   </span>
                 </button>
               );
             })}
           </div>
+        </aside>
+
+        <main className="min-h-[680px] border border-[var(--border)] bg-white">
+          <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto] items-center border-b border-[var(--border)] px-3">
+            <div>
+              <h2 className="text-sm font-semibold">
+                {wechatMode ? "微信文章访问" : "访问明细"}
+                {!wechatMode && activeDomain ? `：${activeDomain}` : ""}
+              </h2>
+            </div>
+            <span className="text-xs text-[var(--muted)]">
+              {visitsCount} / 最多 50 条
+            </span>
+          </div>
+          <div className="grid grid-cols-[104px_72px_minmax(220px,1fr)_minmax(260px,1.25fr)] border-b border-[var(--border)] bg-neutral-50 px-3 py-2 text-[11px] uppercase tracking-wide text-[var(--muted)]">
+            <span>日期</span>
+            <span>时间</span>
+            <span>标题</span>
+            <span>URL</span>
+          </div>
+          <div className="h-[591px] overflow-auto">
+            {(visits.data?.items ?? []).map((item) => (
+              <a
+                key={`${item.source_id}-${item.visit_id}`}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="grid grid-cols-[104px_72px_minmax(220px,1fr)_minmax(260px,1.25fr)] items-center border-b border-neutral-100 px-3 py-2 text-sm hover:bg-neutral-50"
+              >
+                <span className="text-xs text-[var(--muted)]">{item.calendar_day}</span>
+                <span className="text-xs tabular-nums text-[var(--muted)]">
+                  {formatFileTimeMs(item.visit_time_unix_ms)}
+                </span>
+                <span className="min-w-0 truncate font-medium">
+                  {item.title || item.url}
+                </span>
+                <span className="min-w-0 truncate text-xs text-[var(--muted)]">
+                  {item.url}
+                </span>
+              </a>
+            ))}
+            {visits.data?.items.length === 0 ? (
+              <p className="px-4 py-16 text-center text-sm text-[var(--muted)]">
+                {wechatMode ? "没有匹配的微信文章访问。" : "没有匹配的访问。"}
+              </p>
+            ) : null}
+          </div>
+        </main>
+
+        <aside className="min-h-[680px] space-y-3">
+          <section className="border border-[var(--border)] bg-white">
+            <div className="border-b border-[var(--border)] px-3 py-2">
+              <h2 className="text-sm font-semibold">当前域名摘要</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-px bg-[var(--border)] text-sm">
+              <div className="bg-white px-3 py-3">
+                <div className="text-xs text-[var(--muted)]">范围</div>
+                <div className="mt-1 truncate font-medium">{scopeLabel}</div>
+              </div>
+              <div className="bg-white px-3 py-3">
+                <div className="text-xs text-[var(--muted)]">访问</div>
+                <div className="mt-1 font-medium tabular-nums">
+                  {activeTopDomain?.count ?? visitsCount}
+                </div>
+              </div>
+              <div className="bg-white px-3 py-3">
+                <div className="text-xs text-[var(--muted)]">首次</div>
+                <div className="mt-1 font-medium tabular-nums">
+                  {activeTopDomain?.first_visit_day ?? "—"}
+                </div>
+              </div>
+              <div className="bg-white px-3 py-3">
+                <div className="text-xs text-[var(--muted)]">最近</div>
+                <div className="mt-1 font-medium tabular-nums">
+                  {activeTopDomain?.last_visit_day ?? "—"}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="border border-[var(--border)] bg-white">
+            <div className="flex h-11 items-center justify-between border-b border-[var(--border)] px-3">
+              <h2 className="text-sm font-semibold">时间矩阵</h2>
+              {state.domains.length ? (
+                <button
+                  type="button"
+                  className="text-xs text-[var(--accent)]"
+                  onClick={() => update(clearDomainsInParams(searchParams))}
+                >
+                  清空域名
+                </button>
+              ) : null}
+            </div>
+            <div className="p-3">
+              <Heatmap
+                data={timeline.data}
+                grain={state.grain}
+                onCell={(domain, bucket) => {
+                  const next = setDomainBucketRangeInParams(
+                    setDomainListInParams(searchParams, [domain]),
+                    state.grain,
+                    bucket
+                  );
+                  update(next);
+                }}
+              />
+            </div>
+          </section>
         </aside>
       </div>
     </div>
