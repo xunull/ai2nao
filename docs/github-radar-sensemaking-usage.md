@@ -1,8 +1,8 @@
 # GitHub 开源雷达：线索图版本使用说明
 
-**状态：** 已实现  
-**入口：** `/github/radar`  
-**核心命令：** `ai2nao github sync --full`  
+**状态：** 已实现
+**入口：** `/github/radar`
+**核心命令：** `ai2nao github sync --full`
 
 ## 它解决什么问题
 
