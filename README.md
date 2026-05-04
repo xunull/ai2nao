@@ -84,6 +84,10 @@ node dist/cli.js atuin directories status
 node dist/cli.js github sync
 node dist/cli.js github sync --full
 
+# GitHub 开源雷达
+node dist/cli.js scan --root ~/projects
+node dist/cli.js github sync --full
+
 # Hugging Face 本地模型
 node dist/cli.js huggingface sync
 
@@ -115,6 +119,7 @@ node dist/cli.js serve
 
 **Web 功能**：
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
+- **开源雷达** — 在 `/github/radar` 把 GitHub Star 连接到已索引本地项目的 TODO、docs、README 和 manifest，生成可反馈的当前技术线索
 - **软件** — macOS 应用、Homebrew 包、Hugging Face 与 LM Studio 本地模型浏览
 - **工作区** — VS Code 与 Cursor 最近打开的项目、文件、workspace
 - **对话** — Claude Code 与 Codex 本地对话历史
