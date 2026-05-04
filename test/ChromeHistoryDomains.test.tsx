@@ -264,6 +264,85 @@ describe("ChromeHistoryDomains page", () => {
       expect(visitUrls.every((url) => !url.includes("a.test"))).toBe(true);
     });
   });
+
+  it("replaces the active domain when clicking ranking rows repeatedly", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/chrome-history/domains/status")) {
+        return json({
+          supported: true,
+          profile: "Default",
+          defaultHistoryPath: "/tmp/History",
+          platform: "darwin",
+          domainStatus: {
+            profile: "Default",
+            ruleVersion: 1,
+            state: {
+              last_rebuilt_at: "2026-05-04T00:00:00.000Z",
+              last_error: null,
+              source_visit_count: 3,
+              derived_visit_count: 3,
+              last_rebuild_duration_ms: 4,
+            },
+            currentSourceVisitCount: 3,
+            currentDerivedVisitCount: 3,
+            fresh: true,
+            staleReasons: [],
+          },
+        });
+      }
+      if (url.includes("/api/chrome-history/domains/summary")) {
+        return json({
+          unique_domains: 2,
+          total_visits: 3,
+          top_domain: { domain: "example.com", count: 2 },
+        });
+      }
+      if (url.includes("/api/chrome-history/domains/top")) {
+        return json({
+          items: [
+            {
+              domain: "example.com",
+              count: 2,
+              first_visit_day: "2026-05-01",
+              last_visit_day: "2026-05-02",
+            },
+            {
+              domain: "github.com",
+              count: 1,
+              first_visit_day: "2026-05-02",
+              last_visit_day: "2026-05-02",
+            },
+          ],
+        });
+      }
+      if (url.includes("/api/chrome-history/domains/timeline")) {
+        return json({ xs: ["2026-05-02"], ys: ["example.com"], cells: [[1]] });
+      }
+      if (url.includes("/api/chrome-history/domains/visits")) {
+        return json({ items: [], next_cursor: null });
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    renderPage("/chrome-history/domains");
+
+    await user.click(await screen.findByRole("button", { name: /example.com/ }));
+    await user.click(screen.getByRole("button", { name: /github.com/ }));
+
+    expect(screen.getByLabelText("域名")).toHaveValue("github.com");
+    await waitFor(() => {
+      const visitUrls = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes("/api/chrome-history/domains/visits"));
+      expect(visitUrls.some((url) => url.includes("domain=github.com"))).toBe(true);
+      expect(visitUrls.every((url) => !url.includes("domain=example.com%2Cgithub.com"))).toBe(
+        true
+      );
+    });
+  });
 });
 
 function json(body: unknown): Response {
