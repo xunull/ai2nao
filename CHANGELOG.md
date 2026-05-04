@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.9 — 2026-05-04
+
+### Added
+
+- Add an insight-first GitHub radar that connects starred repositories to indexed local project context, including TODOs, docs, README files, manifests, current git branch, and recent commits.
+- Add local radar insight snapshots, safe evidence payloads, and feedback controls so users can refresh clues, inspect matched terms, and tune useful, wrong, later, or ignored recommendations.
+- Add bounded project context indexing for `ai2nao scan`, including root TODO files and markdown docs under `docs/`, while keeping refreshes fast and local-index based.
+- Add regression coverage for radar insight generation, refresh failure behavior, indexed project context, feedback suppression, API routes, and the insight-first Web UI.
+- Document the new radar sensemaking workflow and explain that global project context comes from `ai2nao scan --root <workspace>`.
+
+### Changed
+
+- Rework `/github/radar` around current clues, evidence drawers, rediscovered repositories, retire candidates, and a compact legacy radar queue instead of making note maintenance the primary workflow.
+- Upgrade radar freshness fingerprints to track indexed project context separately from current git context.
+- Keep radar evidence safe by returning labels and matched terms instead of raw local document excerpts or absolute filesystem paths.
+
 ## 0.3.8 — 2026-05-02
 
 ### Added
