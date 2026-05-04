@@ -1,5 +1,5 @@
 import { FormEvent, type ReactNode, useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 
 const navGroups = [
   {
@@ -47,12 +47,8 @@ const navGroups = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const nav = useNavigate();
-  const location = useLocation();
   const [q, setQ] = useState("");
-  const wideChromeDomainPage = location.pathname === "/chrome-history/domains";
-  const frameClass = wideChromeDomainPage
-    ? "mx-auto max-w-[1760px] px-8"
-    : "mx-auto max-w-6xl px-4";
+  const frameClass = "mx-auto max-w-[1760px] px-8";
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
