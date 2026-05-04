@@ -132,7 +132,7 @@ branch、model 过滤。
 
 Chrome 域名分析位于 `/chrome-history/domains`。它基于本地 Chrome History
 镜像生成可重建的域名透视表，支持 Top domains、日/周/月时间矩阵和访问记录
-钻取。`chrome-history sync` 会在原始访问写入后重建当前 profile 的域名层；
+钻取，也支持按域名与 URL/标题关键词搜索，并提供微信文章快捷筛选。`chrome-history sync` 会在原始访问写入后重建当前 profile 的域名层；
 如果只想重建分析层，可运行 `chrome-history domains rebuild`。原始浏览记录仍
 保留在本机 SQLite 中，域名层失败时不会回滚已同步的原始数据。
 
