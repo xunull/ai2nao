@@ -243,6 +243,14 @@ describe("ChromeHistoryDomains page", () => {
     );
     expect(screen.getAllByText("https://example.com/fallback")).toHaveLength(2);
 
+    const timelineTab = screen.getByRole("button", { name: "时间矩阵" });
+    expect(timelineTab).toHaveAttribute("aria-selected", "false");
+    await user.click(timelineTab);
+    expect(timelineTab).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("img", { name: "域名访问时间矩阵" })
+    ).toBeInTheDocument();
+
     const domainInput = screen.getByLabelText("域名");
     await user.clear(domainInput);
     await user.type(domainInput, " GitHub.COM ");
