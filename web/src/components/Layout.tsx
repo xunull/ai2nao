@@ -1,5 +1,5 @@
 import { FormEvent, type ReactNode, useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 const navGroups = [
   {
@@ -47,7 +47,12 @@ const navGroups = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const nav = useNavigate();
+  const location = useLocation();
   const [q, setQ] = useState("");
+  const wideChromeDomainPage = location.pathname === "/chrome-history/domains";
+  const frameClass = wideChromeDomainPage
+    ? "mx-auto max-w-[1760px] px-8"
+    : "mx-auto max-w-6xl px-4";
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -59,7 +64,7 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-[var(--border)] bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-4">
+        <div className={`${frameClass} py-3 flex flex-wrap items-center gap-4`}>
           <Link to="/repos" className="font-semibold text-[var(--fg)]">
             ai2nao
           </Link>
@@ -105,7 +110,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </form>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl w-full px-4 py-6 flex-1">{children}</main>
+      <main className={`${frameClass} w-full py-6 flex-1`}>{children}</main>
       <footer className="border-t border-[var(--border)] text-xs text-[var(--muted)] py-3 text-center">
         本机索引；下载页写入需运行带可写库的 serve
       </footer>
