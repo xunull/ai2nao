@@ -21,7 +21,9 @@
 17. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
 18. Chrome History 域名透视 v2：CSV 导出
 19. Chrome History 域名透视 v2：真正增量派生
-20. VS Code terminal dirs 工作信号（显式 opt-in）
+20. Chrome History 微信文章正文索引
+21. Chrome History 搜索命中原因展示
+22. VS Code terminal dirs 工作信号（显式 opt-in）
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
@@ -216,6 +218,56 @@ Depends on / blocked by:
 - freshness state 已覆盖 success、stale、error、count mismatch
 
 Priority: P2
+
+## Chrome History 微信文章正文索引
+
+What: 在当前仅搜索 Chrome History 标题与 URL 的基础上，为 `mp.weixin.qq.com` 等已访问文章建立本地正文索引，支持按文章正文回找看过的微信文章。
+
+Why: Chrome History 只稳定保存标题、URL、访问时间；如果文章标题不含关键词，用户仍然找不到“看过但忘了标题”的文章。正文索引能把微信文章搜索从历史过滤升级为本机浏览记忆。
+
+Pros:
+- 可以搜索文章正文，不再完全依赖标题和 URL 参数
+- 为后续摘要、证据回看、收藏和本机知识库打下数据基础
+- 能和现有 Chrome History freshness 经验对齐，避免旧索引被误认为新数据
+
+Cons:
+- 需要处理页面抓取或渲染、登录态、失效链接、反爬和正文解析失败
+- 会增加隐私边界：正文落库前必须明确本机存储、范围和重建策略
+- 需要 FTS、抓取状态、失败重试、清理策略和 UI 状态，明显不适合塞进当前搜索增强 PR
+
+Context:
+来自 `/plan-ceo-review` 与 `/plan-eng-review` 对 Chrome History 搜索增强的 deferred scope。当前 PR 只做 `domain + q + date range`，其中 `q` 搜 Chrome 保存的 title/url；正文索引是后续独立设计，不能被简化成“顺手加 FTS 表”。开始前应先确认数据源策略：直接 HTTP 抓取、浏览器渲染、还是仅对用户显式选中的文章归档。
+
+Depends on / blocked by:
+- `/chrome-history/domains` 的域名 + 关键词搜索已经稳定
+- `mp.weixin.qq.com` 搜索入口有真实使用反馈
+- 明确正文落库、删除、重建与失败可见性策略
+
+Priority: P2
+
+## Chrome History 搜索命中原因展示
+
+What: 在 Chrome History 搜索结果中展示每条访问的命中原因，例如“域名匹配 `mp.weixin.qq.com`”“标题命中关键词”“URL 命中 `__biz`”。
+
+Why: 当前搜索结果只显示标题、URL 和访问时间；当结果来自长 URL 或模糊关键词时，用户需要自己判断为什么命中。命中原因能提升搜索可信度，也让过滤条件调试更快。
+
+Pros:
+- 用户能更快判断结果是否相关
+- 后续正文索引可以复用同一块解释 UI
+- 便于调试 `domain`、`q`、日期范围和 URL/title 匹配语义
+
+Cons:
+- 会让结果列表信息密度变高，微信长 URL 尤其容易产生噪声
+- 需要扩展 DTO 或前端计算匹配原因，并补 UI 测试
+
+Context:
+来自 `/plan-ceo-review` 中对 Chrome History 搜索解释性的 deferred scope。当前 PR 先保持结果列表干净，只保证 `mp.weixin.qq.com` + URL/title 关键词搜索可用；命中原因应等真实搜索反馈稳定后再决定展示粒度。
+
+Depends on / blocked by:
+- Chrome History 域名 + 关键词搜索已落地
+- 明确是否只解释 title/url/domain，或同时为未来正文命中预留字段
+
+Priority: P3
 
 ## Chrome 下载镜像：设计文档（docs）
 
