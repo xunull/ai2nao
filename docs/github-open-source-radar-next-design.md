@@ -1,8 +1,8 @@
 # GitHub 开源雷达下一版设计：从 Star 库存到技术线索图
 
-**状态：** Draft  
-**日期：** 2026-05-02  
-**关联现有版本：** `docs/github-open-source-radar.md`  
+**状态：** Draft
+**日期：** 2026-05-02
+**关联现有版本：** `docs/github-open-source-radar.md`
 
 ## 问题重述
 
@@ -351,4 +351,3 @@ type RadarInsightsRes = {
 3. 改 Web 首页信息架构：洞察卡优先，队列降级。
 4. 加反馈模型和最小反馈 API。
 5. 再评估是否引入 README 缓存和 LLM 起草。
-
