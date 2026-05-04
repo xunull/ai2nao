@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.11 — 2026-05-04
+
+### Changed
+
+- Move the Chrome domain time matrix into its own page tab so visit filtering and timeline analysis no longer compete in the same workspace.
+- Use a consistent PC-wide workspace width across the Web UI so switching pages no longer jumps between narrow and wide layouts.
+- Add `.gstack/` to local ignores so ship/design artifacts stay out of the repository.
+
+### Fixed
+
+- Fix Chrome domain ranking clicks so each clicked domain replaces the active visit filter instead of appending behind the first selected domain.
+- Add regression coverage for repeatedly selecting different Chrome domain ranking rows.
+
 ## 0.3.10 — 2026-05-04
 
 ### Added
