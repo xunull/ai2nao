@@ -3,12 +3,24 @@ export const DEFAULT_MANIFEST_RELS = [
   "README.md",
   "README",
   "readme.md",
+  "TODOS.md",
   "package.json",
   "go.mod",
   "pyproject.toml",
   "Cargo.toml",
   "Gemfile",
 ] as const;
+
+/** Bounded project context policy shared by scan and GitHub radar. */
+export const DEFAULT_PROJECT_CONTEXT = {
+  fixedManifestRels: DEFAULT_MANIFEST_RELS,
+  docsRootRel: "docs",
+  maxDocsPerRepo: 40,
+  maxDocBytes: 64 * 1024,
+  maxRadarProjects: 80,
+  maxRadarSources: 500,
+  maxRadarSourceBytes: 64 * 1024,
+} as const;
 
 /** Directory name segments that skip subtree walk (beyond .git internals). */
 export const DEFAULT_EXCLUDE_DIR_NAMES = new Set([

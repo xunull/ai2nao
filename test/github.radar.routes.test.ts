@@ -147,4 +147,63 @@ describe("github radar routes", () => {
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toBeTruthy();
   });
+
+  it("GET /api/github/radar/insights returns the insight DTO shape", async () => {
+    upsertStar(db, star(1), "2024-06-01T00:00:00Z");
+    rebuildAllRepoTags(db);
+
+    const refresh = await app.request("/api/github/radar/insights/refresh", {
+      method: "POST",
+    });
+    expect(refresh.status).toBe(200);
+    const refreshed = (await refresh.json()) as {
+      ok: boolean;
+      status: string;
+      snapshot: { metrics: { candidate_count: number } };
+    };
+    expect(refreshed.ok).toBe(true);
+    expect(refreshed.snapshot.metrics.candidate_count).toBe(1);
+
+    const res = await app.request("/api/github/radar/insights");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      meta: { status: string; warnings: unknown[]; metrics: { insight_count: number } };
+      current_clues: unknown[];
+      rediscovered: unknown[];
+      retire_candidates: unknown[];
+      taste_profile: unknown;
+      legacy_available: boolean;
+    };
+    expect(body.meta.status).toMatch(/fresh|partial/);
+    expect(Array.isArray(body.meta.warnings)).toBe(true);
+    expect(body.meta.metrics.insight_count).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(body.current_clues)).toBe(true);
+    expect(Array.isArray(body.rediscovered)).toBe(true);
+    expect(Array.isArray(body.retire_candidates)).toBe(true);
+    expect(body.legacy_available).toBe(true);
+  });
+
+  it("POST /api/github/radar/insights/feedback validates and stores feedback", async () => {
+    const bad = await app.request("/api/github/radar/insights/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feedback: "great" }),
+    });
+    expect(bad.status).toBe(400);
+
+    const good = await app.request("/api/github/radar/insights/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_type: "insight",
+        target_id: "abc",
+        feedback: "useful",
+        insight_fingerprint: "abc",
+        repo_id: 1,
+        terms: ["agent"],
+      }),
+    });
+    expect(good.status).toBe(200);
+    expect(await good.json()).toEqual({ ok: true });
+  });
 });

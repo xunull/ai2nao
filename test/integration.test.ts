@@ -35,6 +35,10 @@ describe("discover + scan + search", () => {
       JSON.stringify({ name: "fixture-pkg", version: "1.0.0" }),
       "utf8"
     );
+    writeFileSync(join(repo, "TODOS.md"), "Investigate agent memory radar\n", "utf8");
+    mkdirSync(join(repo, "docs"), { recursive: true });
+    writeFileSync(join(repo, "docs", "radar.md"), "Agent radar design notes\n", "utf8");
+    writeFileSync(join(repo, "docs", "large.md"), "x".repeat(70 * 1024), "utf8");
 
     const found = discoverGitRepos(base);
     expect(found).toHaveLength(1);
@@ -43,12 +47,15 @@ describe("discover + scan + search", () => {
     const dbPath = join(base, "idx.db");
     const db = openDatabase(dbPath);
     try {
-      const result = runScan(db, [base], ["package.json"]);
+      const result = runScan(db, [base]);
       expect(result.reposFound).toBe(1);
-      expect(result.manifestsIndexed).toBe(1);
+      expect(result.manifestsIndexed).toBe(3);
       const hits = searchManifests(db, "fixture", 10);
       expect(hits.length).toBeGreaterThan(0);
       expect(hits[0].rel_path).toBe("package.json");
+      expect(searchManifests(db, "memory", 10)[0].rel_path).toBe("TODOS.md");
+      expect(searchManifests(db, "radar", 10).map((h) => h.rel_path)).toContain("docs/radar.md");
+      expect(searchManifests(db, "xxxxx", 10)).toHaveLength(0);
     } finally {
       db.close();
     }

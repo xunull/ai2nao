@@ -119,6 +119,66 @@ function radar(reason = "") {
   };
 }
 
+function insights(status = "fresh") {
+  const insight = {
+    id: 1,
+    fingerprint: "abc",
+    kind: "recommended_now",
+    title: "u/agent-kit 可能和当前工作有关",
+    summary: "它和当前 TODO 中的 agent 有重合。",
+    health: status === "partial" ? "partial" : "strong",
+    health_reason: "有当前工作证据和 repo 事实共同支撑。",
+    score: 42,
+    repo_ids: [1],
+    terms: ["agent", "workflow"],
+    evidence: [
+      {
+        source_kind: "todo",
+        label: "TODOS.md",
+        source_path: "TODOS.md",
+        matched_terms: ["agent"],
+        weight: 4,
+      },
+      {
+        source_kind: "topic",
+        label: "GitHub topics",
+        source_path: null,
+        matched_terms: ["agent"],
+        weight: 2,
+      },
+    ],
+  };
+  return {
+    meta: {
+      status,
+      generated_at: "2026-05-01T00:00:00Z",
+      error_code: null,
+      warnings:
+        status === "partial"
+          ? [{ code: "git_log_failed", message: "git context could not be read" }]
+          : [],
+      metrics: {
+        duration_ms: 12,
+        stars_scanned: 1,
+        docs_scanned: 1,
+        docs_skipped: 0,
+        candidate_count: 1,
+        insight_count: 1,
+      },
+    },
+    current_clues: status === "empty" ? [] : [insight],
+    rediscovered: [],
+    retire_candidates: [],
+    taste_profile: {
+      ...insight,
+      fingerprint: "taste",
+      kind: "taste_profile",
+      title: "你的开源兴趣正在靠近 agent",
+    },
+    legacy_available: true,
+  };
+}
+
 describe("GithubRadar page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -145,13 +205,14 @@ describe("GithubRadar page", () => {
     expect(screen.queryByText("复盘队列")).not.toBeInTheDocument();
   });
 
-  it("renders metrics, topic clusters, language-only clusters, and repo editor", async () => {
+  it("renders insight-first page, evidence drawer, legacy queues, and repo editor", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith("/api/github/status")) return json(status(true));
         if (url.endsWith("/api/github/radar")) return json(radar());
+        if (url.endsWith("/api/github/radar/insights")) return json(insights());
         throw new Error(`Unhandled fetch: ${url}`);
       })
     );
@@ -159,8 +220,14 @@ describe("GithubRadar page", () => {
     renderPage();
 
     expect(await screen.findByText("开源雷达")).toBeInTheDocument();
+    expect(await screen.findByText("现在值得看的线索")).toBeInTheDocument();
+    expect(screen.getByText("u/agent-kit 可能和当前工作有关")).toBeInTheDocument();
+    expect(screen.getByText(/2 个证据/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "查看证据" }));
+    expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByText(/旧雷达队列/));
     expect(await screen.findByText("主题方向")).toBeInTheDocument();
-    expect(screen.getByText("agent")).toBeInTheDocument();
+    expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
     expect(screen.getByText("仅语言分组")).toBeInTheDocument();
     expect(screen.getByText("language:go")).toBeInTheDocument();
     expect(screen.getByText("u/agent-kit")).toBeInTheDocument();
@@ -189,6 +256,7 @@ describe("GithubRadar page", () => {
       const url = String(input);
       if (url.endsWith("/api/github/status")) return json(status(true));
       if (url.endsWith("/api/github/radar")) return json(radar());
+      if (url.endsWith("/api/github/radar/insights")) return json(insights());
       if (url.endsWith("/api/github/radar/notes/1") && init?.method === "POST") {
         return pending;
       }
@@ -198,6 +266,7 @@ describe("GithubRadar page", () => {
     const user = userEvent.setup();
     renderPage();
 
+    await user.click(await screen.findByText(/旧雷达队列/));
     await user.type(await screen.findByLabelText("收藏理由 u/agent-kit"), "compare later");
     const button = screen.getByRole("button", { name: "保存" });
     await user.click(button);
@@ -217,6 +286,7 @@ describe("GithubRadar page", () => {
       const url = String(input);
       if (url.endsWith("/api/github/status")) return json(status(true));
       if (url.endsWith("/api/github/radar")) return json(radar());
+      if (url.endsWith("/api/github/radar/insights")) return json(insights());
       if (url.endsWith("/api/github/radar/notes/1") && init?.method === "POST") {
         return new Response(JSON.stringify({ error: { message: "disk is locked" } }), {
           status: 500,
@@ -229,6 +299,7 @@ describe("GithubRadar page", () => {
     const user = userEvent.setup();
     renderPage();
 
+    await user.click(await screen.findByText(/旧雷达队列/));
     const textarea = await screen.findByLabelText("收藏理由 u/agent-kit");
     await user.type(textarea, "keep this draft");
     await user.click(screen.getByRole("button", { name: "保存" }));
@@ -236,6 +307,43 @@ describe("GithubRadar page", () => {
     expect(await screen.findByText("disk is locked")).toBeInTheDocument();
     expect(screen.getByLabelText("收藏理由 u/agent-kit")).toHaveValue("keep this draft");
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("refreshes insights and records feedback", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/github/status")) return json(status(true));
+      if (url.endsWith("/api/github/radar")) return json(radar());
+      if (url.endsWith("/api/github/radar/insights")) return json(insights("partial"));
+      if (url.endsWith("/api/github/radar/insights/refresh") && init?.method === "POST") {
+        return json({ ok: true, status: "fresh", snapshot: {}, warnings: [] });
+      }
+      if (url.endsWith("/api/github/radar/insights/feedback") && init?.method === "POST") {
+        return json({ ok: true });
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("部分上下文读取失败，线索仍可参考，但证据不完整。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "刷新线索" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          String(call[0]).endsWith("/api/github/radar/insights/refresh")
+        )
+      ).toBe(true)
+    );
+    await user.click(screen.getByRole("button", { name: "有用" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          String(call[0]).endsWith("/api/github/radar/insights/feedback")
+        )
+      ).toBe(true)
+    );
   });
 });
 
