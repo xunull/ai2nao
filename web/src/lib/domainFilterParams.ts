@@ -90,6 +90,13 @@ export function setDomainListInParams(
   return next;
 }
 
+export function setSingleDomainInParams(
+  params: URLSearchParams,
+  domain: string
+): URLSearchParams {
+  return setDomainListInParams(params, [domain]);
+}
+
 export function clearDomainsInParams(params: URLSearchParams): URLSearchParams {
   const next = cloneParams(params);
   next.delete("domains");

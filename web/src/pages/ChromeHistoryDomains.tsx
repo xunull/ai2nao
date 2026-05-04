@@ -9,6 +9,7 @@ import {
   setDomainBucketRangeInParams,
   setDomainListInParams,
   setDomainParam,
+  setSingleDomainInParams,
   toggleDomainInParams,
   type DomainTimelineGrain,
   type DomainUrlKind,
@@ -82,6 +83,8 @@ type SyncRes = {
   errors: string[];
   domainRebuild: { ok: boolean; derivedVisitCount: number; sourceVisitCount: number } | null;
 };
+
+const WECHAT_ARTICLE_DOMAIN = "mp.weixin.qq.com";
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -269,6 +272,10 @@ export function ChromeHistoryDomains() {
     update(setDomainParam(searchParams, key, value));
   }
 
+  function setSearchDomain(domain: string) {
+    update(setSingleDomainInParams(searchParams, domain));
+  }
+
   function applyProfile() {
     setScalar("profile", profileDraft.trim() || "Default");
   }
@@ -328,6 +335,7 @@ export function ChromeHistoryDomains() {
   const badge = statusLabel(status.data?.domainStatus);
   const domainStatus = status.data?.domainStatus;
   const stale = domainStatus ? !domainStatus.fresh : true;
+  const wechatMode = activeDomain === WECHAT_ARTICLE_DOMAIN;
 
   return (
     <div className="space-y-5">
@@ -418,6 +426,15 @@ export function ChromeHistoryDomains() {
           </select>
         </label>
         <label className="min-w-64 flex-1 text-sm">
+          <span className="block text-xs text-[var(--muted)]">域名</span>
+          <input
+            className="w-full rounded border border-[var(--border)] px-2 py-1 text-sm"
+            placeholder="mp.weixin.qq.com"
+            value={activeDomain ?? ""}
+            onChange={(e) => setSearchDomain(e.target.value)}
+          />
+        </label>
+        <label className="min-w-64 flex-1 text-sm">
           <span className="block text-xs text-[var(--muted)]">搜索 URL / 标题</span>
           <input
             className="w-full rounded border border-[var(--border)] px-2 py-1 text-sm"
@@ -425,6 +442,13 @@ export function ChromeHistoryDomains() {
             onChange={(e) => setScalar("q", e.target.value)}
           />
         </label>
+        <button
+          type="button"
+          className="rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-900 hover:bg-blue-100"
+          onClick={() => setSearchDomain(WECHAT_ARTICLE_DOMAIN)}
+        >
+          微信文章
+        </button>
       </div>
 
       {stale ? (
@@ -540,7 +564,8 @@ export function ChromeHistoryDomains() {
       <section className="border border-[var(--border)] bg-white">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
           <h2 className="text-sm font-semibold">
-            访问明细{activeDomain ? `：${activeDomain}` : ""}
+            {wechatMode ? "微信文章访问" : "访问明细"}
+            {!wechatMode && activeDomain ? `：${activeDomain}` : ""}
           </h2>
           <span className="text-xs text-[var(--muted)]">
             {effectiveFrom} 至 {state.to ?? "现在"}
@@ -572,7 +597,9 @@ export function ChromeHistoryDomains() {
             </a>
           ))}
           {visits.data?.items.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-[var(--muted)]">没有匹配的访问。</p>
+            <p className="px-3 py-4 text-sm text-[var(--muted)]">
+              {wechatMode ? "没有匹配的微信文章访问。" : "没有匹配的访问。"}
+            </p>
           ) : null}
         </div>
       </section>

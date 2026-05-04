@@ -287,6 +287,10 @@ function addDomainFilters(
   return { where: `WHERE ${clauses.join(" AND ")}`, params };
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export type ChromeHistoryDomainSummary = {
   unique_domains: number;
   total_visits: number;
@@ -481,8 +485,8 @@ export function listChromeHistoryDomainVisits(
     }
   }
   if (args.q?.trim()) {
-    const like = `%${args.q.trim()}%`;
-    clauses.push("(u.url LIKE ? OR u.title LIKE ?)");
+    const like = `%${escapeLikePattern(args.q.trim())}%`;
+    clauses.push("(u.url LIKE ? ESCAPE '\\' OR u.title LIKE ? ESCAPE '\\')");
     params.push(like, like);
   }
   const rows = db

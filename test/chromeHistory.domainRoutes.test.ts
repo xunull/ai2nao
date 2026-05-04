@@ -82,4 +82,43 @@ describe("Chrome History domain API", () => {
       db.close();
     }
   });
+
+  it("serves WeChat article visits with literal q matching", async () => {
+    const db = freshDb();
+    try {
+      insertVisit(
+        db,
+        1,
+        "https://mp.weixin.qq.com/s?__biz=abc&mid=1",
+        "2026-04-02"
+      );
+      insertVisit(
+        db,
+        2,
+        "https://mp.weixin.qq.com/s?xxbiz=abc&mid=2",
+        "2026-04-02"
+      );
+      const app = createApp({ db });
+
+      const rebuild = await app.request("http://x/api/chrome-history/domains/rebuild", {
+        method: "POST",
+        body: JSON.stringify({ profile: "Default" }),
+        headers: { "content-type": "application/json" },
+      });
+      expect(rebuild.status).toBe(200);
+
+      const visits = await app.request(
+        "http://x/api/chrome-history/domains/visits?domain=mp.weixin.qq.com&q=__biz&from=2026-04-01&to=2026-04-03"
+      );
+      expect(visits.status).toBe(200);
+      const visitsJson = (await visits.json()) as {
+        items: { url: string }[];
+      };
+      expect(visitsJson.items.map((item) => item.url)).toEqual([
+        "https://mp.weixin.qq.com/s?__biz=abc&mid=1",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
 });
