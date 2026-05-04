@@ -216,3 +216,106 @@ export type GhRadarOverviewRes = {
 export type GhStarNoteRes = {
   note: GhStarNote;
 };
+
+// ---------- Open-source radar insights ----------
+
+export type GhRadarInsightKind =
+  | "recommended_now"
+  | "rediscovered"
+  | "retire_candidate"
+  | "taste_profile";
+
+export type GhRadarInsightHealth =
+  | "strong"
+  | "partial"
+  | "weak"
+  | "stale"
+  | "suppressed";
+
+export type GhRadarInsightStatus =
+  | "fresh"
+  | "stale"
+  | "partial"
+  | "empty"
+  | "error";
+
+export type GhRadarInsightFeedback =
+  | "useful"
+  | "wrong"
+  | "later"
+  | "ignore";
+
+export type GhRadarInsightEvidence = {
+  source_kind:
+    | "todo"
+    | "doc"
+    | "git_commit"
+    | "branch"
+    | "repo_fact"
+    | "topic"
+    | "feedback";
+  label: string;
+  source_path: string | null;
+  matched_terms: string[];
+  weight: number;
+};
+
+export type GhRadarInsight = {
+  id: number | null;
+  fingerprint: string;
+  kind: GhRadarInsightKind;
+  title: string;
+  summary: string;
+  health: GhRadarInsightHealth;
+  health_reason: string;
+  score: number;
+  repo_ids: number[];
+  terms: string[];
+  evidence: GhRadarInsightEvidence[];
+};
+
+export type GhRadarInsightWarning = {
+  code: string;
+  message: string;
+};
+
+export type GhRadarInsightsRes = {
+  meta: {
+    status: GhRadarInsightStatus;
+    generated_at: string | null;
+    error_code: string | null;
+    warnings: GhRadarInsightWarning[];
+    metrics: {
+      duration_ms: number;
+      stars_scanned: number;
+      docs_scanned: number;
+      docs_skipped: number;
+      candidate_count: number;
+      insight_count: number;
+    } | null;
+  };
+  current_clues: GhRadarInsight[];
+  rediscovered: GhRadarInsight[];
+  retire_candidates: GhRadarInsight[];
+  taste_profile: GhRadarInsight | null;
+  legacy_available: boolean;
+};
+
+export type GhRadarInsightRefreshRes =
+  | {
+      ok: true;
+      status: "fresh" | "partial" | "empty";
+      snapshot: unknown;
+      warnings: GhRadarInsightWarning[];
+    }
+  | {
+      ok: false;
+      status: "error" | "refresh_in_progress";
+      error: string;
+      warnings: GhRadarInsightWarning[];
+      previousSnapshot: unknown;
+    };
+
+export type GhRadarInsightFeedbackRes = {
+  ok: true;
+};
