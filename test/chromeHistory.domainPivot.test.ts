@@ -141,6 +141,66 @@ describe("Chrome History domain pivot", () => {
     }
   });
 
+  it("treats LIKE wildcard characters in q as literal URL/title text", () => {
+    const db = freshDb();
+    try {
+      insertVisit(db, {
+        id: 1,
+        url: "https://mp.weixin.qq.com/s?__biz=abc&mid=1",
+        title: "WeChat article",
+        day: "2026-04-01",
+      });
+      insertVisit(db, {
+        id: 2,
+        url: "https://mp.weixin.qq.com/s?xxbiz=abc&mid=2",
+        title: "Similar article",
+        day: "2026-04-01",
+      });
+      insertVisit(db, {
+        id: 3,
+        url: "https://mp.weixin.qq.com/s?discount=100%25",
+        title: "Percent article",
+        day: "2026-04-01",
+      });
+      insertVisit(db, {
+        id: 4,
+        url: "https://mp.weixin.qq.com/s?plain=1",
+        title: "Literal 100% title",
+        day: "2026-04-01",
+      });
+      insertVisit(db, {
+        id: 5,
+        url: "https://mp.weixin.qq.com/s?slash=1",
+        title: String.raw`Path C:\notes article`,
+        day: "2026-04-01",
+      });
+      rebuildChromeHistoryVisitDomains(db, "Default");
+
+      const biz = listChromeHistoryDomainVisits(db, {
+        profile: "Default",
+        domain: "mp.weixin.qq.com",
+        q: "__biz",
+      });
+      expect(biz.items.map((item) => item.visit_id)).toEqual([1]);
+
+      const percent = listChromeHistoryDomainVisits(db, {
+        profile: "Default",
+        domain: "mp.weixin.qq.com",
+        q: "100%",
+      });
+      expect(percent.items.map((item) => item.visit_id)).toEqual([4, 3]);
+
+      const titleSlash = listChromeHistoryDomainVisits(db, {
+        profile: "Default",
+        domain: "mp.weixin.qq.com",
+        q: String.raw`C:\notes`,
+      });
+      expect(titleSlash.items.map((item) => item.visit_id)).toEqual([5]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("records rebuild errors in state without requiring raw data rollback", () => {
     const db = freshDb();
     try {
