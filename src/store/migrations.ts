@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 15;
+const CURRENT_VERSION = 16;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -26,6 +26,7 @@ export function migrate(db: Database.Database): void {
     applyV13(db);
     applyV14(db);
     applyV15(db);
+    applyV16(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -47,6 +48,7 @@ export function migrate(db: Database.Database): void {
   if (v < 13) applyV13(db);
   if (v < 14) applyV14(db);
   if (v < 15) applyV15(db);
+  if (v < 16) applyV16(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -975,5 +977,68 @@ function applyV15(db: Database.Database): void {
       ON gh_star_note(last_reviewed_at);
 
     UPDATE meta_schema SET version = 15 WHERE id = 1;
+  `);
+}
+
+/** Materialized GitHub radar insights, safe evidence payloads, and feedback. */
+function applyV16(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gh_radar_insight_snapshot (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      generated_at TEXT NOT NULL,
+      status TEXT NOT NULL
+        CHECK (status IN ('fresh', 'stale', 'partial', 'empty', 'error')),
+      source_fingerprint_json TEXT NOT NULL,
+      error_code TEXT,
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      stars_scanned INTEGER NOT NULL DEFAULT 0,
+      docs_scanned INTEGER NOT NULL DEFAULT 0,
+      docs_skipped INTEGER NOT NULL DEFAULT 0,
+      candidate_count INTEGER NOT NULL DEFAULT 0,
+      insight_count INTEGER NOT NULL DEFAULT 0,
+      warnings_json TEXT NOT NULL DEFAULT '[]'
+    );
+
+    CREATE TABLE IF NOT EXISTS gh_radar_insight (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL REFERENCES gh_radar_insight_snapshot(id) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL,
+      kind TEXT NOT NULL
+        CHECK (kind IN ('recommended_now', 'rediscovered', 'retire_candidate', 'taste_profile')),
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      health TEXT NOT NULL
+        CHECK (health IN ('strong', 'partial', 'weak', 'stale', 'suppressed')),
+      health_reason TEXT NOT NULL,
+      score INTEGER NOT NULL DEFAULT 0,
+      repo_ids_json TEXT NOT NULL DEFAULT '[]',
+      terms_json TEXT NOT NULL DEFAULT '[]',
+      evidence_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      UNIQUE(snapshot_id, fingerprint)
+    );
+
+    CREATE TABLE IF NOT EXISTS gh_radar_insight_feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      target_type TEXT NOT NULL CHECK (target_type IN ('insight', 'repo')),
+      target_id TEXT NOT NULL,
+      feedback TEXT NOT NULL CHECK (feedback IN ('useful', 'wrong', 'later', 'ignore')),
+      insight_fingerprint TEXT,
+      repo_id INTEGER,
+      terms_json TEXT NOT NULL DEFAULT '[]',
+      expires_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gh_radar_insight_snapshot_generated
+      ON gh_radar_insight_snapshot(generated_at);
+    CREATE INDEX IF NOT EXISTS idx_gh_radar_insight_list
+      ON gh_radar_insight(snapshot_id, kind, health, score DESC);
+    CREATE INDEX IF NOT EXISTS idx_gh_radar_insight_fingerprint
+      ON gh_radar_insight(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_gh_radar_feedback_target
+      ON gh_radar_insight_feedback(target_type, target_id, expires_at);
+
+    UPDATE meta_schema SET version = 16 WHERE id = 1;
   `);
 }
