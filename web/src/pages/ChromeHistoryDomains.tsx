@@ -10,7 +10,6 @@ import {
   setDomainListInParams,
   setDomainParam,
   setSingleDomainInParams,
-  toggleDomainInParams,
   type DomainTimelineGrain,
   type DomainUrlKind,
 } from "../lib/domainFilterParams";
@@ -589,7 +588,9 @@ export function ChromeHistoryDomains() {
                     className={`mb-1 grid w-full grid-cols-[minmax(0,1fr)_72px] items-center gap-3 rounded px-3 py-2.5 text-left text-sm hover:bg-neutral-50 ${
                       selected ? "bg-blue-50 text-blue-950 ring-1 ring-blue-200" : ""
                     }`}
-                    onClick={() => update(toggleDomainInParams(searchParams, item.domain))}
+                    onClick={() =>
+                      update(setSingleDomainInParams(searchParams, item.domain))
+                    }
                   >
                     <span className="min-w-0 truncate">{item.domain}</span>
                     <span className="text-right tabular-nums text-[var(--muted)]">
