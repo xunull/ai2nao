@@ -122,24 +122,50 @@ export function Downloads() {
   const unsupported = status.data && !status.data.supported;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">下载目录</h1>
-        <p className="text-sm text-[var(--muted)] mt-2">
-          文件名可能敏感；此处按<strong>本机日历日</strong>聚合已记录的文件（仅索引元数据）。
-          使用「立即扫描」与 CLI{" "}
-          <code className="rounded bg-neutral-100 px-1 text-xs">
-            ai2nao downloads scan
-          </code>{" "}
-          相同逻辑。
-        </p>
-        {status.data?.defaultRoots.length ? (
-          <p className="text-xs text-[var(--muted)] mt-2 break-all">
-            默认根目录：{status.data.defaultRoots.join(" · ")}
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">下载目录</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            按本机日历日检查下载文件元数据，文件内容不会被读取。
           </p>
+        </div>
+        <button
+          type="button"
+          className="rounded bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-50"
+          onClick={() => void onScan()}
+          disabled={scanning || unsupported}
+        >
+          {scanning ? "扫描中…" : "立即扫描"}
+        </button>
+      </header>
+
+      <div className="rounded border border-[var(--border)] bg-white px-4 py-3 text-sm">
+        <div className="grid grid-cols-[minmax(0,1fr)_180px_180px] gap-4">
+          <div className="min-w-0">
+            <div className="text-xs text-[var(--muted)]">默认根目录</div>
+            <div className="mt-1 truncate">
+              {status.data?.defaultRoots.length
+                ? status.data.defaultRoots.join(" · ")
+                : "当前平台无默认下载目录"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-[var(--muted)]">当前月份</div>
+            <div className="mt-1 font-medium">{format(month, "yyyy-MM")}</div>
+          </div>
+          <div>
+            <div className="text-xs text-[var(--muted)]">选中日期</div>
+            <div className="mt-1 font-medium">{selectedStr || "未选择"}</div>
+          </div>
+        </div>
+        {scanMsg ? (
+          <div className="mt-3 border-t border-[var(--border)] pt-3 text-[var(--muted)]">
+            {scanMsg}
+          </div>
         ) : null}
         {unsupported ? (
-          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3 mt-3">
+          <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
             当前系统（{status.data.platform}
             ）无内置 ~/Downloads 根路径。请使用{" "}
             <code className="rounded bg-white px-1">
@@ -158,22 +184,14 @@ export function Downloads() {
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <button
-          type="button"
-          className="rounded bg-[var(--accent)] text-white px-4 py-2 text-sm disabled:opacity-50"
-          onClick={() => void onScan()}
-          disabled={scanning || unsupported}
-        >
-          {scanning ? "扫描中…" : "立即扫描"}
-        </button>
-        {scanMsg ? (
-          <span className="text-sm text-[var(--muted)]">{scanMsg}</span>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
+      <div className="grid grid-cols-[360px_minmax(0,1fr)] gap-6 items-start">
         <div className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <h2 className="font-medium">日期索引</h2>
+            <span className="text-xs text-[var(--muted)]">
+              {datesWithFiles.length} 天有记录
+            </span>
+          </div>
           <DayPicker
             mode="single"
             month={month}
@@ -198,33 +216,43 @@ export function Downloads() {
           ) : null}
         </div>
 
-        <div className="flex-1 min-w-0 space-y-3 w-full">
-          <div className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
-            <h2 className="text-base font-medium">
-              {selectedStr ? selectedStr : "选择日期"}
-            </h2>
+        <div className="min-w-0 space-y-3">
+          <div className="rounded border border-[var(--border)] bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <h2 className="text-base font-medium">
+                {selectedStr ? `文件明细：${selectedStr}` : "选择日期"}
+              </h2>
+              <span className="text-sm text-[var(--muted)]">
+                {dayQ.data?.entries.length ?? 0} 条
+              </span>
+            </div>
             {dayQ.isLoading ? (
-              <p className="text-sm text-[var(--muted)] mt-2">加载…</p>
+              <p className="p-4 text-sm text-[var(--muted)]">加载…</p>
             ) : dayQ.isError ? (
-              <p className="text-sm text-red-600 mt-2">
+              <p className="p-4 text-sm text-red-600">
                 {String((dayQ.error as Error).message)}
               </p>
             ) : (
-              <ul className="mt-3 space-y-2 text-sm max-h-[28rem] overflow-y-auto">
+              <ul className="max-h-[34rem] overflow-y-auto text-sm">
                 {(dayQ.data?.entries ?? []).length === 0 ? (
-                  <li className="text-[var(--muted)]">当日无记录（可先扫描）。</li>
+                  <li className="p-4 text-[var(--muted)]">当日无记录（可先扫描）。</li>
                 ) : (
                   dayQ.data?.entries.map((e) => (
                     <li
                       key={e.id}
-                      className="border-b border-[var(--border)] pb-2 last:border-0"
+                      className="grid grid-cols-[minmax(0,1fr)_180px] gap-4 border-b border-[var(--border)] px-4 py-3 last:border-0"
                     >
-                      <div className="font-mono text-xs break-all">
-                        {e.rel_path}
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-xs" title={e.rel_path}>
+                          {e.rel_path}
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--muted)] break-all">
+                          {e.root_path}
+                        </div>
                       </div>
-                      <div className="text-xs text-[var(--muted)] mt-1">
-                        大小 {formatByteSize(e.size_bytes)} · 时间{" "}
-                        {formatFileTimeMs(e.file_birthtime_ms)}
+                      <div className="text-xs text-[var(--muted)]">
+                        <div>大小 {formatByteSize(e.size_bytes)}</div>
+                        <div className="mt-1">时间 {formatFileTimeMs(e.file_birthtime_ms)}</div>
                       </div>
                     </li>
                   ))

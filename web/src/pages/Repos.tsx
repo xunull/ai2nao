@@ -100,24 +100,36 @@ export function Repos() {
   const showPager = !empty && totalPages > 1;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold">仓库</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded border border-[var(--border)] bg-white p-4">
-          <div className="text-2xl font-semibold">{s.repos}</div>
-          <div className="text-sm text-[var(--muted)]">仓库</div>
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">仓库</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            本机代码仓库索引，查看路径、origin 和最近扫描时间。
+          </p>
         </div>
-        <div className="rounded border border-[var(--border)] bg-white p-4">
-          <div className="text-2xl font-semibold">{s.manifests}</div>
-          <div className="text-sm text-[var(--muted)]">已索引文件</div>
+        <div className="text-sm text-[var(--muted)]">
+          {s.lastJob
+            ? `最近任务 #${s.lastJob.id} · ${s.lastJob.kind} · ${s.lastJob.status}`
+            : "暂无扫描任务"}
         </div>
-        <div className="rounded border border-[var(--border)] bg-white p-4">
-          <div className="text-sm font-medium">
-            {s.lastJob
-              ? `#${s.lastJob.id} ${s.lastJob.kind} ${s.lastJob.status}`
-              : "暂无任务"}
+      </header>
+
+      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-px overflow-hidden rounded border border-[var(--border)] bg-[var(--border)] text-sm">
+        <div className="bg-white px-4 py-3">
+          <div className="text-xs text-[var(--muted)]">仓库</div>
+          <div className="mt-1 text-xl font-semibold">{s.repos}</div>
+        </div>
+        <div className="bg-white px-4 py-3">
+          <div className="text-xs text-[var(--muted)]">已索引文件</div>
+          <div className="mt-1 text-xl font-semibold">{s.manifests}</div>
+        </div>
+        <div className="bg-white px-4 py-3">
+          <div className="text-xs text-[var(--muted)]">当前页</div>
+          <div className="mt-1 text-xl font-semibold">
+            {displayPage}
+            <span className="text-sm font-normal text-[var(--muted)]"> / {totalPages}</span>
           </div>
-          <div className="text-sm text-[var(--muted)]">最近任务</div>
         </div>
       </div>
 
@@ -135,6 +147,12 @@ export function Repos() {
       ) : (
         <>
           <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
+              <h2 className="font-medium">仓库清单</h2>
+              <span className="text-[var(--muted)]">
+                共 {l.total} 条 · 每页 {PAGE_SIZE} 条
+              </span>
+            </div>
             <table className="min-w-full text-sm">
               <thead className="bg-neutral-50 text-left">
                 <tr>
@@ -168,12 +186,7 @@ export function Repos() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
-            <span>
-              共 {l.total} 条，每页 {PAGE_SIZE} 条
-              {showPager
-                ? ` · 第 ${displayPage} / ${totalPages} 页`
-                : null}
-            </span>
+            <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : "单页结果"}</span>
             {showPager ? (
               <div className="flex items-center gap-2">
                 <button
