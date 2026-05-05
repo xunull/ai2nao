@@ -7,6 +7,7 @@
 - Move the Chrome domain time matrix into its own page tab so visit filtering and timeline analysis no longer compete in the same workspace.
 - Use a consistent PC-wide workspace width across the Web UI so switching pages no longer jumps between narrow and wide layouts.
 - Compact the global desktop navigation into a single toolbar so page content starts higher and route changes feel less jumpy.
+- Reshape repos, downloads, and Mac apps into denser desktop inventory workbenches with compact headers, toolbars, and table-first content.
 - Reshape the Chrome domain page into a desktop workbench with a light toolbar, left domain index, right current-domain workspace, and global stats folded into secondary details.
 - Treat the highest-ranked domain as the default working object without rewriting the URL, while keeping explicit all-domain scope addressable with `scope=all`.
 - Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
