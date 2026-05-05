@@ -16,6 +16,7 @@
 
 - Fix Chrome domain ranking clicks so each clicked domain replaces the active visit filter instead of appending behind the first selected domain.
 - Add regression coverage for repeatedly selecting different Chrome domain ranking rows.
+- Clear the GitHub radar clue highlight when switching the left index into a review queue, so the selected row matches the right workspace.
 
 ## 0.3.10 — 2026-05-04
 
