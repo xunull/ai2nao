@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -221,8 +221,8 @@ describe("GithubRadar page", () => {
 
     expect(await screen.findByText("开源雷达")).toBeInTheDocument();
     expect(await screen.findByText("现在值得看的线索")).toBeInTheDocument();
-    expect(screen.getByText("u/agent-kit 可能和当前工作有关")).toBeInTheDocument();
-    expect(screen.getByText(/2 个证据/)).toBeInTheDocument();
+    expect(screen.getAllByText("u/agent-kit 可能和当前工作有关").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2 个证据/).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole("button", { name: "查看证据" }));
     expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
     await userEvent.click(screen.getByText(/旧雷达队列/));
@@ -232,6 +232,32 @@ describe("GithubRadar page", () => {
     expect(screen.getByText("language:go")).toBeInTheDocument();
     expect(screen.getByText("u/agent-kit")).toBeInTheDocument();
     expect(screen.getByLabelText("收藏理由 u/agent-kit")).toBeInTheDocument();
+  });
+
+  it("switches from the insight workspace to a review queue from the left index", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/github/status")) return json(status(true));
+        if (url.endsWith("/api/github/radar")) return json(radar("compare later"));
+        if (url.endsWith("/api/github/radar/insights")) return json(insights());
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const index = await screen.findByRole("complementary");
+    expect(within(index).getByRole("button", { name: /下一步试\s*1/ })).toBeInTheDocument();
+    await user.click(within(index).getByRole("button", { name: /下一步试\s*1/ }));
+
+    expect(
+      screen
+        .getAllByRole("button", { name: "复盘队列" })
+        .some((button) => button.getAttribute("aria-selected") === "true")
+    ).toBe(true);
+    expect(screen.getByText("compare later")).toBeInTheDocument();
   });
 
   it("disables save while pending and prevents duplicate save requests", async () => {
