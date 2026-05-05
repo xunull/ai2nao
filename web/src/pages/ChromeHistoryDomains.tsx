@@ -611,13 +611,14 @@ export function ChromeHistoryDomains() {
                     {!wechatMode && activeDomain ? `：${activeDomain}` : ""}
                   </h2>
                   <p className="mt-1 truncate text-xs text-[var(--muted)]">
-                    当前范围：{scopeLabel}
+                    {effectiveFrom} 至 {state.to ?? "现在"}
+                    {state.q ? ` · 搜索：${state.q}` : ""}
                   </p>
                 </div>
-              <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs text-[var(--muted)]">
-                {visitsCount} / 最多 50 条
-              </span>
-            </div>
+                <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs text-[var(--muted)]">
+                  {visitsCount} / 最多 50 条
+                </span>
+              </div>
               <div className="grid grid-cols-[minmax(180px,1.4fr)_repeat(3,minmax(120px,1fr))] border-b border-[var(--border)] bg-neutral-50/70 text-sm">
                 <div className="border-r border-[var(--border)] px-4 py-3">
                   <div className="text-xs text-[var(--muted)]">范围</div>
