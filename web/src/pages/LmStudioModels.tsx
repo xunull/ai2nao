@@ -122,17 +122,14 @@ export function LmStudioModels() {
   }
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold">LM Studio 模型</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          读取 LM Studio settings 的下载目录，扫描本机模型文件，只记录元数据、大小和 warning。
-        </p>
-      </header>
-
-      <StatusPanel status={statusQ.data} isLoading={statusQ.isLoading} error={statusQ.error} />
-
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">LM Studio 模型</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            读取 LM Studio 模型目录，检查格式、权重文件、总大小和缺失状态。
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => syncM.mutate()}
@@ -141,38 +138,46 @@ export function LmStudioModels() {
         >
           {syncM.isPending ? "同步中…" : "立即同步"}
         </button>
-        {syncM.isError ? (
-          <span className="text-sm text-red-700">{String((syncM.error as Error).message)}</span>
-        ) : syncM.data?.status === "partial" ? (
-          <span className="text-sm text-amber-700">
-            同步部分完成，{syncM.data.warnings.length} 个 warning。
-          </span>
-        ) : null}
-      </div>
+      </header>
 
-      <form onSubmit={onSearch} className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+      <StatusPanel status={statusQ.data} isLoading={statusQ.isLoading} error={statusQ.error} />
+
+      {syncM.isError ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {String((syncM.error as Error).message)}
+        </div>
+      ) : syncM.data?.status === "partial" ? (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+          同步部分完成，{syncM.data.warnings.length} 个 warning。
+        </div>
+      ) : null}
+
+      <form
+        onSubmit={onSearch}
+        className="grid grid-cols-[minmax(18rem,1.2fr)_minmax(14rem,1fr)_160px_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
+      >
+        <label className="min-w-0 text-xs text-[var(--muted)]">
           models root
           <input
-            className="min-h-10 min-w-[18rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
             placeholder="默认读取 LM Studio settings 或 ~/.lmstudio/models"
             value={root}
             onChange={(e) => setRoot(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+        <label className="min-w-0 text-xs text-[var(--muted)]">
           模型
           <input
-            className="min-h-10 min-w-[14rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
             placeholder="搜索 publisher/model"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+        <label className="text-xs text-[var(--muted)]">
           format
           <select
-            className="min-h-10 rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
             value={format}
             onChange={(e) => setFormat(e.target.value)}
           >
@@ -183,10 +188,7 @@ export function LmStudioModels() {
             ))}
           </select>
         </label>
-        <button className="min-h-10 rounded border border-[var(--border)] px-3 py-2 text-sm">
-          筛选
-        </button>
-        <label className="flex min-h-10 items-center gap-2 text-sm text-[var(--muted)]">
+        <label className="flex h-9 items-center gap-2 text-sm text-[var(--muted)]">
           <input
             type="checkbox"
             checked={includeMissing}
@@ -197,6 +199,9 @@ export function LmStudioModels() {
           />
           显示已移除
         </label>
+        <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
+          筛选
+        </button>
       </form>
 
       <ModelList res={listQ.data} isLoading={listQ.isLoading} error={listQ.error} offset={offset} setOffset={setOffset} />
@@ -209,29 +214,53 @@ function StatusPanel({ status, isLoading, error }: { status: LmStatus | undefine
   if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
   if (!status) return null;
   return (
-    <div className="space-y-2 rounded border border-[var(--border)] bg-white p-4 text-sm">
-      <div>
-        已记录 {status.counts.active} 个模型 · 总大小 {formatByteSize(status.counts.totalSizeBytes)}
-        {status.counts.missing ? ` · 已移除 ${status.counts.missing}` : ""}
+    <div className="rounded border border-[var(--border)] bg-white text-sm">
+      <span className="sr-only">已记录 {status.counts.active} 个模型</span>
+      <div className="grid grid-cols-[160px_160px_160px_200px_minmax(0,1fr)] gap-px bg-[var(--border)]">
+        <Metric label="已记录" value={`${status.counts.active} 个模型`} />
+        <Metric label="总大小" value={formatByteSize(status.counts.totalSizeBytes)} />
+        <Metric label="已移除" value={String(status.counts.missing)} />
+        <Metric label="最大模型" value={formatByteSize(status.counts.largestSizeBytes)} />
+        <div className="min-w-0 bg-white px-4 py-3">
+          <div className="text-xs text-[var(--muted)]">models root</div>
+          <div className="mt-1 truncate" title={status.modelsRoot}>
+            {status.modelsRoot}
+          </div>
+          <div className="mt-1 text-xs text-[var(--muted)]">{status.rootSource}</div>
+        </div>
       </div>
-      <div className="break-all text-[var(--muted)]">
-        models root：{status.modelsRoot} · {status.rootSource}
-      </div>
-      {status.settingsPath ? <div className="break-all text-[var(--muted)]">settings：{status.settingsPath}</div> : null}
+      {status.settingsPath ? (
+        <div className="border-t border-[var(--border)] px-4 py-3 break-all text-[var(--muted)]">
+          settings：{status.settingsPath}
+        </div>
+      ) : null}
       {status.alternativeRoots.length ? (
-        <div className="break-all text-amber-700">
+        <div className="border-t border-[var(--border)] px-4 py-3 break-all text-amber-700">
           其他 settings 指向：{status.alternativeRoots.map((r) => `${r.source} ${r.modelsRoot}`).join(" · ")}
         </div>
       ) : null}
       {status.warnings.length ? (
-        <div className="whitespace-pre-wrap text-amber-700">{status.warnings.map((w) => w.message).join("\n")}</div>
+        <div className="border-t border-[var(--border)] px-4 py-3 whitespace-pre-wrap text-amber-700">
+          {status.warnings.map((w) => w.message).join("\n")}
+        </div>
       ) : null}
       {status.counts.largestModel ? (
-        <div className="text-[var(--muted)]">
+        <div className="border-t border-[var(--border)] px-4 py-3 text-[var(--muted)]">
           最大模型：{status.counts.largestModel} · {formatByteSize(status.counts.largestSizeBytes)}
         </div>
       ) : null}
-      <RunSummary run={status.lastRun} />
+      <div className="border-t border-[var(--border)] px-4 py-3">
+        <RunSummary run={status.lastRun} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white px-4 py-3">
+      <div className="text-xs text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
 }
@@ -253,52 +282,78 @@ function ModelList({ res, isLoading, error, offset, setOffset }: { res: ModelsRe
   const rows = res?.rows ?? [];
   return (
     <div className="space-y-3">
-      <div className="text-sm text-[var(--muted)]">共 {res?.total ?? 0} 条</div>
-      <div className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
-        {rows.length === 0 ? (
-          <div className="p-4 text-sm text-[var(--muted)]">暂无模型记录。运行同步后再查看。</div>
-        ) : (
-          rows.map((model) => <ModelItem key={model.id} model={model} />)
-        )}
+      <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
+          <h2 className="font-medium">模型清单</h2>
+          <span className="text-[var(--muted)]">共 {res?.total ?? 0} 条</span>
+        </div>
+        <table className="min-w-full text-sm">
+          <thead className="bg-neutral-50 text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium">模型</th>
+              <th className="px-3 py-2 font-medium">格式</th>
+              <th className="px-3 py-2 font-medium">大小</th>
+              <th className="px-3 py-2 font-medium">文件</th>
+              <th className="px-3 py-2 font-medium">Primary</th>
+              <th className="px-3 py-2 font-medium">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-4 text-[var(--muted)]" colSpan={6}>
+                  暂无模型记录。运行同步后再查看。
+                </td>
+              </tr>
+            ) : (
+              rows.map((model) => <ModelRow key={model.id} model={model} />)
+            )}
+          </tbody>
+        </table>
       </div>
       <Pager total={res?.total ?? 0} offset={offset} setOffset={setOffset} />
     </div>
   );
 }
 
-function ModelItem({ model }: { model: LmModel }) {
+function ModelRow({ model }: { model: LmModel }) {
   const warnings = safeJsonArray(model.warnings_json);
-  const topFiles = model.files.slice(0, 5);
   return (
-    <div className="p-3 text-sm">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <strong className="font-mono">{model.model_key}</strong>
-        <span className="rounded border border-[var(--border)] px-2 py-0.5 font-mono text-xs text-[var(--muted)]">{model.format}</span>
-        <span className="text-[var(--muted)]">{formatByteSize(model.total_size_bytes)}</span>
-        <span className="text-xs text-[var(--muted)]">
-          weights {model.weight_file_count} · aux {model.auxiliary_file_count} · files {model.total_file_count}
-        </span>
-        {model.missing_since ? <span className="text-xs text-amber-700">已移除</span> : null}
-        {warnings.length ? <span className="text-xs text-amber-700">warning {warnings.length}</span> : null}
-      </div>
-      <div className="mt-1 break-all text-xs text-[var(--muted)]">
-        primary：{model.primary_file ?? "—"} · weights {formatByteSize(model.weight_size_bytes)}
-        {model.last_modified_ms ? ` · ${formatDate(model.last_modified_ms)}` : ""}
-      </div>
-      {topFiles.length ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {topFiles.map((f) => (
-            <span key={f.rel_path} className="rounded border border-[var(--border)] px-2 py-1 font-mono text-xs text-[var(--muted)]">
-              {f.rel_path} · {formatByteSize(f.size_bytes)}
-              {f.is_symlink ? " · link" : ""}
-            </span>
-          ))}
+    <tr className="border-t border-[var(--border)] align-top">
+      <td className="px-3 py-2">
+        <div className="font-mono font-medium">{model.model_key}</div>
+        <div className="mt-1 max-w-[38rem] truncate text-xs text-[var(--muted)]" title={model.models_root}>
+          {model.models_root}
         </div>
-      ) : null}
-      {warnings.length ? (
-        <div className="mt-2 whitespace-pre-wrap text-xs text-amber-700">{warnings.map((w) => warningMessage(w)).join("\n")}</div>
-      ) : null}
-    </div>
+        {warnings.length ? (
+          <div className="mt-1 max-w-[38rem] whitespace-pre-wrap text-xs text-amber-700">
+            {warnings.map((w) => warningMessage(w)).join("\n")}
+          </div>
+        ) : null}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        <span className="rounded border border-[var(--border)] px-1.5 py-0.5 font-mono text-xs">
+          {model.format}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
+        <div>{formatByteSize(model.total_size_bytes)}</div>
+        <div className="mt-1 text-xs">weights {formatByteSize(model.weight_size_bytes)}</div>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
+        weights {model.weight_file_count} · aux {model.auxiliary_file_count} · files {model.total_file_count}
+      </td>
+      <td className="max-w-[28rem] px-3 py-2 text-xs text-[var(--muted)]">
+        <div className="truncate" title={model.primary_file ?? undefined}>
+          {model.primary_file ?? "—"}
+        </div>
+        {model.last_modified_ms ? <div className="mt-1">{formatDate(model.last_modified_ms)}</div> : null}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        <div>{model.missing_since ? <span className="text-amber-700">已移除</span> : <span className="text-emerald-700">存在</span>}</div>
+        {warnings.length ? <div className="mt-1 text-xs text-amber-700">warning {warnings.length}</div> : null}
+      </td>
+    </tr>
   );
 }
 
