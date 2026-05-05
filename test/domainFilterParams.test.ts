@@ -3,6 +3,7 @@ import {
   clearDomainsInParams,
   defaultDomainFromDate,
   readDomainFilterState,
+  setAllDomainsScopeInParams,
   setDomainBucketRangeInParams,
   setDomainListInParams,
   setDomainParam,
@@ -19,6 +20,7 @@ describe("domain filter URL helpers", () => {
     expect(readDomainFilterState(p(""))).toEqual({
       profile: "Default",
       domains: [],
+      scope: null,
       kind: "web",
       grain: "day",
       from: null,
@@ -59,12 +61,24 @@ describe("domain filter URL helpers", () => {
 
   it("sets a single search domain without preserving older selections", () => {
     const next = setSingleDomainInParams(
-      p("domains=example.com,a.test&q=agent"),
+      p("scope=all&domains=example.com,a.test&q=agent"),
       " MP.Weixin.QQ.com "
     );
     expect(next.get("domains")).toBe("mp.weixin.qq.com");
+    expect(next.has("scope")).toBe(false);
     expect(next.get("q")).toBe("agent");
     expect(setSingleDomainInParams(next, "").has("domains")).toBe(false);
+  });
+
+  it("uses scope=all to distinguish explicit all domains", () => {
+    const all = setAllDomainsScopeInParams(p("domains=example.com&q=agent"));
+    expect(all.get("scope")).toBe("all");
+    expect(all.has("domains")).toBe(false);
+    expect(readDomainFilterState(all).scope).toBe("all");
+
+    const domain = setSingleDomainInParams(all, "github.com");
+    expect(domain.get("domains")).toBe("github.com");
+    expect(domain.has("scope")).toBe(false);
   });
 
   it("expands clicked timeline buckets into half-open ranges", () => {
