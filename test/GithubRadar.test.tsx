@@ -249,9 +249,14 @@ describe("GithubRadar page", () => {
     renderPage();
 
     const index = await screen.findByRole("complementary");
-    expect(within(index).getByRole("button", { name: /下一步试\s*1/ })).toBeInTheDocument();
-    await user.click(within(index).getByRole("button", { name: /下一步试\s*1/ }));
+    const clueButton = within(index).getByRole("button", { name: /u\/agent-kit/ });
+    const queueButton = within(index).getByRole("button", { name: /下一步试\s*1/ });
+    expect(clueButton.className).toContain("ring-1");
+    expect(queueButton).toBeInTheDocument();
+    await user.click(queueButton);
 
+    expect(clueButton.className).not.toContain("ring-1");
+    expect(queueButton.className).toContain("ring-1");
     expect(
       screen
         .getAllByRole("button", { name: "复盘队列" })

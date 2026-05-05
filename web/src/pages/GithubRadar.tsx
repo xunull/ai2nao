@@ -230,7 +230,7 @@ function RadarBody({
             <IndexGroupTitle label="现在值得看的线索" count={insights.current_clues.length} />
             {renderInsightIndexRows({
               items: insights.current_clues,
-              selected: selectedInsight?.fingerprint,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
               onSelect: (fingerprint) => {
                 setTask("insights");
                 setSelectedFingerprint(fingerprint);
@@ -240,7 +240,7 @@ function RadarBody({
             <IndexGroupTitle label="重新变得有用" count={insights.rediscovered.length} />
             {renderInsightIndexRows({
               items: insights.rediscovered,
-              selected: selectedInsight?.fingerprint,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
               onSelect: (fingerprint) => {
                 setTask("insights");
                 setSelectedFingerprint(fingerprint);
@@ -250,7 +250,7 @@ function RadarBody({
             <IndexGroupTitle label="可能该降级关注" count={insights.retire_candidates.length} />
             {renderInsightIndexRows({
               items: insights.retire_candidates,
-              selected: selectedInsight?.fingerprint,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
               onSelect: (fingerprint) => {
                 setTask("insights");
                 setSelectedFingerprint(fingerprint);
