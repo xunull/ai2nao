@@ -614,9 +614,33 @@ export function ChromeHistoryDomains() {
                     当前范围：{scopeLabel}
                   </p>
                 </div>
-                <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs text-[var(--muted)]">
-                  {visitsCount} / 最多 50 条
-                </span>
+              <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs text-[var(--muted)]">
+                {visitsCount} / 最多 50 条
+              </span>
+            </div>
+              <div className="grid grid-cols-[minmax(180px,1.4fr)_repeat(3,minmax(120px,1fr))] border-b border-[var(--border)] bg-neutral-50/70 text-sm">
+                <div className="border-r border-[var(--border)] px-4 py-3">
+                  <div className="text-xs text-[var(--muted)]">范围</div>
+                  <div className="mt-1 truncate font-medium">{scopeLabel}</div>
+                </div>
+                <div className="border-r border-[var(--border)] px-4 py-3">
+                  <div className="text-xs text-[var(--muted)]">访问</div>
+                  <div className="mt-1 font-medium tabular-nums">
+                    {activeTopDomain?.count ?? visitsCount}
+                  </div>
+                </div>
+                <div className="border-r border-[var(--border)] px-4 py-3">
+                  <div className="text-xs text-[var(--muted)]">首次</div>
+                  <div className="mt-1 font-medium tabular-nums">
+                    {activeTopDomain?.first_visit_day ?? "—"}
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-xs text-[var(--muted)]">最近</div>
+                  <div className="mt-1 font-medium tabular-nums">
+                    {activeTopDomain?.last_visit_day ?? "—"}
+                  </div>
+                </div>
               </div>
               <div className="divide-y divide-neutral-100">
                 {(visits.data?.items ?? []).map((item) => (
@@ -650,31 +674,6 @@ export function ChromeHistoryDomains() {
                     {wechatMode ? "没有匹配的微信文章访问。" : "没有匹配的访问。"}
                   </p>
                 ) : null}
-              </div>
-            </section>
-
-            <section className="grid grid-cols-4 rounded border border-[var(--border)] bg-white text-sm shadow-sm">
-              <div className="border-r border-[var(--border)] px-4 py-3">
-                <div className="text-xs text-[var(--muted)]">范围</div>
-                <div className="mt-1 truncate font-medium">{scopeLabel}</div>
-              </div>
-              <div className="border-r border-[var(--border)] px-4 py-3">
-                <div className="text-xs text-[var(--muted)]">访问</div>
-                <div className="mt-1 font-medium tabular-nums">
-                  {activeTopDomain?.count ?? visitsCount}
-                </div>
-              </div>
-              <div className="border-r border-[var(--border)] px-4 py-3">
-                <div className="text-xs text-[var(--muted)]">首次</div>
-                <div className="mt-1 font-medium tabular-nums">
-                  {activeTopDomain?.first_visit_day ?? "—"}
-                </div>
-              </div>
-              <div className="px-4 py-3">
-                <div className="text-xs text-[var(--muted)]">最近</div>
-                <div className="mt-1 font-medium tabular-nums">
-                  {activeTopDomain?.last_visit_day ?? "—"}
-                </div>
               </div>
             </section>
           </main>
