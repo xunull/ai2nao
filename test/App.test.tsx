@@ -102,6 +102,52 @@ describe("App routes", () => {
     expect(await screen.findByText("Atuin 目录活动")).toBeInTheDocument();
     expect(await screen.findByText("/tmp/history.db")).toBeInTheDocument();
   });
+
+  it("keeps the AI chat composer inside a fixed-height workbench", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    Element.prototype.scrollTo = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/llm-chat/status")) {
+          return json({
+            configured: true,
+            provider: "openai-compatible",
+            model: "local-test-model",
+            baseHost: "http://127.0.0.1:11434",
+            configPath: "/tmp/llm-chat.json",
+          });
+        }
+        if (url.endsWith("/api/rag/status")) {
+          return json({
+            ok: true,
+            dbPath: "/tmp/rag.db",
+            configPath: "/tmp/rag.json",
+            configPresent: true,
+            corpusRoots: ["/Users/test/project-notes"],
+            embeddingEnabled: true,
+            chunkCount: 12,
+          });
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    const { container } = renderApp("/ai-chat");
+
+    expect(await screen.findByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "本机上下文" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "消息内容" })).toBeInTheDocument();
+    expect(container.querySelector('[class*="h-[clamp(620px"]')).toBeInTheDocument();
+  });
 });
 
 function json(body: unknown): Response {

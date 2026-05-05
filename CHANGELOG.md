@@ -1,26 +1,33 @@
 # Changelog
 
+## 0.3.12 — 2026-05-05
+
+### Changed
+
+- Keep the AI chat composer anchored inside a fixed-height desktop workbench so long assistant answers scroll in the conversation pane instead of pushing the input box down the page.
+- Reshape AI chat into a left-context/right-thread workspace with model state, RAG corpus boundaries, quick prompts, and local forwarding trust signals visible beside the conversation.
+- Compact the global desktop navigation into a single toolbar so page content starts higher and route changes feel less jumpy.
+- Reshape repos, downloads, Mac apps, Homebrew, Hugging Face models, and LM Studio models into denser desktop inventory workbenches with compact headers, toolbars, and table-first content.
+- Reshape Chrome domain analysis and GitHub radar into desktop workbenches with left-side indexes and right-side current-object workspaces.
+- Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
+
+### Fixed
+
+- Clear the GitHub radar clue highlight when switching the left index into a review queue, so the selected row matches the right workspace.
+- Add route-level regression coverage for the AI chat fixed-height workbench layout.
+
 ## 0.3.11 — 2026-05-04
 
 ### Changed
 
 - Move the Chrome domain time matrix into its own page tab so visit filtering and timeline analysis no longer compete in the same workspace.
 - Use a consistent PC-wide workspace width across the Web UI so switching pages no longer jumps between narrow and wide layouts.
-- Compact the global desktop navigation into a single toolbar so page content starts higher and route changes feel less jumpy.
-- Reshape repos, downloads, and Mac apps into denser desktop inventory workbenches with compact headers, toolbars, and table-first content.
-- Bring the Homebrew page into the same inventory workbench pattern with compact status metrics, filters, and a table-first package list.
-- Bring Hugging Face and LM Studio model inventory pages into the same table-first desktop workbench pattern.
-- Reshape the Chrome domain page into a desktop workbench with a light toolbar, left domain index, right current-domain workspace, and global stats folded into secondary details.
-- Treat the highest-ranked domain as the default working object without rewriting the URL, while keeping explicit all-domain scope addressable with `scope=all`.
-- Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
-- Reshape GitHub radar into the same desktop workbench pattern with a left clue/queue index and a right-side current clue or review queue workspace.
 - Add `.gstack/` to local ignores so ship/design artifacts stay out of the repository.
 
 ### Fixed
 
 - Fix Chrome domain ranking clicks so each clicked domain replaces the active visit filter instead of appending behind the first selected domain.
 - Add regression coverage for repeatedly selecting different Chrome domain ranking rows.
-- Clear the GitHub radar clue highlight when switching the left index into a review queue, so the selected row matches the right workspace.
 
 ## 0.3.10 — 2026-05-04
 
