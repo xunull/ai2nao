@@ -9,6 +9,7 @@
 - Compact the global desktop navigation into a single toolbar so page content starts higher and route changes feel less jumpy.
 - Reshape repos, downloads, and Mac apps into denser desktop inventory workbenches with compact headers, toolbars, and table-first content.
 - Bring the Homebrew page into the same inventory workbench pattern with compact status metrics, filters, and a table-first package list.
+- Bring Hugging Face and LM Studio model inventory pages into the same table-first desktop workbench pattern.
 - Reshape the Chrome domain page into a desktop workbench with a light toolbar, left domain index, right current-domain workspace, and global stats folded into secondary details.
 - Treat the highest-ranked domain as the default working object without rewriting the URL, while keeping explicit all-domain scope addressable with `scope=all`.
 - Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
