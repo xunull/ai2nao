@@ -31,6 +31,9 @@ const QUEUE_LABELS: Record<keyof GhRadarOverviewRes["queues"], string> = {
   recently_starred: "最近收藏",
 };
 
+type RadarTask = "insights" | "queues";
+type RadarQueueKey = keyof GhRadarOverviewRes["queues"];
+
 function formatDay(iso: string | null): string {
   if (!iso) return "—";
   return iso.slice(0, 10);
@@ -121,6 +124,12 @@ function RadarBody({
   data: GhRadarOverviewRes;
   insights: GhRadarInsightsRes;
 }) {
+  const [task, setTask] = useState<RadarTask>("insights");
+  const [selectedFingerprint, setSelectedFingerprint] = useState<string | null>(
+    null
+  );
+  const [activeQueue, setActiveQueue] = useState<RadarQueueKey>("missing_reason");
+  const [q, setQ] = useState("");
   const totalQueued = useMemo(
     () =>
       data.counts.missing_reason +
@@ -129,6 +138,43 @@ function RadarBody({
       data.counts.try_next,
     [data.counts]
   );
+  const allInsights = useMemo(
+    () => [
+      ...insights.current_clues,
+      ...insights.rediscovered,
+      ...insights.retire_candidates,
+    ],
+    [insights.current_clues, insights.rediscovered, insights.retire_candidates]
+  );
+  const filteredInsights = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return allInsights;
+    return allInsights.filter((insight) =>
+      [
+        insight.title,
+        insight.summary,
+        insight.kind,
+        insight.health,
+        ...insight.terms,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle)
+    );
+  }, [allInsights, q]);
+  const selectedInsight =
+    filteredInsights.find((insight) => insight.fingerprint === selectedFingerprint) ??
+    filteredInsights[0] ??
+    null;
+
+  useEffect(() => {
+    if (
+      filteredInsights.length > 0 &&
+      !filteredInsights.some((insight) => insight.fingerprint === selectedFingerprint)
+    ) {
+      setSelectedFingerprint(filteredInsights[0].fingerprint);
+    }
+  }, [filteredInsights, selectedFingerprint]);
 
   if (data.counts.total_stars === 0) {
     return (
@@ -143,8 +189,166 @@ function RadarBody({
   return (
     <div className="space-y-5">
       <InsightStatusBar insights={insights} />
-      <CurrentClues insights={insights} />
-      <SecondaryInsightSections insights={insights} />
+      <section className="border-y border-[var(--border)] bg-white px-4 py-3">
+        <div className="grid grid-cols-[minmax(220px,1fr)_minmax(320px,1.5fr)_minmax(170px,auto)] items-end gap-3">
+          <div className="text-sm">
+            <div className="text-xs text-[var(--muted)]">当前</div>
+            <div className="mt-1 flex h-10 items-center rounded border border-[var(--border)] bg-neutral-50 px-3 text-sm text-[var(--fg)]">
+              {task === "queues"
+                ? QUEUE_LABELS[activeQueue]
+                : selectedInsight?.title ?? "暂无线索"}
+            </div>
+          </div>
+          <label className="text-sm">
+            <span className="block text-xs text-[var(--muted)]">
+              搜索 repo / topic / 上下文
+            </span>
+            <input
+              className="mt-1 h-10 w-full rounded border border-[var(--border)] px-3 text-sm"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </label>
+          <div className="text-sm">
+            <div className="text-xs text-[var(--muted)]">范围</div>
+            <div className="mt-1 flex h-10 items-center rounded border border-[var(--border)] bg-neutral-50 px-3 text-sm text-[var(--fg)]">
+              {insights.meta.metrics?.insight_count ?? 0} 条线索
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-[360px_minmax(0,1fr)] gap-6">
+        <aside className="rounded border border-[var(--border)] bg-white shadow-sm">
+          <div className="border-b border-[var(--border)] px-4 py-3">
+            <h2 className="text-sm font-semibold">线索索引</h2>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              左侧选线索或队列，右侧查看证据和反馈
+            </p>
+          </div>
+          <div className="max-h-[44rem] overflow-auto p-2">
+            <IndexGroupTitle label="现在值得看的线索" count={insights.current_clues.length} />
+            {renderInsightIndexRows({
+              items: insights.current_clues,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
+              onSelect: (fingerprint) => {
+                setTask("insights");
+                setSelectedFingerprint(fingerprint);
+              },
+            })}
+
+            <IndexGroupTitle label="重新变得有用" count={insights.rediscovered.length} />
+            {renderInsightIndexRows({
+              items: insights.rediscovered,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
+              onSelect: (fingerprint) => {
+                setTask("insights");
+                setSelectedFingerprint(fingerprint);
+              },
+            })}
+
+            <IndexGroupTitle label="可能该降级关注" count={insights.retire_candidates.length} />
+            {renderInsightIndexRows({
+              items: insights.retire_candidates,
+              selected: task === "insights" ? selectedInsight?.fingerprint : undefined,
+              onSelect: (fingerprint) => {
+                setTask("insights");
+                setSelectedFingerprint(fingerprint);
+              },
+            })}
+
+            <IndexGroupTitle label="复盘队列" count={totalQueued} />
+            {(Object.keys(data.queues) as RadarQueueKey[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                className={`mb-1 grid w-full grid-cols-[minmax(0,1fr)_44px] items-center gap-2 rounded px-3 py-2.5 text-left text-sm hover:bg-neutral-50 ${
+                  task === "queues" && activeQueue === key
+                    ? "bg-blue-50 text-blue-950 ring-1 ring-blue-200"
+                    : ""
+                }`}
+                onClick={() => {
+                  setTask("queues");
+                  setActiveQueue(key);
+                }}
+              >
+                <span className="min-w-0 truncate">{QUEUE_LABELS[key]}</span>
+                <span className="text-right tabular-nums text-[var(--muted)]">
+                  {data.queues[key].length}
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="min-w-0">
+          <section className="rounded border border-[var(--border)] bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">
+                  {task === "queues" ? "复盘队列" : "当前线索"}
+                </h2>
+                <p className="mt-1 truncate text-xs text-[var(--muted)]">
+                  {task === "queues"
+                    ? QUEUE_LABELS[activeQueue]
+                    : selectedInsight?.title ?? "暂无可用线索"}
+                </p>
+              </div>
+              {task === "insights" && selectedInsight ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge>{healthLabel(selectedInsight.health)}</Badge>
+                  <Badge>{kindLabel(selectedInsight.kind)}</Badge>
+                  <span className="rounded bg-neutral-100 px-2 py-1 text-xs text-[var(--muted)]">
+                    score {selectedInsight.score}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            <nav
+              className="flex items-center gap-2 border-b border-[var(--border)] px-2"
+              aria-label="开源雷达视图"
+            >
+              {[
+                { key: "insights" as const, label: "当前线索" },
+                { key: "queues" as const, label: "复盘队列" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  aria-selected={task === tab.key}
+                  className={`border-b-2 px-3 py-2 text-sm ${
+                    task === tab.key
+                      ? "border-[var(--accent)] font-semibold text-[var(--fg)]"
+                      : "border-transparent text-[var(--muted)] hover:text-[var(--fg)]"
+                  }`}
+                  onClick={() => setTask(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+
+            {task === "insights" ? (
+              selectedInsight ? (
+                <InsightCard insight={selectedInsight} />
+              ) : (
+                <p className="px-4 py-16 text-center text-sm text-[var(--muted)]">
+                  没有匹配的线索。可以刷新一次，或清空搜索。
+                </p>
+              )
+            ) : (
+              <div className="p-4">
+                <QueuePanel
+                  queues={data.queues}
+                  active={activeQueue}
+                  onActiveChange={setActiveQueue}
+                />
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+
       <details className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
         <summary className="cursor-pointer text-sm font-medium">
           旧雷达队列 · 待补 {data.counts.missing_reason} · 复盘{" "}
@@ -166,6 +370,7 @@ function RadarBody({
             <div className="space-y-4">
               <ClusterPanel title="主题方向" clusters={data.clusters} />
               <ClusterPanel title="仅语言分组" clusters={data.language_only} muted />
+              <TasteProfile insight={insights.taste_profile} />
             </div>
             <QueuePanel queues={data.queues} />
           </div>
@@ -173,6 +378,51 @@ function RadarBody({
       </details>
     </div>
   );
+}
+
+function IndexGroupTitle({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="px-3 pb-1 pt-3 text-[11px] font-medium text-[var(--muted)]">
+      <span>{label}</span>
+      <span> · {count}</span>
+    </div>
+  );
+}
+
+function renderInsightIndexRows({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: GhRadarInsight[];
+  selected?: string;
+  onSelect: (fingerprint: string) => void;
+}) {
+  if (items.length === 0) {
+    return <p className="px-3 py-2 text-xs text-[var(--muted)]">暂无线索。</p>;
+  }
+  return items.map((insight) => (
+    <button
+      key={insight.fingerprint}
+      type="button"
+      className={`mb-1 grid w-full grid-cols-[minmax(0,1fr)_44px] items-center gap-2 rounded px-3 py-2.5 text-left text-sm hover:bg-neutral-50 ${
+        selected === insight.fingerprint
+          ? "bg-blue-50 text-blue-950 ring-1 ring-blue-200"
+          : ""
+      }`}
+      onClick={() => onSelect(insight.fingerprint)}
+    >
+      <span className="min-w-0">
+        <span className="block truncate">{insight.title}</span>
+        <span className="mt-1 block truncate text-xs text-[var(--muted)]">
+          {healthLabel(insight.health)} · {insight.evidence.length} 个证据
+        </span>
+      </span>
+      <span className="text-right tabular-nums text-[var(--muted)]">
+        {insight.score}
+      </span>
+    </button>
+  ));
 }
 
 function InsightStatusBar({ insights }: { insights: GhRadarInsightsRes }) {
@@ -229,85 +479,6 @@ function InsightStatusBar({ insights }: { insights: GhRadarInsightsRes }) {
   );
 }
 
-function CurrentClues({ insights }: { insights: GhRadarInsightsRes }) {
-  if (insights.meta.status === "empty") {
-    return (
-      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm text-sm text-[var(--muted)]">
-        开源雷达需要本地 GitHub Star 数据。先运行{" "}
-        <code className="bg-neutral-100 px-1 rounded">ai2nao github sync --full</code>{" "}
-        ，再回来生成线索。同步只写入本地 SQLite，不会修改 GitHub。
-      </section>
-    );
-  }
-  if (insights.current_clues.length === 0) {
-    return (
-      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm text-sm text-[var(--muted)]">
-        目前没有足够强的当前工作线索。可以刷新一次，或先继续保留旧雷达队列。
-      </section>
-    );
-  }
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-medium">现在值得看的线索</h2>
-      {insights.current_clues.map((insight) => (
-        <InsightCard key={insight.fingerprint} insight={insight} />
-      ))}
-    </section>
-  );
-}
-
-function SecondaryInsightSections({ insights }: { insights: GhRadarInsightsRes }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <InsightList title="重新变得有用" items={insights.rediscovered} />
-      <InsightList title="可能该降级关注" items={insights.retire_candidates} />
-      <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-medium">技术品味画像</h2>
-        {insights.taste_profile ? (
-          <div className="mt-3">
-            <p className="text-sm">{insights.taste_profile.title}</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {insights.taste_profile.terms.map((t) => (
-                <Badge key={t}>{t}</Badge>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-[var(--muted)]">暂无足够主题数据。</p>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function InsightList({
-  title,
-  items,
-}: {
-  title: string;
-  items: GhRadarInsight[];
-}) {
-  return (
-    <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-medium">{title}</h2>
-      {items.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--muted)]">暂无线索。</p>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {items.slice(0, 4).map((insight) => (
-            <li key={insight.fingerprint} className="text-sm">
-              <div className="font-medium">{insight.title}</div>
-              <div className="mt-1 text-xs text-[var(--muted)]">
-                {evidenceSummary(insight)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function InsightCard({ insight }: { insight: GhRadarInsight }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -327,7 +498,7 @@ function InsightCard({ insight }: { insight: GhRadarInsight }) {
   });
   const drawerId = `evidence-${insight.fingerprint}`;
   return (
-    <article className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+    <article className="p-4">
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{healthLabel(insight.health)}</Badge>
@@ -403,6 +574,26 @@ function InsightCard({ insight }: { insight: GhRadarInsight }) {
   );
 }
 
+function TasteProfile({ insight }: { insight: GhRadarInsight | null }) {
+  return (
+    <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">
+      <h2 className="text-sm font-medium">技术品味画像</h2>
+      {insight ? (
+        <div className="mt-3">
+          <p className="text-sm">{insight.title}</p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {insight.terms.map((t) => (
+              <Badge key={t}>{t}</Badge>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-[var(--muted)]">暂无足够主题数据。</p>
+      )}
+    </section>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded border border-[var(--border)] bg-white p-3 shadow-sm">
@@ -456,8 +647,22 @@ function ClusterPanel({
   );
 }
 
-function QueuePanel({ queues }: { queues: GhRadarOverviewRes["queues"] }) {
-  const [active, setActive] = useState<keyof GhRadarOverviewRes["queues"]>("missing_reason");
+function QueuePanel({
+  queues,
+  active: controlledActive,
+  onActiveChange,
+}: {
+  queues: GhRadarOverviewRes["queues"];
+  active?: RadarQueueKey;
+  onActiveChange?: (key: RadarQueueKey) => void;
+}) {
+  const [internalActive, setInternalActive] =
+    useState<RadarQueueKey>("missing_reason");
+  const active = controlledActive ?? internalActive;
+  function setActive(key: RadarQueueKey) {
+    if (onActiveChange) onActiveChange(key);
+    else setInternalActive(key);
+  }
   const items = queues[active];
   return (
     <section className="rounded border border-[var(--border)] bg-white p-4 shadow-sm">

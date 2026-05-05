@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.12 — 2026-05-05
+
+### Changed
+
+- Keep the AI chat composer anchored inside a fixed-height desktop workbench so long assistant answers scroll in the conversation pane instead of pushing the input box down the page.
+- Reshape AI chat into a left-context/right-thread workspace with model state, RAG corpus boundaries, quick prompts, and local forwarding trust signals visible beside the conversation.
+- Compact the global desktop navigation into a single toolbar so page content starts higher and route changes feel less jumpy.
+- Reshape repos, downloads, Mac apps, Homebrew, Hugging Face models, and LM Studio models into denser desktop inventory workbenches with compact headers, toolbars, and table-first content.
+- Reshape Chrome domain analysis and GitHub radar into desktop workbenches with left-side indexes and right-side current-object workspaces.
+- Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
+
+### Fixed
+
+- Clear the GitHub radar clue highlight when switching the left index into a review queue, so the selected row matches the right workspace.
+- Add route-level regression coverage for the AI chat fixed-height workbench layout.
+
 ## 0.3.11 — 2026-05-04
 
 ### Changed
