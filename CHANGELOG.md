@@ -8,6 +8,7 @@
 - Use a consistent PC-wide workspace width across the Web UI so switching pages no longer jumps between narrow and wide layouts.
 - Reshape the Chrome domain page into a desktop workbench with a light toolbar, left domain index, right current-domain workspace, and global stats folded into secondary details.
 - Treat the highest-ranked domain as the default working object without rewriting the URL, while keeping explicit all-domain scope addressable with `scope=all`.
+- Add a desktop workbench design guide and align the next GitHub radar design plan with the same left-index/right-workspace structure.
 - Add `.gstack/` to local ignores so ship/design artifacts stay out of the repository.
 
 ### Fixed
