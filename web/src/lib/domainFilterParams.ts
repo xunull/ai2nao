@@ -11,6 +11,7 @@ export type DomainUrlKind =
 export type DomainFilterState = {
   profile: string;
   domains: string[];
+  scope: "all" | null;
   kind: DomainUrlKind;
   grain: DomainTimelineGrain;
   from: string | null;
@@ -54,6 +55,7 @@ export function readDomainFilterState(
   return {
     profile: (params.get("profile") ?? "").trim() || "Default",
     domains: readDomains(params.get("domains")),
+    scope: params.get("scope") === "all" ? "all" : null,
     kind,
     grain,
     from: (params.get("from") ?? "").trim() || null,
@@ -74,6 +76,7 @@ export function toggleDomainInParams(
   else cur.add(lower);
   if (cur.size === 0) next.delete("domains");
   else next.set("domains", Array.from(cur).join(","));
+  if (cur.size > 0) next.delete("scope");
   return next;
 }
 
@@ -87,6 +90,7 @@ export function setDomainListInParams(
   );
   if (normalized.length === 0) next.delete("domains");
   else next.set("domains", normalized.join(","));
+  if (normalized.length > 0) next.delete("scope");
   return next;
 }
 
@@ -100,6 +104,16 @@ export function setSingleDomainInParams(
 export function clearDomainsInParams(params: URLSearchParams): URLSearchParams {
   const next = cloneParams(params);
   next.delete("domains");
+  next.delete("scope");
+  return next;
+}
+
+export function setAllDomainsScopeInParams(
+  params: URLSearchParams
+): URLSearchParams {
+  const next = cloneParams(params);
+  next.delete("domains");
+  next.set("scope", "all");
   return next;
 }
 

@@ -60,22 +60,41 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-[var(--border)] bg-white">
-        <div className={`${frameClass} py-3 flex flex-wrap items-center gap-4`}>
-          <Link to="/repos" className="font-semibold text-[var(--fg)]">
-            ai2nao
-          </Link>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <div className={`${frameClass} py-2`}>
+          <div className="flex min-h-9 items-center gap-5">
+            <Link to="/repos" className="shrink-0 font-semibold text-[var(--fg)]">
+              ai2nao
+            </Link>
+            <form onSubmit={onSubmit} className="ml-auto flex shrink-0 items-center gap-2">
+              <label className="flex items-center">
+                <span className="sr-only">全站搜索</span>
+                <input
+                  className="h-9 w-56 rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
+                  placeholder="仓库、文件、对话"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </label>
+              <button
+                type="submit"
+                className="h-9 rounded bg-[var(--accent)] px-4 text-sm text-white"
+              >
+                搜索
+              </button>
+            </form>
+          </div>
+          <nav className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {navGroups.map((group) => (
-              <div key={group.label} className="flex items-center gap-2">
+              <div key={group.label} className="flex shrink-0 items-center gap-2">
                 <span className="text-[var(--muted)] text-xs">
                   {group.label}
                 </span>
-                <span className="flex flex-wrap gap-2">
+                <span className="flex gap-1">
                   {group.items.map((item) => (
                     <NavLink
                       key={item.to}
                       className={({ isActive }) =>
-                        "inline-flex min-h-11 items-center rounded px-2 text-[var(--accent)] hover:bg-blue-50 hover:no-underline " +
+                        "inline-flex min-h-8 items-center rounded px-2 text-[var(--accent)] hover:bg-blue-50 hover:no-underline " +
                         (isActive ? "bg-blue-50 font-semibold text-[var(--fg)]" : "")
                       }
                       to={item.to}
@@ -87,26 +106,9 @@ export function Layout({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
-          <form onSubmit={onSubmit} className="ml-auto flex items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-              全站搜索
-              <input
-                className="min-h-11 min-w-[12rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
-                placeholder="仓库、文件、对话"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </label>
-            <button
-              type="submit"
-              className="min-h-11 rounded bg-[var(--accent)] px-4 py-2 text-sm text-white"
-            >
-              搜索
-            </button>
-          </form>
         </div>
       </header>
-      <main className={`${frameClass} w-full py-6 flex-1`}>{children}</main>
+      <main className={`${frameClass} w-full py-5 flex-1`}>{children}</main>
       <footer className="border-t border-[var(--border)] text-xs text-[var(--muted)] py-3 text-center">
         本机索引；下载页写入需运行带可写库的 serve
       </footer>
