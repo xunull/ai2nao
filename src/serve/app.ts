@@ -161,11 +161,11 @@ export function createApp(opts: ServeOptions): Hono {
     "/api/*",
     cors({
       origin: ["http://127.0.0.1:5173", "http://localhost:5173"],
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     })
   );
 
-  registerLlmChatRoutes(app, { ragDb: rag?.db });
+  registerLlmChatRoutes(app, { db, ragDb: rag?.db });
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerGithubRoutes(app, db);
   registerHuggingfaceRoutes(app, db);
