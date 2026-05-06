@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.13 — 2026-05-06
+
+### Added
+
+- Add local AI chat session storage and session APIs so `/ai-chat` conversations can be saved, restored, continued, and deleted from SQLite.
+- Add protocol-level UIMessage validation, frontend/backend message codecs, and Playwright coverage for AI chat history isolation.
+
+### Changed
+
+- Rework `/ai-chat` into a fixed-height desktop AI studio with a history rail, active session identity, persistence status, and restored-history context bridging.
+
+### Fixed
+
+- Prevent long assistant answers from pushing the AI chat composer down the page.
+- Prevent switched AI chat sessions from leaking messages into each other, and reject malformed messages before they reach AI SDK/model calls.
+
 ## 0.3.12 — 2026-05-05
 
 ### Changed
