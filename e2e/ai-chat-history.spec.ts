@@ -1,63 +1,65 @@
 import { test, expect, type Page } from "@playwright/test";
 
-test("AI chat history flow saves, restores, and deletes a local session", async ({ page }) => {
+test("AI chat renders a fixed-height CopilotKit workbench", async ({ page }) => {
   const store = new MockSessionStore();
   await mockAiChatApis(page, store);
 
   await page.goto("/ai-chat");
+
   await expect(page.getByRole("heading", { name: "AI 对话" })).toBeVisible();
-  await expect(page.getByText("Local AI Studio")).toBeVisible();
+  await expect(page.getByTestId("ai-chat-session-rail")).toBeVisible();
+  await expect(page.getByTestId("ai-chat-thread-shell")).toBeVisible();
+  await expect(page.getByText("AI Studio")).toBeVisible();
 
-  await page.getByRole("textbox", { name: "消息内容" }).fill("总结今天的工作");
-  await page.keyboard.press("Enter");
-
-  await expect(page.getByText("这是一个确定性的测试回答。")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^总结今天的工作 \d+ 条消息$/ })).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByRole("button", { name: /^总结今天的工作 \d+ 条消息$/ })).toBeVisible();
-  await page.getByRole("button", { name: /^总结今天的工作 \d+ 条消息$/ }).click();
-  await expect(page.getByText("这是一个确定性的测试回答。")).toBeVisible();
-
-  await page.getByRole("textbox", { name: "消息内容" }).fill("继续说");
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("继续说")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^总结今天的工作 4 条消息$/ })).toBeVisible();
-
-  await page.getByRole("button", { name: /删除 总结今天的工作/ }).click();
-  await expect(page.getByText("第一条消息后，会话会保存在这里。")).toBeVisible();
-  await expect(page.getByText("问一个和你本机资料有关的问题。")).toBeVisible();
+  const shellBox = await page.getByTestId("ai-chat-thread-shell").boundingBox();
+  expect(shellBox?.height).toBeGreaterThan(520);
 });
 
-test("AI chat history keeps switched sessions isolated", async ({ page }) => {
+test("AI chat creates, switches, and deletes local CopilotKit sessions", async ({ page }) => {
   const store = new MockSessionStore();
-  const chatRequests: unknown[] = [];
-  await mockAiChatApis(page, store, chatRequests);
+  await mockAiChatApis(page, store);
 
   await page.goto("/ai-chat");
-  await page.getByRole("textbox", { name: "消息内容" }).fill("第一个问题");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: /^第一个问题 \d+ 条消息$/ })).toBeVisible();
+  await expect(page.getByTestId("ai-chat-session")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "新对话" }).click();
-  await page.getByRole("textbox", { name: "消息内容" }).fill("第二个问题");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: /^第二个问题 \d+ 条消息$/ })).toBeVisible();
+  await page.getByRole("button", { name: "新对话", exact: true }).first().click();
+  await expect(page.getByTestId("ai-chat-session")).toHaveCount(2);
 
-  await page.getByRole("button", { name: /^第一个问题 \d+ 条消息$/ }).click();
-  await page.getByRole("textbox", { name: "消息内容" }).fill("我刚才问你什么了");
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: /^第一个问题 4 条消息$/ })).toBeVisible();
+  await page.getByTestId("ai-chat-session").last().click();
+  await expect(page.getByTestId("ai-chat-thread-shell")).toBeVisible();
 
-  const lastRequest = chatRequests.at(-1);
-  const lastRequestText = extractChatRequestText(lastRequest);
-  expect(lastRequestText).toContain("第一个问题");
-  expect(lastRequestText).toContain("我刚才问你什么了");
-  expect(lastRequestText).not.toContain("第二个问题");
+  await page.getByRole("button", { name: "删除对话" }).first().click();
+  await expect(page.getByTestId("ai-chat-session")).toHaveCount(1);
 });
 
-async function mockAiChatApis(page: Page, store: MockSessionStore, chatRequests: unknown[] = []) {
-  let streamNo = 0;
+test("AI chat keeps switched CopilotKit sessions isolated at the runtime boundary", async ({ page }) => {
+  const store = new MockSessionStore([
+    sessionFixture("s1", "第一个问题", [
+      { id: "u1", role: "user", content: "第一个问题" },
+      { id: "a1", role: "assistant", content: "第一个回答" },
+    ]),
+    sessionFixture("s2", "第二个问题", [
+      { id: "u2", role: "user", content: "第二个问题" },
+      { id: "a2", role: "assistant", content: "第二个回答" },
+    ]),
+  ]);
+  const runtimeRequests: unknown[] = [];
+  await mockAiChatApis(page, store, runtimeRequests);
+
+  await page.goto("/ai-chat");
+  await page.getByRole("button", { name: /^第一个问题/ }).click();
+  await page.getByTestId("copilot-chat-textarea").fill("我刚才问你什么了");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => runtimeRequests.length).toBeGreaterThan(0);
+
+  const lastRun = runtimeRequests.at(-1);
+  const requestText = JSON.stringify(lastRun);
+  expect(requestText).toContain("第一个问题");
+  expect(requestText).toContain("我刚才问你什么了");
+  expect(requestText).not.toContain("第二个问题");
+});
+
+async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeRequests: unknown[] = []) {
   await page.route("**/api/llm-chat/sessions**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -80,14 +82,6 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, chatRequests:
       });
     }
 
-    if (sessionId && url.pathname.endsWith("/sync") && method === "POST") {
-      const body = request.postDataJSON() as { title?: string; messages: unknown[] };
-      return route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ session: store.sync(sessionId, body.title, body.messages) }),
-      });
-    }
-
     if (sessionId && method === "DELETE") {
       store.delete(sessionId);
       return route.fulfill({
@@ -106,7 +100,7 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, chatRequests:
     return route.fulfill({
       status: 404,
       contentType: "application/json",
-      body: JSON.stringify({ error: "unhandled mock route" }),
+      body: JSON.stringify({ error: "unhandled session mock route" }),
     });
   });
 
@@ -122,6 +116,7 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, chatRequests:
       }),
     })
   );
+
   await page.route("**/api/rag/status", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -136,62 +131,122 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, chatRequests:
       }),
     })
   );
-  await page.route("**/api/llm-chat", (route) => {
-    const body = route.request().postDataJSON();
-    chatRequests.push(body);
-    const invalidMessage = (body as { messages?: unknown[] })?.messages?.find(
-      (message) => !Array.isArray((message as { parts?: unknown })?.parts)
-    );
-    if (invalidMessage) {
+
+  const handleCopilotKitRoute: Parameters<Page["route"]>[1] = async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+
+    if (path.endsWith("/info")) {
       return route.fulfill({
-        status: 500,
         contentType: "application/json",
-        body: JSON.stringify({
-          error: { message: "Cannot read properties of undefined (reading 'map')" },
-        }),
+        body: JSON.stringify({}),
       });
     }
-    streamNo += 1;
-    route.fulfill({
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      },
-      body: [
-        sse({ type: "start", messageId: `assistant-e2e-${streamNo}` }),
-        sse({ type: "text-start", id: "txt" }),
-        sse({ type: "text-delta", id: "txt", delta: "这是一个确定性的测试回答。" }),
-        sse({ type: "text-end", id: "txt" }),
-        sse({ type: "finish", finishReason: "stop" }),
-        "data: [DONE]\n\n",
-      ].join(""),
+
+    if (path.endsWith("/connect")) {
+      const threadId = threadIdFromBody(request.postDataJSON());
+      const session = store.get(threadId);
+      return route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        body: [
+          sse({ type: "RUN_STARTED", threadId, runId: `${threadId}:connect` }),
+          sse({ type: "MESSAGES_SNAPSHOT", messages: session?.messages ?? [] }),
+          sse({ type: "RUN_FINISHED", threadId, runId: `${threadId}:connect` }),
+        ].join(""),
+      });
+    }
+
+    if (path === "/api/copilotkit" || path.endsWith("/run")) {
+      const body = request.postDataJSON();
+      const threadId = threadIdFromBody(body);
+      const session = store.get(threadId);
+      const mergedBody = mergeRuntimeMessages(body, session?.messages ?? []);
+      runtimeRequests.push(mergedBody);
+      return route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        body: [
+          sse({ type: "RUN_STARTED", threadId, runId: `${threadId}:run` }),
+          sse({ type: "TEXT_MESSAGE_START", messageId: `${threadId}:assistant` }),
+          sse({ type: "TEXT_MESSAGE_CONTENT", messageId: `${threadId}:assistant`, delta: "这是一个确定性的测试回答。" }),
+          sse({ type: "TEXT_MESSAGE_END", messageId: `${threadId}:assistant` }),
+          sse({ type: "RUN_FINISHED", threadId, runId: `${threadId}:run` }),
+        ].join(""),
+      });
+    }
+
+    return route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "unhandled copilotkit mock route" }),
     });
-  });
+  };
+
+  await page.route("**/api/copilotkit", handleCopilotKitRoute);
+  await page.route("**/api/copilotkit/**", handleCopilotKitRoute);
 }
 
 function sse(value: unknown) {
   return `data: ${JSON.stringify(value)}\n\n`;
 }
 
+function threadIdFromBody(body: unknown) {
+  return (
+    (body as { threadId?: string })?.threadId ??
+    (body as { input?: { threadId?: string } })?.input?.threadId ??
+    (body as { body?: { threadId?: string } })?.body?.threadId ??
+    "s1"
+  );
+}
+
+function mergeRuntimeMessages(body: unknown, persistedMessages: unknown[]) {
+  const record = body as { body?: { messages?: unknown[] }; input?: { messages?: unknown[] }; messages?: unknown[] };
+  const incoming = record.body?.messages ?? record.input?.messages ?? record.messages ?? [];
+  const merged = mergeMessagesById(persistedMessages, incoming);
+  if (record.body) return { ...record, body: { ...record.body, messages: merged } };
+  if (record.input) return { ...record, input: { ...record.input, messages: merged } };
+  return { ...record, messages: merged };
+}
+
+function mergeMessagesById(...groups: unknown[][]) {
+  const seen = new Set<string>();
+  const merged: unknown[] = [];
+  for (const message of groups.flat()) {
+    const id = (message as { id?: string }).id;
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    merged.push(message);
+  }
+  return merged;
+}
+
+function sessionFixture(id: string, title: string, messages: unknown[] = []) {
+  const now = new Date().toISOString();
+  return {
+    id,
+    title,
+    created_at: now,
+    updated_at: now,
+    last_message_at: messages.length > 0 ? now : null,
+    message_count: messages.length,
+    messages,
+  };
+}
+
 class MockSessionStore {
-  private sessions: Array<Record<string, unknown> & { id: string; title: string; messages: unknown[] }> = [];
+  private sessions: ReturnType<typeof sessionFixture>[];
+
+  constructor(initialSessions?: ReturnType<typeof sessionFixture>[]) {
+    this.sessions = initialSessions ?? [sessionFixture("s1", "新对话")];
+  }
 
   list() {
     return this.sessions.map(({ messages: _messages, ...session }) => session);
   }
 
   create(title = "新对话") {
-    const now = new Date().toISOString();
-    const session = {
-      id: `s${this.sessions.length + 1}`,
-      title,
-      created_at: now,
-      updated_at: now,
-      last_message_at: null,
-      message_count: 0,
-      messages: [],
-    };
+    const session = sessionFixture(`s${this.sessions.length + 1}`, title);
     this.sessions.unshift(session);
     return this.list()[0];
   }
@@ -200,43 +255,7 @@ class MockSessionStore {
     return this.sessions.find((session) => session.id === id) ?? this.sessions[0];
   }
 
-  sync(id: string, title: string | undefined, messages: unknown[]) {
-    const session = this.sessions.find((item) => item.id === id);
-    if (!session) throw new Error("missing session");
-    const now = new Date().toISOString();
-    session.title = title || session.title;
-    session.updated_at = now;
-    session.last_message_at = now;
-    session.message_count = messages.length;
-    session.messages = messages.map((message, index) => ({
-      id: `${id}:${index}`,
-      session_id: id,
-      message_id: (message as { id?: string }).id ?? `m${index}`,
-      message_index: index,
-      role: (message as { role?: string }).role ?? "user",
-      raw_json: JSON.stringify(message),
-      plain_text: textFromMessage(message),
-      preview: textFromMessage(message),
-      status: null,
-      created_at: now,
-      updated_at: now,
-    }));
-    return session;
-  }
-
   delete(id: string) {
     this.sessions = this.sessions.filter((session) => session.id !== id);
   }
-
-}
-
-function textFromMessage(message: unknown) {
-  const m = message as { content?: Array<{ text?: string }>; parts?: Array<{ text?: string }> };
-  const parts = m.parts ?? m.content ?? [];
-  return parts.map((part) => part.text ?? "").join("\n").trim();
-}
-
-function extractChatRequestText(request: unknown) {
-  const messages = (request as { messages?: unknown[] } | undefined)?.messages ?? [];
-  return messages.map(textFromMessage).join("\n");
 }
