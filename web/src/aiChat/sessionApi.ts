@@ -31,20 +31,6 @@ export async function getAiChatSession(
   return res.session;
 }
 
-export async function syncAiChatSession(
-  id: string,
-  messages: readonly unknown[],
-  title?: string,
-  options?: ApiOptions
-): Promise<AiChatSessionDetail> {
-  const res = await apiPost<SessionRes>(
-    `/api/llm-chat/sessions/${encodeURIComponent(id)}/sync`,
-    { title, messages },
-    options
-  );
-  return res.session;
-}
-
 export async function deleteAiChatSession(id: string, options?: ApiOptions): Promise<void> {
   await apiDelete<{ ok: true }>(
     `/api/llm-chat/sessions/${encodeURIComponent(id)}`,

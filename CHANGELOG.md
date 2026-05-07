@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.14 — 2026-05-07
+
+### Added
+
+- Add a CopilotKit runtime endpoint for `/ai-chat` with SQLite-backed AG-UI conversation sessions.
+- Add regression coverage for CopilotKit single-endpoint routing, session isolation, and fixed-height AI Chat layout.
+
+### Changed
+
+- Replace the assistant-ui AI Chat implementation with CopilotKit while keeping local session history in ai2nao's SQLite database.
+- Run the development API server in watch mode so backend route changes reload during local UI work.
+
+### Fixed
+
+- Fix AI Chat message sending by matching the React client to the backend's single `/api/copilotkit` endpoint.
+- Surface CopilotKit runtime and model errors in the chat workbench instead of failing silently.
+
 ## 0.3.13 — 2026-05-06
 
 ### Added

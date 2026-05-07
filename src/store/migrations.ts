@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 17;
+const CURRENT_VERSION = 18;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -28,6 +28,7 @@ export function migrate(db: Database.Database): void {
     applyV15(db);
     applyV16(db);
     applyV17(db);
+    applyV18(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -51,6 +52,7 @@ export function migrate(db: Database.Database): void {
   if (v < 15) applyV15(db);
   if (v < 16) applyV16(db);
   if (v < 17) applyV17(db);
+  if (v < 18) applyV18(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1082,5 +1084,49 @@ function applyV17(db: Database.Database): void {
       ON llm_chat_messages(session_id, role);
 
     UPDATE meta_schema SET version = 17 WHERE id = 1;
+  `);
+}
+
+/** Rebuild AI chat storage for CopilotKit AG-UI. Old assistant-ui data is intentionally dropped. */
+function applyV18(db: Database.Database): void {
+  db.exec(`
+    DROP TABLE IF EXISTS llm_chat_messages;
+    DROP TABLE IF EXISTS llm_chat_sessions;
+
+    CREATE TABLE llm_chat_sessions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'copilotkit-agui',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_message_at TEXT,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE llm_chat_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES llm_chat_sessions(id) ON DELETE CASCADE,
+      message_id TEXT NOT NULL,
+      message_index INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
+      raw_json TEXT NOT NULL,
+      plain_text TEXT NOT NULL DEFAULT '',
+      preview TEXT NOT NULL DEFAULT '',
+      status TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(session_id, message_id),
+      UNIQUE(session_id, message_index)
+    );
+
+    CREATE INDEX idx_llm_chat_sessions_recent
+      ON llm_chat_sessions(last_message_at DESC, updated_at DESC);
+    CREATE INDEX idx_llm_chat_messages_session_order
+      ON llm_chat_messages(session_id, message_index);
+    CREATE INDEX idx_llm_chat_messages_session_role
+      ON llm_chat_messages(session_id, role);
+
+    UPDATE meta_schema SET version = 18 WHERE id = 1;
   `);
 }

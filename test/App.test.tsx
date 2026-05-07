@@ -8,6 +8,15 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../web/src/App";
 
+vi.mock("@copilotkit/react-core/v2", () => ({
+  CopilotKit: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="mock-copilotkit">{children}</div>
+  ),
+  CopilotChat: ({ threadId }: { threadId: string }) => (
+    <textarea aria-label="消息内容" data-threadid={threadId} />
+  ),
+}));
+
 function renderApp(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -32,7 +41,7 @@ describe("App routes", () => {
   it("redirects the root route to the lazy-loaded repos page", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/api/status")) {
           return json({
@@ -140,6 +149,25 @@ describe("App routes", () => {
         if (url.endsWith("/api/llm-chat/sessions?limit=50")) {
           return json({ sessions: [] });
         }
+        if (url.endsWith("/api/llm-chat/sessions") && init?.method === "POST") {
+          return json({
+            session: {
+              id: "session-1",
+              title: "新对话",
+              created_at: "2026-05-07T00:00:00.000Z",
+              updated_at: "2026-05-07T00:00:00.000Z",
+              last_message_at: null,
+              message_count: 0,
+            },
+          });
+        }
+        if (url.endsWith("/api/copilotkit/info")) {
+          return json({
+            version: "test",
+            agents: { default: { name: "default" } },
+            audioFileTranscriptionEnabled: false,
+          });
+        }
         throw new Error(`Unhandled fetch: ${url}`);
       })
     );
@@ -147,10 +175,10 @@ describe("App routes", () => {
     const { container } = renderApp("/ai-chat");
 
     expect(await screen.findByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
-    expect(await screen.findByText("Local AI Studio")).toBeInTheDocument();
-    expect(await screen.findByText("历史")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "消息内容" })).toBeInTheDocument();
-    expect(container.querySelector('[class*="h-[clamp(640px"]')).toBeInTheDocument();
+    expect(await screen.findByTestId("ai-chat-session-rail")).toBeInTheDocument();
+    expect(await screen.findAllByText("新对话")).not.toHaveLength(0);
+    expect(container.querySelector('[class*="h-[calc(100vh-112px)]"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="ai-chat-thread-shell"]')).toBeInTheDocument();
   });
 });
 

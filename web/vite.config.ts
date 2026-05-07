@@ -7,7 +7,17 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root,
-  plugins: [react()],
+  plugins: [
+    {
+      name: "ignore-copilotkit-bundled-css",
+      enforce: "pre",
+      load(id) {
+        if (id.endsWith("@copilotkit/react-core/dist/v2/index.css")) return "";
+        return null;
+      },
+    },
+    react(),
+  ],
   server: {
     port: 5173,
     proxy: {

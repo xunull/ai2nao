@@ -1,51 +1,55 @@
 # AI 对话架构
 
-本文记录 `/ai-chat` 的当前实现边界，重点防止会话串线、历史恢复清空、以及发送给 AI SDK 的消息协议退化。
+本文记录 `/ai-chat` 的当前实现边界。AI 对话已经从 assistant-ui 切换为 CopilotKit，历史协议统一为 CopilotKit / AG-UI，旧 assistant-ui 数据在 schema v18 迁移中被主动清空。
 
 ## 目标
 
-- UI 运行时只交给 assistant-ui / AI SDK 管理，不在页面组件里拼接影子消息。
-- 本地历史保存 assistant-ui `UIMessage` 原始结构，恢复时优先使用 `raw_json`。
-- 每次会话切换必须是原子的：恢复成功后才 reset 当前 thread；恢复失败时保留当前对话。
-- 前后端都做严格消息校验，缺少 `parts` 的消息不能进入模型调用或本地存储。
-- 输入框固定在 thread workbench 底部，长回答只滚动消息区，不推动整个页面。
+- 前端只使用 CopilotKit 的运行时和 `CopilotChat` 组件，不再维护影子消息、前端 sync 或 assistant-ui codec。
+- SQLite 保存 AG-UI 原始消息，后端按 `threadId` 做会话隔离、恢复和持久化。
+- 模型调用由 `/api/copilotkit` 承担，旧 `POST /api/llm-chat` 流式接口已删除。
+- 当前版本只支持普通 system/user/assistant 文本消息；工具调用、前端 actions 和生成式 UI 显式拒绝。
+- 输入框固定在对话工作台底部，长回答只滚动消息区，不推动页面布局。
 
 ## 前端边界
 
-`web/src/pages/AiChat.tsx` 只负责创建 `AssistantChatTransport` 和页面布局。`prepareSendMessagesRequest` 直接转发 AI SDK 提供的 `options.messages`，只附加 `useRag`、`ragTopK` 等请求配置。
+`web/src/pages/AiChat.tsx` 是唯一的 AI 对话页面：
 
-`web/src/aiChat/useAiChatThreads.ts` 是会话适配层：
+- 通过 `/api/llm-chat/status` 和 `/api/rag/status` 展示本地模型与 RAG 状态。
+- 通过 `/api/llm-chat/sessions` 做会话列表、创建、详情和删除。
+- 使用 `CopilotKit runtimeUrl="/api/copilotkit"` 和 `CopilotChat threadId={activeSessionId}` 绑定当前会话。
+- 切换会话时用 `key={activeSessionId}` 重建 CopilotKit chat，避免旧 thread 状态泄漏。
+- 页面根容器固定 PC 桌面高度，`ai-chat-thread-shell` 承载滚动消息区和底部 composer。
 
-- 读取 assistant-ui runtime messages。
-- 600ms debounce 自动保存，切换、新建、删除前主动 flush。
-- 用 generation token 和 `AbortController` 避免过期请求回写状态。
-- `selectSession` 先请求详情、校验并恢复消息，成功后才切换到 fresh runtime 并设置 restored base。
-- 由于 assistant-ui 的 AI SDK runtime 不能稳定同步重灌本地历史，`runtimeBridge` 会保存当前会话的 restored base；展示、后续模型请求、自动保存都会把 restored base 与新 runtime 消息合并，保证会话上下文不丢也不串线。
-- 暴露 `idle/loading/restoring/saving/saved/save_error/restore_error` 给 UI 展示。
-
-`web/src/aiChat/messageCodec.ts` 是前端消息 codec：
-
-- `encodeMessageForSync` 只接受合法 assistant-ui `parts` 消息。
-- `restoreSessionMessages` 从 `raw_json` 恢复完整消息；只有 raw json 解析失败时才用 `plain_text` 兜底。
-- 如果 raw json 结构存在但协议非法，恢复返回错误，hook 不切换当前 thread。
+`web/src/aiChat/sessionApi.ts` 只保留 session CRUD。不存在前端消息同步接口，消息持久化由 CopilotKit runtime 的 runner 在后端完成。
 
 ## 后端边界
 
-`src/llmChat/routes.ts` 只是聚合器：
+`src/llmChat/routes.ts` 负责聚合路由：
 
-- `src/llmChat/chatRoutes.ts`：`/api/llm-chat/status` 和 `/api/llm-chat`。
-- `src/llmChat/sessionRoutes.ts`：session CRUD 与 sync。
+- `src/llmChat/chatRoutes.ts`：只保留 `GET /api/llm-chat/status`。
+- `src/llmChat/sessionRoutes.ts`：session CRUD。
+- `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，桥接 CopilotKit runtime、AI SDK 模型调用、RAG 上下文和 SQLite 持久化。
 
-`src/llmChat/messageCodec.ts` 是后端消息 codec：
+`src/llmChat/sessions.ts` 是协议无关的 AG-UI 持久化层：
 
-- `validateLlmChatUiMessages` 校验 `id`、`role`、`parts`、text/file/reasoning part 的必要字段。
-- chat route 在调用 `convertToModelMessages` 和 `streamText` 前先校验消息。
-- session sync 在落库前校验消息，`raw_json` 保存完整 UIMessage，`plain_text` 只作为列表和标题展示派生值。
+- `ensureLlmChatSession` 按 `threadId` 保证会话存在。
+- `agUiMessagesFromSession` 从 SQLite 恢复 AG-UI 消息。
+- `replaceLlmChatSessionMessages` 原子替换当前 session 的消息快照并更新标题、计数和时间戳。
+- `textFromAgUiMessage` 只派生列表预览文本，不参与模型协议拼接。
+
+## 数据迁移
+
+schema v18 会删除并重建：
+
+- `llm_chat_sessions`
+- `llm_chat_messages`
+
+这是一次有意的破坏性迁移，用来彻底移除 assistant-ui 历史结构，避免旧 `UIMessage.parts` 与 CopilotKit / AG-UI 消息混用。
 
 ## 关键测试
 
-- `test/llmChat.messageCodec.test.ts`：后端 codec。
-- `test/aiChat.messageCodec.test.ts`：前端恢复与编码。
-- `test/llmChat.chatRoutes.test.ts`：协议级 route 测试，非法消息不会调用模型。
-- `test/aiChat.useAiChatThreads.test.tsx`：hook harness，覆盖原子恢复、非法恢复不清空当前 thread、自动保存只发送 `parts`。
-- `e2e/ai-chat-history.spec.ts`：浏览器级保存、恢复、删除和跨会话隔离。
+- `test/llmChat.sessions.test.ts`：AG-UI session 创建、列表、详情、持久化和 schema v18。
+- `test/llmChat.chatRoutes.test.ts`：`GET /api/llm-chat/status`。
+- `test/aiChat.sessionApi.test.ts`：前端 session CRUD API 映射。
+- `test/App.test.tsx`：AI 对话页固定高度工作台和 CopilotKit 外壳。
+- `e2e/ai-chat-history.spec.ts`：浏览器级工作台、会话创建/删除、跨会话 runtime 隔离。
