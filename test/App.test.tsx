@@ -137,6 +137,9 @@ describe("App routes", () => {
             chunkCount: 12,
           });
         }
+        if (url.endsWith("/api/llm-chat/sessions?limit=50")) {
+          return json({ sessions: [] });
+        }
         throw new Error(`Unhandled fetch: ${url}`);
       })
     );
@@ -144,9 +147,10 @@ describe("App routes", () => {
     const { container } = renderApp("/ai-chat");
 
     expect(await screen.findByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "本机上下文" })).toBeInTheDocument();
+    expect(await screen.findByText("Local AI Studio")).toBeInTheDocument();
+    expect(await screen.findByText("历史")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "消息内容" })).toBeInTheDocument();
-    expect(container.querySelector('[class*="h-[clamp(620px"]')).toBeInTheDocument();
+    expect(container.querySelector('[class*="h-[clamp(640px"]')).toBeInTheDocument();
   });
 });
 
