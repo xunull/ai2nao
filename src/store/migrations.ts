@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 16;
+const CURRENT_VERSION = 17;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -27,6 +27,7 @@ export function migrate(db: Database.Database): void {
     applyV14(db);
     applyV15(db);
     applyV16(db);
+    applyV17(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -49,6 +50,7 @@ export function migrate(db: Database.Database): void {
   if (v < 14) applyV14(db);
   if (v < 15) applyV15(db);
   if (v < 16) applyV16(db);
+  if (v < 17) applyV17(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1040,5 +1042,45 @@ function applyV16(db: Database.Database): void {
       ON gh_radar_insight_feedback(target_type, target_id, expires_at);
 
     UPDATE meta_schema SET version = 16 WHERE id = 1;
+  `);
+}
+
+/** Local AI chat sessions and normalized messages for the desktop AI Studio. */
+function applyV17(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS llm_chat_sessions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_message_at TEXT,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS llm_chat_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES llm_chat_sessions(id) ON DELETE CASCADE,
+      message_id TEXT NOT NULL,
+      message_index INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
+      raw_json TEXT NOT NULL,
+      plain_text TEXT NOT NULL DEFAULT '',
+      preview TEXT NOT NULL DEFAULT '',
+      status TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(session_id, message_id),
+      UNIQUE(session_id, message_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_llm_chat_sessions_recent
+      ON llm_chat_sessions(last_message_at DESC, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_llm_chat_messages_session_order
+      ON llm_chat_messages(session_id, message_index);
+    CREATE INDEX IF NOT EXISTS idx_llm_chat_messages_session_role
+      ON llm_chat_messages(session_id, role);
+
+    UPDATE meta_schema SET version = 17 WHERE id = 1;
   `);
 }
