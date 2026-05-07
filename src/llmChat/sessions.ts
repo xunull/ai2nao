@@ -1,18 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import {
-  LlmChatMessageCodecError,
-  textFromUiMessage,
-  validateLlmChatUiMessage,
-} from "./messageCodec.js";
+import type { Message } from "@ag-ui/client";
 
-const MAX_SYNC_MESSAGES = 200;
+const MAX_MESSAGES = 200;
 const MAX_SYNC_RAW_BYTES = 1_500_000;
 const PREVIEW_LEN = 140;
 
 export type LlmChatSessionSummary = {
   id: string;
   title: string;
+  protocol?: string;
   created_at: string;
   updated_at: string;
   last_message_at: string | null;
@@ -37,9 +34,9 @@ export type LlmChatSessionDetail = LlmChatSessionSummary & {
   messages: LlmChatMessageRow[];
 };
 
-export type SyncLlmChatSessionInput = {
+export type PersistLlmChatMessagesInput = {
   title?: unknown;
-  messages?: unknown;
+  messages: Message[];
 };
 
 export class LlmChatSessionError extends Error {
@@ -58,7 +55,7 @@ export function listLlmChatSessions(
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit) || 50));
   return db
     .prepare(
-      `SELECT id, title, created_at, updated_at, last_message_at, message_count
+      `SELECT id, title, protocol, created_at, updated_at, last_message_at, message_count
        FROM llm_chat_sessions
        ORDER BY COALESCE(last_message_at, updated_at) DESC, updated_at DESC
        LIMIT ?`
@@ -75,8 +72,8 @@ export function createLlmChatSession(
   const cleanTitle = cleanSessionTitle(title) ?? "新对话";
   db.prepare(
     `INSERT INTO llm_chat_sessions (
-      id, title, created_at, updated_at, last_message_at, message_count
-    ) VALUES (?, ?, ?, ?, NULL, 0)`
+      id, title, protocol, created_at, updated_at, last_message_at, message_count
+    ) VALUES (?, ?, 'copilotkit-agui', ?, ?, NULL, 0)`
   ).run(id, cleanTitle, now, now);
   const detail = getLlmChatSession(db, id);
   if (!detail) throw new LlmChatSessionError(500, "failed to create session");
@@ -89,7 +86,7 @@ export function getLlmChatSession(
 ): LlmChatSessionDetail | null {
   const session = db
     .prepare(
-      `SELECT id, title, created_at, updated_at, last_message_at, message_count
+      `SELECT id, title, protocol, created_at, updated_at, last_message_at, message_count
        FROM llm_chat_sessions
        WHERE id = ?`
     )
@@ -107,33 +104,49 @@ export function getLlmChatSession(
   return { ...session, messages };
 }
 
+export function ensureLlmChatSession(
+  db: Database.Database,
+  id: string,
+  title?: string
+): LlmChatSessionSummary {
+  const existing = getLlmChatSession(db, id);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const cleanTitle = cleanSessionTitle(title) ?? "新对话";
+  db.prepare(
+    `INSERT INTO llm_chat_sessions (
+      id, title, protocol, created_at, updated_at, last_message_at, message_count
+    ) VALUES (?, ?, 'copilotkit-agui', ?, ?, NULL, 0)`
+  ).run(id, cleanTitle, now, now);
+  const created = getLlmChatSession(db, id);
+  if (!created) throw new LlmChatSessionError(500, "failed to create session");
+  return created;
+}
+
 export function deleteLlmChatSession(db: Database.Database, id: string): boolean {
   const info = db.prepare("DELETE FROM llm_chat_sessions WHERE id = ?").run(id);
   return info.changes > 0;
 }
 
-export function syncLlmChatSession(
+export function replaceLlmChatSessionMessages(
   db: Database.Database,
   sessionId: string,
-  input: SyncLlmChatSessionInput
+  input: PersistLlmChatMessagesInput
 ): LlmChatSessionDetail {
   const row = db
     .prepare("SELECT id, title FROM llm_chat_sessions WHERE id = ?")
     .get(sessionId) as { id: string; title: string } | undefined;
   if (!row) throw new LlmChatSessionError(404, "session not found");
-  if (!Array.isArray(input.messages)) {
-    throw new LlmChatSessionError(400, "messages must be an array");
-  }
-  if (input.messages.length > MAX_SYNC_MESSAGES) {
+  if (input.messages.length > MAX_MESSAGES) {
     throw new LlmChatSessionError(
       413,
-      `too many messages; max ${MAX_SYNC_MESSAGES}`
+      `too many messages; max ${MAX_MESSAGES}`
     );
   }
 
   const now = new Date().toISOString();
   const normalized = input.messages.map((raw, index) =>
-    normalizeSyncMessage(raw, index, now)
+    normalizeAgUiMessage(raw, index, now)
   );
   const rawBytes = normalized.reduce((sum, msg) => sum + msg.raw_json.length, 0);
   if (rawBytes > MAX_SYNC_RAW_BYTES) {
@@ -208,18 +221,25 @@ export function syncLlmChatSession(
   return detail;
 }
 
-function normalizeSyncMessage(raw: unknown, index: number, now: string) {
-  let msg: ReturnType<typeof validateLlmChatUiMessage>;
-  try {
-    msg = validateLlmChatUiMessage(raw, index);
-  } catch (e) {
-    if (e instanceof LlmChatMessageCodecError) {
-      throw new LlmChatSessionError(400, e.message);
-    }
-    throw e;
+function normalizeAgUiMessage(raw: Message, index: number, now: string) {
+  if (!raw || typeof raw !== "object") {
+    throw new LlmChatSessionError(400, `message at index ${index} must be an object`);
+  }
+  if (!["system", "user", "assistant"].includes(raw.role)) {
+    throw new LlmChatSessionError(
+      400,
+      `message at index ${index} has unsupported role ${String(raw.role)}`
+    );
+  }
+  if (raw.role === "assistant" && "toolCalls" in raw && raw.toolCalls?.length) {
+    throw new LlmChatSessionError(400, "tool calls are not enabled for AI chat");
+  }
+  const msg = raw as Extract<Message, { role: "system" | "user" | "assistant" }>;
+  if (!msg.id?.trim()) {
+    throw new LlmChatSessionError(400, `message at index ${index} is missing id`);
   }
   const rawJson = JSON.stringify(msg);
-  const plainText = textFromUiMessage(msg);
+  const plainText = textFromAgUiMessage(msg);
   return {
     message_id: msg.id.trim(),
     message_index: index,
@@ -231,6 +251,26 @@ function normalizeSyncMessage(raw: unknown, index: number, now: string) {
     created_at: now,
     updated_at: now,
   };
+}
+
+export function agUiMessagesFromSession(detail: LlmChatSessionDetail): Message[] {
+  return detail.messages.map((row) => JSON.parse(row.raw_json) as Message);
+}
+
+export function textFromAgUiMessage(message: Message): string {
+  const content = "content" in message ? message.content : "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === "object" && part.type === "text") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  return "";
 }
 
 function cleanSessionTitle(value: unknown): string | null {
