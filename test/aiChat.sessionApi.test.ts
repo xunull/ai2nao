@@ -5,7 +5,6 @@ import {
   createAiChatSession,
   deleteAiChatSession,
   listAiChatSessions,
-  syncAiChatSession,
 } from "../web/src/aiChat/sessionApi";
 
 describe("AI chat session API client", () => {
@@ -13,7 +12,7 @@ describe("AI chat session API client", () => {
     vi.restoreAllMocks();
   });
 
-  it("maps list/create/sync/delete responses", async () => {
+  it("maps list/create/delete responses", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/llm-chat/sessions?limit=50") {
@@ -21,9 +20,6 @@ describe("AI chat session API client", () => {
       }
       if (url === "/api/llm-chat/sessions" && init?.method === "POST") {
         return json({ session: { id: "s2", title: "Two" } });
-      }
-      if (url === "/api/llm-chat/sessions/s2/sync") {
-        return json({ session: { id: "s2", title: "Two", messages: [] } });
       }
       if (url === "/api/llm-chat/sessions/s2" && init?.method === "DELETE") {
         return json({ ok: true });
@@ -34,7 +30,6 @@ describe("AI chat session API client", () => {
 
     await expect(listAiChatSessions()).resolves.toEqual([{ id: "s1", title: "One" }]);
     await expect(createAiChatSession("Two")).resolves.toMatchObject({ id: "s2" });
-    await expect(syncAiChatSession("s2", [])).resolves.toMatchObject({ id: "s2" });
     await expect(deleteAiChatSession("s2")).resolves.toBeUndefined();
   });
 

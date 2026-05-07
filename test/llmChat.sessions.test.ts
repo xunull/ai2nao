@@ -7,7 +7,7 @@ import {
   createLlmChatSession,
   getLlmChatSession,
   listLlmChatSessions,
-  syncLlmChatSession,
+  replaceLlmChatSessionMessages,
 } from "../src/llmChat/sessions.js";
 
 function freshDb() {
@@ -20,7 +20,7 @@ function userMessage(id: string, text: string) {
   return {
     id,
     role: "user",
-    parts: [{ type: "text", text }],
+    content: text,
   };
 }
 
@@ -28,17 +28,16 @@ function assistantMessage(id: string, text: string) {
   return {
     id,
     role: "assistant",
-    status: { type: "complete", reason: "stop" },
-    parts: [{ type: "text", text }],
+    content: text,
   };
 }
 
 describe("LLM chat session storage", () => {
-  it("migrates v17 tables on fresh databases", () => {
+  it("migrates v18 CopilotKit tables on fresh databases", () => {
     const db = freshDb();
     try {
       const version = (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version;
-      expect(version).toBe(17);
+      expect(version).toBe(18);
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'llm_chat_%' ORDER BY name")
         .all() as { name: string }[];
@@ -51,11 +50,11 @@ describe("LLM chat session storage", () => {
     }
   });
 
-  it("syncs normalized messages with raw JSON and derived text", () => {
+  it("persists normalized AG-UI messages with raw JSON and derived text", () => {
     const db = freshDb();
     try {
       const session = createLlmChatSession(db);
-      const detail = syncLlmChatSession(db, session.id, {
+      const detail = replaceLlmChatSessionMessages(db, session.id, {
         messages: [
           userMessage("u1", "Explain the bug"),
           assistantMessage("a1", "The bug is in the route."),
@@ -72,11 +71,11 @@ describe("LLM chat session storage", () => {
     }
   });
 
-  it("diff sync updates, reorders, inserts, and deletes messages transactionally", () => {
+  it("replaces, reorders, inserts, and deletes messages transactionally", () => {
     const db = freshDb();
     try {
       const session = createLlmChatSession(db);
-      syncLlmChatSession(db, session.id, {
+      replaceLlmChatSessionMessages(db, session.id, {
         messages: [
           userMessage("u1", "First"),
           assistantMessage("a1", "Old answer"),
@@ -84,7 +83,7 @@ describe("LLM chat session storage", () => {
         ],
       });
 
-      const updated = syncLlmChatSession(db, session.id, {
+      const updated = replaceLlmChatSessionMessages(db, session.id, {
         messages: [
           userMessage("u1", "First edited"),
           userMessage("u3", "New follow up"),
@@ -101,7 +100,7 @@ describe("LLM chat session storage", () => {
     }
   });
 
-  it("lists, reads, syncs, and deletes sessions through Hono routes", async () => {
+  it("lists, reads, and deletes sessions through Hono routes", async () => {
     const db = freshDb();
     try {
       const app = createApp({ db });
@@ -112,13 +111,9 @@ describe("LLM chat session storage", () => {
       expect(createdRes.status).toBe(200);
       const created = (await createdRes.json()) as { session: { id: string } };
 
-      const syncRes = await app.request(`/api/llm-chat/sessions/${created.session.id}/sync`, {
-        method: "POST",
-        body: JSON.stringify({
-          messages: [userMessage("u1", "Hello"), assistantMessage("a1", "Hi")],
-        }),
+      replaceLlmChatSessionMessages(db, created.session.id, {
+        messages: [userMessage("u1", "Hello"), assistantMessage("a1", "Hi")],
       });
-      expect(syncRes.status).toBe(200);
 
       const listRes = await app.request("/api/llm-chat/sessions");
       expect(listRes.status).toBe(200);
@@ -136,6 +131,22 @@ describe("LLM chat session storage", () => {
       expect(deleteRes.status).toBe(200);
       expect(getLlmChatSession(db, created.session.id)).toBeNull();
       expect(listLlmChatSessions(db)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("mounts CopilotKit v2 as the single-route endpoint used by the React client", async () => {
+    const db = freshDb();
+    try {
+      const app = createApp({ db });
+      const res = await app.request("/api/copilotkit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: "info", params: {}, body: {} }),
+      });
+
+      expect(res.status).toBe(200);
     } finally {
       db.close();
     }

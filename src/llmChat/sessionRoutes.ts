@@ -7,7 +7,6 @@ import {
   getLlmChatSession,
   listLlmChatSessions,
   LlmChatSessionError,
-  syncLlmChatSession,
 } from "./sessions.js";
 
 export type LlmChatSessionRouteDeps = {
@@ -55,17 +54,6 @@ export function registerLlmChatSessionRoutes(
       return c.json({ session });
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
-    }
-  });
-
-  app.post("/api/llm-chat/sessions/:id/sync", async (c) => {
-    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
-    try {
-      const body = await safeJson(c);
-      const session = syncLlmChatSession(deps.db, c.req.param("id"), body as {});
-      return c.json({ session });
-    } catch (e) {
-      return sessionErr(e);
     }
   });
 
