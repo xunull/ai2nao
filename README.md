@@ -100,12 +100,22 @@ node dist/cli.js lmstudio sync
 ```bash
 # 1. 复制配置
 cp rag.config.example.json ~/.ai2nao/rag.json
-# 编辑 ~/.ai2nao/rag.json，填写 corpusRoots
+# 编辑 ~/.ai2nao/rag.json，填写 corpusRoots；如需向量召回，启用 embedding 和 vectorStore.provider=lancedb
 
-# 2. 建索引
+# 2. 建索引（默认增量；不变文件会跳过，删除文件会从 FTS 和向量库移除）
 node dist/cli.js rag ingest --root /path/to/notes
 
-# 3. 启动服务
+# 3. 可选：先看计划、不写库
+node dist/cli.js rag ingest --dry-run
+
+# 4. 可选：修复 partial/error 文件或强制全量重建
+node dist/cli.js rag ingest --repair
+node dist/cli.js rag ingest --force
+
+# 5. 可选：跑固定问句评测
+node dist/cli.js rag eval --cases docs/rag-eval-cases.json
+
+# 6. 启动服务
 node dist/cli.js serve
 ```
 
@@ -169,7 +179,25 @@ npm run dev:ui
 
 ## RAG（本地笔记 / 纯文本）
 
-为 AI 对话提供可选的本地检索：把 `.md` / `.txt` 切块写入 **`~/.ai2nao/rag.db`**（FTS5；可在 `rag.json` 里开启 embedding 做字面 + 向量融合）。
+为 AI 对话提供可选的本地检索：把 `.md` / `.txt` 切块写入 **`~/.ai2nao/rag.db`**（SQLite FTS5），并可在 `rag.json` 里开启 embedding 与 LanceDB 向量库，形成 FTS + vector 双路召回和 RRF 融合。
+
+RAG ingest 是增量索引：`rag_files` manifest 会记录每个文件的状态、mtime/size/hash、FTS 状态、向量状态和错误。普通 `rag ingest` 会跳过健康且未变化的文件；磁盘删除的文件会从 SQLite chunks/FTS 和 LanceDB 中移除，并保留 deleted tombstone 供状态页展示。
+
+常用维护命令：
+
+```bash
+node dist/cli.js rag ingest --dry-run       # 只打印计划，不写 SQLite/LanceDB
+node dist/cli.js rag ingest --repair        # 只修复 partial/error/unhealthy 文件
+node dist/cli.js rag ingest --force         # 当前 corpus 全量重建
+node dist/cli.js rag optimize               # 手动触发 LanceDB optimize
+node dist/cli.js rag cleanup-tombstones     # 清理过期 deleted manifest
+node dist/cli.js rag eval --cases docs/rag-eval-cases.json
+```
+
+Web 侧提供两个独立页面：
+
+- `/rag-status` — 查看 manifest、chunk、vector sync、配置路径和 corpus roots。
+- `/rag-debug` — 同一查询下对比 FTS、Vector、Hybrid 结果、分数和排名。
 
 配置参考：
 - [`rag.config.example.json`](rag.config.example.json) — OpenAI API
