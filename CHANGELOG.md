@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.15 — 2026-05-17
+
+### Added
+
+- Add true hybrid RAG retrieval with separate FTS and LanceDB vector branches, RRF fusion, detailed evidence scores, and `/rag-debug` for comparing FTS, vector, and fused results.
+- Add RAG eval cases and `ai2nao rag eval` so retrieval changes can be checked against a small golden set.
+- Add incremental RAG ingest with a `rag_files` manifest, unchanged-file skipping, missing-file tombstones, `--dry-run`, `--force`, `--repair`, manual `rag optimize`, and tombstone cleanup.
+- Add a standalone `/rag-status` page that shows manifest health, chunk counts, vector sync state, config paths, and corpus roots.
+- Add technical docs for hybrid FTS/vector retrieval, rerankers, RRF fusion, and vector-store tradeoffs.
+
+### Changed
+
+- Expand `/api/rag/status` and RAG evidence payloads with manifest counts, vector-store status, per-hit ranks, scores, and matched retrieval branches.
+- Replace the old synchronous test ingest helper with the async production ingest path.
+
+### Fixed
+
+- Remove deleted files from SQLite chunks/FTS and LanceDB during RAG ingest so stale evidence no longer appears in search results.
+- Preserve partial/error status when vector delete or upsert fails, so index health is visible instead of silently claiming freshness.
+
 ## 0.3.14 — 2026-05-07
 
 ### Added

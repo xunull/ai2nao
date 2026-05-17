@@ -10,10 +10,52 @@ export type RagStatus = {
   ok: true;
   dbPath: string;
   configPath: string;
+  defaultDbPath: string;
   configPresent: boolean;
   corpusRoots: string[];
   embeddingEnabled: boolean;
   chunkCount: number;
+  manifest: {
+    total: number;
+    indexed: number;
+    skipped: number;
+    partial: number;
+    error: number;
+    deleted: number;
+    ftsError: number;
+    vectorError: number;
+  };
+  vectorStore: {
+    provider: "none" | "lancedb";
+    path: string | null;
+    ok: boolean;
+    indexedCount: number;
+    syncStatus: string;
+    embeddingModel: string | null;
+    embeddingDim: number | null;
+    error: string | null;
+  };
+};
+
+export type RagEvidenceHit = {
+  id?: number;
+  chunkId: number;
+  sourceRoot: string;
+  filePath: string;
+  content: string;
+  contentPreview: string;
+  truncated: boolean;
+  scores: {
+    ftsRank?: number;
+    vectorScore?: number;
+    rrfScore: number;
+  };
+  ranks: {
+    fts?: number;
+    vector?: number;
+    hybrid: number;
+  };
+  matchedBy: ("fts" | "vector")[];
 };
 
 export type AiChatSessionSummary = {

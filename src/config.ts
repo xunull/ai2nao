@@ -80,3 +80,10 @@ export function defaultRagDbPath(): string {
   if (!home) return ".ai2nao/rag.db";
   return `${home}/.ai2nao/rag.db`;
 }
+
+/** Local LanceDB directory for optional RAG vector recall. */
+export function defaultRagVectorDbPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/rag-lance";
+  return `${home}/.ai2nao/rag-lance`;
+}

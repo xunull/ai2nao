@@ -25,4 +25,16 @@ describe("parseRagConfigJson", () => {
     expect(cfg).not.toBeNull();
     expect(cfg!.includeExtensions).toEqual([".md", ".mdx", ".txt"]);
   });
+
+  it("parses embedded LanceDB vector store config", () => {
+    const cfg = parseRagConfigJson(
+      JSON.stringify({
+        version: 1,
+        corpusRoots: ["/tmp/n"],
+        vectorStore: { provider: "lancedb", path: "/tmp/rag-lance" },
+      })
+    );
+    expect(cfg).not.toBeNull();
+    expect(cfg!.vectorStore).toEqual({ provider: "lancedb", path: "/tmp/rag-lance" });
+  });
 });

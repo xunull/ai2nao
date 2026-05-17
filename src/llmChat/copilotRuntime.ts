@@ -22,7 +22,7 @@ import {
 import { Observable } from "rxjs";
 import { streamText } from "ai";
 import { readRagConfig } from "../rag/config.js";
-import { countChunks, searchHybrid } from "../rag/retrieve.js";
+import { countChunks, searchHybridDetailed } from "../rag/retrieve.js";
 import { llmChatStatus, readLlmChatConfig } from "./config.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
@@ -236,15 +236,17 @@ async function ragSystemPrompt(
 
   const rawTopK = parseInt(String(props.ragTopK ?? 8), 10);
   const ragTopK = Math.min(20, Math.max(1, rawTopK || 8));
-  const hits = await searchHybrid(deps.ragDb, lastUser, ragTopK, readRagConfig());
+  const result = await searchHybridDetailed(deps.ragDb, lastUser, ragTopK, readRagConfig());
+  const hits = result.hits;
   if (hits.length === 0) {
     return [
-      "The local RAG index returned no good keyword matches for the user's last message.",
+      "The local RAG index returned no strong matches for the user's last message.",
       "Answer using general knowledge and briefly note that the indexed files did not match strongly.",
     ].join(" ");
   }
   const blocks = hits.map(
-    (h, i) => `[#${i + 1}] ${h.filePath} (root: ${h.sourceRoot})\n${h.content}`
+    (h, i) =>
+      `[#${i + 1}] ${h.filePath} (root: ${h.sourceRoot}, matched: ${h.matchedBy.join("+")})\n${h.content}`
   );
   return [
     "You are given excerpts from the user's locally indexed text files.",
