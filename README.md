@@ -16,6 +16,8 @@ npm install
 npm run build
 ```
 
+`package.json` 中所有 `scripts` 的用途见：[package.json scripts 说明](docs/package-scripts.md)。
+
 开发时可直接：
 
 ```bash
