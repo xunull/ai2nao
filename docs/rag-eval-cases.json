@@ -1,0 +1,20 @@
+[
+  {
+    "id": "rag-config",
+    "query": "RAG corpusRoots includeExtensions 配置",
+    "expected": [
+      {
+        "filePath": "rag.config.example.json"
+      }
+    ]
+  },
+  {
+    "id": "project-readme",
+    "query": "ai2nao 本机索引和桌面工作台",
+    "expected": [
+      {
+        "filePath": "README.md"
+      }
+    ]
+  }
+]

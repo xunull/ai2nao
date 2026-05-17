@@ -6,21 +6,17 @@ import {
 import type React from "react";
 import { z } from "zod";
 import { apiPost } from "../api";
-import type { AiChatSessionSummary, LlmChatStatus, RagStatus } from "./types";
+import type {
+  AiChatSessionSummary,
+  LlmChatStatus,
+  RagEvidenceHit,
+  RagStatus,
+} from "./types";
 
 type RagSearchResponse = {
   ok: true;
   query: string;
   hits: RagEvidenceHit[];
-};
-
-type RagEvidenceHit = {
-  id: number;
-  sourceRoot: string;
-  filePath: string;
-  content: string;
-  ftsRank: number;
-  cosine?: number;
 };
 
 type AiChatCopilotToolsProps = {
@@ -82,6 +78,7 @@ export function AiChatCopilotTools({
           chunkCount: rag.chunkCount,
           corpusRoots: rag.corpusRoots,
           embeddingEnabled: rag.embeddingEnabled,
+          vectorStore: rag.vectorStore,
         }
       : null,
     recentSessions: sessions.slice(0, 12).map((session) => ({
@@ -230,12 +227,17 @@ function RagEvidenceCard({
       ) : (
         <div className="space-y-2">
           {hits.slice(0, 5).map((hit) => (
-            <div key={hit.id} className="rounded-md border border-neutral-200 bg-neutral-50 p-2">
-              <div className="truncate text-xs font-semibold text-neutral-900">
-                {hit.filePath}
+            <div key={hit.chunkId} className="rounded-md border border-neutral-200 bg-neutral-50 p-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="truncate text-xs font-semibold text-neutral-900">
+                  {hit.filePath}
+                </div>
+                <div className="shrink-0 text-[11px] text-neutral-500">
+                  {hit.matchedBy.join("+")} · #{hit.ranks.hybrid}
+                </div>
               </div>
               <p className="mt-1 max-h-16 overflow-hidden text-xs leading-5 text-neutral-700">
-                {hit.content}
+                {hit.contentPreview || hit.content}
               </p>
             </div>
           ))}

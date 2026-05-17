@@ -15,7 +15,10 @@ import {
   resolveRagConfigPath,
 } from "./rag/config.js";
 import { ingestCorpus, type IngestFileProgress } from "./rag/ingest.js";
+import { loadRagEvalCases, runRagEval } from "./rag/eval.js";
+import { cleanupDeletedRagFileManifests } from "./rag/manifest.js";
 import { openRagDatabase } from "./rag/open.js";
+import { createVectorStore } from "./rag/vectorStore/factory.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
   defaultChromeHistoryPath,
@@ -1397,12 +1400,18 @@ ragCmd
     "--config <path>",
     "rag.json path (overrides AI2NAO_RAG_CONFIG / default)"
   )
+  .option("--dry-run", "scan and print an incremental plan without writing indexes", false)
+  .option("--force", "rebuild every matched file even when unchanged", false)
+  .option("--repair", "only repair manifest rows marked partial/error/unhealthy", false)
   .option("--json", "print machine-readable JSON", false)
   .action(
     async (opts: {
       root: string[];
       ragDb: string;
       config?: string;
+      dryRun: boolean;
+      force: boolean;
+      repair: boolean;
       json: boolean;
     }) => {
       const triedConfigPath = opts.config?.trim()
@@ -1431,6 +1440,9 @@ ragCmd
       const progress = !opts.json ? createRagIngestProgressReporter() : null;
       try {
         const result = await ingestCorpus(db, cfg, opts.root, {
+          dryRun: opts.dryRun,
+          force: opts.force,
+          repair: opts.repair,
           onProgress: progress?.onProgress,
         });
         if (opts.json) {
@@ -1443,7 +1455,10 @@ ragCmd
           );
         } else {
           console.error(
-            `RAG ingest: ${result.roots} root(s), ${result.filesIndexed}/${result.filesSeen} file(s), ${result.chunksInserted} chunk(s) → ${dbPath}`
+            `RAG ingest${result.dryRun ? " dry-run" : ""}: ${result.roots} root(s), indexed ${result.filesIndexed}, skipped ${result.filesSkipped}, deleted ${result.filesDeleted}, partial ${result.filesPartial}, seen ${result.filesSeen}, chunks ${result.chunksInserted} → ${dbPath}`
+          );
+          console.error(
+            `Plan: new ${result.plan.index_new}, changed ${result.plan.index_changed}, force ${result.plan.force_rebuild}, repair ${result.plan.repair}, delete ${result.plan.delete_missing}, skip ${result.plan.skip}`
           );
           for (const err of result.errors) console.error(`warning: ${err}`);
           if (result.roots > 0 && result.filesSeen === 0) {
@@ -1455,6 +1470,107 @@ ragCmd
         process.exitCode = result.errors.length ? 1 : 0;
       } finally {
         progress?.finish();
+        db.close();
+      }
+    }
+  );
+
+ragCmd
+  .command("optimize")
+  .description("Run vector-store maintenance for the configured RAG vector database")
+  .option(
+    "--config <path>",
+    "rag.json path (overrides AI2NAO_RAG_CONFIG / default)"
+  )
+  .option("--json", "print machine-readable JSON", false)
+  .action(async (opts: { config?: string; json: boolean }) => {
+    const cfg = opts.config?.trim()
+      ? readRagConfigFile(opts.config)
+      : readRagConfig();
+    const store = createVectorStore(cfg);
+    try {
+      await store.optimize?.();
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, provider: store.provider }, null, 2));
+      } else {
+        console.error(`RAG optimize: provider ${store.provider}`);
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, provider: store.provider, error: message }, null, 2));
+      } else {
+        console.error(`RAG optimize failed: ${message}`);
+      }
+      process.exitCode = 1;
+    }
+  });
+
+ragCmd
+  .command("cleanup-tombstones")
+  .description("Remove deleted-file manifest tombstones older than a retention window")
+  .option("--rag-db <path>", "RAG SQLite path", defaultRagDbPath())
+  .option("--older-than-days <n>", "delete tombstones older than N days", "30")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { ragDb: string; olderThanDays: string; json: boolean }) => {
+    const ragEnv = (process.env.AI2NAO_RAG_DB ?? "").trim();
+    const dbPath = ragEnv.length > 0 ? resolve(ragEnv) : resolve(opts.ragDb);
+    const days = Math.max(1, parseInt(opts.olderThanDays, 10) || 30);
+    const olderThan = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const db = openRagDatabase(dbPath);
+    try {
+      const deleted = cleanupDeletedRagFileManifests(db, olderThan);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, ragDb: dbPath, olderThan: olderThan.toISOString(), deleted }, null, 2));
+      } else {
+        console.error(`RAG cleanup-tombstones: deleted ${deleted} row(s) older than ${olderThan.toISOString()}`);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+ragCmd
+  .command("eval")
+  .description("Run a small golden retrieval set and report Recall@K / MRR / NoHit")
+  .requiredOption("--cases <path>", "JSON eval cases path")
+  .option("--rag-db <path>", "RAG SQLite path", defaultRagDbPath())
+  .option("--config <path>", "rag.json path (overrides AI2NAO_RAG_CONFIG / default)")
+  .option("--top-k <n>", "retrieval depth", "8")
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    async (opts: {
+      cases: string;
+      ragDb: string;
+      config?: string;
+      topK: string;
+      json: boolean;
+    }) => {
+      const cfg = opts.config?.trim()
+        ? readRagConfigFile(opts.config)
+        : readRagConfig();
+      const ragEnvEval = (process.env.AI2NAO_RAG_DB ?? "").trim();
+      const dbPath = ragEnvEval.length > 0 ? resolve(ragEnvEval) : resolve(opts.ragDb);
+      const db = openRagDatabase(dbPath);
+      try {
+        const topK = Math.min(50, Math.max(1, parseInt(opts.topK, 10) || 8));
+        const cases = loadRagEvalCases(resolve(opts.cases));
+        const result = await runRagEval({ db, cfg, cases, topK });
+        if (opts.json) {
+          console.log(JSON.stringify({ ...result, ragDb: dbPath }, null, 2));
+        } else {
+          console.log(
+            `RAG eval: cases=${result.caseCount} topK=${result.topK} recall@K=${result.recallAtK.toFixed(3)} mrr=${result.mrr.toFixed(3)} noHit=${result.noHit}`
+          );
+          for (const item of result.cases) {
+            const rank = item.firstRelevantRank == null ? "-" : String(item.firstRelevantRank);
+            console.log(
+              `${item.id}\trank=${rank}\thits=${item.hitCount}\t${item.matchedFilePath ?? "-"}`
+            );
+          }
+        }
+        process.exitCode = result.recallAtK < 1 ? 1 : 0;
+      } finally {
         db.close();
       }
     }

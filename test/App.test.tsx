@@ -112,6 +112,55 @@ describe("App routes", () => {
     expect(await screen.findByText("/tmp/history.db")).toBeInTheDocument();
   });
 
+  it("renders the standalone RAG status route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/rag/status")) {
+          return json({
+            ok: true,
+            dbPath: "/tmp/rag.db",
+            configPath: "/tmp/rag.json",
+            defaultDbPath: "/tmp/default-rag.db",
+            configPresent: true,
+            corpusRoots: ["/tmp/notes"],
+            embeddingEnabled: true,
+            chunkCount: 20,
+            manifest: {
+              total: 4,
+              indexed: 3,
+              skipped: 0,
+              partial: 1,
+              error: 0,
+              deleted: 0,
+              ftsError: 0,
+              vectorError: 1,
+            },
+            vectorStore: {
+              provider: "lancedb",
+              path: "/tmp/lancedb",
+              ok: true,
+              indexedCount: 18,
+              syncStatus: "partial",
+              embeddingModel: "test-embedding",
+              embeddingDim: 3,
+              error: null,
+            },
+          });
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    renderApp("/rag-status");
+
+    expect(await screen.findByRole("heading", { name: "RAG Status" })).toBeInTheDocument();
+    expect(await screen.findByText("/tmp/rag.db")).toBeInTheDocument();
+    expect(await screen.findByText("Vector Store")).toBeInTheDocument();
+    expect(await screen.findByText("/tmp/notes")).toBeInTheDocument();
+  });
+
   it("keeps the AI chat composer inside a fixed-height workbench", async () => {
     vi.stubGlobal(
       "ResizeObserver",
@@ -140,10 +189,31 @@ describe("App routes", () => {
             ok: true,
             dbPath: "/tmp/rag.db",
             configPath: "/tmp/rag.json",
+            defaultDbPath: "/tmp/rag-default.db",
             configPresent: true,
             corpusRoots: ["/Users/test/project-notes"],
             embeddingEnabled: true,
             chunkCount: 12,
+            manifest: {
+              total: 3,
+              indexed: 3,
+              skipped: 0,
+              partial: 0,
+              error: 0,
+              deleted: 0,
+              ftsError: 0,
+              vectorError: 0,
+            },
+            vectorStore: {
+              provider: "lancedb",
+              path: "/tmp/lancedb",
+              ok: true,
+              indexedCount: 12,
+              syncStatus: "fresh",
+              embeddingModel: "test-embedding",
+              embeddingDim: 3,
+              error: null,
+            },
           });
         }
         if (url.endsWith("/api/llm-chat/sessions?limit=50")) {

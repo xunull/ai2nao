@@ -22,4 +22,10 @@ export type RagConfigV1 = {
      */
     maxBatchSize?: number;
   };
+  /** Optional derived vector index. `none` preserves the SQLite FTS-only behavior. */
+  vectorStore?: {
+    provider: "none" | "lancedb";
+    /** Local LanceDB directory. Defaults to `~/.ai2nao/rag-lance` when provider is `lancedb`. */
+    path?: string;
+  };
 };

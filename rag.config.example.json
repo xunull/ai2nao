@@ -10,5 +10,9 @@
     "model": "text-embedding-3-small",
     "apiKey": "sk-proj-REPLACE_ME",
     "maxBatchSize": 128
+  },
+  "vectorStore": {
+    "provider": "lancedb",
+    "path": "~/.ai2nao/rag-lance"
   }
 }
