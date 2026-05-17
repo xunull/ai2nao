@@ -6,6 +6,7 @@ import {
   CopilotRuntime,
   AgentRunner,
   convertMessagesToVercelAISDKMessages,
+  convertToolsToVercelAITools,
   type AgentRunnerConnectRequest,
   type AgentRunnerIsRunningRequest,
   type AgentRunnerRunRequest,
@@ -15,6 +16,7 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import {
   EventType,
   type BaseEvent,
+  type Context,
   type Message,
 } from "@ag-ui/client";
 import { Observable } from "rxjs";
@@ -53,11 +55,17 @@ export function registerCopilotKitRoutes(
       validateAi2NaoCopilotInput(input.messages, input.tools);
       const model = createChatLanguageModel(cfg);
       const modelMessages = convertMessagesToVercelAISDKMessages(input.messages);
-      const system = await ragSystemPrompt(deps, input.messages, input.forwardedProps);
+      const system = await ai2NaoSystemPrompt(
+        deps,
+        input.messages,
+        input.context,
+        input.forwardedProps
+      );
       return streamText({
         model,
         system,
         messages: modelMessages,
+        tools: convertToolsToVercelAITools(input.tools),
         abortSignal,
         onFinish: (ev) => {
           llmChatLog.info("CopilotKit streamText onFinish", {
@@ -72,7 +80,10 @@ export function registerCopilotKitRoutes(
       });
     },
     capabilities: {
-      tools: { supported: false, clientProvided: false },
+      tools: {
+        supported: true,
+        clientProvided: true,
+      },
       transport: { streaming: true },
     },
   });
@@ -175,15 +186,22 @@ function mergeAgUiMessages(persistedMessages: Message[], inputMessages: Message[
 }
 
 function validateAi2NaoCopilotInput(messages: Message[], tools: unknown[]): void {
-  if (tools.length > 0) {
-    throw new Error("CopilotKit tools/actions are not enabled for this AI chat.");
+  const allowedTools = new Set([
+    "ai2nao_read_workspace_context",
+    "ai2nao_search_rag_evidence",
+    "ai2nao_select_session",
+    "ai2nao_confirm_session_delete",
+  ]);
+  for (const tool of tools) {
+    const name =
+      tool && typeof tool === "object" ? (tool as Record<string, unknown>).name : null;
+    if (typeof name !== "string" || !allowedTools.has(name)) {
+      throw new Error(`Unsupported CopilotKit tool: ${String(name ?? "unknown")}`);
+    }
   }
   for (const [index, message] of messages.entries()) {
-    if (!["system", "user", "assistant"].includes(message.role)) {
+    if (!["developer", "system", "user", "assistant", "tool", "activity", "reasoning"].includes(message.role)) {
       throw new Error(`Unsupported message role at index ${index}: ${message.role}`);
-    }
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      throw new Error("Tool-call messages are not enabled for this AI chat.");
     }
   }
 }
@@ -235,6 +253,37 @@ async function ragSystemPrompt(
     "---",
     ...blocks,
   ].join("\n\n");
+}
+
+async function ai2NaoSystemPrompt(
+  deps: LlmChatCopilotRuntimeDeps,
+  messages: Message[],
+  context: Context[],
+  forwardedProps: unknown
+): Promise<string> {
+  const parts = [
+    "You are ai2nao's local-first AI workbench assistant.",
+    "When the user asks about current workspace/page/model/RAG/session state, call ai2nao_read_workspace_context before answering.",
+    "When the user asks to find, cite, inspect, or use local indexed materials, call ai2nao_search_rag_evidence before answering.",
+    "When the user asks to switch chats, call ai2nao_select_session if a target session is identifiable.",
+    "When the user asks to delete a chat/session, call ai2nao_confirm_session_delete and wait for the user's approval.",
+    "After tool calls, summarize the result in Chinese and mention the evidence paths when available.",
+  ];
+
+  if (context.length > 0) {
+    parts.push("\n## Application Context");
+    for (const item of context) {
+      parts.push(`${item.description}:\n${item.value}`);
+    }
+  }
+
+  const ragPrompt = await ragSystemPrompt(deps, messages, forwardedProps);
+  if (ragPrompt) {
+    parts.push("\n## Automatic RAG Excerpts");
+    parts.push(ragPrompt);
+  }
+
+  return parts.join("\n\n");
 }
 
 function lastUserText(messages: Message[]): string | null {
