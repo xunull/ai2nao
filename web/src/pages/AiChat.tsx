@@ -6,6 +6,7 @@ import {
   deleteAiChatSession,
   listAiChatSessions,
 } from "../aiChat/sessionApi";
+import { AiChatCopilotTools } from "../aiChat/copilotTools";
 import type { AiChatSessionSummary, LlmChatStatus, RagStatus } from "../aiChat/types";
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
@@ -57,6 +58,19 @@ export function AiChat() {
     setSessionErr(null);
     setChatErr(null);
   }, []);
+
+  const deleteAndSelectNext = useCallback(
+    async (sessionId: string) => {
+      await deleteAiChatSession(sessionId);
+      const next = sessions.filter((s) => s.id !== sessionId);
+      setSessions(next);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(next[0]?.id ?? null);
+        if (!next[0]) await createAndSelect();
+      }
+    },
+    [activeSessionId, createAndSelect, sessions]
+  );
 
   const handleChatError = useCallback((event: unknown) => {
     const maybeRecord =
@@ -183,15 +197,7 @@ export function AiChat() {
                     <button
                       type="button"
                       aria-label="删除对话"
-                      onClick={async () => {
-                        await deleteAiChatSession(session.id);
-                        const next = sessions.filter((s) => s.id !== session.id);
-                        setSessions(next);
-                        if (activeSessionId === session.id) {
-                          setActiveSessionId(next[0]?.id ?? null);
-                          if (!next[0]) await createAndSelect();
-                        }
-                      }}
+                      onClick={() => void deleteAndSelectNext(session.id)}
                       className={`rounded px-2 py-1 text-xs ${
                         active ? "text-neutral-300 hover:bg-white/10" : "text-neutral-400 hover:bg-neutral-100"
                       }`}
@@ -255,6 +261,18 @@ export function AiChat() {
                       {chatErr}
                     </div>
                   ) : null}
+                  <AiChatCopilotTools
+                    activeSession={activeSession}
+                    cfg={cfg}
+                    rag={rag}
+                    sessions={sessions}
+                    useRag={useRag}
+                    onSelectSession={(sessionId) => {
+                      setActiveSessionId(sessionId);
+                      setChatErr(null);
+                    }}
+                    onDeleteSession={deleteAndSelectNext}
+                  />
                   <CopilotChat
                     key={activeSessionId}
                     threadId={activeSessionId}

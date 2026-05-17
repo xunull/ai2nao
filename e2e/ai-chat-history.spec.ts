@@ -53,10 +53,27 @@ test("AI chat keeps switched CopilotKit sessions isolated at the runtime boundar
   await expect.poll(() => runtimeRequests.length).toBeGreaterThan(0);
 
   const lastRun = runtimeRequests.at(-1);
-  const requestText = JSON.stringify(lastRun);
+  const requestText = JSON.stringify(runtimeMessagesFromBody(lastRun));
   expect(requestText).toContain("第一个问题");
   expect(requestText).toContain("我刚才问你什么了");
   expect(requestText).not.toContain("第二个问题");
+});
+
+test("AI chat registers safe CopilotKit tools and page context with the runtime", async ({ page }) => {
+  const store = new MockSessionStore();
+  const runtimeRequests: unknown[] = [];
+  await mockAiChatApis(page, store, runtimeRequests);
+
+  await page.goto("/ai-chat");
+  await page.getByTestId("copilot-chat-textarea").fill("帮我找一下本机资料");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => runtimeRequests.length).toBeGreaterThan(0);
+
+  const requestText = JSON.stringify(runtimeRequests.at(-1));
+  expect(requestText).toContain("ai2nao_read_workspace_context");
+  expect(requestText).toContain("ai2nao_search_rag_evidence");
+  expect(requestText).toContain("ai2nao_confirm_session_delete");
+  expect(requestText).toContain("ai2nao 当前 AI 对话工作台状态");
 });
 
 async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeRequests: unknown[] = []) {
@@ -128,6 +145,25 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeReques
         corpusRoots: ["/Users/test/project-notes"],
         embeddingEnabled: true,
         chunkCount: 12,
+      }),
+    })
+  );
+
+  await page.route("**/api/rag/search", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        query: "test",
+        hits: [
+          {
+            id: 1,
+            sourceRoot: "/Users/test/project-notes",
+            filePath: "README.md",
+            content: "测试证据片段",
+            ftsRank: -1,
+          },
+        ],
       }),
     })
   );
@@ -207,6 +243,11 @@ function mergeRuntimeMessages(body: unknown, persistedMessages: unknown[]) {
   if (record.body) return { ...record, body: { ...record.body, messages: merged } };
   if (record.input) return { ...record, input: { ...record.input, messages: merged } };
   return { ...record, messages: merged };
+}
+
+function runtimeMessagesFromBody(body: unknown) {
+  const record = body as { body?: { messages?: unknown[] }; input?: { messages?: unknown[] }; messages?: unknown[] };
+  return record.body?.messages ?? record.input?.messages ?? record.messages ?? [];
 }
 
 function mergeMessagesById(...groups: unknown[][]) {
