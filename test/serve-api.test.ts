@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { openDailySummaryCacheDatabase } from "../src/dailySummary/cache.js";
+import { ingestCorpus } from "../src/rag/ingest.js";
+import { openRagDatabase } from "../src/rag/open.js";
+import type { RagConfigV1 } from "../src/rag/types.js";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase, openReadOnlyDatabase } from "../src/store/open.js";
 import { runScan } from "../src/scan/runScan.js";
@@ -75,6 +78,51 @@ describe("Hono read-only API", () => {
       expect(typeof llmj.configured).toBe("boolean");
       expect(llmj.configPath.length).toBeGreaterThan(0);
     } finally {
+      db.close();
+    }
+  });
+
+  it("GET /api/rag/status returns manifest and vector health", async () => {
+    const base = join(tmpdir(), `ai2nao-rag-api-${Date.now()}`);
+    const corpus = join(base, "notes");
+    mkdirSync(corpus, { recursive: true });
+    writeFileSync(join(corpus, "one.md"), "# One\n\nRAG status contract.\n", "utf8");
+
+    const idxPath = join(base, "idx.db");
+    const idxw = openDatabase(idxPath);
+    idxw.close();
+
+    const ragPath = join(base, "rag.db");
+    const ragDb = openRagDatabase(ragPath);
+    const cfg: RagConfigV1 = {
+      version: 1,
+      corpusRoots: [corpus],
+      includeExtensions: [".md"],
+      maxFileBytes: 1_000_000,
+      respectDefaultExcludes: true,
+    };
+    await ingestCorpus(ragDb, cfg, []);
+
+    const db = openReadOnlyDatabase(idxPath);
+    try {
+      const app = createApp({
+        db,
+        rag: { db: ragDb, path: ragPath },
+      });
+      const res = await app.request("http://x/api/rag/status");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        chunkCount: number;
+        manifest: { total: number; indexed: number };
+        vectorStore: { provider: string; syncStatus: string };
+      };
+      expect(body.chunkCount).toBeGreaterThan(0);
+      expect(body.manifest.total).toBe(1);
+      expect(body.manifest.indexed).toBe(1);
+      expect(["none", "lancedb"]).toContain(body.vectorStore.provider);
+      expect(typeof body.vectorStore.syncStatus).toBe("string");
+    } finally {
+      ragDb.close();
       db.close();
     }
   });

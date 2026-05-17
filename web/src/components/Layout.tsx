@@ -32,6 +32,8 @@ const navGroups = [
       { to: "/claude-code-history", label: "Claude" },
       { to: "/codex-history", label: "Codex" },
       { to: "/ai-chat", label: "AI 对话" },
+      { to: "/rag-status", label: "RAG 状态" },
+      { to: "/rag-debug", label: "RAG 调试" },
     ],
   },
   {

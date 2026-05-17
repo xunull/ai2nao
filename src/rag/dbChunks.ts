@@ -4,7 +4,7 @@ export function deleteChunksForFile(
   db: Database.Database,
   sourceRoot: string,
   filePath: string
-): void {
+): number[] {
   const sel = db.prepare(
     "SELECT id FROM rag_chunks WHERE source_root = ? AND file_path = ?"
   );
@@ -18,4 +18,5 @@ export function deleteChunksForFile(
     }
   });
   tx();
+  return ids.map((row) => row.id);
 }

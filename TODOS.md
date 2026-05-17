@@ -12,17 +12,15 @@
 8. Cursor 集成：LICENSE / NOTICE 与上游署名
 9. Cursor 设计文档修订（仅 `src/` 实现）
 10. Cursor opened projects：显示关联 chat session counts
-11. RAG：双路检索调试视图（同一查询下展示 FTS 与向量 topK/分数，利于录屏与排错）
-12. RAG：黄金检索评测集（固定问句 + 期望命中；改融合/切块可回归）
-13. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
-14. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
-15. Homebrew 清单：Brewfile 导出
-16. 软件清单：Mac App 与 Homebrew Cask 关联
-17. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
-18. Chrome History 域名透视 v2：CSV 导出
-19. Chrome History 域名透视 v2：真正增量派生
-20. Chrome History 微信文章正文索引
-21. Chrome History 搜索命中原因展示
+11. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
+12. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
+13. Homebrew 清单：Brewfile 导出
+14. 软件清单：Mac App 与 Homebrew Cask 关联
+15. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
+16. Chrome History 域名透视 v2：CSV 导出
+17. Chrome History 域名透视 v2：真正增量派生
+18. Chrome History 微信文章正文索引
+19. Chrome History 搜索命中原因展示
 22. VS Code terminal dirs 工作信号（显式 opt-in）
 23. CopilotKit 自定义 AI Studio UI
 
@@ -199,6 +197,22 @@ Depends on / blocked by:
 - 明确 CopilotKit custom/headless UI 接入边界
 
 Priority: P1（CopilotKit 迁移后）
+
+## Completed
+
+### RAG：双路检索调试视图
+
+**Completed:** v0.3.15 (2026-05-17)
+
+What shipped:
+- `/rag-debug` 展示同一查询下的 FTS、Vector、Hybrid 结果、分数、排名和命中分支。
+
+### RAG：黄金检索评测集
+
+**Completed:** v0.3.15 (2026-05-17)
+
+What shipped:
+- `docs/rag-eval-cases.json` 和 `ai2nao rag eval` 支持固定问句、期望命中、Recall@K / MRR / NoHit 回归。
 
 ## Chrome History 域名透视 v2：CSV 导出
 
