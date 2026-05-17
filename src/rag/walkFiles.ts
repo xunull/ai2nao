@@ -6,6 +6,7 @@ export type FileToIndex = {
   absPath: string;
   relPath: string;
   mtimeMs: number;
+  sizeBytes: number;
   body: string;
 };
 
@@ -13,6 +14,7 @@ export type CorpusFileEntry = {
   relPath: string;
   absPath: string;
   mtimeMs: number;
+  sizeBytes: number;
 };
 
 function shouldSkipDirName(name: string, respectExcludes: boolean): boolean {
@@ -73,9 +75,9 @@ export function listCorpusFiles(
       if (d.isFile()) {
         const ext = extname(name).toLowerCase();
         if (!includeExtensions.has(ext)) continue;
-        let mtimeMs: number;
+        let st: import("node:fs").Stats;
         try {
-          mtimeMs = Math.floor(statSync(abs).mtimeMs);
+          st = statSync(abs);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           warnings.push(`skip file: ${abs} — ${msg}`);
@@ -84,7 +86,8 @@ export function listCorpusFiles(
         out.push({
           relPath: relative(root, abs).split(sep).join("/"),
           absPath: abs,
-          mtimeMs,
+          mtimeMs: Math.floor(st.mtimeMs),
+          sizeBytes: st.size,
         });
         continue;
       }
@@ -106,6 +109,7 @@ export function listCorpusFiles(
           relPath: relative(root, abs).split(sep).join("/"),
           absPath: abs,
           mtimeMs: Math.floor(st.mtimeMs),
+          sizeBytes: st.size,
         });
       }
     }
@@ -136,7 +140,7 @@ export function readFileLimited(
   }
   try {
     const body = readFileSync(absPath, "utf8");
-    return { ok: true, data: { absPath, relPath, mtimeMs, body } };
+    return { ok: true, data: { absPath, relPath, mtimeMs, sizeBytes: st.size, body } };
   } catch (e) {
     return { ok: false, error: `${relPath}: ${e instanceof Error ? e.message : String(e)}` };
   }

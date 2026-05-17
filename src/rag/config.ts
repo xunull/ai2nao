@@ -86,6 +86,22 @@ export function parseRagConfigJson(raw: string): RagConfigV1 | null {
     /* 若 embedding 写了一半（缺 baseURL/model），不再整表解析失败，只当作未启用 embedding */
   }
 
+  let vectorStore: RagConfigV1["vectorStore"];
+  if (isRecord(data.vectorStore)) {
+    const provider = data.vectorStore.provider;
+    if (provider === "none") {
+      vectorStore = { provider: "none" };
+    } else if (provider === "lancedb") {
+      const rawPath = data.vectorStore.path;
+      vectorStore = {
+        provider: "lancedb",
+        ...(typeof rawPath === "string" && rawPath.trim()
+          ? { path: expandUserPath(rawPath.trim()) }
+          : {}),
+      };
+    }
+  }
+
   return {
     version: 1,
     corpusRoots,
@@ -93,6 +109,7 @@ export function parseRagConfigJson(raw: string): RagConfigV1 | null {
     maxFileBytes,
     respectDefaultExcludes,
     embedding,
+    vectorStore,
   };
 }
 

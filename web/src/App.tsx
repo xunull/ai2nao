@@ -69,6 +69,12 @@ const RepoDetail = lazy(() =>
   import("./pages/RepoDetail").then((m) => ({ default: m.RepoDetail }))
 );
 const Repos = lazy(() => import("./pages/Repos").then((m) => ({ default: m.Repos })));
+const RagDebug = lazy(() =>
+  import("./pages/RagDebug").then((m) => ({ default: m.RagDebug }))
+);
+const RagStatus = lazy(() =>
+  import("./pages/RagStatus").then((m) => ({ default: m.RagStatus }))
+);
 const Search = lazy(() => import("./pages/Search").then((m) => ({ default: m.Search })));
 
 export function App() {
@@ -103,6 +109,8 @@ export function App() {
           <Route path="/codex-history" element={<CodexHistory />} />
           <Route path="/codex-history/s/:sessionId" element={<CodexHistorySession />} />
           <Route path="/ai-chat" element={<AiChat />} />
+          <Route path="/rag-status" element={<RagStatus />} />
+          <Route path="/rag-debug" element={<RagDebug />} />
           <Route path="/github" element={<Github />} />
           <Route path="/github/radar" element={<GithubRadar />} />
           <Route path="/github/tags" element={<GithubTags />} />
