@@ -32,6 +32,64 @@ afterEach(() => {
 });
 
 describe("CopilotKit-compatible LLM chat runtime", () => {
+  it("serves direct CopilotKit multi-route runs as encoded SSE from the ai2nao runner", async () => {
+    const dbPath = tempPath("copilot-runtime-direct-run.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([
+        { type: "text-start", id: "direct-text" },
+        { type: "text-delta", id: "direct-text", text: "direct runtime answer" },
+        { type: "text-end", id: "direct-text" },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-direct-run",
+          runId: "run-direct-run",
+          messages: [{ id: "u1", role: "user", content: "direct route please" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+      const sse = await res.text();
+      expect(sse).toContain("RUN_STARTED");
+      expect(sse).toContain("direct runtime answer");
+      expect(sse).toContain("RUN_FINISHED");
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+
+      const session = getLlmChatSession(db, "thread-direct-run");
+      expect(JSON.stringify(session?.messages)).toContain("direct runtime answer");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
   it("synthesizes a final answer immediately when a web search run ends after the tool result", async () => {
     const dbPath = tempPath("copilot-runtime-final-answer.db");
     const db = openDatabase(dbPath);
@@ -245,6 +303,90 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
       db.close();
       if (existsSync(dbPath)) unlinkSync(dbPath);
       if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("rejects CopilotKit tools, page context, and shared state before model execution", async () => {
+    const cases = [
+      {
+        name: "client tool",
+        body: {
+          tools: [{ name: "frontend_tool", description: "must not be accepted", parameters: {} }],
+          context: [],
+          state: {},
+        },
+        message: "Client-provided CopilotKit tools are not supported for ai2nao.",
+      },
+      {
+        name: "page context",
+        body: {
+          tools: [],
+          context: [{ description: "Selected file", value: "/private/path/secret.md" }],
+          state: {},
+        },
+        message: "CopilotKit page context is not supported for ai2nao.",
+      },
+      {
+        name: "shared state",
+        body: {
+          tools: [],
+          context: [],
+          state: { selectedFile: "/private/path/secret.md" },
+        },
+        message: "CopilotKit shared state is not supported for ai2nao.",
+      },
+      {
+        name: "primitive shared state",
+        body: {
+          tools: [],
+          context: [],
+          state: "client-state",
+        },
+        message: "CopilotKit shared state is not supported for ai2nao.",
+      },
+      {
+        name: "array shared state",
+        body: {
+          tools: [],
+          context: [],
+          state: [{ selectedFile: "/private/path/secret.md" }],
+        },
+        message: "CopilotKit shared state is not supported for ai2nao.",
+      },
+    ];
+
+    for (const item of cases) {
+      const dbPath = tempPath(`copilot-runtime-${item.name}.db`);
+      const db = openDatabase(dbPath);
+      streamTextMock.mockClear();
+      try {
+        const app = new Hono();
+        registerCopilotKitRoutes(app, { db });
+        const res = await app.request("/api/copilotkit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            method: "agent/run",
+            params: { agentId: "default" },
+            body: {
+              threadId: `thread-${item.name}`,
+              runId: `run-${item.name}`,
+              messages: [{ id: "u1", role: "user", content: "测试边界" }],
+              forwardedProps: { webSearchEnabled: true },
+              ...item.body,
+            },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        const sse = await res.text();
+        expect(sse).toContain("RUN_ERROR");
+        expect(sse).toContain(item.message);
+        expect(streamTextMock).not.toHaveBeenCalled();
+      } finally {
+        db.close();
+        if (existsSync(dbPath)) unlinkSync(dbPath);
+      }
     }
   });
 });

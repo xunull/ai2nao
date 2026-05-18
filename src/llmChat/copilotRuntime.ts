@@ -1,8 +1,24 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Hono } from "hono";
-import { EventType, type BaseEvent, type Context, type Message } from "@ag-ui/client";
+import {
+  AbstractAgent,
+  EventType,
+  type AgentCapabilities,
+  type BaseEvent,
+  type Context,
+  type Message,
+} from "@ag-ui/client";
 import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
+import { Observable } from "rxjs";
+import type {
+  AgentRunner,
+  AgentRunnerConnectRequest,
+  AgentRunnerIsRunningRequest,
+  AgentRunnerRunRequest,
+  AgentRunnerStopRequest,
+  CopilotRuntimeFetchHandler,
+} from "@copilotkit/runtime/v2";
 import { llmChatStatus, readLlmChatConfig } from "./config.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
@@ -28,6 +44,7 @@ type AgentInput = {
   messages: Message[];
   tools: unknown[];
   context: Context[];
+  state: unknown;
   forwardedProps: unknown;
 };
 
@@ -57,171 +74,279 @@ type AiSdkStreamToAgUiOptions = {
 };
 
 const runningThreadIds = new Set<string>();
+const runningThreadStops = new Map<string, () => void>();
 const MAX_TOOL_LOOP_STEPS = 6;
+const sseTextEncoder = new TextEncoder();
+
+type CopilotRuntimeHandlers = {
+  single: CopilotRuntimeFetchHandler;
+  multi: CopilotRuntimeFetchHandler;
+};
 
 export function registerCopilotKitRoutes(
   app: Hono,
   deps: LlmChatCopilotRuntimeDeps
 ): void {
-  app.get("/api/copilotkit/info", (c) => c.json(copilotInfo()));
+  let handlers: Promise<CopilotRuntimeHandlers> | undefined;
+  const getHandlers = () => {
+    handlers ??= createCopilotRuntimeTransportHandlers(deps);
+    return handlers;
+  };
 
-  app.post("/api/copilotkit", async (c) => {
-    const envelope = await c.req.json().catch(() => null);
-    if (!envelope || typeof envelope !== "object") return jsonErr(400, "Invalid JSON payload");
-    const rec = envelope as Record<string, unknown>;
-    const method = typeof rec.method === "string" ? rec.method : "";
-    const params = objectOrEmpty(rec.params);
+  app.get("/api/copilotkit/info", async (c) => runCopilotHandler((await getHandlers()).multi, c.req.raw));
 
-    if (method === "info") return c.json(copilotInfo());
-    if (method === "agent/stop") {
-      const threadId = typeof params.threadId === "string" ? params.threadId : "";
-      return c.json({ stopped: threadId ? runningThreadIds.delete(threadId) : false });
-    }
-    if (method !== "agent/run" && method !== "agent/connect") {
-      return jsonErr(400, `Unsupported method '${method || "unknown"}'`);
-    }
-    if (params.agentId !== undefined && params.agentId !== "default") {
-      return jsonErr(404, "Unknown agent");
-    }
-    const input = parseAgentInput(rec.body);
-    return method === "agent/connect"
-      ? connectToThread(deps, input)
-      : runThread(deps, input, c.req.raw.signal);
-  });
+  app.post("/api/copilotkit", async (c) => runCopilotHandler((await getHandlers()).single, c.req.raw));
 
   app.post("/api/copilotkit/agent/default/connect", async (c) => {
-    const input = parseAgentInput(await c.req.json().catch(() => null));
-    return connectToThread(deps, input);
+    return runCopilotHandler((await getHandlers()).multi, c.req.raw);
   });
 
   app.post("/api/copilotkit/agent/default/run", async (c) => {
-    const input = parseAgentInput(await c.req.json().catch(() => null));
-    return runThread(deps, input, c.req.raw.signal);
+    return runCopilotHandler((await getHandlers()).multi, c.req.raw);
+  });
+
+  app.post("/api/copilotkit/agent/default/stop/:threadId", async (c) => {
+    return runCopilotHandler((await getHandlers()).multi, c.req.raw);
   });
 }
 
-function copilotInfo() {
+async function runCopilotHandler(
+  handler: CopilotRuntimeFetchHandler,
+  request: Request
+): Promise<Response> {
+  return normalizeCopilotRuntimeResponse(await handler(request));
+}
+
+function normalizeCopilotRuntimeResponse(response: Response): Response {
+  if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
+    return response;
+  }
+  const body = response.body.pipeThrough(
+    new TransformStream<unknown, Uint8Array>({
+      transform(chunk, controller) {
+        if (typeof chunk === "string") {
+          controller.enqueue(sseTextEncoder.encode(chunk));
+        } else if (chunk instanceof Uint8Array) {
+          controller.enqueue(chunk);
+        } else {
+          controller.enqueue(sseTextEncoder.encode(String(chunk)));
+        }
+      },
+    })
+  );
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+async function createCopilotRuntimeTransportHandlers(
+  deps: LlmChatCopilotRuntimeDeps
+): Promise<CopilotRuntimeHandlers> {
+  process.env.COPILOTKIT_TELEMETRY_DISABLED ??= "1";
+  const { CopilotRuntime, createCopilotRuntimeHandler } = await import("@copilotkit/runtime/v2");
+  const runtime = new CopilotRuntime({
+    agents: { default: new Ai2NaoTransportAgent() },
+    runner: createAi2NaoAgentRunner(deps),
+  });
+
   return {
-    version: "ai2nao",
-    agents: { default: { name: "default" } },
-    audioFileTranscriptionEnabled: false,
+    single: createCopilotRuntimeHandler({
+      runtime,
+      basePath: "/api/copilotkit",
+      mode: "single-route",
+    }),
+    multi: createCopilotRuntimeHandler({
+      runtime,
+      basePath: "/api/copilotkit",
+      mode: "multi-route",
+    }),
   };
 }
 
-function connectToThread(deps: LlmChatCopilotRuntimeDeps, input: AgentInput): Response {
-  const detail = getLlmChatSession(deps.db, input.threadId);
-  const messages = detail ? agUiMessagesFromSession(detail) : [];
-  const runId = input.runId || randomUUID();
-  return sseResponse([
-    { type: EventType.RUN_STARTED, threadId: input.threadId, runId },
-    { type: EventType.MESSAGES_SNAPSHOT, messages },
-    { type: EventType.RUN_FINISHED, threadId: input.threadId, runId },
-  ]);
+class Ai2NaoTransportAgent extends AbstractAgent {
+  constructor() {
+    super({ agentId: "default", description: "ai2nao transport-only CopilotKit adapter" });
+  }
+
+  async getCapabilities(): Promise<AgentCapabilities> {
+    return {
+      tools: { supported: false, clientProvided: false },
+      transport: { streaming: true },
+    };
+  }
+
+  setState(): void {
+    super.setState({});
+  }
+
+  run(): Observable<BaseEvent> {
+    return new Observable((subscriber) => {
+      subscriber.error(new Error("ai2nao owns agent execution; CopilotKit is transport only."));
+    });
+  }
 }
 
-function runThread(
+function createAi2NaoAgentRunner(deps: LlmChatCopilotRuntimeDeps): AgentRunner {
+  return {
+    run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
+      return observableFromAi2NaoTurn(deps, parseAgentInput(request.input));
+    },
+    connect(request: AgentRunnerConnectRequest): Observable<BaseEvent> {
+      return observableFromEvents(connectToThreadEvents(deps, request.threadId));
+    },
+    isRunning(request: AgentRunnerIsRunningRequest): Promise<boolean> {
+      return Promise.resolve(runningThreadIds.has(request.threadId));
+    },
+    stop(request: AgentRunnerStopRequest): Promise<boolean | undefined> {
+      const stop = runningThreadStops.get(request.threadId);
+      stop?.();
+      const wasRunning = runningThreadIds.delete(request.threadId) || Boolean(stop);
+      runningThreadStops.delete(request.threadId);
+      return Promise.resolve(wasRunning);
+    },
+  };
+}
+
+function observableFromAi2NaoTurn(
+  deps: LlmChatCopilotRuntimeDeps,
+  input: AgentInput
+): Observable<BaseEvent> {
+  return new Observable<BaseEvent>((subscriber) => {
+    const abortController = new AbortController();
+    runningThreadStops.set(input.threadId, () => abortController.abort());
+    (async () => {
+      try {
+        for await (const event of runAi2NaoTurnEvents(deps, input, abortController.signal)) {
+          if (subscriber.closed) break;
+          subscriber.next(event);
+        }
+        subscriber.complete();
+      } catch (error) {
+        subscriber.error(error);
+      }
+    })();
+
+    return () => {
+      abortController.abort();
+    };
+  });
+}
+
+function observableFromEvents(events: Iterable<BaseEvent>): Observable<BaseEvent> {
+  return new Observable<BaseEvent>((subscriber) => {
+    for (const event of events) {
+      if (subscriber.closed) break;
+      subscriber.next(event);
+    }
+    subscriber.complete();
+  });
+}
+
+function* connectToThreadEvents(deps: LlmChatCopilotRuntimeDeps, threadId: string): Generator<BaseEvent> {
+  const detail = getLlmChatSession(deps.db, threadId);
+  const messages = detail ? agUiMessagesFromSession(detail) : [];
+  const runId = randomUUID();
+  yield { type: EventType.RUN_STARTED, threadId, runId } as BaseEvent;
+  yield { type: EventType.MESSAGES_SNAPSHOT, messages } as BaseEvent;
+  yield { type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent;
+}
+
+async function* runAi2NaoTurnEvents(
   deps: LlmChatCopilotRuntimeDeps,
   input: AgentInput,
   abortSignal: AbortSignal
-): Response {
+): AsyncGenerator<BaseEvent> {
   const runId = input.runId || randomUUID();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const writer = new SseWriter(controller);
-      const generated = new GeneratedMessages();
-      runningThreadIds.add(input.threadId);
-      await writer.write({ type: EventType.RUN_STARTED, threadId: input.threadId, runId });
-      try {
-        const cfg = readLlmChatConfig();
-        if (!cfg) {
-          throw new Error(
-            "LLM chat is not configured. Add ~/.ai2nao/llm-chat.json or set AI2NAO_LLM_CHAT_CONFIG."
-          );
-        }
-        validateAi2NaoCopilotInput(input.messages, input.tools);
-        ensureLlmChatSession(deps.db, input.threadId);
-        const detail = getLlmChatSession(deps.db, input.threadId);
-        const persistedMessages = detail ? agUiMessagesFromSession(detail) : [];
-        const mergedMessages = mergeAgUiMessages(persistedMessages, input.messages);
-        const serverTools = buildAi2NaoServerTools(deps, input.forwardedProps);
-        const modelMessages = agUiMessagesToModelMessages(mergedMessages);
-        const result = streamText({
-          model: createChatLanguageModel(cfg),
-          system: ai2NaoSystemPrompt(input.context, input.forwardedProps),
-          messages: modelMessages,
-          tools: serverTools,
-          stopWhen: stepCountIs(MAX_TOOL_LOOP_STEPS),
-          abortSignal,
-          onFinish: (ev) => {
-            llmChatLog.info("ai2nao streamText onFinish", {
-              threadId: input.threadId,
-              finishReason: ev.finishReason,
-              usage: ev.totalUsage,
-            });
-          },
-          onError: ({ error }) => {
-            llmChatLog.error("ai2nao streamText onError", error);
-          },
+  const generated = new GeneratedMessages();
+  runningThreadIds.add(input.threadId);
+  yield { type: EventType.RUN_STARTED, threadId: input.threadId, runId } as BaseEvent;
+  try {
+    validateAi2NaoCopilotInput(input.messages, input.tools, input.context, input.state);
+    const cfg = readLlmChatConfig();
+    if (!cfg) {
+      throw new Error(
+        "LLM chat is not configured. Add ~/.ai2nao/llm-chat.json or set AI2NAO_LLM_CHAT_CONFIG."
+      );
+    }
+    ensureLlmChatSession(deps.db, input.threadId);
+    const detail = getLlmChatSession(deps.db, input.threadId);
+    const persistedMessages = detail ? agUiMessagesFromSession(detail) : [];
+    const mergedMessages = mergeAgUiMessages(persistedMessages, input.messages);
+    const serverTools = buildAi2NaoServerTools(deps, input.forwardedProps);
+    const modelMessages = agUiMessagesToModelMessages(mergedMessages);
+    const systemPrompt = ai2NaoSystemPrompt(input.forwardedProps);
+    const result = streamText({
+      model: createChatLanguageModel(cfg),
+      system: systemPrompt,
+      messages: modelMessages,
+      tools: serverTools,
+      stopWhen: stepCountIs(MAX_TOOL_LOOP_STEPS),
+      abortSignal,
+      onFinish: (ev) => {
+        llmChatLog.info("ai2nao streamText onFinish", {
+          threadId: input.threadId,
+          finishReason: ev.finishReason,
+          usage: ev.totalUsage,
         });
+      },
+      onError: ({ error }) => {
+        llmChatLog.error("ai2nao streamText onError", error);
+      },
+    });
 
-        for await (const event of aiSdkStreamToAgUiEvents(result.fullStream, {
-          executeTextToolCall: createTextToolCallExecutor(serverTools, modelMessages, abortSignal),
-        })) {
-          generated.apply(event);
-          await writer.write(event);
-        }
+    for await (const event of aiSdkStreamToAgUiEvents(result.fullStream, {
+      executeTextToolCall: createTextToolCallExecutor(serverTools, modelMessages, abortSignal),
+    })) {
+      generated.apply(event);
+      yield event;
+    }
 
-        if (generated.needsFinalAnswer()) {
-          const finalMessages = finalAnswerModelMessages(
-            mergeAgUiMessages(mergedMessages, generated.messages())
-          );
-          const finalResult = streamText({
-            model: createChatLanguageModel(cfg),
-            system: finalAnswerSystemPrompt(ai2NaoSystemPrompt(input.context, input.forwardedProps)),
-            messages: finalMessages,
-            abortSignal,
-            stopWhen: stepCountIs(1),
-          });
-          for await (const event of aiSdkStreamToAgUiEvents(finalResult.fullStream)) {
-            generated.apply(event);
-            await writer.write(event);
-          }
-        }
-
-        if (generated.needsFinalAnswer()) {
-          const fallback = deterministicEvidenceAnswer(
-            mergeAgUiMessages(mergedMessages, generated.messages())
-          );
-          const fallbackEvent = textChunkEvent(randomUUID(), fallback);
-          generated.apply(fallbackEvent);
-          await writer.write(fallbackEvent);
-        }
-
-        replaceLlmChatSessionMessages(deps.db, input.threadId, {
-          messages: mergeAgUiMessages(mergedMessages, generated.messages()),
-        });
-        await writer.write({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        llmChatLog.error("ai2nao run failed", message);
-        await writer.write({ type: EventType.RUN_ERROR, message, code: "ai2nao_run_failed" });
-      } finally {
-        runningThreadIds.delete(input.threadId);
-        controller.close();
+    if (generated.needsFinalAnswer()) {
+      const finalMessages = finalAnswerModelMessages(
+        mergeAgUiMessages(mergedMessages, generated.messages())
+      );
+      const finalResult = streamText({
+        model: createChatLanguageModel(cfg),
+        system: finalAnswerSystemPrompt(systemPrompt),
+        messages: finalMessages,
+        abortSignal,
+        stopWhen: stepCountIs(1),
+      });
+      for await (const event of aiSdkStreamToAgUiEvents(finalResult.fullStream)) {
+        generated.apply(event);
+        yield event;
       }
-    },
-    cancel() {
-      runningThreadIds.delete(input.threadId);
-    },
-  });
+    }
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+    if (generated.needsFinalAnswer()) {
+      const fallback = deterministicEvidenceAnswer(
+        mergeAgUiMessages(mergedMessages, generated.messages())
+      );
+      const fallbackEvent = textChunkEvent(randomUUID(), fallback);
+      generated.apply(fallbackEvent);
+      yield fallbackEvent;
+    }
+
+    replaceLlmChatSessionMessages(deps.db, input.threadId, {
+      messages: mergeAgUiMessages(mergedMessages, generated.messages()),
+    });
+    yield { type: EventType.RUN_FINISHED, threadId: input.threadId, runId } as BaseEvent;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    llmChatLog.error("ai2nao run failed", message);
+    yield {
+      type: EventType.RUN_ERROR,
+      threadId: input.threadId,
+      runId,
+      message,
+      code: "ai2nao_run_failed",
+    } as BaseEvent;
+  } finally {
+    runningThreadIds.delete(input.threadId);
+    runningThreadStops.delete(input.threadId);
+  }
 }
 
 export async function* aiSdkStreamToAgUiEvents(
@@ -739,7 +864,7 @@ type EvidenceResultForPrompt = {
   }>;
 };
 
-function ai2NaoSystemPrompt(context: Context[], forwardedProps: unknown): string {
+function ai2NaoSystemPrompt(forwardedProps: unknown): string {
   const props = parseForwardedToolProps(forwardedProps);
   const parts = [
     "You are ai2nao's local-first AI workbench assistant.",
@@ -767,13 +892,6 @@ function ai2NaoSystemPrompt(context: Context[], forwardedProps: unknown): string
     parts.push("No evidence tools are enabled for this turn; answer from conversation context and say when evidence is unavailable.");
   }
 
-  if (context.length > 0) {
-    parts.push("\n## Application Context");
-    for (const item of context) {
-      parts.push(`${item.description}:\n${item.value}`);
-    }
-  }
-
   return parts.join("\n\n");
 }
 
@@ -788,9 +906,20 @@ function finalAnswerSystemPrompt(basePrompt: string): string {
   ].join("\n\n");
 }
 
-function validateAi2NaoCopilotInput(messages: Message[], tools: unknown[]): void {
+function validateAi2NaoCopilotInput(
+  messages: Message[],
+  tools: unknown[],
+  context: Context[],
+  state: unknown
+): void {
   if (tools.length > 0) {
     throw new Error("Client-provided CopilotKit tools are not supported for ai2nao.");
+  }
+  if (context.length > 0) {
+    throw new Error("CopilotKit page context is not supported for ai2nao.");
+  }
+  if (hasCopilotKitState(state)) {
+    throw new Error("CopilotKit shared state is not supported for ai2nao.");
   }
   for (const [index, message] of messages.entries()) {
     if (!["developer", "system", "user", "assistant", "tool", "activity", "reasoning"].includes(message.role)) {
@@ -807,8 +936,16 @@ function parseAgentInput(raw: unknown): AgentInput {
     messages: Array.isArray(rec.messages) ? (rec.messages as Message[]) : [],
     tools: Array.isArray(rec.tools) ? rec.tools : [],
     context: Array.isArray(rec.context) ? (rec.context as Context[]) : [],
+    state: rec.state,
     forwardedProps: rec.forwardedProps,
   };
+}
+
+function hasCopilotKitState(state: unknown): boolean {
+  if (state === undefined || state === null) return false;
+  if (Array.isArray(state)) return state.length > 0;
+  if (typeof state === "object") return Object.keys(state).length > 0;
+  return true;
 }
 
 function mergeAgUiMessages(persistedMessages: Message[], inputMessages: Message[]): Message[] {
@@ -1012,29 +1149,6 @@ type AgUiToolCall = {
     arguments: string;
   };
 };
-
-class SseWriter {
-  private readonly encoder = new TextEncoder();
-
-  constructor(private readonly controller: ReadableStreamDefaultController<Uint8Array>) {}
-
-  async write(event: unknown): Promise<void> {
-    this.controller.enqueue(this.encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-  }
-}
-
-function sseResponse(events: unknown[]): Response {
-  return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-    },
-  });
-}
-
-function jsonErr(status: number, message: string): Response {
-  return Response.json({ error: "invalid_request", message }, { status });
-}
 
 function objectOrEmpty(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
