@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 18;
+const CURRENT_VERSION = 19;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -29,6 +29,7 @@ export function migrate(db: Database.Database): void {
     applyV16(db);
     applyV17(db);
     applyV18(db);
+    applyV19(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -53,6 +54,7 @@ export function migrate(db: Database.Database): void {
   if (v < 16) applyV16(db);
   if (v < 17) applyV17(db);
   if (v < 18) applyV18(db);
+  if (v < 19) applyV19(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1128,5 +1130,47 @@ function applyV18(db: Database.Database): void {
       ON llm_chat_messages(session_id, role);
 
     UPDATE meta_schema SET version = 18 WHERE id = 1;
+  `);
+}
+
+/** Allow AG-UI tool/result sidecar messages while preserving existing chat rows. */
+function applyV19(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE llm_chat_messages_v19 (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES llm_chat_sessions(id) ON DELETE CASCADE,
+      message_id TEXT NOT NULL,
+      message_index INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (
+        role IN ('developer', 'system', 'user', 'assistant', 'tool', 'activity', 'reasoning')
+      ),
+      raw_json TEXT NOT NULL,
+      plain_text TEXT NOT NULL DEFAULT '',
+      preview TEXT NOT NULL DEFAULT '',
+      status TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(session_id, message_id),
+      UNIQUE(session_id, message_index)
+    );
+
+    INSERT INTO llm_chat_messages_v19 (
+      id, session_id, message_id, message_index, role, raw_json, plain_text,
+      preview, status, created_at, updated_at
+    )
+    SELECT
+      id, session_id, message_id, message_index, role, raw_json, plain_text,
+      preview, status, created_at, updated_at
+    FROM llm_chat_messages;
+
+    DROP TABLE llm_chat_messages;
+    ALTER TABLE llm_chat_messages_v19 RENAME TO llm_chat_messages;
+
+    CREATE INDEX idx_llm_chat_messages_session_order
+      ON llm_chat_messages(session_id, message_index);
+    CREATE INDEX idx_llm_chat_messages_session_role
+      ON llm_chat_messages(session_id, role);
+
+    UPDATE meta_schema SET version = 19 WHERE id = 1;
   `);
 }

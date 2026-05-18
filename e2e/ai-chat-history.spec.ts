@@ -59,24 +59,72 @@ test("AI chat keeps switched CopilotKit sessions isolated at the runtime boundar
   expect(requestText).not.toContain("第二个问题");
 });
 
-test("AI chat registers safe CopilotKit tools and page context with the runtime", async ({ page }) => {
+test("AI chat passes feature flags without client-provided CopilotKit tools", async ({ page }) => {
   const store = new MockSessionStore();
   const runtimeRequests: unknown[] = [];
   await mockAiChatApis(page, store, runtimeRequests);
 
   await page.goto("/ai-chat");
+  await page.getByLabel("RAG").check();
+  await page.getByLabel("Web Search").check();
   await page.getByTestId("copilot-chat-textarea").fill("帮我找一下本机资料");
   await page.keyboard.press("Enter");
   await expect.poll(() => runtimeRequests.length).toBeGreaterThan(0);
 
   const requestText = JSON.stringify(runtimeRequests.at(-1));
-  expect(requestText).toContain("ai2nao_read_workspace_context");
-  expect(requestText).toContain("ai2nao_search_rag_evidence");
-  expect(requestText).toContain("ai2nao_confirm_session_delete");
-  expect(requestText).toContain("ai2nao 当前 AI 对话工作台状态");
+  expect(requestText).toContain('"useRag":true');
+  expect(requestText).toContain('"webSearchEnabled":true');
+  expect(requestText).not.toContain("ai2nao_read_workspace_context");
+  expect(requestText).not.toContain("ai2nao_search_rag_evidence");
+  expect(requestText).not.toContain("ai2nao_web_search");
 });
 
-async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeRequests: unknown[] = []) {
+test("AI chat renders the final answer in the same turn after a server-side web search tool result", async ({ page }) => {
+  const store = new MockSessionStore();
+  await mockAiChatApis(page, store, [], (threadId) => [
+    sse({ type: "RUN_STARTED", threadId, runId: `${threadId}:run` }),
+    sse({ type: "TEXT_MESSAGE_START", messageId: "search-preface", role: "assistant" }),
+    sse({ type: "TEXT_MESSAGE_CONTENT", messageId: "search-preface", delta: "我先查一下。" }),
+    sse({ type: "TEXT_MESSAGE_END", messageId: "search-preface" }),
+    sse({
+      type: "TOOL_CALL_START",
+      parentMessageId: "search-preface",
+      toolCallId: "web-search-1",
+      toolCallName: "ai2nao_web_search",
+    }),
+    sse({
+      type: "TOOL_CALL_ARGS",
+      toolCallId: "web-search-1",
+      delta: JSON.stringify({ query: "ai2nao web search" }),
+    }),
+    sse({ type: "TOOL_CALL_END", toolCallId: "web-search-1" }),
+    sse({
+      type: "TOOL_CALL_RESULT",
+      role: "tool",
+      messageId: "web-search-1-result",
+      toolCallId: "web-search-1",
+      content: JSON.stringify({ ok: true, evidence: [{ title: "搜索结果", url: "https://example.com" }] }),
+    }),
+    sse({ type: "TEXT_MESSAGE_START", messageId: "search-answer", role: "assistant" }),
+    sse({ type: "TEXT_MESSAGE_CONTENT", messageId: "search-answer", delta: "这是 web search 后的最终回答。" }),
+    sse({ type: "TEXT_MESSAGE_END", messageId: "search-answer" }),
+    sse({ type: "RUN_FINISHED", threadId, runId: `${threadId}:run` }),
+  ]);
+
+  await page.goto("/ai-chat");
+  await page.getByLabel("Web Search").check();
+  await page.getByTestId("copilot-chat-textarea").fill("搜索一下 ai2nao web search");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByText("这是 web search 后的最终回答。")).toBeVisible();
+});
+
+async function mockAiChatApis(
+  page: Page,
+  store: MockSessionStore,
+  runtimeRequests: unknown[] = [],
+  runtimeStream?: (threadId: string) => string[]
+) {
   await page.route("**/api/llm-chat/sessions**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -168,6 +216,26 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeReques
     })
   );
 
+  await page.route("**/api/web-search/status", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: "brave",
+        configured: true,
+        ok: true,
+        configPath: "/tmp/web-search.json",
+        capabilities: {
+          freshness: false,
+          safeSearch: false,
+          resultLanguage: false,
+          pageFetch: false,
+        },
+        cacheTtlMs: 300000,
+        error: null,
+      }),
+    })
+  );
+
   const handleCopilotKitRoute: Parameters<Page["route"]>[1] = async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -199,16 +267,17 @@ async function mockAiChatApis(page: Page, store: MockSessionStore, runtimeReques
       const session = store.get(threadId);
       const mergedBody = mergeRuntimeMessages(body, session?.messages ?? []);
       runtimeRequests.push(mergedBody);
+      const events = runtimeStream?.(threadId) ?? [
+        sse({ type: "RUN_STARTED", threadId, runId: `${threadId}:run` }),
+        sse({ type: "TEXT_MESSAGE_START", messageId: `${threadId}:assistant` }),
+        sse({ type: "TEXT_MESSAGE_CONTENT", messageId: `${threadId}:assistant`, delta: "这是一个确定性的测试回答。" }),
+        sse({ type: "TEXT_MESSAGE_END", messageId: `${threadId}:assistant` }),
+        sse({ type: "RUN_FINISHED", threadId, runId: `${threadId}:run` }),
+      ];
       return route.fulfill({
         status: 200,
         headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-        body: [
-          sse({ type: "RUN_STARTED", threadId, runId: `${threadId}:run` }),
-          sse({ type: "TEXT_MESSAGE_START", messageId: `${threadId}:assistant` }),
-          sse({ type: "TEXT_MESSAGE_CONTENT", messageId: `${threadId}:assistant`, delta: "这是一个确定性的测试回答。" }),
-          sse({ type: "TEXT_MESSAGE_END", messageId: `${threadId}:assistant` }),
-          sse({ type: "RUN_FINISHED", threadId, runId: `${threadId}:run` }),
-        ].join(""),
+        body: events.join(""),
       });
     }
 

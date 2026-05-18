@@ -5,6 +5,7 @@ import { createApp } from "../src/serve/app.js";
 import { openDatabase } from "../src/store/open.js";
 import {
   createLlmChatSession,
+  ensureLlmChatSession,
   getLlmChatSession,
   listLlmChatSessions,
   replaceLlmChatSessionMessages,
@@ -32,12 +33,52 @@ function assistantMessage(id: string, text: string) {
   };
 }
 
+function assistantToolCallMessage(id: string) {
+  return {
+    id,
+    role: "assistant",
+    toolCalls: [
+      {
+        id: "call-web-1",
+        type: "function",
+        function: {
+          name: "ai2nao_web_search",
+          arguments: JSON.stringify({ query: "Brave Search API", reason: "current web docs" }),
+        },
+      },
+    ],
+  };
+}
+
+function toolEvidenceMessage(id: string) {
+  return {
+    id,
+    role: "tool",
+    toolCallId: "call-web-1",
+    content: JSON.stringify({
+      ok: true,
+      kind: "evidence",
+      source: "web",
+      query: "Brave Search API",
+      generatedAt: "2026-05-17T00:00:00.000Z",
+      evidence: [
+        {
+          title: "Brave Search API",
+          url: "https://api.search.brave.com/",
+          snippet: "Search API docs",
+        },
+      ],
+      meta: { provider: "brave" },
+    }),
+  };
+}
+
 describe("LLM chat session storage", () => {
-  it("migrates v18 CopilotKit tables on fresh databases", () => {
+  it("migrates v19 CopilotKit tables on fresh databases", () => {
     const db = freshDb();
     try {
       const version = (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version;
-      expect(version).toBe(18);
+      expect(version).toBe(19);
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'llm_chat_%' ORDER BY name")
         .all() as { name: string }[];
@@ -66,6 +107,69 @@ describe("LLM chat session storage", () => {
       expect(detail.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
       expect(detail.messages[0].plain_text).toBe("Explain the bug");
       expect(JSON.parse(detail.messages[1].raw_json)).toMatchObject({ id: "a1" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("persists AG-UI tool calls and tool results without polluting title or message count", () => {
+    const db = freshDb();
+    try {
+      const session = createLlmChatSession(db);
+      const detail = replaceLlmChatSessionMessages(db, session.id, {
+        messages: [
+          userMessage("u1", "Find current Brave Search API docs"),
+          assistantToolCallMessage("a-tool"),
+          toolEvidenceMessage("tool-web"),
+          assistantMessage("a1", "I found one current web source."),
+        ],
+      });
+
+      expect(detail.title).toBe("Find current Brave Search API docs");
+      expect(detail.message_count).toBe(2);
+      expect(detail.messages.map((m) => m.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+      ]);
+      expect(detail.messages.find((m) => m.message_id === "a-tool")?.preview).toBe(
+        "[tool call] ai2nao_web_search"
+      );
+      expect(detail.messages.find((m) => m.message_id === "tool-web")?.preview).toBe(
+        "[evidence] web · 1 result"
+      );
+      expect(JSON.parse(detail.messages.find((m) => m.message_id === "tool-web")!.raw_json)).toMatchObject({
+        role: "tool",
+        toolCallId: "call-web-1",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("keeps legacy text-only CopilotKit sessions readable after the tool-message migration", () => {
+    const db = freshDb();
+    try {
+      const session = createLlmChatSession(db);
+      const detail = replaceLlmChatSessionMessages(db, session.id, {
+        messages: [
+          userMessage("u1", "Existing chat question"),
+          assistantMessage("a1", "Existing chat answer"),
+        ],
+      });
+
+      const reloaded = getLlmChatSession(db, detail.id);
+      expect(reloaded?.title).toBe("Existing chat question");
+      expect(reloaded?.message_count).toBe(2);
+      expect(reloaded?.messages.map((m) => m.plain_text)).toEqual([
+        "Existing chat question",
+        "Existing chat answer",
+      ]);
+      expect(reloaded?.messages.map((m) => JSON.parse(m.raw_json).role)).toEqual([
+        "user",
+        "assistant",
+      ]);
     } finally {
       db.close();
     }
@@ -147,6 +251,44 @@ describe("LLM chat session storage", () => {
       });
 
       expect(res.status).toBe(200);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("serves CopilotKit UI transport snapshots without CopilotKit backend runtime", async () => {
+    const db = freshDb();
+    try {
+      const app = createApp({ db });
+      ensureLlmChatSession(db, "thread-1");
+      replaceLlmChatSessionMessages(db, "thread-1", {
+        messages: [userMessage("u1", "之前的问题"), assistantMessage("a1", "之前的回答")],
+      });
+
+      const res = await app.request("/api/copilotkit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method: "agent/connect",
+          params: { agentId: "default" },
+          body: {
+            threadId: "thread-1",
+            runId: "run-1",
+            messages: [],
+            tools: [],
+            context: [],
+            forwardedProps: {},
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+      const text = await res.text();
+      expect(text).toContain("RUN_STARTED");
+      expect(text).toContain("MESSAGES_SNAPSHOT");
+      expect(text).toContain("之前的问题");
+      expect(text).toContain("RUN_FINISHED");
     } finally {
       db.close();
     }

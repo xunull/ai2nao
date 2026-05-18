@@ -627,3 +627,112 @@ Depends on / blocked by:
 - Atuin 目录活动派生层已落地
 - 每日摘要证据层设计稳定
 - 明确缓存指纹如何纳入目录活动 rule version、filter config hash 和 freshness 状态
+
+## AI Chat Web Search：网页正文抽取
+
+What: 为 Web Search 增加页面 fetch 和正文抽取，把搜索结果的 title/url/snippet 升级为可审计网页片段。
+
+Why: 首版只使用 Brave Search 返回的摘要，足够完成联网搜索闭环，但证据深度有限。正文抽取能让 AI 回答更可靠，也能和后续专用 Evidence Strip/Panel 更自然地结合。
+
+Pros:
+- 提升网页证据质量，减少只凭搜索摘要回答的问题
+- 为后续本机 RAG + Web 统一证据层提供更强内容来源
+- 能支持用户展开查看网页片段，而不是只看标题和 snippet
+
+Cons:
+- 需要处理超时、重定向、HTML 清洗、正文长度和恶意网页内容
+- 会引入 robots/版权摘要边界与更厚的测试矩阵
+
+Context:
+来自 `/plan-ceo-review` 对 AI Chat Web Search 的 SELECTIVE EXPANSION。用户选择 defer，不进入首版。首版先完成 SearchProvider、Brave provider、server-side tool、敏感查询拦截、短 TTL 内存缓存、最终回答证据引用和 SSE 验证。
+
+Effort estimate: M（human）→ S-M（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- AI Chat Web Search 首版已落地
+- SearchProvider typed errors 和性能预算稳定
+- Dedicated Evidence Strip/Panel UI 的交互边界已确认
+
+## AI Chat Web Search：专用 Evidence Strip/Panel UI
+
+What: 在 AI Chat 中增加独立证据条/证据面板，把 RAG 和 Web Search 的结构化 evidence 以可展开、可复制 URL/path、可区分来源的方式呈现。
+
+Why: 首版已经保证 Web Search 结果会被后端综合进最终回答，不再把 raw tool log 当用户回答。但长期看，用户需要能审计“答案用了哪些本机资料和网页结果”，而不是只能从最终回答文字里看引用。
+
+Pros:
+- 让本机 RAG + Web 当前信息的差异化更清楚
+- 降低用户排查搜索质量和引用来源的成本
+- 可以保留 CopilotKit 只做 UI 的边界，同时由 ai2nao 后端提供证据数据
+
+Cons:
+- 需要定义 CopilotKit UI 组件外的证据状态来源，避免把 CopilotKit tool/state 逻辑带回后端
+- 需要处理历史会话恢复、tool result 为空、失败 evidence_error、长 URL/path 和多工具结果的布局
+
+Context:
+来自 AI Chat Web Search 首版发布收口。专用证据面板没有进入 v1；v1 先确保服务端 tool 调用、DSML 拦截、AI SDK v6 tool-result schema、最终回答兜底和 URL/title 引用稳定。
+
+Effort estimate: M（human）→ S-M（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- AI Chat Web Search 首版运行稳定
+- AG-UI tool/result 持久化和最终回答证据综合稳定
+- 明确证据面板只消费 ai2nao 后端持久化结果，不引入 CopilotKit 后端逻辑
+
+## AI Chat Web Search：持久搜索缓存与 citation provenance
+
+What: 将 web search 结果、answer citation、provider 元数据和生成时刻持久化，支持会话回放时知道“当时搜到了什么、答案引用了哪些来源”。
+
+Why: 首版选择短 TTL 内存缓存，不把搜索词和结果落 SQLite。这保护隐私并降低首版复杂度，但长期看，AI 回答的引用如果不能回放，就很难审计和复盘。
+
+Pros:
+- 回放会话时能保留当时的网页证据上下文
+- 支持更强的 citation provenance 和调试能力
+- 为未来“本机资料 + Web 当前信息”的研究记录打基础
+
+Cons:
+- 需要明确搜索词、URL、摘要和引用的本地持久化隐私语义
+- 需要 TTL、清理策略、schema migration 和 stale UI
+- 会增加数据库、测试和文档维护成本
+
+Context:
+来自 `/plan-ceo-review` 对 AI Chat Web Search 的 SELECTIVE EXPANSION。用户选择首版只做短 TTL 内存缓存，本项作为后续设计记录；实现前必须重新确认隐私默认值和清理策略。
+
+Effort estimate: M-L（human）→ M（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- AI Chat Web Search 首版已落地
+- 统一 Evidence model 和 AG-UI tool/result 持久化稳定
+- 用户明确接受搜索词和搜索结果的本地持久化语义
+
+## AI Chat Web Search：freshness / 时间范围搜索参数
+
+What: 为 Web Search 增加 freshness 或时间范围参数，例如最近 24 小时、最近一周、指定年份，并在证据视图中显示实际使用的时间约束。
+
+Why: 首版只做通用搜索。对于“最新版本”“今天新闻”“最近政策变化”这类问题，严格时间过滤比依赖 provider 默认排序更可信。
+
+Pros:
+- 提升时效性问题的答案质量
+- 让用户看见搜索结果是否真的按时间约束过滤
+- 可以复用 SearchProvider status 中的 capabilities 来判断 provider 是否支持
+
+Cons:
+- Brave、Tavily、OpenAI hosted search 等 provider 的 freshness 语义不完全一致
+- 需要真实查询样本后再设计枚举，否则容易过早抽象
+
+Context:
+来自 `/plan-ceo-review` 对 AI Chat Web Search 的 SELECTIVE EXPANSION。用户选择 defer，不进入首版；首版 SearchRequest 只保留 `query` 和 `count`，Provider status 预留 capabilities。
+
+Effort estimate: M（human）→ S-M（CC+gstack）
+
+Priority: P2
+
+Depends on / blocked by:
+- AI Chat Web Search 首版已落地
+- 至少一个 provider 的基础搜索稳定
+- 收集到真实“最新/最近”类查询样本
