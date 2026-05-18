@@ -5,6 +5,15 @@ import type { Message } from "@ag-ui/client";
 const MAX_MESSAGES = 200;
 const MAX_SYNC_RAW_BYTES = 1_500_000;
 const PREVIEW_LEN = 140;
+const AG_UI_ROLES = new Set([
+  "developer",
+  "system",
+  "user",
+  "assistant",
+  "tool",
+  "activity",
+  "reasoning",
+]);
 
 export type LlmChatSessionSummary = {
   id: string;
@@ -21,7 +30,7 @@ export type LlmChatMessageRow = {
   session_id: string;
   message_id: string;
   message_index: number;
-  role: "system" | "user" | "assistant";
+  role: "developer" | "system" | "user" | "assistant" | "tool" | "activity" | "reasoning";
   raw_json: string;
   plain_text: string;
   preview: string;
@@ -156,6 +165,7 @@ export function replaceLlmChatSessionMessages(
   const explicitTitle = cleanSessionTitle(input.title);
   const title = explicitTitle ?? autoTitle(normalized) ?? row.title;
   const lastMessageAt = normalized.length > 0 ? now : null;
+  const visibleMessageCount = normalized.filter(isHumanVisibleMessage).length;
   const incomingIds = new Set(normalized.map((m) => m.message_id));
 
   const tx = db.transaction(() => {
@@ -163,7 +173,7 @@ export function replaceLlmChatSessionMessages(
       `UPDATE llm_chat_sessions
        SET title = ?, updated_at = ?, last_message_at = ?, message_count = ?
        WHERE id = ?`
-    ).run(title, now, lastMessageAt, normalized.length, sessionId);
+    ).run(title, now, lastMessageAt, visibleMessageCount, sessionId);
 
     const existing = db
       .prepare("SELECT message_id FROM llm_chat_messages WHERE session_id = ?")
@@ -225,28 +235,27 @@ function normalizeAgUiMessage(raw: Message, index: number, now: string) {
   if (!raw || typeof raw !== "object") {
     throw new LlmChatSessionError(400, `message at index ${index} must be an object`);
   }
-  if (!["system", "user", "assistant"].includes(raw.role)) {
+  const role = typeof raw.role === "string" ? raw.role : "";
+  if (!AG_UI_ROLES.has(role)) {
     throw new LlmChatSessionError(
       400,
       `message at index ${index} has unsupported role ${String(raw.role)}`
     );
   }
-  if (raw.role === "assistant" && "toolCalls" in raw && raw.toolCalls?.length) {
-    throw new LlmChatSessionError(400, "tool calls are not enabled for AI chat");
-  }
-  const msg = raw as Extract<Message, { role: "system" | "user" | "assistant" }>;
+  const msg = raw as Message & { id?: string; role: string };
   if (!msg.id?.trim()) {
     throw new LlmChatSessionError(400, `message at index ${index} is missing id`);
   }
   const rawJson = JSON.stringify(msg);
   const plainText = textFromAgUiMessage(msg);
+  const preview = previewForAgUiMessage(msg, plainText);
   return {
     message_id: msg.id.trim(),
     message_index: index,
     role: msg.role,
     raw_json: rawJson,
     plain_text: plainText,
-    preview: previewText(plainText),
+    preview,
     status: extractStatus(msg),
     created_at: now,
     updated_at: now,
@@ -283,6 +292,51 @@ function cleanSessionTitle(value: unknown): string | null {
 function autoTitle(messages: Array<{ role: string; plain_text: string }>): string | null {
   const user = messages.find((m) => m.role === "user" && m.plain_text.trim());
   return cleanSessionTitle(user?.plain_text ?? null);
+}
+
+function isHumanVisibleMessage(message: { role: string; plain_text: string }): boolean {
+  return ["user", "assistant"].includes(message.role) && Boolean(message.plain_text.trim());
+}
+
+function previewForAgUiMessage(message: Message & { role: string }, plainText: string): string {
+  if (message.role === "assistant" && "toolCalls" in message && message.toolCalls?.length) {
+    const names = message.toolCalls
+      .map((call) => call.function?.name)
+      .filter((name): name is string => Boolean(name))
+      .slice(0, 3);
+    return names.length > 0 ? `[tool call] ${names.join(", ")}` : "[tool call]";
+  }
+
+  if (message.role === "tool") {
+    return previewToolContent("content" in message ? message.content : "");
+  }
+
+  if (message.role === "activity") return "[activity]";
+  if (message.role === "reasoning") return "[reasoning]";
+  return previewText(plainText);
+}
+
+function previewToolContent(content: unknown): string {
+  if (typeof content !== "string" || !content.trim()) return "[tool result]";
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const rec = parsed as Record<string, unknown>;
+      const kind = typeof rec.kind === "string" ? rec.kind : "tool result";
+      const source = typeof rec.source === "string" ? rec.source : null;
+      const evidence = Array.isArray(rec.evidence) ? rec.evidence : [];
+      if (kind === "evidence") {
+        return `[evidence] ${source ? `${source} · ` : ""}${evidence.length} result${evidence.length === 1 ? "" : "s"}`;
+      }
+      if (kind === "evidence_error") {
+        const code = typeof rec.code === "string" ? rec.code : "error";
+        return `[evidence error] ${source ? `${source} · ` : ""}${code}`;
+      }
+    }
+  } catch {
+    // Plain text tool results still get a compact preview.
+  }
+  return previewText(content) || "[tool result]";
 }
 
 function previewText(value: string): string {

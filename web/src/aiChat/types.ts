@@ -37,6 +37,21 @@ export type RagStatus = {
   };
 };
 
+export type WebSearchStatus = {
+  provider: "brave";
+  configured: boolean;
+  ok: boolean;
+  configPath: string;
+  capabilities: {
+    freshness: boolean;
+    safeSearch: boolean;
+    resultLanguage: boolean;
+    pageFetch: boolean;
+  };
+  cacheTtlMs: number;
+  error: string | null;
+};
+
 export type RagEvidenceHit = {
   id?: number;
   chunkId: number;
@@ -72,7 +87,7 @@ export type AiChatStoredMessage = {
   session_id: string;
   message_id: string;
   message_index: number;
-  role: "system" | "user" | "assistant";
+  role: "developer" | "system" | "user" | "assistant" | "tool" | "activity" | "reasoning";
   raw_json: string;
   plain_text: string;
   preview: string;
