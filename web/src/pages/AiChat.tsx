@@ -6,8 +6,12 @@ import {
   deleteAiChatSession,
   listAiChatSessions,
 } from "../aiChat/sessionApi";
-import { AiChatCopilotTools } from "../aiChat/copilotTools";
-import type { AiChatSessionSummary, LlmChatStatus, RagStatus } from "../aiChat/types";
+import type {
+  AiChatSessionSummary,
+  LlmChatStatus,
+  RagStatus,
+  WebSearchStatus,
+} from "../aiChat/types";
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
   const cls =
@@ -39,6 +43,9 @@ export function AiChat() {
   const [rag, setRag] = useState<RagStatus | null>(null);
   const [ragErr, setRagErr] = useState<string | null>(null);
   const [useRag, setUseRag] = useState(false);
+  const [webSearch, setWebSearch] = useState<WebSearchStatus | null>(null);
+  const [webSearchErr, setWebSearchErr] = useState<string | null>(null);
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [sessions, setSessions] = useState<AiChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionErr, setSessionErr] = useState<string | null>(null);
@@ -105,6 +112,14 @@ export function AiChat() {
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setRagErr(e instanceof Error ? e.message : String(e));
       });
+    apiGet<WebSearchStatus>("/api/web-search/status", { signal: ac.signal })
+      .then((s) => {
+        setWebSearch(s);
+        setWebSearchErr(null);
+      })
+      .catch((e: unknown) => {
+        if (!ac.signal.aborted) setWebSearchErr(e instanceof Error ? e.message : String(e));
+      });
     return () => ac.abort();
   }, []);
 
@@ -132,6 +147,8 @@ export function AiChat() {
 
   const disabled = cfg?.configured !== true;
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
+  const webSearchAvailable = webSearch?.ok === true;
+  const effectiveWebSearch = useWebSearch && webSearchAvailable;
 
   return (
     <div className="cursor-chat-root -mx-1 h-[calc(100vh-112px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
@@ -218,7 +235,7 @@ export function AiChat() {
                 {activeSession?.title ?? "新对话"}
               </h2>
               <p className="mt-1 text-sm text-neutral-500">
-                每个历史会话独立连接 CopilotKit 线程，消息由本机 SQLite 保存。
+                每个历史会话独立保存到本机 SQLite，模型与工具流程由 ai2nao 后端掌控。
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -230,6 +247,14 @@ export function AiChat() {
                 label={rag?.ok ? `RAG ${rag.chunkCount} chunks` : ragErr ?? "RAG 不可用"}
                 tone={rag?.ok ? "ok" : "idle"}
               />
+              <StatusPill
+                label={
+                  webSearch?.ok
+                    ? `Web ${webSearch.provider}`
+                    : webSearch?.error ?? webSearchErr ?? "Web 未配置"
+                }
+                tone={webSearch?.ok ? "ok" : "idle"}
+              />
               <label className="flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700">
                 <input
                   type="checkbox"
@@ -238,6 +263,18 @@ export function AiChat() {
                   className="h-3.5 w-3.5"
                 />
                 RAG
+              </label>
+              <label className={`flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium ${
+                webSearchAvailable ? "text-neutral-700" : "text-neutral-400"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={useWebSearch}
+                  disabled={!webSearchAvailable}
+                  onChange={(e) => setUseWebSearch(e.currentTarget.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Web Search
               </label>
             </div>
           </header>
@@ -251,7 +288,7 @@ export function AiChat() {
               <CopilotKit
                 runtimeUrl="/api/copilotkit"
                 useSingleEndpoint={true}
-                properties={{ useRag, ragTopK: 8 }}
+                properties={{ useRag, ragTopK: 8, webSearchEnabled: effectiveWebSearch }}
                 onError={handleChatError}
                 showDevConsole={false}
               >
@@ -261,18 +298,6 @@ export function AiChat() {
                       {chatErr}
                     </div>
                   ) : null}
-                  <AiChatCopilotTools
-                    activeSession={activeSession}
-                    cfg={cfg}
-                    rag={rag}
-                    sessions={sessions}
-                    useRag={useRag}
-                    onSelectSession={(sessionId) => {
-                      setActiveSessionId(sessionId);
-                      setChatErr(null);
-                    }}
-                    onDeleteSession={deleteAndSelectNext}
-                  />
                   <CopilotChat
                     key={activeSessionId}
                     threadId={activeSessionId}

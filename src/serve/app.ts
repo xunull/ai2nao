@@ -67,6 +67,7 @@ import { registerHuggingfaceRoutes } from "../huggingface/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
 import { registerSoftwareRoutes } from "../software/routes.js";
 import { registerVscodeRoutes } from "../vscode/routes.js";
+import { registerWebSearchRoutes } from "../webSearch/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -167,6 +168,7 @@ export function createApp(opts: ServeOptions): Hono {
 
   registerLlmChatRoutes(app, { db, ragDb: rag?.db });
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
+  registerWebSearchRoutes(app);
   registerGithubRoutes(app, db);
   registerHuggingfaceRoutes(app, db);
   registerLmStudioRoutes(app, db);
