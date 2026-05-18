@@ -10,10 +10,11 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 ## Project Architecture Iron Laws
 
-- CopilotKit 在本项目中只能作为前端 AI 对话 UI 显示库使用。禁止使用 CopilotKit 的后端 agent runtime、tool calling、action system、state/context 注入、LLM 调用编排、stream conversion 或任何会影响后端 AI 逻辑的能力。
+- CopilotKit 在本项目中默认只能作为前端 AI 对话 UI 显示库使用。唯一允许的后端例外是：CopilotKit runtime 可以作为最薄 transport adapter，用于兼容 CopilotKit / AG-UI 的 HTTP/SSE 路由、agent discovery、run/connect/stop 生命周期和传输协议。
+- 即使使用 CopilotKit runtime transport adapter，也禁止让 CopilotKit 接管 tool calling、frontend/backend actions、state/context 注入、LLM 调用编排、AI SDK stream conversion、MCP/A2UI/generative UI、tool result 后是否继续回答、消息修复或持久化语义。
 - AI 对话的后端逻辑必须由 ai2nao 自己掌控：模型调用、server-side tools、RAG、Web Search、tool result 回传、多步推理、消息持久化和可见输出都必须在 ai2nao 后端实现。
 - 前端可以通过 CopilotKit 组件渲染聊天界面，但不得注册业务 tools，不得把 CopilotKit client-provided tools/page context 作为后端事实来源，不得让 CopilotKit 决定 tool 调用后模型是否继续回答。
-- 如果未来需要兼容 CopilotKit 的传输协议，也只能把它当作 UI transport 适配层；业务语义和执行流程必须保持在 ai2nao 后端，不得引入 CopilotKit 后端逻辑依赖。
+- 如果未来引入或重构 CopilotKit runtime adapter，必须先抽出 ai2nao 自己的 turn runner，并补齐 parity/regression tests，证明 tools/context/state 被拒绝或忽略，Web Search/RAG tool result 会在同一轮综合成最终可见回答。
 
 ## Skill routing
 

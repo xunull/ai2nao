@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.17 — 2026-05-18
+
+### Changed
+
+- Use CopilotKit runtime only as the thin AI Chat transport adapter while keeping model calls, server-side tools, Web Search final answers, and persistence inside ai2nao.
+- Document the allowed CopilotKit runtime boundary in the project architecture rules and AI Chat/Web Search docs.
+
+### Fixed
+
+- Reject CopilotKit client tools, page context, and shared state before model execution so frontend UI state cannot alter backend AI behavior.
+- Add direct CopilotKit multi-route coverage for run/connect/info/stop and keep Web Search answers visible in the same turn after tool results.
+- Let Playwright e2e run on an alternate `E2E_PORT` so tests do not accidentally reuse another local app on port 5173.
+
 ## 0.3.16 — 2026-05-18
 
 ### Added
