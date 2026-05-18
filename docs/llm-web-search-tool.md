@@ -1,6 +1,6 @@
 # LLM Web Search Tool 技术说明
 
-本文说明 ai2nao 的 Web Search tool 如何接入 LLM 对话链路。核心原则是：CopilotKit 只负责前端 UI 和 AG-UI 事件展示，不参与后端 tool 选择、执行、消息修复或最终回答生成；这些逻辑全部由 ai2nao 后端 runtime 控制。
+本文说明 ai2nao 的 Web Search tool 如何接入 LLM 对话链路。核心原则是：CopilotKit 只负责前端 UI 和最薄 runtime transport adapter，不参与后端 tool 选择、执行、消息修复、AI SDK stream conversion 或最终回答生成；这些逻辑全部由 ai2nao 后端 turn runner 控制。
 
 ## 目标
 
@@ -18,23 +18,28 @@ Web Search tool 用来让 LLM 在需要当前互联网信息时调用服务端�
 ```mermaid
 sequenceDiagram
   participant UI as React AI Chat UI
-  participant Runtime as ai2nao Copilot-compatible Runtime
+  participant Runtime as CopilotKit Transport Adapter
+  participant Turn as ai2nao Turn Runner
   participant SDK as AI SDK streamText
   participant LLM as OpenAI-compatible LLM
   participant Search as WebSearchService
 
   UI->>Runtime: POST /api/copilotkit agent/run<br/>messages + forwardedProps.webSearchEnabled
-  Runtime->>Runtime: merge persisted/input AG-UI messages
-  Runtime->>Runtime: buildAi2NaoServerTools()
-  Runtime->>SDK: streamText({ model, messages, tools, stopWhen })
+  Runtime->>Turn: pass AG-UI RunAgentInput only
+  Turn->>Turn: reject client tools/context/state
+  Turn->>Turn: merge persisted/input AG-UI messages
+  Turn->>Turn: buildAi2NaoServerTools()
+  Turn->>SDK: streamText({ model, messages, tools, stopWhen })
   SDK->>LLM: prompt + ai2nao_web_search schema
-  LLM-->>SDK: tool-call 或 DSML text tool call
-  SDK-->>Runtime: fullStream parts
-  Runtime->>Search: execute ai2nao_web_search
-  Search-->>Runtime: AiEvidenceToolResult
+  LLM-->>SDK: tool-call or DSML text tool call
+  SDK-->>Turn: fullStream parts
+  Turn->>Search: execute ai2nao_web_search
+  Search-->>Turn: AiEvidenceToolResult
+  Turn-->>Runtime: AG-UI TOOL_CALL_* events
   Runtime-->>UI: AG-UI TOOL_CALL_* events
-  Runtime->>SDK: final answer call with flattened evidence if needed
-  SDK-->>Runtime: final TEXT_MESSAGE_CHUNK
+  Turn->>SDK: final answer call with flattened evidence if needed
+  SDK-->>Turn: final TEXT_MESSAGE_CHUNK
+  Turn-->>Runtime: final answer chunks
   Runtime-->>UI: final answer chunks
 ```
 
@@ -48,7 +53,7 @@ sequenceDiagram
 }
 ```
 
-前端不会注册 `ai2nao_web_search` 这个 tool，也不会执行搜索。后端在 `validateAi2NaoCopilotInput()` 中拒绝 client-provided tools：如果请求里带了 `tools`，会直接报错。这样可以保证 CopilotKit 不影响后端 tool 行为。
+前端不会注册 `ai2nao_web_search` 这个 tool，也不会执行搜索。后端在 `validateAi2NaoCopilotInput()` 中拒绝 client-provided tools、非空 page context 和非空 shared state：如果请求里带了这些 CopilotKit 业务语义输入，会直接报错。这样可以保证 CopilotKit runtime 只做 transport，不影响后端 tool 行为。
 
 ## Tool 注册
 
@@ -276,8 +281,9 @@ BRAVE_SEARCH_API_KEY=...
 
 ## 关键不变量
 
-- CopilotKit 只做 UI 展示，不参与后端 tool 逻辑。
+- CopilotKit 只做 UI 展示和最薄 runtime transport，不参与后端 tool 逻辑。
 - 前端只传 `webSearchEnabled`，不传 tools。
+- CopilotKit page context/shared state 不能作为后端事实来源。
 - Web Search tool 只在后端注册和执行。
 - DSML 文本永远不能作为 assistant 文本显示给用户。
 - tool result 必须被综合为最终回答；没有最终回答时必须触发兜底。

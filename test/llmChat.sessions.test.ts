@@ -251,12 +251,52 @@ describe("LLM chat session storage", () => {
       });
 
       expect(res.status).toBe(200);
+      const info = (await res.json()) as {
+        agents?: {
+          default?: {
+            className?: string;
+            capabilities?: { tools?: { clientProvided?: boolean } };
+          };
+        };
+      };
+      expect(info.agents?.default?.className).toBe("Ai2NaoTransportAgent");
+      expect(info.agents?.default?.capabilities?.tools?.clientProvided).toBe(false);
     } finally {
       db.close();
     }
   });
 
-  it("serves CopilotKit UI transport snapshots without CopilotKit backend runtime", async () => {
+  it("serves direct CopilotKit v2 multi-route info and stop endpoints", async () => {
+    const db = freshDb();
+    try {
+      const app = createApp({ db });
+      const infoRes = await app.request("/api/copilotkit/info");
+
+      expect(infoRes.status).toBe(200);
+      const info = (await infoRes.json()) as {
+        agents?: {
+          default?: {
+            className?: string;
+            capabilities?: { tools?: { clientProvided?: boolean } };
+          };
+        };
+      };
+      expect(info.agents?.default?.className).toBe("Ai2NaoTransportAgent");
+      expect(info.agents?.default?.capabilities?.tools?.clientProvided).toBe(false);
+
+      const stopRes = await app.request("/api/copilotkit/agent/default/stop/not-running", {
+        method: "POST",
+      });
+      expect(stopRes.status).toBe(200);
+      const stopBody = (await stopRes.json()) as { stopped?: boolean; message?: string };
+      expect(stopBody.stopped).toBe(false);
+      expect(stopBody.message).toContain("No active run");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("serves CopilotKit UI transport snapshots through the runtime transport adapter", async () => {
     const db = freshDb();
     try {
       const app = createApp({ db });
@@ -277,6 +317,7 @@ describe("LLM chat session storage", () => {
             messages: [],
             tools: [],
             context: [],
+            state: {},
             forwardedProps: {},
           },
         }),
@@ -289,6 +330,25 @@ describe("LLM chat session storage", () => {
       expect(text).toContain("MESSAGES_SNAPSHOT");
       expect(text).toContain("之前的问题");
       expect(text).toContain("RUN_FINISHED");
+
+      const multiRouteRes = await app.request("/api/copilotkit/agent/default/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-1",
+          runId: "run-2",
+          messages: [],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+      expect(multiRouteRes.status).toBe(200);
+      expect(multiRouteRes.headers.get("content-type")).toContain("text/event-stream");
+      const multiRouteText = await multiRouteRes.text();
+      expect(multiRouteText).toContain("MESSAGES_SNAPSHOT");
+      expect(multiRouteText).toContain("之前的问题");
     } finally {
       db.close();
     }
