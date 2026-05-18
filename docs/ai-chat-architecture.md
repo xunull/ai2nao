@@ -4,7 +4,7 @@
 
 ## 目标
 
-- 前端只使用 CopilotKit 的运行时和 `CopilotChat` 组件，不再维护影子消息、前端 sync 或 assistant-ui codec。
+- 前端只使用 CopilotKit 的 `CopilotChat` 组件和 CopilotKit / AG-UI transport，不再维护影子消息、前端 sync 或 assistant-ui codec。
 - SQLite 保存 AG-UI 原始消息，后端按 `threadId` 做会话隔离、恢复和持久化。
 - 模型调用由 `/api/copilotkit` 承担，旧 `POST /api/llm-chat` 流式接口已删除。
 - 当前版本只支持普通 system/user/assistant 文本消息；工具调用、前端 actions 和生成式 UI 显式拒绝。
@@ -20,7 +20,7 @@
 - 切换会话时用 `key={activeSessionId}` 重建 CopilotKit chat，避免旧 thread 状态泄漏。
 - 页面根容器固定 PC 桌面高度，`ai-chat-thread-shell` 承载滚动消息区和底部 composer。
 
-`web/src/aiChat/sessionApi.ts` 只保留 session CRUD。不存在前端消息同步接口，消息持久化由 CopilotKit runtime 的 runner 在后端完成。
+`web/src/aiChat/sessionApi.ts` 只保留 session CRUD。不存在前端消息同步接口，消息持久化由 ai2nao 后端 turn runner 完成；CopilotKit runtime 只负责 transport 层生命周期和 SSE 输出。
 
 ## 后端边界
 
@@ -28,7 +28,7 @@
 
 - `src/llmChat/chatRoutes.ts`：只保留 `GET /api/llm-chat/status`。
 - `src/llmChat/sessionRoutes.ts`：session CRUD。
-- `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，桥接 CopilotKit runtime、AI SDK 模型调用、RAG 上下文和 SQLite 持久化。
+- `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
 
 `src/llmChat/sessions.ts` 是协议无关的 AG-UI 持久化层：
 
