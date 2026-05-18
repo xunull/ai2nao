@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.16 — 2026-05-18
+
+### Added
+
+- Add server-side AI Chat Web Search with Brave Search configuration, status diagnostics, sensitive query blocking, in-memory caching, and structured local/web evidence results.
+- Add ai2nao-owned AI chat tools for RAG and Web Search, with CopilotKit kept as the UI transport only.
+- Add regression coverage for AI SDK tool-result schema, DeepSeek DSML text tool calls, final-answer fallback, web search service behavior, and AI Chat e2e rendering.
+
+### Changed
+
+- Replace the CopilotKit backend runtime dependency with an ai2nao-owned CopilotKit-compatible SSE runtime for `/api/copilotkit`.
+- Persist AG-UI assistant tool calls and `role: tool` evidence messages so search/RAG results survive session reloads and can be used in later turns.
+- Route web-search and RAG tool results through a final answer synthesis step so the page receives a readable answer with result titles and URLs/paths.
+
+### Fixed
+
+- Prevent DeepSeek-style `<｜｜DSML｜｜tool_calls>` markup from appearing in the chat UI by parsing it server-side and executing the matching ai2nao tool.
+- Fix `Invalid prompt: The messages do not match the ModelMessage[] schema` by restoring tool results with AI SDK v6 `{ type, value }` output objects.
+- Add a deterministic evidence fallback when a model stops after tool results or keeps trying to call tools during final-answer generation.
+
 ## 0.3.15 — 2026-05-17
 
 ### Added

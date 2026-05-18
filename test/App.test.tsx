@@ -216,6 +216,22 @@ describe("App routes", () => {
             },
           });
         }
+        if (url.endsWith("/api/web-search/status")) {
+          return json({
+            provider: "brave",
+            configured: true,
+            ok: true,
+            configPath: "/tmp/web-search.json",
+            capabilities: {
+              freshness: false,
+              safeSearch: false,
+              resultLanguage: false,
+              pageFetch: false,
+            },
+            cacheTtlMs: 300000,
+            error: null,
+          });
+        }
         if (url.endsWith("/api/llm-chat/sessions?limit=50")) {
           return json({ sessions: [] });
         }

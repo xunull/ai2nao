@@ -74,6 +74,13 @@ export function defaultRagConfigPath(): string {
   return `${home}/.ai2nao/rag.json`;
 }
 
+/** JSON config for AI chat web search (`~/.ai2nao/web-search.json`). */
+export function defaultWebSearchConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/web-search.json";
+  return `${home}/.ai2nao/web-search.json`;
+}
+
 /** Dedicated SQLite for RAG chunks + FTS5 (separate from main index.db). */
 export function defaultRagDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
