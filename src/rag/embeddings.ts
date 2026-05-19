@@ -1,7 +1,17 @@
 import type { RagConfigV1 } from "./types.js";
-import { readLlmChatConfig } from "../llmChat/config.js";
+import { readLlmChatConfig, type LlmChatConfig } from "../llmChat/config.js";
 
 export type EmbeddingResult = { dim: number; vector: Float32Array };
+
+function embeddingFallbackFromLlmConfig(llm: LlmChatConfig | null): {
+  baseURL: string;
+  apiKey?: string;
+} {
+  if (!llm || (llm.provider !== "openai" && llm.provider !== "openai-compatible")) {
+    return { baseURL: "" };
+  }
+  return { baseURL: llm.baseURL, apiKey: llm.apiKey };
+}
 
 /**
  * OpenAI-compatible POST /v1/embeddings. Uses rag embedding block or LLM config base + key.
@@ -15,13 +25,14 @@ export async function fetchEmbedding(
     throw new Error("embedding not enabled in rag.json");
   }
   const llm = readLlmChatConfig();
-  const baseURL = (emb.baseURL || llm?.baseURL || "").replace(/\/$/, "");
+  const llmFallback = embeddingFallbackFromLlmConfig(llm);
+  const baseURL = (emb.baseURL || llmFallback.baseURL).replace(/\/$/, "");
   if (!baseURL) {
     throw new Error("embedding baseURL missing (set in rag.json or llm-chat.json)");
   }
   const apiKey =
     emb.apiKey?.trim() ||
-    llm?.apiKey?.trim() ||
+    llmFallback.apiKey?.trim() ||
     process.env.AI2NAO_LLM_API_KEY?.trim() ||
     process.env.OPENAI_API_KEY?.trim() ||
     "local-no-key";
@@ -111,13 +122,14 @@ export async function fetchEmbeddingsBatch(
     return [];
   }
   const llm = readLlmChatConfig();
-  const baseURL = (emb.baseURL || llm?.baseURL || "").replace(/\/$/, "");
+  const llmFallback = embeddingFallbackFromLlmConfig(llm);
+  const baseURL = (emb.baseURL || llmFallback.baseURL).replace(/\/$/, "");
   if (!baseURL) {
     throw new Error("embedding baseURL missing");
   }
   const apiKey =
     emb.apiKey?.trim() ||
-    llm?.apiKey?.trim() ||
+    llmFallback.apiKey?.trim() ||
     process.env.AI2NAO_LLM_API_KEY?.trim() ||
     process.env.OPENAI_API_KEY?.trim() ||
     "local-no-key";
