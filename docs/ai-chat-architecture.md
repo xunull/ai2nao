@@ -7,15 +7,16 @@
 - 前端只使用 CopilotKit 的 `CopilotChat` 组件和 CopilotKit / AG-UI transport，不再维护影子消息、前端 sync 或 assistant-ui codec。
 - SQLite 保存 AG-UI 原始消息，后端按 `threadId` 做会话隔离、恢复和持久化。
 - 模型调用由 `/api/copilotkit` 承担，旧 `POST /api/llm-chat` 流式接口已删除。
-- 当前版本只支持普通 system/user/assistant 文本消息；工具调用、前端 actions 和生成式 UI 显式拒绝。
+- AI-callable tools 只允许在后端构建；前端 actions、前端 tools、页面 context、shared state 和生成式 UI 显式拒绝。
 - 输入框固定在对话工作台底部，长回答只滚动消息区，不推动页面布局。
 
 ## 前端边界
 
 `web/src/pages/AiChat.tsx` 是唯一的 AI 对话页面：
 
-- 通过 `/api/llm-chat/status` 和 `/api/rag/status` 展示本地模型与 RAG 状态。
+- 通过 `/api/llm-chat/status`、`/api/rag/status` 和 `/api/web-search/status` 展示本地模型、RAG 与 Web Search 状态。
 - 通过 `/api/llm-chat/sessions` 做会话列表、创建、详情和删除。
+- 顶栏只传能力开关：RAG、Web Search、Memory。业务 tool 执行仍由后端 runner 决定。
 - 使用 `CopilotKit runtimeUrl="/api/copilotkit"` 和 `CopilotChat threadId={activeSessionId}` 绑定当前会话。
 - 切换会话时用 `key={activeSessionId}` 重建 CopilotKit chat，避免旧 thread 状态泄漏。
 - 页面根容器固定 PC 桌面高度，`ai-chat-thread-shell` 承载滚动消息区和底部 composer。
@@ -28,7 +29,10 @@
 
 - `src/llmChat/chatRoutes.ts`：只保留 `GET /api/llm-chat/status`。
 - `src/llmChat/sessionRoutes.ts`：session CRUD。
-- `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
+- `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search/Session Memory、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
+- `src/llmTools/`：按 `forwardedProps` 构建后端 AI SDK tools，目前包括 `ai2nao_search_rag_evidence`、`ai2nao_web_search` 和 `ai2nao_search_session_memory`。这里是 LLM tool adapter/registry 层，不承载完整业务能力实现。
+- `src/sessionMemory/service.ts`：只读搜索现有 AI Chat、Codex、Claude Code、Cursor 会话来源，返回短 evidence snippets；不新增索引、不回传完整 transcript。
+- Session Memory tool 的实现细节、查询范围和触发规则见 [`docs/ai-chat-session-memory-tool.md`](ai-chat-session-memory-tool.md)。
 
 `src/llmChat/sessions.ts` 是协议无关的 AG-UI 持久化层：
 
@@ -50,6 +54,8 @@ schema v18 会删除并重建：
 
 - `test/llmChat.sessions.test.ts`：AG-UI session 创建、列表、详情、持久化和 schema v18。
 - `test/llmChat.chatRoutes.test.ts`：`GET /api/llm-chat/status`。
+- `test/sessionMemory.test.ts`：Session Memory evidence envelope、AI Chat 命中、坏输入和局部来源失败降级。
+- `test/llmChat.copilotRuntime.run.test.ts`：server-side tools 注册、Web/Search final-answer 兜底、拒绝 client-provided CopilotKit tools/context/state。
 - `test/aiChat.sessionApi.test.ts`：前端 session CRUD API 映射。
 - `test/App.test.tsx`：AI 对话页固定高度工作台和 CopilotKit 外壳。
 - `e2e/ai-chat-history.spec.ts`：浏览器级工作台、会话创建/删除、跨会话 runtime 隔离。

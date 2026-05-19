@@ -63,7 +63,7 @@ sequenceDiagram
 const serverTools = buildAi2NaoServerTools(deps, input.forwardedProps);
 ```
 
-`buildAi2NaoServerTools()` 位于 `src/llmChat/tools.ts`。当 `forwardedProps.webSearchEnabled === true` 时，它注册 `ai2nao_web_search`：
+`buildAi2NaoServerTools()` 位于 `src/llmTools/registry.ts`。当 `forwardedProps.webSearchEnabled === true` 时，它通过 `src/llmTools/webSearchTool.ts` 注册 `ai2nao_web_search`：
 
 ```ts
 tools.ai2nao_web_search = tool<WebSearchInput, AiEvidenceToolResult>({
@@ -84,7 +84,7 @@ tools.ai2nao_web_search = tool<WebSearchInput, AiEvidenceToolResult>({
 - `reason`: 可选，说明为什么需要搜索。
 - `count`: 可选，结果数量。
 
-输出类型是统一证据结构 `AiEvidenceToolResult`，定义在 `src/aiEvidence.ts`。
+输出类型是统一证据结构 `AiEvidenceToolResult`，定义在 `src/llmTools/evidence.ts`。
 
 ## Search Service
 
