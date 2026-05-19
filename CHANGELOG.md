@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.18 — 2026-05-19
+
+### Added
+
+- Add configured AI SDK chat providers for DeepSeek, Moonshot/Kimi, Alibaba/Qwen, OpenAI, and OpenAI-compatible endpoints.
+- Add provider-specific `llm-chat.config` examples and README guidance for selecting the matching provider and API key environment variable.
+- Add regression coverage for provider config parsing, model factory selection, API key fallback order, and RAG embedding endpoint inheritance.
+
+### Changed
+
+- Keep RAG embedding fallback limited to OpenAI and OpenAI-compatible LLM configs so DeepSeek, Moonshot, and Alibaba chat endpoints are not reused as embedding endpoints.
+
 ## 0.3.17 — 2026-05-18
 
 ### Changed

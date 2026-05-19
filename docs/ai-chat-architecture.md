@@ -29,6 +29,7 @@
 - `src/llmChat/chatRoutes.ts`：只保留 `GET /api/llm-chat/status`。
 - `src/llmChat/sessionRoutes.ts`：session CRUD。
 - `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
+- `src/llmChat/model.ts`：根据 `~/.ai2nao/llm-chat.json` 里的 `provider` 显式选择 AI SDK provider。DeepSeek 官方 API 走 `@ai-sdk/deepseek`，Moonshot/Kimi 走 `@ai-sdk/moonshotai`，Alibaba Cloud DashScope/Qwen 走 `@ai-sdk/alibaba`，OpenAI 走 `@ai-sdk/openai`，LM Studio/Ollama/代理网关等通用接口走 `@ai-sdk/openai-compatible`。
 
 `src/llmChat/sessions.ts` 是协议无关的 AG-UI 持久化层：
 

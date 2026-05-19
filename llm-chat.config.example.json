@@ -1,6 +1,6 @@
 {
-  "provider": "openai-compatible",
-  "baseURL": "https://api.openai.com/v1",
-  "apiKey": "sk-your-key-here",
-  "model": "gpt-4o-mini"
+  "provider": "deepseek",
+  "baseURL": "https://api.deepseek.com",
+  "apiKey": "sk-your-deepseek-key-here",
+  "model": "deepseek-v4-pro"
 }
