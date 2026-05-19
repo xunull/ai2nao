@@ -179,6 +179,44 @@ Atuin 目录活动位于 `/atuin/directories`。它从只读 Atuin `history.db` 
 npm run dev:ui
 ```
 
+## AI 对话模型配置
+
+`/ai-chat` 的模型调用由 ai2nao 后端负责，CopilotKit 只作为 transport/UI。复制示例配置到 `~/.ai2nao/llm-chat.json`：
+
+```bash
+cp llm-chat.config.example.json ~/.ai2nao/llm-chat.json
+```
+
+DeepSeek 官方 API 使用 first-party provider：
+
+```json
+{
+  "provider": "deepseek",
+  "baseURL": "https://api.deepseek.com",
+  "apiKey": "sk-your-deepseek-key-here",
+  "model": "deepseek-v4-pro"
+}
+```
+
+OpenAI-compatible 本地服务继续保留，用于 LM Studio / Ollama / 代理网关：
+
+```json
+{
+  "provider": "openai-compatible",
+  "baseURL": "http://127.0.0.1:1234/v1",
+  "apiKey": "local-no-key",
+  "model": "local-model"
+}
+```
+
+更多示例：
+
+- [`llm-chat.config.moonshotai.example.json`](llm-chat.config.moonshotai.example.json) — Moonshot/Kimi
+- [`llm-chat.config.alibaba.example.json`](llm-chat.config.alibaba.example.json) — Alibaba Cloud DashScope/Qwen
+- [`llm-chat.config.openai-compatible.example.json`](llm-chat.config.openai-compatible.example.json) — LM Studio / Ollama / 代理网关
+
+AI 对话环境变量回退：DeepSeek 使用 `DEEPSEEK_API_KEY` / `AI2NAO_LLM_API_KEY`；Moonshot 使用 `MOONSHOT_API_KEY` / `AI2NAO_LLM_API_KEY`；Alibaba 使用 `ALIBABA_API_KEY` / `AI2NAO_LLM_API_KEY`；OpenAI 使用 `OPENAI_API_KEY` / `AI2NAO_LLM_API_KEY`；OpenAI-compatible 使用 `AI2NAO_LLM_API_KEY` / `OPENAI_API_KEY`，本地服务无 key 时会使用占位 key。
+
 ## RAG（本地笔记 / 纯文本）
 
 为 AI 对话提供可选的本地检索：把 `.md` / `.txt` 切块写入 **`~/.ai2nao/rag.db`**（SQLite FTS5），并可在 `rag.json` 里开启 embedding 与 LanceDB 向量库，形成 FTS + vector 双路召回和 RRF 融合。
@@ -205,7 +243,7 @@ Web 侧提供两个独立页面：
 - [`rag.config.example.json`](rag.config.example.json) — OpenAI API
 - [`rag.config.example.local-llm.json`](rag.config.example.local-llm.json) — LM Studio / Ollama
 
-环境变量回退：`OPENAI_API_KEY` / `AI2NAO_LLM_API_KEY`。
+RAG embedding 环境变量回退：`OPENAI_API_KEY` / `AI2NAO_LLM_API_KEY`。DeepSeek chat 配置不会被自动当作 embedding endpoint；如需向量召回，请在 `rag.json` 的 `embedding` 块里显式配置 embedding provider。
 
 ## 测试
 
