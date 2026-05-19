@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { defaultLlmChatConfigPath } from "../config.js";
 import { llmChatLog } from "./log.js";
 
-export type LlmChatProvider = "openai-compatible";
+export type LlmChatProvider = "openai-compatible" | "deepseek";
 
 export type LlmChatConfig = {
   provider: LlmChatProvider;
@@ -43,13 +43,13 @@ export function parseLlmChatConfigJson(raw: string): LlmChatConfig | null {
   const provider = data.provider;
   const baseURL = data.baseURL;
   const model = data.model;
-  if (provider !== "openai-compatible") return null;
+  if (provider !== "openai-compatible" && provider !== "deepseek") return null;
   if (typeof baseURL !== "string" || !baseURL.trim()) return null;
   if (typeof model !== "string" || !model.trim()) return null;
   const apiKey =
     typeof data.apiKey === "string" && data.apiKey.trim() ? data.apiKey.trim() : undefined;
   return {
-    provider: "openai-compatible",
+    provider,
     baseURL: baseURL.trim(),
     model: model.trim(),
     apiKey,

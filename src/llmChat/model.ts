@@ -11,7 +11,7 @@ function apiKeySource(cfg: LlmChatConfig): "config" | "AI2NAO_LLM_API_KEY" | "OP
 }
 
 export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
-  if (cfg.provider !== "openai-compatible") {
+  if (cfg.provider !== "openai-compatible" && cfg.provider !== "deepseek") {
     throw new Error(`Unsupported LLM provider: ${cfg.provider}`);
   }
   const baseURL = cfg.baseURL.replace(/\/$/, "");

@@ -30,6 +30,23 @@ describe("parseLlmChatConfigJson", () => {
     expect(cfg?.apiKey).toBeUndefined();
   });
 
+  it("accepts DeepSeek config as an OpenAI-compatible provider", () => {
+    const cfg = parseLlmChatConfigJson(
+      JSON.stringify({
+        provider: "deepseek",
+        baseURL: "https://api.deepseek.com",
+        model: "deepseek-reasoner",
+        apiKey: "x",
+      })
+    );
+    expect(cfg).toEqual({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-reasoner",
+      apiKey: "x",
+    });
+  });
+
   it("rejects invalid provider", () => {
     expect(
       parseLlmChatConfigJson(
