@@ -3,16 +3,54 @@ import { resolve } from "node:path";
 import { defaultLlmChatConfigPath } from "../config.js";
 import { llmChatLog } from "./log.js";
 
-export type LlmChatProvider = "openai-compatible" | "deepseek";
+export type LlmChatProvider =
+  | "alibaba"
+  | "deepseek"
+  | "moonshotai"
+  | "openai"
+  | "openai-compatible";
 
-export type LlmChatConfig = {
-  provider: LlmChatProvider;
-  /** Base URL including `/v1` when the server expects it (OpenAI, LM Studio, Ollama compat). */
-  baseURL: string;
-  model: string;
-  /** Optional; falls back to `AI2NAO_LLM_API_KEY` or `OPENAI_API_KEY`. */
-  apiKey?: string;
-};
+export type LlmChatConfig =
+  | {
+      provider: "deepseek";
+      /** DeepSeek API base URL. Do not append `/v1` for the official API. */
+      baseURL: string;
+      model: string;
+      /** Optional; falls back to `DEEPSEEK_API_KEY` or `AI2NAO_LLM_API_KEY`. */
+      apiKey?: string;
+    }
+  | {
+      provider: "moonshotai";
+      /** Moonshot API base URL, defaulting to `https://api.moonshot.ai/v1`. */
+      baseURL: string;
+      model: string;
+      /** Optional; falls back to `MOONSHOT_API_KEY` or `AI2NAO_LLM_API_KEY`. */
+      apiKey?: string;
+    }
+  | {
+      provider: "alibaba";
+      /** DashScope OpenAI-compatible base URL. */
+      baseURL: string;
+      model: string;
+      /** Optional; falls back to `ALIBABA_API_KEY` or `AI2NAO_LLM_API_KEY`. */
+      apiKey?: string;
+    }
+  | {
+      provider: "openai";
+      /** OpenAI API base URL, defaulting to `https://api.openai.com/v1`. */
+      baseURL: string;
+      model: string;
+      /** Optional; falls back to `OPENAI_API_KEY` or `AI2NAO_LLM_API_KEY`. */
+      apiKey?: string;
+    }
+  | {
+      provider: "openai-compatible";
+      /** Base URL including `/v1` when the server expects it (LM Studio, Ollama compat). */
+      baseURL: string;
+      model: string;
+      /** Optional; falls back to `AI2NAO_LLM_API_KEY`, `OPENAI_API_KEY`, or a local placeholder. */
+      apiKey?: string;
+    };
 
 export type LlmChatStatus = {
   configured: boolean;
@@ -32,6 +70,10 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
+function optionalTrimmedString(x: unknown): string | undefined {
+  return typeof x === "string" && x.trim() ? x.trim() : undefined;
+}
+
 export function parseLlmChatConfigJson(raw: string): LlmChatConfig | null {
   let data: unknown;
   try {
@@ -41,19 +83,52 @@ export function parseLlmChatConfigJson(raw: string): LlmChatConfig | null {
   }
   if (!isRecord(data)) return null;
   const provider = data.provider;
-  const baseURL = data.baseURL;
-  const model = data.model;
-  if (provider !== "openai-compatible" && provider !== "deepseek") return null;
-  if (typeof baseURL !== "string" || !baseURL.trim()) return null;
-  if (typeof model !== "string" || !model.trim()) return null;
-  const apiKey =
-    typeof data.apiKey === "string" && data.apiKey.trim() ? data.apiKey.trim() : undefined;
-  return {
-    provider,
-    baseURL: baseURL.trim(),
-    model: model.trim(),
-    apiKey,
-  };
+  const baseURL = optionalTrimmedString(data.baseURL);
+  const model = optionalTrimmedString(data.model);
+  if (!model) return null;
+  const apiKey = optionalTrimmedString(data.apiKey);
+  if (provider === "deepseek") {
+    return {
+      provider: "deepseek",
+      baseURL: baseURL ?? "https://api.deepseek.com",
+      model,
+      apiKey,
+    };
+  }
+  if (provider === "moonshotai") {
+    return {
+      provider: "moonshotai",
+      baseURL: baseURL ?? "https://api.moonshot.ai/v1",
+      model,
+      apiKey,
+    };
+  }
+  if (provider === "alibaba") {
+    return {
+      provider: "alibaba",
+      baseURL: baseURL ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      model,
+      apiKey,
+    };
+  }
+  if (provider === "openai") {
+    return {
+      provider: "openai",
+      baseURL: baseURL ?? "https://api.openai.com/v1",
+      model,
+      apiKey,
+    };
+  }
+  if (provider === "openai-compatible") {
+    if (!baseURL) return null;
+    return {
+      provider: "openai-compatible",
+      baseURL,
+      model,
+      apiKey,
+    };
+  }
+  return null;
 }
 
 export function readLlmChatConfig(): LlmChatConfig | null {

@@ -30,6 +30,7 @@
 - `src/llmChat/chatRoutes.ts`：只保留 `GET /api/llm-chat/status`。
 - `src/llmChat/sessionRoutes.ts`：session CRUD。
 - `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search/Session Memory、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
+- `src/llmChat/model.ts`：根据 `~/.ai2nao/llm-chat.json` 里的 `provider` 显式选择 AI SDK provider。DeepSeek 官方 API 走 `@ai-sdk/deepseek`，Moonshot/Kimi 走 `@ai-sdk/moonshotai`，Alibaba Cloud DashScope/Qwen 走 `@ai-sdk/alibaba`，OpenAI 走 `@ai-sdk/openai`，LM Studio/Ollama/代理网关等通用接口走 `@ai-sdk/openai-compatible`。
 - `src/llmTools/`：按 `forwardedProps` 构建后端 AI SDK tools，目前包括 `ai2nao_search_rag_evidence`、`ai2nao_web_search` 和 `ai2nao_search_session_memory`。这里是 LLM tool adapter/registry 层，不承载完整业务能力实现。
 - `src/sessionMemory/service.ts`：只读搜索现有 AI Chat、Codex、Claude Code、Cursor 会话来源，返回短 evidence snippets；不新增索引、不回传完整 transcript。
 - Session Memory tool 的实现细节、查询范围和触发规则见 [`docs/ai-chat-session-memory-tool.md`](ai-chat-session-memory-tool.md)。
