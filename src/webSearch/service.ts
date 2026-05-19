@@ -1,4 +1,4 @@
-import type { AiEvidenceItem, AiEvidenceToolResult } from "../aiEvidence.js";
+import type { AiEvidenceItem, AiEvidenceToolResult } from "../llmTools/evidence.js";
 import { readWebSearchConfig } from "./config.js";
 import { WebSearchMemoryCache } from "./cache.js";
 import { createWebSearchDiagnostics, statusFromErrorCode, type WebSearchDiagnostics } from "./diagnostics.js";
