@@ -1,0 +1,6 @@
+{
+  "provider": "moonshotai",
+  "baseURL": "https://api.moonshot.ai/v1",
+  "apiKey": "sk-your-moonshot-key-here",
+  "model": "kimi-k2"
+}

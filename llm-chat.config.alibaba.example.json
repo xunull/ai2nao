@@ -1,0 +1,6 @@
+{
+  "provider": "alibaba",
+  "baseURL": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "apiKey": "your-alibaba-api-key-here",
+  "model": "qwen-plus-latest"
+}
