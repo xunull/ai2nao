@@ -52,6 +52,17 @@ export type WebSearchStatus = {
   error: string | null;
 };
 
+export type CodeRunnerStatus = {
+  pyodide: { available: true };
+  docker: {
+    available: boolean;
+    dockerVersion: string | null;
+    image: string;
+    imagePresent: boolean;
+    error: string | null;
+  };
+};
+
 export type RagEvidenceHit = {
   id?: number;
   chunkId: number;

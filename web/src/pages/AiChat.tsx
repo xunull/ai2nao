@@ -9,6 +9,7 @@ import {
 import type {
   AiChatSessionSummary,
   LlmChatStatus,
+  CodeRunnerStatus,
   RagStatus,
   WebSearchStatus,
 } from "../aiChat/types";
@@ -47,6 +48,10 @@ export function AiChat() {
   const [webSearchErr, setWebSearchErr] = useState<string | null>(null);
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [useSessionMemory, setUseSessionMemory] = useState(true);
+  const [useCodeExecution, setUseCodeExecution] = useState(false);
+  const [codeExecutionRuntime, setCodeExecutionRuntime] = useState<"pyodide" | "docker">("pyodide");
+  const [codeRunner, setCodeRunner] = useState<CodeRunnerStatus | null>(null);
+  const [codeRunnerErr, setCodeRunnerErr] = useState<string | null>(null);
   const [sessions, setSessions] = useState<AiChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionErr, setSessionErr] = useState<string | null>(null);
@@ -121,6 +126,14 @@ export function AiChat() {
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setWebSearchErr(e instanceof Error ? e.message : String(e));
       });
+    apiGet<CodeRunnerStatus>("/api/code-runner/status", { signal: ac.signal })
+      .then((s) => {
+        setCodeRunner(s);
+        setCodeRunnerErr(null);
+      })
+      .catch((e: unknown) => {
+        if (!ac.signal.aborted) setCodeRunnerErr(e instanceof Error ? e.message : String(e));
+      });
     return () => ac.abort();
   }, []);
 
@@ -150,6 +163,8 @@ export function AiChat() {
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
   const webSearchAvailable = webSearch?.ok === true;
   const effectiveWebSearch = useWebSearch && webSearchAvailable;
+  const dockerRuntimeAvailable = codeRunner?.docker.available === true;
+  const effectiveCodeRuntime = codeExecutionRuntime === "docker" && dockerRuntimeAvailable ? "docker" : "pyodide";
 
   return (
     <div className="cursor-chat-root -mx-1 h-[calc(100vh-112px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
@@ -286,6 +301,28 @@ export function AiChat() {
                 />
                 Memory
               </label>
+              <label className="flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={useCodeExecution}
+                  onChange={(e) => setUseCodeExecution(e.currentTarget.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Code
+              </label>
+              {useCodeExecution ? (
+                <select
+                  value={codeExecutionRuntime}
+                  onChange={(e) => setCodeExecutionRuntime(e.currentTarget.value === "docker" ? "docker" : "pyodide")}
+                  className="h-8 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700"
+                  title={codeRunnerErr ?? codeRunner?.docker.error ?? undefined}
+                >
+                  <option value="pyodide">Safe Python</option>
+                  <option value="docker" disabled={!dockerRuntimeAvailable}>
+                    Docker Python
+                  </option>
+                </select>
+              ) : null}
             </div>
           </header>
 
@@ -309,6 +346,9 @@ export function AiChat() {
                   webSearchEnabled: effectiveWebSearch,
                   sessionMemoryEnabled: useSessionMemory,
                   sessionMemoryTopK: 8,
+                  codeExecutionEnabled: useCodeExecution,
+                  codeExecutionRuntime: effectiveCodeRuntime,
+                  codeExecutionTimeoutMs: 10_000,
                 }}
                 onError={handleChatError}
                 showDevConsole={false}
