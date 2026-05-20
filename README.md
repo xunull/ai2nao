@@ -121,6 +121,53 @@ node dist/cli.js rag eval --cases docs/rag-eval-cases.json
 node dist/cli.js serve
 ```
 
+### AI 对话本机 LLM 配置
+
+`/ai-chat` 页面不会自动猜模型服务。它只读取一个 JSON 配置文件，然后把模型调用交给 ai2nao 后端执行。
+
+默认配置路径：
+
+```bash
+~/.ai2nao/llm-chat.json
+```
+
+也可以用环境变量覆盖：
+
+```bash
+AI2NAO_LLM_CHAT_CONFIG=/path/to/llm-chat.json node dist/cli.js serve
+```
+
+DeepSeek 示例：
+
+```json
+{
+  "provider": "deepseek",
+  "baseURL": "https://api.deepseek.com",
+  "model": "deepseek-reasoner",
+  "apiKey": "sk-..."
+}
+```
+
+Ollama / LM Studio / 其他 OpenAI-compatible 服务示例：
+
+```json
+{
+  "provider": "openai-compatible",
+  "baseURL": "http://127.0.0.1:11434/v1",
+  "model": "qwen2.5-coder:7b",
+  "apiKey": "local-no-key"
+}
+```
+
+字段要求：
+
+- `provider`: `deepseek` 或 `openai-compatible`
+- `baseURL`: 模型服务地址；本地服务通常带 `/v1`
+- `model`: 模型名
+- `apiKey`: 可选；省略时回退到 `AI2NAO_LLM_API_KEY` 或 `OPENAI_API_KEY`
+
+如果页面提示“请先配置本机 LLM”，先打开 `/api/llm-chat/status` 看后端实际读取的 `configPath`、`configured` 和 `model`。最常见原因是文件不在当前进程的默认路径，或 `provider` / `baseURL` / `model` 字段不符合上面的格式。
+
 ## Web 界面
 
 启动服务后打开终端显示的地址（默认仅监听本机）：

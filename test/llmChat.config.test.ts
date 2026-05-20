@@ -92,6 +92,23 @@ describe("parseLlmChatConfigJson", () => {
     expect(cfg?.apiKey).toBeUndefined();
   });
 
+  it("parses deepseek config with explicit baseURL", () => {
+    const cfg = parseLlmChatConfigJson(
+      JSON.stringify({
+        provider: "deepseek",
+        baseURL: "https://api.deepseek.com",
+        model: "deepseek-reasoner",
+        apiKey: "x",
+      })
+    );
+    expect(cfg).toEqual({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-reasoner",
+      apiKey: "x",
+    });
+  });
+
   it("requires baseURL for openai-compatible config", () => {
     expect(
       parseLlmChatConfigJson(
