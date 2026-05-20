@@ -22,8 +22,9 @@ import type {
 import { llmChatStatus, readLlmChatConfig } from "./config.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
+import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
-import { buildAi2NaoServerTools, parseForwardedToolProps } from "./tools.js";
+import { buildAi2NaoServerTools, parseForwardedToolProps } from "../llmTools/index.js";
 import {
   agUiMessagesFromSession,
   ensureLlmChatSession,
@@ -36,6 +37,7 @@ export type LlmChatCopilotRuntimeDeps = {
   db: Database.Database;
   ragDb?: Database.Database;
   webSearch?: WebSearchService;
+  sessionMemory?: SessionMemoryService;
 };
 
 type AgentInput = {
@@ -751,7 +753,7 @@ function finalAnswerModelMessages(messages: Message[]): ModelMessage[] {
       content: [
         `用户问题：${question}`,
         "下面是已经执行完成的工具证据。请只基于这些证据回答，不要再调用任何工具。",
-        "如果证据不足以确认精确答案，请明确说明不确定性，并列出最相关的标题和 URL。",
+        "如果证据不足以确认精确答案，请明确说明不确定性，并列出最相关的标题和 URL 或本地路径。",
         evidence || "没有可用的工具证据。",
       ].join("\n\n"),
     },
@@ -771,13 +773,18 @@ function deterministicEvidenceAnswer(messages: Message[]): string {
   }
 
   const items = latest.evidence.slice(0, 5);
+  const sourceLabel = latest.source === "web"
+    ? "Web Search"
+    : latest.source === "session"
+      ? "Session Memory"
+      : "工具搜索";
   return [
-    `我已经完成搜索，但模型没有成功生成最终总结。基于当前 Web Search 结果，我先把可用证据直接给你：`,
+    `我已经完成搜索，但模型没有成功生成最终总结。基于当前 ${sourceLabel} 结果，我先把可用证据直接给你：`,
     "",
     latest.query ? `搜索词：${latest.query}` : "",
     latest.reason ? `搜索原因：${latest.reason}` : "",
     "",
-    "当前搜索摘要不足以让我可靠确认一个精确收盘价；最相关结果如下：",
+    "当前搜索摘要不足以让我可靠确认精确答案；最相关结果如下：",
     ...items.map((item, index) => {
       const target = item.url || item.path || "";
       const snippet = item.snippet ? `\n   摘要：${item.snippet}` : "";
@@ -872,6 +879,7 @@ function ai2NaoSystemPrompt(forwardedProps: unknown): string {
     "Use server-side tools when evidence is needed; do not claim you searched unless a tool result is present.",
     "After evidence tool calls, synthesize the evidence into a direct answer and cite the evidence paths or URLs when available.",
     "For web search evidence, include the most relevant result titles and URLs in the final answer. Do not merely say that you searched.",
+    "For session memory evidence, cite the most relevant session titles and local paths when available, but do not expose whole transcripts.",
     "If web snippets are insufficient for an exact answer, state the uncertainty and still summarize the closest results with URLs.",
     "Do not stop after a tool result. Always continue with a concise final answer for the user.",
   ];
@@ -888,7 +896,15 @@ function ai2NaoSystemPrompt(forwardedProps: unknown): string {
       "Keep web search queries short and public-safe; never include private paths, emails, API keys, or tokens in web search queries."
     );
   }
-  if (!props.useRag && !props.webSearchEnabled) {
+  if (props.sessionMemoryEnabled) {
+    parts.push(
+      "When the user asks about previous ai2nao, Codex, Claude Code, or Cursor conversations or decisions, call ai2nao_search_session_memory before answering."
+    );
+    parts.push(
+      "Session memory is local-only and read-only. Use narrow queries, summarize snippets, and avoid quoting or reconstructing whole conversations."
+    );
+  }
+  if (!props.useRag && !props.webSearchEnabled && !props.sessionMemoryEnabled) {
     parts.push("No evidence tools are enabled for this turn; answer from conversation context and say when evidence is unavailable.");
   }
 
@@ -902,7 +918,7 @@ function finalAnswerSystemPrompt(basePrompt: string): string {
     "The previous step ended after tool results without a user-facing answer.",
     "Do not call tools again. Use the tool evidence already present in the conversation.",
     "Answer the user's latest question directly in Simplified Chinese.",
-    "When web evidence is present, include concrete search result titles and URLs. If the evidence does not fully answer the question, say so clearly.",
+    "When evidence is present, include concrete result titles and URLs or local paths. If the evidence does not fully answer the question, say so clearly.",
   ].join("\n\n");
 }
 

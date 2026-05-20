@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.19 — 2026-05-19
+
+### Added
+
+- Add an AI Chat Memory switch that lets the backend search local ai2nao, Codex, Claude Code, and Cursor session history for short evidence snippets.
+- Add the `ai2nao_search_session_memory` server-side tool with local-only evidence results, source-level warnings, bounded snippets, and regression coverage.
+- Add a technical document describing how AI Chat tools are implemented, what each memory source searches, and how the model triggers the tool.
+
+### Changed
+
+- Move AI-callable tool adapters into `src/llmTools/` so RAG, Web Search, and Session Memory tools share one registry and evidence envelope.
+- Show the LLM config path on the disabled AI Chat screen and document the local LLM config file in the README.
+
 ## 0.3.18 — 2026-05-19
 
 ### Added

@@ -46,6 +46,7 @@ export function AiChat() {
   const [webSearch, setWebSearch] = useState<WebSearchStatus | null>(null);
   const [webSearchErr, setWebSearchErr] = useState<string | null>(null);
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [useSessionMemory, setUseSessionMemory] = useState(true);
   const [sessions, setSessions] = useState<AiChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionErr, setSessionErr] = useState<string | null>(null);
@@ -276,19 +277,39 @@ export function AiChat() {
                 />
                 Web Search
               </label>
+              <label className="flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={useSessionMemory}
+                  onChange={(e) => setUseSessionMemory(e.currentTarget.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Memory
+              </label>
             </div>
           </header>
 
           <section className="min-h-0 flex-1 p-4" data-testid="ai-chat-thread-shell">
             {disabled ? (
-              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-600">
-                请先配置本机 LLM，再开始对话。
+              <div className="flex h-full flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white px-6 text-center text-sm text-neutral-600">
+                <div>请先配置本机 LLM，再开始对话。</div>
+                {cfg?.configPath ? (
+                  <div className="mt-2 max-w-[720px] break-all text-xs text-neutral-500">
+                    当前读取：{cfg.configPath}
+                  </div>
+                ) : null}
               </div>
             ) : activeSessionId ? (
               <CopilotKit
                 runtimeUrl="/api/copilotkit"
                 useSingleEndpoint={true}
-                properties={{ useRag, ragTopK: 8, webSearchEnabled: effectiveWebSearch }}
+                properties={{
+                  useRag,
+                  ragTopK: 8,
+                  webSearchEnabled: effectiveWebSearch,
+                  sessionMemoryEnabled: useSessionMemory,
+                  sessionMemoryTopK: 8,
+                }}
                 onError={handleChatError}
                 showDevConsole={false}
               >
