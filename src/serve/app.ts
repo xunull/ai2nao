@@ -25,6 +25,7 @@ import {
 } from "../downloads/queries.js";
 import { scanDownloads } from "../downloads/scan.js";
 import { registerChromeHistoryRoutes } from "../chromeHistory/routes.js";
+import { registerCodeRunnerRoutes } from "../codeRunner/routes.js";
 import {
   getManifestByRepoAndRelPath,
   getRepoById,
@@ -167,6 +168,7 @@ export function createApp(opts: ServeOptions): Hono {
   );
 
   registerLlmChatRoutes(app, { db, ragDb: rag?.db });
+  registerCodeRunnerRoutes(app);
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerWebSearchRoutes(app);
   registerGithubRoutes(app, db);
