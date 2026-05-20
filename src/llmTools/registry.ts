@@ -1,9 +1,11 @@
 import type Database from "better-sqlite3";
 import type { ToolSet } from "ai";
+import type { CodeRunnerService } from "../codeRunner/index.js";
 import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
 import { parseForwardedToolProps } from "./forwardedProps.js";
 import { createRagEvidenceTool } from "./ragEvidenceTool.js";
+import { createRunCodeTool } from "./runCodeTool.js";
 import { createSessionMemoryTool } from "./sessionMemoryTool.js";
 import { createWebSearchTool } from "./webSearchTool.js";
 
@@ -12,6 +14,7 @@ export type Ai2NaoToolDeps = {
   ragDb?: Database.Database;
   webSearch?: WebSearchService;
   sessionMemory?: SessionMemoryService;
+  codeRunner?: CodeRunnerService;
 };
 
 export function buildAi2NaoServerTools(
@@ -34,6 +37,14 @@ export function buildAi2NaoServerTools(
       db: deps.db,
       sessionMemory: deps.sessionMemory,
       defaultCount: props.sessionMemoryTopK,
+    });
+  }
+
+  if (props.codeExecutionEnabled) {
+    tools.ai2nao_run_code = createRunCodeTool(deps.codeRunner, {
+      defaultTimeoutMs: props.codeExecutionTimeoutMs,
+      defaultRuntime: props.codeExecutionRuntime,
+      dockerEnabled: props.codeExecutionRuntime === "docker",
     });
   }
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.20 — 2026-05-20
+
+### Added
+
+- Add an AI Chat Code switch with a Python execution tool for deterministic calculations, small data transforms, and local verification.
+- Add a Pyodide/WASM Python runtime with bounded input files, output previews, blocked host/JS bridge imports, and timeout enforcement.
+- Add an optional Docker Python runtime V2 that coexists with the Pyodide runner and is enabled only when Docker plus the expected image are available.
+- Add `/api/code-runner/status` diagnostics and documentation for the code execution trust boundary, limits, and Docker setup.
+
+### Changed
+
+- Extend the ai2nao-owned server-side tool registry so code execution follows the same backend-controlled CopilotKit transport boundary as RAG, Web Search, and Session Memory.
+
 ## 0.3.19 — 2026-05-19
 
 ### Added

@@ -14,6 +14,7 @@ Domain services stay outside this directory:
 - Web search implementation lives in `src/webSearch/`.
 - Session memory search implementation lives in `src/sessionMemory/`.
 - RAG retrieval implementation lives in `src/rag/`.
+- Local code execution implementation lives in `src/codeRunner/`.
 
 Rule of thumb: if the code is about tool name, input schema, enabled flags, or
 LLM evidence output, it belongs here. If the code implements a reusable capability,
