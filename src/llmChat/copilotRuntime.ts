@@ -22,6 +22,7 @@ import type {
 import { llmChatStatus, readLlmChatConfig } from "./config.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
+import type { CodeRunnerService } from "../codeRunner/index.js";
 import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
 import { buildAi2NaoServerTools, parseForwardedToolProps } from "../llmTools/index.js";
@@ -38,6 +39,7 @@ export type LlmChatCopilotRuntimeDeps = {
   ragDb?: Database.Database;
   webSearch?: WebSearchService;
   sessionMemory?: SessionMemoryService;
+  codeRunner?: CodeRunnerService;
 };
 
 type AgentInput = {
@@ -904,7 +906,15 @@ function ai2NaoSystemPrompt(forwardedProps: unknown): string {
       "Session memory is local-only and read-only. Use narrow queries, summarize snippets, and avoid quoting or reconstructing whole conversations."
     );
   }
-  if (!props.useRag && !props.webSearchEnabled && !props.sessionMemoryEnabled) {
+  if (props.codeExecutionEnabled) {
+    parts.push(
+      "When the user needs deterministic calculation, small data transformation, or Python verification, call ai2nao_run_code before answering."
+    );
+    parts.push(
+      `ai2nao_run_code is Python-only. The enabled runtime for this turn is ${props.codeExecutionRuntime}. Do not use it for shell commands, package installation, network access, host filesystem access, or long-running services.`
+    );
+  }
+  if (!props.useRag && !props.webSearchEnabled && !props.sessionMemoryEnabled && !props.codeExecutionEnabled) {
     parts.push("No evidence tools are enabled for this turn; answer from conversation context and say when evidence is unavailable.");
   }
 

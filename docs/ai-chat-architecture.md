@@ -16,7 +16,7 @@
 
 - 通过 `/api/llm-chat/status`、`/api/rag/status` 和 `/api/web-search/status` 展示本地模型、RAG 与 Web Search 状态。
 - 通过 `/api/llm-chat/sessions` 做会话列表、创建、详情和删除。
-- 顶栏只传能力开关：RAG、Web Search、Memory。业务 tool 执行仍由后端 runner 决定。
+- 顶栏只传能力开关：RAG、Web Search、Memory、Code。业务 tool 执行仍由后端 runner 决定。
 - 使用 `CopilotKit runtimeUrl="/api/copilotkit"` 和 `CopilotChat threadId={activeSessionId}` 绑定当前会话。
 - 切换会话时用 `key={activeSessionId}` 重建 CopilotKit chat，避免旧 thread 状态泄漏。
 - 页面根容器固定 PC 桌面高度，`ai-chat-thread-shell` 承载滚动消息区和底部 composer。
@@ -31,9 +31,13 @@
 - `src/llmChat/sessionRoutes.ts`：session CRUD。
 - `src/llmChat/copilotRuntime.ts`：注册 `/api/copilotkit`，用 CopilotKit runtime 做最薄 transport adapter，并把实际模型调用、server-side tools、RAG/Web Search/Session Memory、最终回答兜底和 SQLite 持久化交给 ai2nao 自己的 turn runner。
 - `src/llmChat/model.ts`：根据 `~/.ai2nao/llm-chat.json` 里的 `provider` 显式选择 AI SDK provider。DeepSeek 官方 API 走 `@ai-sdk/deepseek`，Moonshot/Kimi 走 `@ai-sdk/moonshotai`，Alibaba Cloud DashScope/Qwen 走 `@ai-sdk/alibaba`，OpenAI 走 `@ai-sdk/openai`，LM Studio/Ollama/代理网关等通用接口走 `@ai-sdk/openai-compatible`。
-- `src/llmTools/`：按 `forwardedProps` 构建后端 AI SDK tools，目前包括 `ai2nao_search_rag_evidence`、`ai2nao_web_search` 和 `ai2nao_search_session_memory`。这里是 LLM tool adapter/registry 层，不承载完整业务能力实现。
+- `src/llmTools/`：按 `forwardedProps` 构建后端 AI SDK tools，目前包括 `ai2nao_search_rag_evidence`、`ai2nao_web_search`、`ai2nao_search_session_memory` 和 `ai2nao_run_code`。这里是 LLM tool adapter/registry 层，不承载完整业务能力实现。
 - `src/sessionMemory/service.ts`：只读搜索现有 AI Chat、Codex、Claude Code、Cursor 会话来源，返回短 evidence snippets；不新增索引、不回传完整 transcript。
 - Session Memory tool 的实现细节、查询范围和触发规则见 [`docs/ai-chat-session-memory-tool.md`](ai-chat-session-memory-tool.md)。
+- `src/codeRunner/service.ts`：通过短生命周期 Worker 启动 Pyodide/WASM Python 沙盒，只允许内联代码和内联小文件，不开放 shell、宿主文件系统、网络或包安装。
+- `src/codeRunner/dockerRunner.ts`：可选 Docker Python runtime，仅在用户显式选择 Docker Code 时启用；通过固定 `docker run` 参数限制网络、CPU、内存、PID 和容器权限。
+- `src/codeRunner/routes.ts`：提供 `GET /api/code-runner/status`，用于前端判断 Docker 是否可用、镜像是否已准备。
+- Code Runner tool 的实现细节、触发规则和安全边界见 [`docs/llm-run-code-tool.md`](llm-run-code-tool.md)。
 
 `src/llmChat/sessions.ts` 是协议无关的 AG-UI 持久化层：
 
@@ -56,6 +60,8 @@ schema v18 会删除并重建：
 - `test/llmChat.sessions.test.ts`：AG-UI session 创建、列表、详情、持久化和 schema v18。
 - `test/llmChat.chatRoutes.test.ts`：`GET /api/llm-chat/status`。
 - `test/sessionMemory.test.ts`：Session Memory evidence envelope、AI Chat 命中、坏输入和局部来源失败降级。
+- `test/codeRunner.test.ts`：Pyodide/WASM Python 执行、MEMFS 文件、路径校验、JS bridge/import block、timeout。
+- `test/dockerRunner.test.ts`：Docker runtime 默认禁用、docker run 安全参数、spawn 参数化执行。
 - `test/llmChat.copilotRuntime.run.test.ts`：server-side tools 注册、Web/Search final-answer 兜底、拒绝 client-provided CopilotKit tools/context/state。
 - `test/aiChat.sessionApi.test.ts`：前端 session CRUD API 映射。
 - `test/App.test.tsx`：AI 对话页固定高度工作台和 CopilotKit 外壳。
