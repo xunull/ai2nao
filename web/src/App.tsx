@@ -7,6 +7,12 @@ const Atuin = lazy(() => import("./pages/Atuin").then((m) => ({ default: m.Atuin
 const AtuinDirectories = lazy(() =>
   import("./pages/AtuinDirectories").then((m) => ({ default: m.AtuinDirectories }))
 );
+const BashPermissions = lazy(() =>
+  import("./pages/BashPermissions").then((m) => ({ default: m.BashPermissions }))
+);
+const BashSandboxSettings = lazy(() =>
+  import("./pages/BashSandboxSettings").then((m) => ({ default: m.BashSandboxSettings }))
+);
 const ChromeDownloads = lazy(() =>
   import("./pages/ChromeDownloads").then((m) => ({ default: m.ChromeDownloads }))
 );
@@ -109,6 +115,8 @@ export function App() {
           <Route path="/codex-history" element={<CodexHistory />} />
           <Route path="/codex-history/s/:sessionId" element={<CodexHistorySession />} />
           <Route path="/ai-chat" element={<AiChat />} />
+          <Route path="/bash-permissions" element={<BashPermissions />} />
+          <Route path="/bash-sandbox" element={<BashSandboxSettings />} />
           <Route path="/rag-status" element={<RagStatus />} />
           <Route path="/rag-debug" element={<RagDebug />} />
           <Route path="/github" element={<Github />} />

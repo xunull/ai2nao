@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.21 — 2026-05-25
+
+### Added
+
+- Add an AI Chat Shell switch with a controlled `ai2nao_run_shell` backend tool for local inspection, test, build, and verification commands.
+- Add interactive Shell approvals with suggested “execute and remember” rules, directory-scoped allow/ask/deny persistence, permission debug details, and management pages for saved rules.
+- Add optional Shell sandbox settings backed by `@anthropic-ai/sandbox-runtime`, including filesystem and network policy configuration plus runtime dependency diagnostics.
+- Add technical documentation for the Bash tool trust boundary, permission rule matching, and LLM-facing Shell tool behavior.
+
+### Changed
+
+- Extend the ai2nao-owned server-side tool registry so Shell execution follows the same backend-controlled CopilotKit transport boundary as RAG, Web Search, Memory, and Code.
+
+### Fixed
+
+- Keep AI Chat Shell tool cards stable across renderer remounts and protect the chat workbench with a local render boundary.
+- Allow local API `PATCH` preflights so editable Shell permission rules can be saved from the management page.
+
 ## 0.3.20 — 2026-05-20
 
 ### Added

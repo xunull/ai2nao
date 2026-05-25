@@ -201,6 +201,71 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
     }
   });
 
+  it("registers controlled shell only when forwarded props enable it", async () => {
+    const dbPath = tempPath("copilot-runtime-run-shell.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([{ type: "finish" }]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, {
+        db,
+        bashTool: {
+          run: async () => ({
+            ok: true,
+            command: "pwd",
+            cwd: process.cwd(),
+            risk: "read-only",
+            exitCode: 0,
+            timedOut: false,
+            durationMs: 1,
+            stdout: process.cwd(),
+            stderr: "",
+            outputTruncated: false,
+          }),
+        },
+      });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-run-shell",
+          runId: "run-run-shell",
+          messages: [{ id: "u1", role: "user", content: "跑一下 pwd" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: { shellExecutionEnabled: true },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      await res.text();
+      const tools = streamTextMock.mock.calls[0]?.[0]?.tools ?? {};
+      expect(Object.keys(tools)).toContain("ai2nao_run_shell");
+      expect(Object.keys(tools)).not.toContain("ai2nao_run_code");
+      expect(Object.keys(tools)).not.toContain("ai2nao_web_search");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
   it("synthesizes a final answer immediately when a web search run ends after the tool result", async () => {
     const dbPath = tempPath("copilot-runtime-final-answer.db");
     const db = openDatabase(dbPath);

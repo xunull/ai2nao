@@ -13,6 +13,26 @@ import { runScan } from "../src/scan/runScan.js";
 import { chromeWebkitUsToUnixMs } from "../src/chromeHistory/time.js";
 
 describe("Hono read-only API", () => {
+  it("allows PATCH in API CORS preflight for editable local settings", async () => {
+    const dbPath = join(tmpdir(), `ai2nao-cors-${Date.now()}.db`);
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const res = await app.request("http://x/api/bash-permission-rules/r1", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://127.0.0.1:5173",
+          "Access-Control-Request-Method": "PATCH",
+        },
+      });
+
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-methods")).toContain("PATCH");
+    } finally {
+      db.close();
+    }
+  });
+
   it("GET /api/status and /api/repos", async () => {
     const base = join(tmpdir(), `ai2nao-api-${Date.now()}`);
     const repo = join(base, "proj");

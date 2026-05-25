@@ -25,6 +25,11 @@ import {
 } from "../downloads/queries.js";
 import { scanDownloads } from "../downloads/scan.js";
 import { registerChromeHistoryRoutes } from "../chromeHistory/routes.js";
+import {
+  createBashApprovalStore,
+  createSqliteBashPermissionRuleStore,
+} from "../bashTool/index.js";
+import { registerBashApprovalRoutes } from "../bashTool/routes.js";
 import { registerCodeRunnerRoutes } from "../codeRunner/routes.js";
 import {
   getManifestByRepoAndRelPath,
@@ -158,16 +163,24 @@ function jsonErr(status: number, message: string) {
 export function createApp(opts: ServeOptions): Hono {
   const { db, atuin, dailySummary, rag } = opts;
   const app = new Hono();
+  const bashPermissionRules = createSqliteBashPermissionRuleStore(db);
+  const bashApprovalStore = createBashApprovalStore({ ruleStore: bashPermissionRules });
 
   app.use(
     "/api/*",
     cors({
       origin: ["http://127.0.0.1:5173", "http://localhost:5173"],
-      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     })
   );
 
-  registerLlmChatRoutes(app, { db, ragDb: rag?.db });
+  registerLlmChatRoutes(app, {
+    db,
+    ragDb: rag?.db,
+    bashApprovalStore,
+    bashPermissionRules,
+  });
+  registerBashApprovalRoutes(app, bashApprovalStore);
   registerCodeRunnerRoutes(app);
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerWebSearchRoutes(app);

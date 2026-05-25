@@ -22,6 +22,12 @@ import type {
 import { llmChatStatus, readLlmChatConfig } from "./config.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
+import {
+  defaultBashApprovalStore,
+  type BashApprovalStore,
+  type BashPermissionRuleStore,
+  type BashToolService,
+} from "../bashTool/index.js";
 import type { CodeRunnerService } from "../codeRunner/index.js";
 import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
@@ -40,6 +46,9 @@ export type LlmChatCopilotRuntimeDeps = {
   webSearch?: WebSearchService;
   sessionMemory?: SessionMemoryService;
   codeRunner?: CodeRunnerService;
+  bashTool?: BashToolService;
+  bashApprovalStore?: BashApprovalStore;
+  bashPermissionRules?: BashPermissionRuleStore;
 };
 
 type AgentInput = {
@@ -278,7 +287,11 @@ async function* runAi2NaoTurnEvents(
     const detail = getLlmChatSession(deps.db, input.threadId);
     const persistedMessages = detail ? agUiMessagesFromSession(detail) : [];
     const mergedMessages = mergeAgUiMessages(persistedMessages, input.messages);
-    const serverTools = buildAi2NaoServerTools(deps, input.forwardedProps);
+    const serverTools = buildAi2NaoServerTools(
+      { ...deps, bashApprovalStore: deps.bashApprovalStore ?? defaultBashApprovalStore },
+      input.forwardedProps,
+      { sessionId: input.threadId }
+    );
     const modelMessages = agUiMessagesToModelMessages(mergedMessages);
     const systemPrompt = ai2NaoSystemPrompt(input.forwardedProps);
     const result = streamText({
@@ -914,7 +927,15 @@ function ai2NaoSystemPrompt(forwardedProps: unknown): string {
       `ai2nao_run_code is Python-only. The enabled runtime for this turn is ${props.codeExecutionRuntime}. Do not use it for shell commands, package installation, network access, host filesystem access, or long-running services.`
     );
   }
-  if (!props.useRag && !props.webSearchEnabled && !props.sessionMemoryEnabled && !props.codeExecutionEnabled) {
+  if (props.shellExecutionEnabled) {
+    parts.push(
+      "When the user asks to inspect the local project, run tests, run type checks, or verify a change with terminal output, call ai2nao_run_shell before answering."
+    );
+    parts.push(
+      "ai2nao_run_shell is a controlled Bash tool, not a general terminal. Use concise commands only. Do not request package installation, network commands, destructive filesystem operations, sudo, nested shells, heredocs, file redirection, command substitution, or long-running services. If a command is denied, explain the denial and suggest a safer command."
+    );
+  }
+  if (!props.useRag && !props.webSearchEnabled && !props.sessionMemoryEnabled && !props.codeExecutionEnabled && !props.shellExecutionEnabled) {
     parts.push("No evidence tools are enabled for this turn; answer from conversation context and say when evidence is unavailable.");
   }
 
