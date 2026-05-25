@@ -7,6 +7,9 @@ export type ForwardedToolProps = {
   codeExecutionEnabled: boolean;
   codeExecutionRuntime: "pyodide" | "docker";
   codeExecutionTimeoutMs: number;
+  shellExecutionEnabled: boolean;
+  shellExecutionTimeoutMs: number;
+  shellPermissionMode: "default" | "plan" | "acceptEdits" | "bypassPermissions" | "dontAsk";
 };
 
 export function parseForwardedToolProps(input: unknown): ForwardedToolProps {
@@ -14,6 +17,7 @@ export function parseForwardedToolProps(input: unknown): ForwardedToolProps {
   const rawRagTopK = parseInt(String(props.ragTopK ?? 8), 10);
   const rawSessionMemoryTopK = parseInt(String(props.sessionMemoryTopK ?? 8), 10);
   const rawCodeExecutionTimeoutMs = parseInt(String(props.codeExecutionTimeoutMs ?? 10_000), 10);
+  const rawShellExecutionTimeoutMs = parseInt(String(props.shellExecutionTimeoutMs ?? 10_000), 10);
   return {
     useRag: props.useRag === true,
     ragTopK: Math.min(20, Math.max(1, rawRagTopK || 8)),
@@ -23,5 +27,22 @@ export function parseForwardedToolProps(input: unknown): ForwardedToolProps {
     codeExecutionEnabled: props.codeExecutionEnabled === true,
     codeExecutionRuntime: props.codeExecutionRuntime === "docker" ? "docker" : "pyodide",
     codeExecutionTimeoutMs: Math.min(30_000, Math.max(1_000, rawCodeExecutionTimeoutMs || 10_000)),
+    shellExecutionEnabled: props.shellExecutionEnabled === true,
+    shellExecutionTimeoutMs: Math.min(30_000, Math.max(1_000, rawShellExecutionTimeoutMs || 10_000)),
+    shellPermissionMode: parseShellPermissionMode(props.shellPermissionMode),
   };
+}
+
+function parseShellPermissionMode(
+  value: unknown
+): ForwardedToolProps["shellPermissionMode"] {
+  if (
+    value === "plan" ||
+    value === "acceptEdits" ||
+    value === "bypassPermissions" ||
+    value === "dontAsk"
+  ) {
+    return value;
+  }
+  return "default";
 }

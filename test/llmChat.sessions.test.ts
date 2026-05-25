@@ -74,15 +74,16 @@ function toolEvidenceMessage(id: string) {
 }
 
 describe("LLM chat session storage", () => {
-  it("migrates v19 CopilotKit tables on fresh databases", () => {
+  it("migrates CopilotKit chat and Bash permission tables on fresh databases", () => {
     const db = freshDb();
     try {
       const version = (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version;
-      expect(version).toBe(19);
+      expect(version).toBe(21);
       const tables = db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'llm_chat_%' ORDER BY name")
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('llm_chat_messages', 'llm_chat_sessions', 'bash_permission_rules') ORDER BY name")
         .all() as { name: string }[];
       expect(tables.map((t) => t.name)).toEqual([
+        "bash_permission_rules",
         "llm_chat_messages",
         "llm_chat_sessions",
       ]);
