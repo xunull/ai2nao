@@ -79,6 +79,24 @@ test("AI chat passes feature flags without client-provided CopilotKit tools", as
   expect(requestText).not.toContain("ai2nao_web_search");
 });
 
+test("AI chat passes shell execution flags without client-provided Shell tools", async ({ page }) => {
+  const store = new MockSessionStore();
+  const runtimeRequests: unknown[] = [];
+  await mockAiChatApis(page, store, runtimeRequests);
+
+  await page.goto("/ai-chat");
+  await page.getByLabel("Shell").check();
+  await page.locator('select[title="Shell permission mode"]').selectOption("dontAsk");
+  await page.getByTestId("copilot-chat-textarea").fill("帮我运行 npm test");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => runtimeRequests.length).toBeGreaterThan(0);
+
+  const requestText = JSON.stringify(runtimeRequests.at(-1));
+  expect(requestText).toContain('"shellExecutionEnabled":true');
+  expect(requestText).toContain('"shellPermissionMode":"dontAsk"');
+  expect(requestText).not.toContain("ai2nao_run_shell");
+});
+
 test("AI chat renders the final answer in the same turn after a server-side web search tool result", async ({ page }) => {
   const store = new MockSessionStore();
   await mockAiChatApis(page, store, [], (threadId) => [
@@ -233,6 +251,23 @@ async function mockAiChatApis(
         cacheTtlMs: 300000,
         error: null,
       }),
+    })
+  );
+
+  await page.route("**/api/code-runner/status", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        pyodide: { available: true },
+        docker: { available: false, image: "ai2nao/python-runner:latest", error: null },
+      }),
+    })
+  );
+
+  await page.route("**/api/bash-approvals**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ approvals: [] }),
     })
   );
 

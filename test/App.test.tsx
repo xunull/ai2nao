@@ -161,6 +161,96 @@ describe("App routes", () => {
     expect(await screen.findByText("/tmp/notes")).toBeInTheDocument();
   });
 
+  it("renders the Shell permissions route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/bash-permission-rules?behavior=allow")) {
+          return json({
+            rules: [
+              {
+                id: "r1",
+                behavior: "allow",
+                ruleType: "prefix",
+                ruleContent: "npm run:*",
+                scopeType: "directory",
+                scopeValue: "/repo",
+                source: "suggested",
+                note: null,
+                enabled: true,
+                createdAt: "2026-05-23T00:00:00.000Z",
+                updatedAt: "2026-05-23T00:00:00.000Z",
+                lastUsedAt: null,
+                useCount: 0,
+              },
+            ],
+          });
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    renderApp("/bash-permissions");
+
+    expect(await screen.findByRole("heading", { name: "Shell 权限" })).toBeInTheDocument();
+    expect(await screen.findByText("npm run:*")).toBeInTheDocument();
+  });
+
+  it("renders the Shell sandbox route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/bash-sandbox/status")) {
+          return json({
+            configPath: "/tmp/bash-sandbox.json",
+            configured: true,
+            config: {
+              version: 1,
+              mode: "best-effort",
+              filesystem: {
+                allowWrite: ["/repo"],
+                denyWrite: [".env"],
+                denyRead: ["~/.ssh"],
+                allowRead: ["/repo"],
+              },
+              network: {
+                allowedDomains: ["api.github.com"],
+                deniedDomains: [],
+              },
+            },
+            effectivePolicy: {
+              filesystem: {
+                allowWrite: ["/repo"],
+                denyWrite: [".env"],
+                denyRead: ["~/.ssh"],
+                allowRead: ["/repo"],
+              },
+              network: {
+                allowedDomains: ["api.github.com"],
+                deniedDomains: [],
+              },
+            },
+            dependencies: {
+              supportedPlatform: true,
+              ok: true,
+              warnings: [],
+              errors: [],
+            },
+            error: null,
+          });
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    renderApp("/bash-sandbox");
+
+    expect(await screen.findByRole("heading", { name: "Shell 沙箱" })).toBeInTheDocument();
+    expect(await screen.findByText("/tmp/bash-sandbox.json")).toBeInTheDocument();
+  });
+
   it("keeps the AI chat composer inside a fixed-height workbench", async () => {
     vi.stubGlobal(
       "ResizeObserver",
