@@ -81,6 +81,13 @@ export function defaultWebSearchConfigPath(): string {
   return `${home}/.ai2nao/web-search.json`;
 }
 
+/** JSON config for Bash tool OS sandboxing (`~/.ai2nao/bash-sandbox.json`). */
+export function defaultBashSandboxConfigPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/bash-sandbox.json";
+  return `${home}/.ai2nao/bash-sandbox.json`;
+}
+
 /** Dedicated SQLite for RAG chunks + FTS5 (separate from main index.db). */
 export function defaultRagDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";

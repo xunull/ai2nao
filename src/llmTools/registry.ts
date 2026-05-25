@@ -1,8 +1,10 @@
 import type Database from "better-sqlite3";
 import type { ToolSet } from "ai";
+import type { BashApprovalStore, BashPermissionRuleStore, BashToolService } from "../bashTool/index.js";
 import type { CodeRunnerService } from "../codeRunner/index.js";
 import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
+import { createBashTool } from "./bashTool.js";
 import { parseForwardedToolProps } from "./forwardedProps.js";
 import { createRagEvidenceTool } from "./ragEvidenceTool.js";
 import { createRunCodeTool } from "./runCodeTool.js";
@@ -15,11 +17,15 @@ export type Ai2NaoToolDeps = {
   webSearch?: WebSearchService;
   sessionMemory?: SessionMemoryService;
   codeRunner?: CodeRunnerService;
+  bashTool?: BashToolService;
+  bashApprovalStore?: BashApprovalStore;
+  bashPermissionRules?: BashPermissionRuleStore;
 };
 
 export function buildAi2NaoServerTools(
   deps: Ai2NaoToolDeps,
-  forwardedProps: unknown
+  forwardedProps: unknown,
+  options?: { sessionId?: string }
 ) {
   const props = parseForwardedToolProps(forwardedProps);
   const tools: ToolSet = {};
@@ -45,6 +51,16 @@ export function buildAi2NaoServerTools(
       defaultTimeoutMs: props.codeExecutionTimeoutMs,
       defaultRuntime: props.codeExecutionRuntime,
       dockerEnabled: props.codeExecutionRuntime === "docker",
+    });
+  }
+
+  if (props.shellExecutionEnabled) {
+    tools.ai2nao_run_shell = createBashTool(deps.bashTool, {
+      defaultTimeoutMs: props.shellExecutionTimeoutMs,
+      approvalStore: deps.bashApprovalStore,
+      ruleStore: deps.bashPermissionRules,
+      permissionMode: props.shellPermissionMode,
+      sessionId: options?.sessionId,
     });
   }
 

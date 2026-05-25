@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 19;
+const CURRENT_VERSION = 21;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -30,6 +30,8 @@ export function migrate(db: Database.Database): void {
     applyV17(db);
     applyV18(db);
     applyV19(db);
+    applyV20(db);
+    applyV21(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -55,6 +57,8 @@ export function migrate(db: Database.Database): void {
   if (v < 17) applyV17(db);
   if (v < 18) applyV18(db);
   if (v < 19) applyV19(db);
+  if (v < 20) applyV20(db);
+  if (v < 21) applyV21(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1172,5 +1176,71 @@ function applyV19(db: Database.Database): void {
       ON llm_chat_messages(session_id, role);
 
     UPDATE meta_schema SET version = 19 WHERE id = 1;
+  `);
+}
+
+/** Persistent local Bash permission rules for AI Chat shell approval. */
+function applyV20(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bash_permission_rules (
+      id TEXT PRIMARY KEY,
+      tool_name TEXT NOT NULL,
+      behavior TEXT NOT NULL CHECK (behavior IN ('allow', 'ask', 'deny')),
+      rule_type TEXT NOT NULL CHECK (rule_type IN ('exact', 'prefix', 'wildcard')),
+      rule_content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user',
+      note TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_used_at TEXT,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(tool_name, behavior, rule_type, rule_content)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bash_permission_rules_lookup
+      ON bash_permission_rules(tool_name, enabled, behavior);
+
+    UPDATE meta_schema SET version = 20 WHERE id = 1;
+  `);
+}
+
+/** Scope Bash permission rules to a directory tree instead of only global command text. */
+function applyV21(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bash_permission_rules_v21 (
+      id TEXT PRIMARY KEY,
+      tool_name TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'global' CHECK (scope_type IN ('global', 'directory')),
+      scope_value TEXT NOT NULL DEFAULT '',
+      behavior TEXT NOT NULL CHECK (behavior IN ('allow', 'ask', 'deny')),
+      rule_type TEXT NOT NULL CHECK (rule_type IN ('exact', 'prefix', 'wildcard')),
+      rule_content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user',
+      note TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_used_at TEXT,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(tool_name, scope_type, scope_value, behavior, rule_type, rule_content)
+    );
+
+    INSERT OR IGNORE INTO bash_permission_rules_v21 (
+      id, tool_name, scope_type, scope_value, behavior, rule_type, rule_content,
+      source, note, enabled, created_at, updated_at, last_used_at, use_count
+    )
+    SELECT
+      id, tool_name, 'global', '', behavior, rule_type, rule_content,
+      source, note, enabled, created_at, updated_at, last_used_at, use_count
+    FROM bash_permission_rules;
+
+    DROP TABLE bash_permission_rules;
+    ALTER TABLE bash_permission_rules_v21 RENAME TO bash_permission_rules;
+
+    CREATE INDEX IF NOT EXISTS idx_bash_permission_rules_lookup
+      ON bash_permission_rules(tool_name, enabled, scope_type, behavior);
+
+    UPDATE meta_schema SET version = 21 WHERE id = 1;
   `);
 }
