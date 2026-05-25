@@ -1,4 +1,12 @@
 export type {
+  BashPermissionDecision,
+  BashToolLimits,
+  BashToolRequest,
+  BashToolResult,
+  BashToolRisk,
+  BashToolService,
+} from "../bashTool/index.js";
+export type {
   CodeRunnerInputFile,
   CodeRunnerLanguage,
   CodeRunnerLimits,
