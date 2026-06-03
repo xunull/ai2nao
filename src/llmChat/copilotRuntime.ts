@@ -913,7 +913,7 @@ function ai2NaoSystemPrompt(forwardedProps: unknown): string {
   }
   if (props.sessionMemoryEnabled) {
     parts.push(
-      "When the user asks about previous ai2nao, Codex, Claude Code, or Cursor conversations or decisions, call ai2nao_search_session_memory before answering."
+      "When the user asks about previous ai2nao, Codex, Claude Code, Cursor, or Cherry Studio conversations or decisions, call ai2nao_search_session_memory before answering."
     );
     parts.push(
       "Session memory is local-only and read-only. Use narrow queries, summarize snippets, and avoid quoting or reconstructing whole conversations."

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.22 — 2026-06-03
+
+### Added
+
+- Add a 2026-style left workspace shell with a fixed app rail, command-style search, icon-led work domains, remembered collapse state, and narrow-desktop default collapse.
+- Add Cherry Studio history browsing with read-only session lists, detail views, search, status diagnostics, and support for IndexedDB, agent database, and Markdown export sources.
+- Add Cherry Studio results to the AI Chat session memory tool so local conversation evidence can include Cherry Studio alongside ai2nao, Codex, Claude Code, and Cursor history.
+
+### Changed
+
+- Promote AI 对话 to a first-level workspace entry while keeping AI history sources grouped under AI 记录.
+- Replace the old top navigation and footer with the left shell while preserving the existing main content width and page-level toolbars.
+
+### Fixed
+
+- Allow workspace-domain buttons to switch panels even when the current route is the first-level AI 对话 entry.
+- Remove implementation taxonomy wording from the visible sidebar panel labels.
+
 ## 0.3.21 — 2026-05-25
 
 ### Added

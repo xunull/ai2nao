@@ -28,7 +28,7 @@ export function createSessionMemoryTool(options: {
     options.sessionMemory ?? createSessionMemoryService({ db: options.db });
   return tool<SessionMemoryInput, AiEvidenceToolResult>({
     description:
-      "Search the user's local AI session history across ai2nao AI Chat, Codex, Claude Code, and Cursor. Returns short LOCAL session-memory evidence snippets only.",
+      "Search the user's local AI session history across ai2nao AI Chat, Codex, Claude Code, Cursor, and Cherry Studio. Returns short LOCAL session-memory evidence snippets only.",
     inputSchema: sessionMemoryInput,
     execute: async ({ query, reason, count, sources }, execOptions): Promise<AiEvidenceToolResult> => {
       return sessionMemory.search(

@@ -2,11 +2,12 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import React from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../web/src/App";
+import { Layout } from "../web/src/components/Layout";
 
 vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotKit: ({ children }: { children: React.ReactNode }) => (
@@ -28,9 +29,57 @@ function renderApp(initialEntry: string) {
   );
 }
 
+function renderLayout(initialEntry: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Layout>
+        <h1>测试页面</h1>
+      </Layout>
+    </MemoryRouter>
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname + location.search}</div>;
+}
+
+function renderSearchLayout(initialEntry: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Layout>
+        <LocationProbe />
+      </Layout>
+    </MemoryRouter>
+  );
+}
+
+function setViewport(width: number) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: width,
+  });
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(max-width: 1439px)" ? width <= 1439 : false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  );
+}
+
 describe("App routes", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
+    setViewport(1760);
   });
 
   afterEach(() => {
@@ -355,6 +404,174 @@ describe("App routes", () => {
     expect(await screen.findAllByText("新对话")).not.toHaveLength(0);
     expect(container.querySelector('[class*="h-[calc(100vh-112px)]"]')).toBeInTheDocument();
     expect(container.querySelector('[data-testid="ai-chat-thread-shell"]')).toBeInTheDocument();
+  });
+});
+
+describe("Layout navigation", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+    setViewport(1760);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("renders the first-level AI chat action, workspace domains, and each route entry in the active domain panel", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/repos");
+
+    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toBeInTheDocument();
+
+    const expectedGroups = [
+      {
+        label: "本机资产",
+        links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "Atuin", "Atuin 目录"],
+      },
+      {
+        label: "浏览器",
+        links: ["Chrome 历史", "Chrome 域名", "Chrome 下载"],
+      },
+      {
+        label: "AI 记录",
+        links: ["Cherry 对话", "Cursor 对话", "Claude", "Codex"],
+      },
+      {
+        label: "AI 工具",
+        links: ["Shell 权限", "Shell 沙箱", "RAG 状态", "RAG 调试"],
+      },
+      {
+        label: "GitHub/开源",
+        links: ["GitHub", "开源雷达", "Star Tag"],
+      },
+    ];
+
+    for (const group of expectedGroups) {
+      const domainButton = within(domainRail).getByRole("button", { name: `切换到${group.label}` });
+      fireEvent.click(domainButton);
+      expect(screen.getByRole("heading", { name: group.label })).toBeInTheDocument();
+      const nav = screen.getByRole("navigation", { name: "全站导航" });
+      for (const link of group.links) {
+        expect(within(nav).getByRole("link", { name: link })).toBeInTheDocument();
+      }
+    }
+
+    expect(screen.queryByRole("link", { name: "搜索" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "AI 对话" })).not.toBeInTheDocument();
+  });
+
+  it("marks the current route link as the active page", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/rag-status");
+
+    expect(screen.getByRole("link", { name: "RAG 状态" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+  });
+
+  it("persists the collapsed sidebar preference", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/repos");
+    fireEvent.click(screen.getByRole("button", { name: "收起侧边导航" }));
+
+    expect(window.localStorage.getItem("ai2nao.sidebar.collapsed")).toBe("true");
+    expect(screen.getByRole("button", { name: "展开侧边导航" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+  });
+
+  it("defaults to collapsed on narrow desktop when no preference exists", () => {
+    setViewport(1280);
+
+    renderLayout("/github/radar");
+
+    expect(screen.getByRole("button", { name: "展开侧边导航" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "开源雷达" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换到GitHub/开源" })).toBeInTheDocument();
+  });
+
+  it("expands from the collapsed domain rail", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "true");
+
+    renderLayout("/github/radar");
+    fireEvent.click(screen.getByRole("button", { name: "切换到GitHub/开源" }));
+
+    expect(screen.getByRole("link", { name: "开源雷达" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起侧边导航" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+  });
+
+  it("switches the active domain panel from the rail", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/repos");
+    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+
+    expect(screen.getByRole("heading", { name: "本机资产" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "仓库" })).toBeInTheDocument();
+
+    fireEvent.click(within(domainRail).getByRole("button", { name: "切换到AI 工具" }));
+
+    expect(screen.getByRole("heading", { name: "AI 工具" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "RAG 状态" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "仓库" })).not.toBeInTheDocument();
+    expect(within(domainRail).getByRole("button", { name: "切换到AI 工具" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  });
+
+  it("keeps AI chat as an active first-level rail item", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/ai-chat");
+    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+
+    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.getByText("独立工作台")).toBeInTheDocument();
+    expect(screen.queryByText("一级能力")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前一级能力")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "全站导航" })).not.toBeInTheDocument();
+  });
+
+  it("can switch to a domain panel while the current route is the first-level AI chat item", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/ai-chat");
+    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+
+    fireEvent.click(within(domainRail).getByRole("button", { name: "切换到AI 记录" }));
+
+    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.getByRole("heading", { name: "AI 记录" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cursor 对话" })).toBeInTheDocument();
+  });
+
+  it("submits the command-style search to the search route", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderSearchLayout("/repos");
+    const input = screen.getByLabelText("全站搜索");
+    fireEvent.change(input, { target: { value: "repo notes" } });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(screen.getByTestId("location-probe")).toHaveTextContent("/search?q=repo%20notes");
   });
 });
 

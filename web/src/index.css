@@ -3,15 +3,45 @@
 @tailwind utilities;
 
 :root {
-  --bg: #fafafa;
-  --fg: #171717;
-  --muted: #737373;
-  --border: #e5e5e5;
-  --accent: #2563eb;
+  --bg: #f7f6f3;
+  --fg: #171612;
+  --muted: #6f6a5f;
+  --border: #e1ded7;
+  --accent: #2f68d8;
+  --sidebar-bg: #efede8;
+  --sidebar-border: #d7d2c8;
+  --sidebar-shadow: 12px 0 36px rgb(33 29 22 / 0.055);
+  --sidebar-rail: #ebe8e1;
+  --sidebar-rail-border: #d8d2c7;
+  --sidebar-panel: rgb(247 244 238 / 0.92);
+  --sidebar-mark: linear-gradient(145deg, #fffdf8, #e8e1d5);
+  --sidebar-mark-border: #d2c9ba;
+  --sidebar-mark-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8), 0 8px 20px rgb(40 35 27 / 0.08);
+  --sidebar-panel-icon: rgb(255 253 248 / 0.68);
+  --sidebar-panel-icon-border: #ded7ca;
+  --sidebar-control: rgb(255 253 248 / 0.78);
+  --sidebar-control-border: #d9d2c5;
+  --sidebar-control-shadow: inset 0 1px 0 rgb(255 255 255 / 0.75);
+  --sidebar-hover: rgb(255 253 248 / 0.76);
+  --sidebar-hover-border: #cfc6b7;
+  --sidebar-link: #3c3933;
+  --sidebar-muted: #746f64;
+  --sidebar-active: #fffaf0;
+  --sidebar-active-border: #d6c49f;
+  --sidebar-active-text: #16130f;
+  --sidebar-active-shadow: inset 0 1px 0 rgb(255 255 255 / 0.78), 0 6px 18px rgb(74 55 19 / 0.07);
+  --sidebar-accent: #9a6a1f;
+  --sidebar-status: #18a058;
+  --sidebar-status-ring: rgb(24 160 88 / 0.16);
+  --sidebar-focus: rgb(47 104 216 / 0.24);
+  --sidebar-focus-border: #8db0f2;
+  --sidebar-kbd: #f3efe6;
+  --sidebar-kbd-border: #d6cdbd;
 }
 
 body {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "Source Han Sans SC", "Segoe UI", sans-serif;
+  background: var(--bg);
 }
 
 /* Cursor 对话页：略加深可读性，与主站变量一致 */

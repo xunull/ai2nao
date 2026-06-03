@@ -4,6 +4,10 @@ import {
   getSession as getCursorSession,
   searchSessions as searchCursorSessions,
 } from "../cursorHistory/index.js";
+import {
+  loadCherryStudioSession,
+  searchCherryStudioSessions,
+} from "../cherryStudioHistory/index.js";
 import type {
   ChatSession,
   ChatSessionSummary,
@@ -45,6 +49,7 @@ const DEFAULT_LIMITS: SessionMemoryLimits = {
   claudeProjects: 20,
   claudeSessionsPerProject: 20,
   cursorResults: 20,
+  cherryStudioResults: 20,
   snippetChars: 700,
 };
 
@@ -142,6 +147,9 @@ function createSourceRunners(
     cursor:
       deps.sources?.cursor ??
       ((request, limits) => searchCursorMemory(request, limits)),
+    "cherry-studio":
+      deps.sources?.["cherry-studio"] ??
+      ((request, limits) => searchCherryStudioMemory(request, limits)),
   };
 }
 
@@ -274,6 +282,34 @@ async function searchCursorMemory(
       snippet,
       score: 10 + result.matchCount,
       updatedAt: detail?.lastUpdatedAt?.toISOString() ?? result.createdAt.toISOString(),
+    });
+  }
+
+  return hits;
+}
+
+async function searchCherryStudioMemory(
+  request: NormalizedSessionMemoryRequest,
+  limits: SessionMemoryLimits
+): Promise<SessionMemoryHit[]> {
+  const results = await searchCherryStudioSessions(request.query, {
+    limit: limits.cherryStudioResults,
+    contextChars: Math.floor(limits.snippetChars / 2),
+  });
+  const hits: SessionMemoryHit[] = [];
+
+  for (const result of results) {
+    const detail = await loadCherryStudioSession(result.sessionId).catch(() => null);
+    const snippet = cursorSnippet(result);
+    hits.push({
+      source: "cherry-studio",
+      sessionId: result.sessionId,
+      title: detail?.session?.title || `Cherry Studio session ${result.index}`,
+      workspacePath: result.workspacePath || detail?.session?.workspacePath,
+      role: result.snippets[0]?.messageRole,
+      snippet,
+      score: 10 + result.matchCount,
+      updatedAt: detail?.session?.lastUpdatedAt?.toISOString() ?? result.createdAt.toISOString(),
     });
   }
 
@@ -466,6 +502,7 @@ function sourceLabel(source: SessionMemorySource): string {
   if (source === "ai-chat") return "AI Chat";
   if (source === "claude-code") return "Claude Code";
   if (source === "codex") return "Codex";
+  if (source === "cherry-studio") return "Cherry Studio";
   return "Cursor";
 }
 
