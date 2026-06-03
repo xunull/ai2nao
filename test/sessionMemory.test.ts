@@ -99,4 +99,37 @@ describe("session memory service", () => {
     expect(result.evidence[0].provider).toBe("codex");
     expect(result.meta.warnings?.[0]).toContain("cursor");
   });
+
+  it("includes Cherry Studio as a local session memory source", async () => {
+    const service = createSessionMemoryService({
+      now: () => new Date("2026-05-19T00:00:00.000Z"),
+      sources: {
+        "cherry-studio": async () => [
+          {
+            source: "cherry-studio",
+            sessionId: "export:topic.md",
+            title: "Cherry Studio 导出",
+            workspacePath: "topic.md",
+            snippet: "Cherry Studio 对话可以从 Markdown 导出目录读取。",
+            score: 30,
+            role: "assistant",
+            updatedAt: "2026-05-18T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    const result = await service.search({
+      query: "Cherry Studio 对话",
+      sources: ["cherry-studio"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.evidence[0]).toMatchObject({
+      provider: "cherry-studio",
+      matchedBy: ["session-memory", "cherry-studio"],
+      title: "Cherry Studio: Cherry Studio 导出",
+    });
+  });
 });

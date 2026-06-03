@@ -6,6 +6,7 @@ export const SESSION_MEMORY_SOURCES = [
   "codex",
   "claude-code",
   "cursor",
+  "cherry-studio",
 ] as const;
 
 export type SessionMemorySource = (typeof SESSION_MEMORY_SOURCES)[number];
@@ -33,6 +34,7 @@ export type SessionMemoryLimits = {
   claudeProjects: number;
   claudeSessionsPerProject: number;
   cursorResults: number;
+  cherryStudioResults: number;
   snippetChars: number;
 };
 
