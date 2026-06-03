@@ -22,6 +22,14 @@ const ChromeHistory = lazy(() =>
 const ChromeHistoryDomains = lazy(() =>
   import("./pages/ChromeHistoryDomains").then((m) => ({ default: m.ChromeHistoryDomains }))
 );
+const CherryStudioHistory = lazy(() =>
+  import("./pages/CherryStudioHistory").then((m) => ({ default: m.CherryStudioHistory }))
+);
+const CherryStudioHistorySession = lazy(() =>
+  import("./pages/CherryStudioHistorySession").then((m) => ({
+    default: m.CherryStudioHistorySession,
+  }))
+);
 const ClaudeCodeHistory = lazy(() =>
   import("./pages/ClaudeCodeHistory").then((m) => ({ default: m.ClaudeCodeHistory }))
 );
@@ -105,6 +113,11 @@ export function App() {
           <Route path="/chrome-history" element={<ChromeHistory />} />
           <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />
           <Route path="/chrome-downloads" element={<ChromeDownloads />} />
+          <Route path="/cherry-studio-history" element={<CherryStudioHistory />} />
+          <Route
+            path="/cherry-studio-history/s/:sessionId"
+            element={<CherryStudioHistorySession />}
+          />
           <Route path="/cursor-history" element={<CursorHistory />} />
           <Route path="/cursor-history/s/:sessionId" element={<CursorHistorySession />} />
           <Route path="/claude-code-history" element={<ClaudeCodeHistory />} />
