@@ -97,6 +97,23 @@ node dist/cli.js huggingface sync
 node dist/cli.js lmstudio sync
 ```
 
+### 定时任务
+
+`serve` 内置本地 scheduler，用于统一管理本机同步、扫描和派生重建任务。任务注册后默认关闭，不会随服务启动自动扫描 Chrome 历史、Atuin shell history、下载目录或编辑器最近项目。
+
+```bash
+# 查看已注册任务和最近运行状态
+node dist/cli.js scheduler status
+
+# 手动运行一个任务
+node dist/cli.js scheduler run downloads.scan
+
+# 启动 Web 控制台
+node dist/cli.js serve
+```
+
+打开 `/scheduler` 可以启用/关闭任务、调整 interval、手动 Run now、查看最近运行历史。V1 已注册的任务包括 `downloads.scan`、`mac_apps.sync`、`brew.sync`、`huggingface.models.sync`、`lmstudio.models.sync`、`vscode.recent.sync`、`cursor.projects.sync`、`chrome.history.sync`、`chrome.domains.rebuild` 和 `atuin.directories.rebuild`。更多设计细节见 [Scheduler 设计](docs/scheduler-design.md)。
+
 ### RAG 本地笔记
 
 ```bash
@@ -178,6 +195,7 @@ node dist/cli.js serve
 
 **Web 功能**：
 - **仓库** — 分页浏览、清单正文（JSON 高亮）、全文搜索
+- **定时任务** — 在 `/scheduler` 统一管理本机同步任务，支持手动运行、interval 调度、运行锁和历史记录
 - **开源雷达** — 在 `/github/radar` 把 GitHub Star 连接到已索引本地项目的 TODO、docs、README 和 manifest，生成可反馈的当前技术线索
 - **软件** — macOS 应用、Homebrew 包、Hugging Face 与 LM Studio 本地模型浏览
 - **工作区** — VS Code 与 Cursor 最近打开的项目、文件、workspace

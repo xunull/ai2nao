@@ -90,6 +90,9 @@ const RagStatus = lazy(() =>
   import("./pages/RagStatus").then((m) => ({ default: m.RagStatus }))
 );
 const Search = lazy(() => import("./pages/Search").then((m) => ({ default: m.Search })));
+const Scheduler = lazy(() =>
+  import("./pages/Scheduler").then((m) => ({ default: m.Scheduler }))
+);
 
 export function App() {
   return (
@@ -101,6 +104,7 @@ export function App() {
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/repos/:id/file" element={<FileView />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/scheduler" element={<Scheduler />} />
           <Route path="/atuin" element={<Atuin />} />
           <Route path="/atuin/directories" element={<AtuinDirectories />} />
           <Route path="/downloads" element={<Downloads />} />

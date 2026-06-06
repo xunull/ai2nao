@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.23 — 2026-06-06
+
+### Added
+
+- Add a local scheduler runtime that registers sync, scan, and derived rebuild tasks in SQLite with interval scheduling, leases, run history, and a CLI for status/run-now workflows.
+- Add a `/scheduler` Web console for enabling tasks, changing intervals, manually running tasks, and inspecting recent task runs.
+- Add scheduler documentation, including the current sync-task inventory and V1 design notes.
+
+### Changed
+
+- Start the scheduler loop from `serve`, so `npm run dev:ui` runs the API, Web UI, and scheduler runtime together while keeping every scheduled task disabled by default.
+
 ## 0.3.22 — 2026-06-03
 
 ### Added

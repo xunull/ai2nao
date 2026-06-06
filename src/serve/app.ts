@@ -80,6 +80,8 @@ import { registerGithubRoutes } from "../github/routes.js";
 import { registerHuggingfaceRoutes } from "../huggingface/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
 import { registerSoftwareRoutes } from "../software/routes.js";
+import { registerSchedulerRoutes } from "../scheduler/routes.js";
+import { SchedulerRuntime } from "../scheduler/runner.js";
 import { registerVscodeRoutes } from "../vscode/routes.js";
 import { registerWebSearchRoutes } from "../webSearch/routes.js";
 
@@ -172,6 +174,7 @@ export type ServeOptions = {
   };
   /** Optional RAG chunk index (`~/.ai2nao/rag.db`). */
   rag?: { db: Database.Database; path: string };
+  schedulerRuntime?: SchedulerRuntime;
 };
 
 function jsonErr(status: number, message: string) {
@@ -209,6 +212,9 @@ export function createApp(opts: ServeOptions): Hono {
   registerChromeHistoryRoutes(app, db);
   registerVscodeRoutes(app, db);
   registerAtuinDirectoryActivityRoutes(app, db, atuin);
+  if (opts.schedulerRuntime) {
+    registerSchedulerRoutes(app, opts.schedulerRuntime);
+  }
 
   app.get("/api/status", (c) => {
     try {
