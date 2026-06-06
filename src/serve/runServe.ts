@@ -2,6 +2,10 @@ import { serve } from "@hono/node-server";
 import type Database from "better-sqlite3";
 import { createApp, resolveWebDist } from "./app.js";
 import type { DailySummaryRuntimeOptions } from "../dailySummary/service.js";
+import { SchedulerLoop } from "../scheduler/loop.js";
+import { ScheduledTaskRegistry } from "../scheduler/registry.js";
+import { SchedulerRuntime } from "../scheduler/runner.js";
+import { createDefaultScheduledTaskDefinitions } from "../scheduler/taskDefinitions.js";
 
 export type RunServeOptions = {
   db: Database.Database;
@@ -23,13 +27,21 @@ export type RunServeOptions = {
 export function runServe(opts: RunServeOptions): { url: string; close: () => void } {
   const cwd = opts.cwd ?? process.cwd();
   const staticRoot = opts.withStatic ? resolveWebDist(cwd) : undefined;
+  const schedulerRuntime = new SchedulerRuntime({
+    db: opts.db,
+    atuin: opts.atuin,
+    registry: new ScheduledTaskRegistry(createDefaultScheduledTaskDefinitions()),
+  });
+  const schedulerLoop = new SchedulerLoop({ runtime: schedulerRuntime });
   const app = createApp({
     db: opts.db,
     atuin: opts.atuin,
     dailySummary: opts.dailySummary,
     rag: opts.rag,
+    schedulerRuntime,
     staticRoot,
   });
+  schedulerLoop.start();
   const server = serve(
     {
       fetch: app.fetch,
@@ -43,6 +55,9 @@ export function runServe(opts: RunServeOptions): { url: string; close: () => voi
   const url = `http://${opts.host}:${opts.port}`;
   return {
     url,
-    close: () => server.close(),
+    close: () => {
+      schedulerLoop.stop();
+      server.close();
+    },
   };
 }

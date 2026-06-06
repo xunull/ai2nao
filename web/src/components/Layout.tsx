@@ -14,6 +14,7 @@ import {
   Boxes,
   BrainCircuit,
   Bug,
+  CalendarClock,
   CircleDot,
   Command,
   Database,
@@ -64,6 +65,7 @@ const navGroups: NavGroup[] = [
     icon: HardDrive,
     items: [
       { to: "/repos", label: "仓库", icon: Archive, matchChildren: true },
+      { to: "/scheduler", label: "定时任务", icon: CalendarClock },
       { to: "/downloads", label: "下载", icon: Download },
       { to: "/apps", label: "Mac 应用", icon: AppWindowMac },
       { to: "/vscode", label: "VS Code", icon: FolderCode },

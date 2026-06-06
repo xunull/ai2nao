@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 21;
+const CURRENT_VERSION = 22;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -32,6 +32,7 @@ export function migrate(db: Database.Database): void {
     applyV19(db);
     applyV20(db);
     applyV21(db);
+    applyV22(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -59,6 +60,7 @@ export function migrate(db: Database.Database): void {
   if (v < 19) applyV19(db);
   if (v < 20) applyV20(db);
   if (v < 21) applyV21(db);
+  if (v < 22) applyV22(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1242,5 +1244,48 @@ function applyV21(db: Database.Database): void {
       ON bash_permission_rules(tool_name, enabled, scope_type, behavior);
 
     UPDATE meta_schema SET version = 21 WHERE id = 1;
+  `);
+}
+
+/** Local scheduled task configuration and unified run history. */
+function applyV22(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      task_key TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      interval_seconds INTEGER,
+      next_run_at TEXT,
+      last_run_id INTEGER,
+      lease_owner TEXT,
+      lease_until TEXT,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+      ON scheduled_tasks(enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_lease
+      ON scheduled_tasks(lease_until);
+
+    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_key TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('manual', 'scheduled', 'cli')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed', 'skipped')),
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      error_summary TEXT,
+      lease_owner TEXT,
+      FOREIGN KEY (task_key) REFERENCES scheduled_tasks(task_key) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task_started
+      ON scheduled_task_runs(task_key, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
+      ON scheduled_task_runs(status, started_at DESC);
+
+    UPDATE meta_schema SET version = 22 WHERE id = 1;
   `);
 }
