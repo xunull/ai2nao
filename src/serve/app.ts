@@ -86,6 +86,7 @@ import { registerVscodeRoutes } from "../vscode/routes.js";
 import { registerWebSearchRoutes } from "../webSearch/routes.js";
 import { registerWorkDashboardRoutes } from "../workDashboard/routes.js";
 import { registerCodexTokenUsageRoutes } from "../codexTokenUsage/routes.js";
+import { registerProjectOpenerRoutes } from "../projectOpeners/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -216,6 +217,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerAtuinDirectoryActivityRoutes(app, db, atuin);
   registerWorkDashboardRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);
+  registerProjectOpenerRoutes(app);
   if (opts.schedulerRuntime) {
     registerSchedulerRoutes(app, opts.schedulerRuntime);
   }
