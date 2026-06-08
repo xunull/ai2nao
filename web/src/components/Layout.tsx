@@ -8,6 +8,7 @@ import {
 import {
   AppWindowMac,
   Archive,
+  BarChart3,
   Beer,
   Bot,
   BotMessageSquare,
@@ -25,6 +26,7 @@ import {
   Globe,
   HardDrive,
   History,
+  LayoutDashboard,
   MessageSquareText,
   Package,
   PanelLeftClose,
@@ -59,6 +61,15 @@ const primaryNavItems: NavItem[] = [
 ];
 
 const navGroups: NavGroup[] = [
+  {
+    id: "workbench",
+    label: "工作台",
+    icon: LayoutDashboard,
+    items: [
+      { to: "/dashboard", label: "最近工作", icon: LayoutDashboard },
+      { to: "/dashboard/tokens", label: "Token 排行", icon: BarChart3 },
+    ],
+  },
   {
     id: "local-assets",
     label: "本机资产",
@@ -165,13 +176,19 @@ function itemMatchesPath(pathname: string, to: string): boolean {
   return pathname.startsWith(`${to}/`);
 }
 
+function navItemMatchesPath(pathname: string, item: NavItem): boolean {
+  return item.matchChildren
+    ? itemMatchesPath(pathname, item.to)
+    : pathname === item.to;
+}
+
 function getActivePrimaryItem(pathname: string): NavItem | null {
-  return primaryNavItems.find((item) => itemMatchesPath(pathname, item.to)) ?? null;
+  return primaryNavItems.find((item) => navItemMatchesPath(pathname, item)) ?? null;
 }
 
 function getRouteGroupId(pathname: string): string | null {
   return navGroups.find((group) =>
-    group.items.some((item) => itemMatchesPath(pathname, item.to))
+    group.items.some((item) => navItemMatchesPath(pathname, item))
   )?.id ?? null;
 }
 
@@ -249,7 +266,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex w-16 shrink-0 flex-col border-r border-[var(--sidebar-rail-border)] bg-[var(--sidebar-rail)]">
           <div className="flex min-h-[72px] items-center justify-center px-2">
             <Link
-              to="/repos"
+              to="/dashboard"
               className="group flex h-11 w-11 items-center justify-center rounded-2xl text-[var(--fg)] outline-none transition-colors hover:bg-[var(--sidebar-hover)] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)]"
               aria-label="ai2nao 本机工作台"
               title="ai2nao"

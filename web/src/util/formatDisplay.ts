@@ -29,3 +29,25 @@ export function formatFileTimeMs(ms: number): string {
     hour12: false,
   });
 }
+
+/** Compact human-readable token count for dashboard metrics. */
+export function formatTokenCount(tokens: number | null | undefined): string {
+  if (tokens == null || !Number.isFinite(tokens) || tokens < 0) return "—";
+  if (tokens < 1000) return Math.trunc(tokens).toLocaleString("en-US");
+  if (tokens < 1_000_000) {
+    const value = tokens / 1000;
+    const fraction = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+    return `${value.toFixed(fraction)}K`;
+  }
+  const value = tokens / 1_000_000;
+  const fraction = value >= 100 ? 0 : 1;
+  return `${value.toFixed(fraction)}M`;
+}
+
+export function formatTokenCoverage(
+  coverage: "full" | "partial" | "unknown" | null | undefined
+): string {
+  if (coverage === "full") return "真实 token";
+  if (coverage === "partial") return "部分 token";
+  return "token 未知";
+}
