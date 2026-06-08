@@ -18,6 +18,7 @@ import {
   getCodexTokenUsageStatus,
   listCodexProjectTokenUsage,
 } from "../codexTokenUsage/queries.js";
+import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import {
   normalizeWorkProjectIdentity,
@@ -413,6 +414,10 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     getClaudeTokenUsageStatus: db
       ? async () => getClaudeTokenUsageStatus(db)
       : undefined,
+    listWorkProjectDurationUsage: db
+      ? async ({ projectKeys, from, sources }) =>
+          listWorkProjectDurationUsage(db, { projectKeys, from, sources })
+      : undefined,
   };
 }
 
@@ -773,17 +778,36 @@ export async function buildWorkTokenRanking(
   }
 
   const labelCounts = new Map<string, number>();
-  const projects: WorkTokenRankingProject[] = [...projectsByKey.values()]
+  const rankedProjects = [...projectsByKey.values()]
     .sort((a, b) =>
       b.totalTokens - a.totalTokens ||
       b.lastUpdatedAt.getTime() - a.lastUpdatedAt.getTime()
     )
-    .slice(0, options.limit)
+    .slice(0, options.limit);
+  let durationByProject = new Map<string, { activeMs: number }>();
+  if (deps.listWorkProjectDurationUsage && rankedProjects.length > 0) {
+    try {
+      durationByProject = await deps.listWorkProjectDurationUsage({
+        projectKeys: rankedProjects.map((project) => project.key),
+        from: range.from,
+        sources: options.sources,
+      });
+    } catch (e) {
+      diagnostics.push({
+        source: options.sources[0] ?? "codex",
+        severity: "warning",
+        kind: "work-duration-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  const projects: WorkTokenRankingProject[] = rankedProjects
     .map((project) => ({
       key: project.key,
       label: projectLabel(project.path, labelCounts),
       path: project.path,
       totalTokens: project.totalTokens,
+      activeMs: durationByProject.get(project.key)?.activeMs ?? 0,
     }));
 
   return {

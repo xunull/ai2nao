@@ -51,3 +51,15 @@ export function formatTokenCoverage(
   if (coverage === "partial") return "部分 token";
   return "token 未知";
 }
+
+export function formatActiveDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
+  const totalMinutes = Math.max(1, Math.round(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes} 分钟`;
+  if (hours < 24) return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours > 0 ? `${days} 天 ${restHours} 小时` : `${days} 天`;
+}

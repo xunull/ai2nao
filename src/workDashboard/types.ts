@@ -1,6 +1,7 @@
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import type { ClaudeProjectTokenUsage, ClaudeTokenUsageStatus } from "../claudeTokenUsage/types.js";
 import type { CodexProjectTokenUsage, CodexTokenUsageStatus } from "../codexTokenUsage/types.js";
+import type { WorkProjectDurationUsage } from "../workDuration/types.js";
 
 export type DashboardSource = "claude-code" | "codex";
 
@@ -110,6 +111,7 @@ export type WorkTokenRankingProject = {
   label: string;
   path: string;
   totalTokens: number;
+  activeMs: number;
 };
 
 export type WorkTokenRankingResponse = {
@@ -157,4 +159,9 @@ export type DashboardCollectors = {
   }) => Promise<Map<string, ClaudeProjectTokenUsage>>;
   getCodexTokenUsageStatus?: () => Promise<CodexTokenUsageStatus>;
   getClaudeTokenUsageStatus?: () => Promise<ClaudeTokenUsageStatus>;
+  listWorkProjectDurationUsage?: (args: {
+    projectKeys: string[];
+    from: Date | null;
+    sources: DashboardSource[];
+  }) => Promise<Map<string, WorkProjectDurationUsage>>;
 };

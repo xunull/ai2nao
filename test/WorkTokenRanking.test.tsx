@@ -51,6 +51,7 @@ describe("WorkTokenRanking", () => {
     expect(screen.getByText("2 个项目")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
     expect(screen.getByText("1.5M")).toBeInTheDocument();
+    expect(screen.getByText("活跃 2 小时 15 分钟")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "用 VS Code 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 Cursor 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 Warp 打开项目" })).toHaveLength(2);
@@ -124,12 +125,14 @@ function tokenRankingResponse() {
         label: "ai2nao",
         path: "/work/ai2nao",
         totalTokens: 1_500_000,
+        activeMs: 135 * 60_000,
       },
       {
         key: "path:/work/notes",
         label: "notes",
         path: "/work/notes",
         totalTokens: 500_000,
+        activeMs: 0,
       },
     ],
   };
