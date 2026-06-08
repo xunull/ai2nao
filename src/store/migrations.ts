@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 21;
+const CURRENT_VERSION = 25;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -32,6 +32,10 @@ export function migrate(db: Database.Database): void {
     applyV19(db);
     applyV20(db);
     applyV21(db);
+    applyV22(db);
+    applyV23(db);
+    applyV24(db);
+    applyV25(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -59,6 +63,10 @@ export function migrate(db: Database.Database): void {
   if (v < 19) applyV19(db);
   if (v < 20) applyV20(db);
   if (v < 21) applyV21(db);
+  if (v < 22) applyV22(db);
+  if (v < 23) applyV23(db);
+  if (v < 24) applyV24(db);
+  if (v < 25) applyV25(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1242,5 +1250,213 @@ function applyV21(db: Database.Database): void {
       ON bash_permission_rules(tool_name, enabled, scope_type, behavior);
 
     UPDATE meta_schema SET version = 21 WHERE id = 1;
+  `);
+}
+
+/** Local scheduled task configuration and unified run history. */
+function applyV22(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      task_key TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      interval_seconds INTEGER,
+      next_run_at TEXT,
+      last_run_id INTEGER,
+      lease_owner TEXT,
+      lease_until TEXT,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+      ON scheduled_tasks(enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_lease
+      ON scheduled_tasks(lease_until);
+
+    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_key TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('manual', 'scheduled', 'cli')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed', 'skipped')),
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      error_summary TEXT,
+      lease_owner TEXT,
+      FOREIGN KEY (task_key) REFERENCES scheduled_tasks(task_key) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task_started
+      ON scheduled_task_runs(task_key, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
+      ON scheduled_task_runs(status, started_at DESC);
+
+    UPDATE meta_schema SET version = 22 WHERE id = 1;
+  `);
+}
+
+/** Derived Codex session token usage index for project-level full-history totals. */
+function applyV23(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS codex_session_token_usage (
+      session_id TEXT PRIMARY KEY,
+      rollout_path TEXT NOT NULL,
+      rollout_mtime_ms INTEGER NOT NULL,
+      rollout_size_bytes INTEGER NOT NULL,
+      cwd TEXT NOT NULL,
+      project_key TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+      title TEXT,
+      model TEXT,
+      git_branch TEXT,
+      created_at TEXT,
+      last_updated_at TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      token_status TEXT NOT NULL CHECK (token_status IN ('full', 'unknown', 'error')),
+      parse_error TEXT,
+      missing_since TEXT,
+      source_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_codex_token_project_updated
+      ON codex_session_token_usage(project_key, last_updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_token_updated
+      ON codex_session_token_usage(last_updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_token_rollout
+      ON codex_session_token_usage(rollout_path);
+    CREATE INDEX IF NOT EXISTS idx_codex_token_missing
+      ON codex_session_token_usage(missing_since);
+
+    CREATE TABLE IF NOT EXISTS codex_token_usage_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_session_count INTEGER NOT NULL DEFAULT 0,
+      indexed_session_count INTEGER NOT NULL DEFAULT 0,
+      token_known_session_count INTEGER NOT NULL DEFAULT 0,
+      token_unknown_session_count INTEGER NOT NULL DEFAULT 0,
+      error_session_count INTEGER NOT NULL DEFAULT 0,
+      skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 23 WHERE id = 1;
+  `);
+}
+
+/** Derived Claude Code session token usage index for fast token ranking. */
+function applyV24(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS claude_session_token_usage (
+      session_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_mtime_ms INTEGER NOT NULL,
+      file_size_bytes INTEGER NOT NULL,
+      cwd TEXT NOT NULL,
+      project_key TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+      title TEXT,
+      created_at TEXT,
+      last_updated_at TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      token_status TEXT NOT NULL CHECK (token_status IN ('full', 'unknown', 'error')),
+      parse_error TEXT,
+      missing_since TEXT,
+      source_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_claude_token_project_updated
+      ON claude_session_token_usage(project_key, last_updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_claude_token_updated
+      ON claude_session_token_usage(last_updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_claude_token_file
+      ON claude_session_token_usage(file_path);
+    CREATE INDEX IF NOT EXISTS idx_claude_token_missing
+      ON claude_session_token_usage(missing_since);
+
+    CREATE TABLE IF NOT EXISTS claude_session_token_usage_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_session_count INTEGER NOT NULL DEFAULT 0,
+      indexed_session_count INTEGER NOT NULL DEFAULT 0,
+      token_known_session_count INTEGER NOT NULL DEFAULT 0,
+      token_unknown_session_count INTEGER NOT NULL DEFAULT 0,
+      error_session_count INTEGER NOT NULL DEFAULT 0,
+      skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 24 WHERE id = 1;
+  `);
+}
+
+/** Derived Claude Code + Codex session active-duration index for work projects. */
+function applyV25(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS work_session_duration (
+      source TEXT NOT NULL CHECK (source IN ('claude-code', 'codex')),
+      session_id TEXT NOT NULL,
+      transcript_path TEXT NOT NULL,
+      transcript_mtime_ms INTEGER NOT NULL,
+      transcript_size_bytes INTEGER NOT NULL,
+      cwd TEXT NOT NULL,
+      project_key TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+      title TEXT,
+      started_at TEXT,
+      ended_at TEXT,
+      wall_ms INTEGER NOT NULL DEFAULT 0,
+      active_ms INTEGER NOT NULL DEFAULT 0,
+      event_count INTEGER NOT NULL DEFAULT 0,
+      idle_threshold_ms INTEGER NOT NULL,
+      duration_status TEXT NOT NULL CHECK (duration_status IN ('full', 'unknown', 'error')),
+      parse_error TEXT,
+      missing_since TEXT,
+      source_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source, session_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_work_duration_project_ended
+      ON work_session_duration(project_key, ended_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_source_session
+      ON work_session_duration(source, session_id);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_transcript
+      ON work_session_duration(transcript_path);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_missing
+      ON work_session_duration(missing_since);
+
+    CREATE TABLE IF NOT EXISTS work_duration_state (
+      source TEXT PRIMARY KEY CHECK (source IN ('claude-code', 'codex')),
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_session_count INTEGER NOT NULL DEFAULT 0,
+      indexed_session_count INTEGER NOT NULL DEFAULT 0,
+      duration_known_session_count INTEGER NOT NULL DEFAULT 0,
+      duration_unknown_session_count INTEGER NOT NULL DEFAULT 0,
+      error_session_count INTEGER NOT NULL DEFAULT 0,
+      skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 25 WHERE id = 1;
   `);
 }

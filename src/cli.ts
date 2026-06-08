@@ -40,6 +40,10 @@ import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
 import { runServe } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
+import { ScheduledTaskRegistry } from "./scheduler/registry.js";
+import { SchedulerRuntime } from "./scheduler/runner.js";
+import { listScheduledTasks } from "./scheduler/store.js";
+import { createDefaultScheduledTaskDefinitions } from "./scheduler/taskDefinitions.js";
 import { syncBrewPackages } from "./software/brew/sync.js";
 import { syncHuggingfaceModels } from "./huggingface/sync.js";
 import { syncLmStudioModels } from "./lmstudio/sync.js";
@@ -69,6 +73,14 @@ import {
 } from "./cursorHistory/index.js";
 
 const program = new Command();
+
+function createCliSchedulerRuntime(db: ReturnType<typeof openDatabase>): SchedulerRuntime {
+  return new SchedulerRuntime({
+    db,
+    registry: new ScheduledTaskRegistry(createDefaultScheduledTaskDefinitions()),
+    ownerId: `cli-${process.pid}`,
+  });
+}
 
 function parseCursorSessionArg(raw: string): number | string {
   const t = raw.trim();
@@ -1338,6 +1350,61 @@ program
       });
     }
   );
+
+const schedulerCmd = program
+  .command("scheduler")
+  .description("Run and inspect local scheduled sync tasks");
+
+schedulerCmd
+  .command("status")
+  .description("List registered scheduler tasks and their latest run state")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const runtime = createCliSchedulerRuntime(db);
+      const tasks = listScheduledTasks(db, runtime.registry.list());
+      if (opts.json) {
+        console.log(JSON.stringify({ tasks }, null, 2));
+        return;
+      }
+      for (const task of tasks) {
+        const status = task.lastRun?.status ?? "never";
+        const enabled = task.enabled ? "enabled" : "disabled";
+        const next = task.nextRunAt ?? "-";
+        console.log(`${task.key} [${enabled}] status=${status} next=${next}`);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+schedulerCmd
+  .command("run <taskKey>")
+  .description("Run one scheduler task once")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--json", "print machine-readable JSON", false)
+  .action(async (taskKey: string, opts: { db: string; json: boolean }) => {
+    const db = openDatabase(opts.db);
+    try {
+      const runtime = createCliSchedulerRuntime(db);
+      const result = await runtime.runNow(taskKey, "cli");
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (!result.ok) {
+        console.error(result.message);
+        process.exitCode = result.status === "unknown_task" ? 2 : 1;
+        return;
+      }
+      const err = result.run.errorSummary ? ` error=${result.run.errorSummary}` : "";
+      console.log(`${taskKey} [${result.run.status}] run=${result.run.id}${err}`);
+    } finally {
+      db.close();
+    }
+  });
 
 /** 交互终端单行刷新；CI / 重定向 则定期换行，避免刷几千行。 */
 function createRagIngestProgressReporter() {

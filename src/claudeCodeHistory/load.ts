@@ -43,14 +43,18 @@ async function readAndParseFile(
 
 export async function listSessionSummaries(
   projectsRoot: string,
-  projectId: string
+  projectId: string,
+  options?: { limit?: number }
 ): Promise<ChatSessionSummary[]> {
   const base = resolve(projectsRoot);
   const projectPath = assertPathInsideRoot(base, join(base, projectId));
   const files = await listSessionJsonlFiles(projectPath);
   const summaries: ChatSessionSummary[] = [];
 
-  for (const f of files) {
+  const boundedFiles =
+    options?.limit != null ? files.slice(0, Math.max(0, options.limit)) : files;
+
+  for (const f of boundedFiles) {
     try {
       const st = await stat(f.filePath);
       if (st.size > MAX_JSONL_BYTES) {

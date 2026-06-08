@@ -23,6 +23,10 @@
 19. Chrome History 搜索命中原因展示
 22. VS Code terminal dirs 工作信号（显式 opt-in）
 23. CopilotKit 自定义 AI Studio UI
+24. Work Dashboard 快照表 + scheduler 自动刷新
+25. Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
+26. Work Dashboard 项目摘要解释层
+27. Work Dashboard 全量 token 历史统计
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../quincy-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
@@ -197,6 +201,106 @@ Depends on / blocked by:
 - 明确 CopilotKit custom/headless UI 接入边界
 
 Priority: P1（CopilotKit 迁移后）
+
+## Work Dashboard 快照表 + scheduler 自动刷新
+
+What: 为 Work Dashboard 增加派生快照表，并接入 local scheduler 定时刷新。
+
+Why: 当前 Work Dashboard 首版计划选择实时只读聚合；如果真实 Claude/Codex session 很多，首页作为 `/` 可能仍然变慢。
+
+Pros:
+- 首页响应稳定，不需要每次打开都扫本机对话文件
+- 可以记录 freshness、partial token、扫描错误和上次刷新时间
+- 和当前 `codex/local-scheduler` 分支方向契合
+
+Cons:
+- 需要 migration、刷新任务、差异同步和 stale UI 状态
+- 首版一起做会扩大范围，延迟 dashboard 本体验证
+
+Context:
+来自 `/plan-eng-review` 对 Work Dashboard 设计的后续项。本轮审查已要求实时路径加入 `claudeProjectLimit`、`claudeSessionsPerProject`、`codexSessionLimit`、`codexFallbackFiles`、`tokenSessionsPerProject` 等预算。快照表是这些预算仍不够时的 Phase 2，不是首版阻塞项。
+
+Depends on / blocked by:
+- `/dashboard` 实时聚合已落地
+- 真实数据证明首页扫描慢或用户需要 freshness 状态
+- dashboard DTO 和 diagnostics shape 稳定
+
+Priority: Phase 2（实时首页之后）
+
+## Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
+
+What: 将 Work Dashboard 从 Claude Code + Codex 扩展到 Cursor、Cherry Studio 和 ai2nao 自己的 AI Chat session。
+
+Why: 用户真正关心的是“最近项目工作”，不是某两个工具；Claude/Codex 首版落地后，其他 AI 记录来源会成为明显缺口。
+
+Pros:
+- 工作回看更完整，减少跨工具漏归因
+- 复用已有 `/cursor-history`、`/cherry-studio-history`、`/ai-chat` 数据
+- 为未来统一 AI 记录中心打基础
+
+Cons:
+- 各来源项目身份字段差异更大，canonical identity 更难
+- 容易把 dashboard 推向统一 `agentHistory` 抽象，复杂度会明显上升
+
+Context:
+来自 `/plan-eng-review` 对 Work Dashboard 的范围确认。本轮首版明确只聚合 Claude Code 和 Codex；设计里的 Approach C 也说明统一 AI 记录中心是长期方向，不应挡住当前首页。
+
+Depends on / blocked by:
+- Claude/Codex dashboard DTO 稳定
+- canonical project identity 跑出真实效果
+- Cursor / Cherry / AI Chat 的 session summary 字段足够可靠
+
+Priority: Phase 2/3
+
+## Work Dashboard 项目摘要解释层
+
+What: 给每个 dashboard 项目增加一句本机生成的“最近在做什么”摘要，基于该项目最近 Claude/Codex session 的标题、用户首条消息和可见片段。
+
+Why: 当前首版能回答“哪些项目活跃、多少 session/token”，但还不能直接回答“这个项目最近在推进什么主题”。
+
+Pros:
+- 工作回看价值更高，用户不必逐条点 session 才知道项目脉络
+- 可与 session memory / RAG 合流
+- 为未来跨天工作线程提供更自然的项目描述
+
+Cons:
+- 会引入摘要质量、证据可回看、缓存和 stale 状态问题
+- 如果首版一起做，首页会从结构化 dashboard 变成 LLM 摘要产品
+
+Context:
+来自 Work Dashboard 设计中的 deferred 项：`session memory / RAG 对项目摘要的自然语言解释`。工程审查把首版重点放在 bounded scan、真实 token、canonical identity 和 partial diagnostics。
+
+Depends on / blocked by:
+- dashboard 项目/session 聚合稳定
+- 证据可回看层或至少 summary source snippets 定义清楚
+- 缓存/stale UI 策略稳定
+
+Priority: Phase 2/3
+
+## Work Dashboard 全量 token 历史统计
+
+What: 在实时首页之外，提供按项目、来源、模型的全量 token 历史统计与趋势视图。
+
+Why: 首版为了首页性能采用 bounded token scan，只展示有边界的真实 token 覆盖；如果用户后续想看完整消耗趋势，需要离线或快照统计。
+
+Pros:
+- token 数据从“首页证据”升级为可分析资产
+- 可支持项目维度成本/强度回看
+- 和外部 AI usage dashboard 的常见能力对齐
+
+Cons:
+- 需要快照表或定时任务
+- 要处理模型维度、历史回填、格式漂移和 coverage 解释
+
+Context:
+本轮用户明确选择 token 只使用真实 usage、不估算；工程审查中又接受 `tokenSessionsPerProject` 上限。因此首版不会、也不应该承诺全量 token 历史。本项是 usage 契约稳定后的 Phase 2/3。
+
+Depends on / blocked by:
+- `ChatSession.usage` 单一真相已落地
+- dashboard 快照表或等价离线扫描机制已落地
+- Codex `token_count` 解析经过真实 fixture 验证
+
+Priority: Phase 2/3
 
 ## Completed
 

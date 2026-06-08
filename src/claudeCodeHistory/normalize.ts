@@ -3,6 +3,7 @@ import type {
   ChatSession,
   ChatSessionSummary,
   Message,
+  SessionUsage,
   ToolCall,
   TokenUsage,
 } from "../cursorHistory/types.js";
@@ -38,6 +39,35 @@ function mapTokenUsage(u: unknown): TokenUsage | undefined {
   const output = o.output_tokens;
   if (typeof input !== "number" || typeof output !== "number") return undefined;
   return { inputTokens: input, outputTokens: output };
+}
+
+function sessionUsageFromMessages(messages: Message[]): SessionUsage | undefined {
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let hasUsage = false;
+  for (const message of messages) {
+    if (!message.tokenUsage) continue;
+    totalInputTokens += message.tokenUsage.inputTokens;
+    totalOutputTokens += message.tokenUsage.outputTokens;
+    hasUsage = true;
+  }
+  return hasUsage ? { totalInputTokens, totalOutputTokens } : undefined;
+}
+
+export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let hasUsage = false;
+  for (const { record } of parse.okLines) {
+    if (!isAssistantShape(record)) continue;
+    const msg = record.message as Record<string, unknown>;
+    const tokenUsage = mapTokenUsage(msg.usage);
+    if (!tokenUsage) continue;
+    totalInputTokens += tokenUsage.inputTokens;
+    totalOutputTokens += tokenUsage.outputTokens;
+    hasUsage = true;
+  }
+  return hasUsage ? { totalInputTokens, totalOutputTokens } : undefined;
 }
 
 function assistantFromContent(content: unknown): {
@@ -231,6 +261,7 @@ export function buildClaudeSession(options: {
     workspaceId: projectId,
     workspacePath,
     source: "claude-code",
+    usage: sessionUsageFromMessages(messages),
   };
 
   const summary: ChatSessionSummary = {
