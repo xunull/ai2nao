@@ -7,6 +7,11 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root,
+  resolve: {
+    alias: {
+      "node-fetch": path.resolve(root, "src/shims/nodeFetch.ts"),
+    },
+  },
   plugins: [
     {
       name: "ignore-copilotkit-bundled-css",
@@ -30,5 +35,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // The largest chunks are lazy-loaded CopilotKit/mermaid/shiki route assets,
+    // not the main application entry. Keep the limit above those intentional
+    // feature chunks so build output still flags future unexpected growth.
+    chunkSizeWarningLimit: 2000,
   },
 });
