@@ -93,13 +93,21 @@ const Search = lazy(() => import("./pages/Search").then((m) => ({ default: m.Sea
 const Scheduler = lazy(() =>
   import("./pages/Scheduler").then((m) => ({ default: m.Scheduler }))
 );
+const WorkDashboard = lazy(() =>
+  import("./pages/WorkDashboard").then((m) => ({ default: m.WorkDashboard }))
+);
+const WorkTokenRanking = lazy(() =>
+  import("./pages/WorkTokenRanking").then((m) => ({ default: m.WorkTokenRanking }))
+);
 
 export function App() {
   return (
     <Layout>
       <Suspense fallback={<p className="text-[var(--muted)]">加载中...</p>}>
         <Routes>
-          <Route path="/" element={<Navigate to="/repos" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<WorkDashboard />} />
+          <Route path="/dashboard/tokens" element={<WorkTokenRanking />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/repos/:id/file" element={<FileView />} />

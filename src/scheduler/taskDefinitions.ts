@@ -7,6 +7,8 @@ import { scanDownloads } from "../downloads/scan.js";
 import { syncHuggingfaceModels } from "../huggingface/sync.js";
 import { syncLmStudioModels } from "../lmstudio/sync.js";
 import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js";
+import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
+import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -177,6 +179,47 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           summary: { atuinPath: ctx.atuin.path, ...result },
           errorSummary: result.error ?? null,
         });
+      },
+    },
+    {
+      key: "codex.tokens.refresh",
+      label: "Codex token 统计刷新",
+      description: "扫描 Codex rollout JSONL 并刷新项目级真实 token 派生索引。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const full = Boolean(ctx.config.full);
+        const result = await refreshCodexTokenUsage(ctx.db, { full });
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: result.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      key: "work.tokens.refresh",
+      label: "工作项目 token 统计刷新",
+      description: "刷新 Claude Code 与 Codex 项目级真实 token 派生索引。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const full = Boolean(ctx.config.full);
+        const codex = await refreshCodexTokenUsage(ctx.db, { full });
+        const claude = await refreshClaudeTokenUsage(ctx.db, { full });
+        const status =
+          codex.status === "failed" || claude.status === "failed"
+            ? "failed"
+            : codex.status === "partial" || claude.status === "partial"
+              ? "partial"
+              : "success";
+        return {
+          status,
+          summary: { codex, claude },
+          errorSummary: codex.errors[0] ?? claude.errors[0] ?? null,
+        };
       },
     },
   ];

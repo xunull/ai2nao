@@ -3,6 +3,7 @@ import type {
   ChatSession,
   ChatSessionSummary,
   Message,
+  SessionUsage,
 } from "../cursorHistory/types.js";
 import type { ParseJsonlResult } from "../localJsonl/parse.js";
 import type {
@@ -93,6 +94,137 @@ function emptyMetrics(): CodexSessionMetrics {
   };
 }
 
+function numberField(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function findObject(value: unknown, keys: string[]): Record<string, unknown> | undefined {
+  const root = asObj(value);
+  if (!root) return undefined;
+  for (const key of keys) {
+    const child = asObj(root[key]);
+    if (child) return child;
+  }
+  return root;
+}
+
+type CodexTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+};
+
+type CodexTokenCountUsage =
+  | { kind: "increment"; usage: CodexTokenUsage; totalUsage?: CodexTokenUsage }
+  | { kind: "total"; usage: CodexTokenUsage };
+
+function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | undefined {
+  const input = numberField(candidate, [
+    "input_tokens",
+    "inputTokens",
+    "prompt_tokens",
+    "promptTokens",
+    "total_input_tokens",
+    "totalInputTokens",
+  ]);
+  const output = numberField(candidate, [
+    "output_tokens",
+    "outputTokens",
+    "completion_tokens",
+    "completionTokens",
+    "total_output_tokens",
+    "totalOutputTokens",
+  ]);
+  const reasoningOutput = numberField(candidate, [
+    "reasoning_output_tokens",
+    "reasoningOutputTokens",
+    "total_reasoning_output_tokens",
+    "totalReasoningOutputTokens",
+  ]);
+  if (input == null || output == null) return undefined;
+  return {
+    inputTokens: input,
+    outputTokens: output + (reasoningOutput ?? 0),
+  };
+}
+
+function usageFromTokenCountPayload(payload: Record<string, unknown>): CodexTokenCountUsage | undefined {
+  const info = asObj(payload.info);
+  const lastUsage =
+    usageFromObject(asObj(payload.last_token_usage) ?? {}) ??
+    usageFromObject(asObj(payload.lastTokenUsage) ?? {}) ??
+    usageFromObject(asObj(info?.last_token_usage) ?? {}) ??
+    usageFromObject(asObj(info?.lastTokenUsage) ?? {});
+  const totalUsage =
+    usageFromObject(asObj(payload.total_token_usage) ?? {}) ??
+    usageFromObject(asObj(payload.totalTokenUsage) ?? {}) ??
+    usageFromObject(asObj(info?.total_token_usage) ?? {}) ??
+    usageFromObject(asObj(info?.totalTokenUsage) ?? {});
+
+  if (lastUsage) return { kind: "increment", usage: lastUsage, totalUsage };
+  if (totalUsage) return { kind: "total", usage: totalUsage };
+
+  const candidates = [
+    payload,
+    findObject(payload, ["usage", "token_usage", "tokens", "counts"]),
+    findObject(info, ["usage", "token_usage", "tokens", "counts"]),
+  ].filter((v): v is Record<string, unknown> => Boolean(v));
+
+  for (const candidate of candidates) {
+    const usage = usageFromObject(candidate);
+    if (usage) return { kind: "increment", usage };
+  }
+  return undefined;
+}
+
+function mergeUsage(
+  current: SessionUsage | undefined,
+  next: CodexTokenUsage | undefined
+): SessionUsage | undefined {
+  if (!next) return current;
+  return {
+    totalInputTokens:
+      (current?.totalInputTokens ?? 0) + next.inputTokens,
+    totalOutputTokens:
+      (current?.totalOutputTokens ?? 0) + next.outputTokens,
+  };
+}
+
+function deltaUsage(
+  total: CodexTokenUsage,
+  previousTotal: CodexTokenUsage | undefined
+): CodexTokenUsage | undefined {
+  if (!previousTotal) return total;
+  const inputTokens = total.inputTokens - previousTotal.inputTokens;
+  const outputTokens = total.outputTokens - previousTotal.outputTokens;
+  if (inputTokens < 0 || outputTokens < 0) return undefined;
+  return { inputTokens, outputTokens };
+}
+
+export function extractCodexSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
+  let usage: SessionUsage | undefined;
+  let previousTotalUsage: CodexTokenUsage | undefined;
+  for (const { record } of parse.okLines) {
+    const payload = asObj(record.payload);
+    if (str(record.type) !== "event_msg" || !payload) continue;
+    if (str(payload.type) !== "token_count") continue;
+    const tokenCount = usageFromTokenCountPayload(payload);
+    if (tokenCount?.kind === "increment") {
+      usage = mergeUsage(usage, tokenCount.usage);
+      if (tokenCount.totalUsage) previousTotalUsage = tokenCount.totalUsage;
+    } else if (tokenCount?.kind === "total") {
+      usage = mergeUsage(usage, deltaUsage(tokenCount.usage, previousTotalUsage));
+      previousTotalUsage = tokenCount.usage;
+    }
+  }
+  return usage;
+}
+
 function summaryTitle(firstUserText: string | null, fallback: string): string {
   const t = (firstUserText || fallback || "(无用户消息)").trim();
   return truncate(t, 120);
@@ -113,6 +245,7 @@ export function buildCodexSession(options: {
   const filePaths = new Set<string>();
   const metrics = emptyMetrics();
   const callNames = new Map<string, string>();
+  const usage = extractCodexSessionUsage(parse);
 
   if (parse.errors.length > 0) {
     warnings.push(`${parse.errors.length} JSONL line(s) failed to parse`);
@@ -221,7 +354,8 @@ export function buildCodexSession(options: {
         });
         continue;
       }
-      if (eventType === "token_count" || eventType === "task_started") {
+      if (eventType === "token_count") continue;
+      if (eventType === "task_started") {
         continue;
       }
     }
@@ -335,6 +469,7 @@ export function buildCodexSession(options: {
     workspacePath: cwd || thread?.cwd || "",
     source: "codex",
     metadata,
+    usage,
   };
 
   const summary: ChatSessionSummary = {

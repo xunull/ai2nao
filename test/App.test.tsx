@@ -87,24 +87,35 @@ describe("App routes", () => {
     vi.restoreAllMocks();
   });
 
-  it("redirects the root route to the lazy-loaded repos page", async () => {
+  it("redirects the root route to the work dashboard", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith("/api/status")) {
+        if (url.startsWith("/api/work-dashboard")) {
+          void init;
           return json({
-            repos: 0,
-            manifests: 0,
-            lastJob: null,
-          });
-        }
-        if (url.includes("/api/repos")) {
-          return json({
-            repos: [],
-            total: 0,
-            page: 1,
-            limit: 25,
+            ok: true,
+            generatedAt: "2026-06-07T10:00:00.000Z",
+            range: { from: "2026-05-08T10:00:00.000Z", to: "2026-06-07T10:00:00.000Z", days: 30 },
+            diagnostics: [],
+            totals: {
+              projectCount: 0,
+              sessionCount: 0,
+              tokenUsage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                totalTokens: 0,
+                coverage: "unknown",
+                coveredSessions: 0,
+                totalSessions: 0,
+                scannedSessions: 0,
+                scanLimit: 5,
+                truncated: false,
+              },
+              sourceCounts: { "claude-code": 0, codex: 0 },
+            },
+            projects: [],
           });
         }
         throw new Error(`Unhandled fetch: ${url}`);
@@ -113,8 +124,8 @@ describe("App routes", () => {
 
     renderApp("/");
 
-    expect(await screen.findByText("仓库")).toBeInTheDocument();
-    expect(await screen.findByText("还没有索引任何仓库。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "最近工作" })).toBeInTheDocument();
+    expect(await screen.findByText("当前范围内没有 Claude Code 或 Codex 项目。")).toBeInTheDocument();
   });
 
   it("loads a nested named-export page through the route suspense boundary", async () => {
@@ -208,6 +219,42 @@ describe("App routes", () => {
     expect(await screen.findByText("/tmp/rag.db")).toBeInTheDocument();
     expect(await screen.findByText("Vector Store")).toBeInTheDocument();
     expect(await screen.findByText("/tmp/notes")).toBeInTheDocument();
+  });
+
+  it("renders the work token ranking route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/api/work-dashboard/token-projects")) {
+          return json({
+            ok: true,
+            generatedAt: "2026-06-07T10:00:00.000Z",
+            range: {
+              from: "2025-12-07T10:00:00.000Z",
+              to: "2026-06-07T10:00:00.000Z",
+              months: 6,
+            },
+            sources: ["claude-code", "codex"],
+            diagnostics: [],
+            projects: [
+              {
+                key: "path:/work/ai2nao",
+                label: "ai2nao",
+                path: "/work/ai2nao",
+                totalTokens: 1200,
+              },
+            ],
+          });
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    renderApp("/dashboard/tokens");
+
+    expect(await screen.findByRole("heading", { name: "Token 排行" })).toBeInTheDocument();
+    expect(await screen.findByText("ai2nao")).toBeInTheDocument();
   });
 
   it("renders the Shell permissions route", async () => {
@@ -429,6 +476,10 @@ describe("Layout navigation", () => {
 
     const expectedGroups = [
       {
+        label: "工作台",
+        links: ["最近工作", "Token 排行"],
+      },
+      {
         label: "本机资产",
         links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "Atuin", "Atuin 目录"],
       },
@@ -545,6 +596,40 @@ describe("Layout navigation", () => {
     expect(screen.queryByText("一级能力")).not.toBeInTheDocument();
     expect(screen.queryByText("当前一级能力")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "全站导航" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the work dashboard inside the workbench group", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/dashboard");
+    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+
+    expect(within(domainRail).getByRole("button", { name: "切换到工作台" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("heading", { name: "工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "最近工作" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.getByRole("link", { name: "Token 排行" })).toBeInTheDocument();
+  });
+
+  it("marks the token ranking route without activating the dashboard link", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/dashboard/tokens");
+
+    expect(screen.getByRole("heading", { name: "工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Token 排行" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.getByRole("link", { name: "最近工作" })).not.toHaveAttribute(
+      "aria-current",
+      "page"
+    );
   });
 
   it("can switch to a domain panel while the current route is the first-level AI chat item", () => {
