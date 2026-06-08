@@ -7,11 +7,14 @@ import {
   listCodexSessionSummaries,
   loadCodexSessionDetail,
 } from "../src/codexHistory/index.js";
+import { extractCodexSessionUsage } from "../src/codexHistory/normalize.js";
+import { parseJsonlText } from "../src/localJsonl/parse.js";
 
 const transcript = [
   JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd: "/work/app" } }),
   JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "user_message", message: "add codex history" } }),
   JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.000Z", payload: { type: "agent_message", message: "working on it" } }),
+  JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.500Z", payload: { type: "token_count", input_tokens: 11, output_tokens: 7 } }),
   JSON.stringify({ type: "response_item", timestamp: "2026-04-26T00:00:03.000Z", payload: { type: "function_call", name: "read_file", call_id: "c1", arguments: JSON.stringify({ path: "/work/app/src/a.ts" }) } }),
   JSON.stringify({ type: "response_item", timestamp: "2026-04-26T00:00:04.000Z", payload: { type: "function_call_output", call_id: "c1", output: "secret output is not rendered here" } }),
   JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:05.000Z", payload: { type: "exec_command_end", command: "npm test", cwd: "/work/app", exit_code: 1, status: "exited" } }),
@@ -111,9 +114,128 @@ describe("codexHistory", () => {
       failedCommandCount: 1,
       fileCount: 1,
     });
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 11, totalOutputTokens: 7 });
     expect(detail?.session.source).toBe("codex");
     expect(detail?.session.messages.some((m) => m.metadata?.codexFailed)).toBe(true);
     expect(detail?.session.messages.some((m) => m.content.includes("secret output"))).toBe(false);
+  });
+
+  it("keeps token-only usage extraction in parity with detail normalization", async () => {
+    const { root, sessions } = makeRoot();
+    const id = "12121212-1212-1212-1212-121212121212";
+    const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+    writeFileSync(goodPath, transcript, "utf8");
+    createStateDb(root, [{ id, rolloutPath: goodPath }]);
+
+    const detail = await loadCodexSessionDetail(root, id);
+    const parsed = parseJsonlText(transcript);
+    expect(extractCodexSessionUsage(parsed)).toEqual(detail?.session.usage);
+  });
+
+  it("does not estimate usage from unrecognized token_count payloads", async () => {
+    const { root, sessions } = makeRoot();
+    const id = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+    writeFileSync(
+      goodPath,
+      [
+        JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd: "/work/app" } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "user_message", message: "hello" } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.000Z", payload: { type: "token_count", total: 123 } }),
+      ].join("\n"),
+      "utf8"
+    );
+    createStateDb(root, [{ id, rolloutPath: goodPath }]);
+
+    const detail = await loadCodexSessionDetail(root, id);
+    expect(detail?.session.usage).toBeUndefined();
+  });
+
+  it("loads usage from Codex info.last_token_usage and includes reasoning output", async () => {
+    const { root, sessions } = makeRoot();
+    const id = "99999999-9999-9999-9999-999999999999";
+    const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+    writeFileSync(
+      goodPath,
+      [
+        JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd: "/work/app" } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "user_message", message: "hello" } }),
+        JSON.stringify({
+          type: "event_msg",
+          timestamp: "2026-04-26T00:00:02.000Z",
+          payload: {
+            type: "token_count",
+            info: {
+              last_token_usage: {
+                input_tokens: 100,
+                cached_input_tokens: 20,
+                output_tokens: 30,
+                reasoning_output_tokens: 7,
+                total_tokens: 137,
+              },
+              total_token_usage: {
+                input_tokens: 100,
+                cached_input_tokens: 20,
+                output_tokens: 30,
+                reasoning_output_tokens: 7,
+                total_tokens: 137,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+    createStateDb(root, [{ id, rolloutPath: goodPath }]);
+
+    const detail = await loadCodexSessionDetail(root, id);
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 100, totalOutputTokens: 37 });
+  });
+
+  it("diffs cumulative Codex info.total_token_usage instead of double-counting totals", async () => {
+    const { root, sessions } = makeRoot();
+    const id = "88888888-8888-8888-8888-888888888888";
+    const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+    writeFileSync(
+      goodPath,
+      [
+        JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd: "/work/app" } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "user_message", message: "hello" } }),
+        JSON.stringify({
+          type: "event_msg",
+          timestamp: "2026-04-26T00:00:02.000Z",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 10,
+                output_tokens: 3,
+                reasoning_output_tokens: 2,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          timestamp: "2026-04-26T00:00:03.000Z",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 25,
+                output_tokens: 8,
+                reasoning_output_tokens: 4,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+    createStateDb(root, [{ id, rolloutPath: goodPath }]);
+
+    const detail = await loadCodexSessionDetail(root, id);
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 25, totalOutputTokens: 12 });
   });
 
   it("falls back to bounded JSONL scan when SQLite is unavailable", async () => {

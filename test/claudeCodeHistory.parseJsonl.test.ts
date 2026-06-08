@@ -49,6 +49,7 @@ describe("claudeCodeHistory normalize", () => {
     expect(warnings).toEqual([]);
     expect(session.messages.filter((m) => m.role === "user")).toHaveLength(1);
     expect(session.messages.filter((m) => m.role === "assistant")).toHaveLength(2);
+    expect(session.usage).toEqual({ totalInputTokens: 1, totalOutputTokens: 2 });
     const appendix = session.messages.find(
       (m) => m.metadata?.claudeAppendix === true
     );

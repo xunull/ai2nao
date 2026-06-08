@@ -102,6 +102,63 @@ describe("Hono read-only API", () => {
     }
   });
 
+  it("GET /api/work-dashboard rejects invalid range parameters", async () => {
+    const dbPath = join(tmpdir(), `ai2nao-dashboard-api-${Date.now()}.db`);
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const res = await app.request("http://x/api/work-dashboard?rangeDays=13");
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { message: string } };
+      expect(body.error.message).toMatch(/rangeDays/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("GET /api/work-dashboard/token-projects validates ranking filters", async () => {
+    const dbPath = join(tmpdir(), `ai2nao-token-ranking-api-${Date.now()}.db`);
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const ok = await app.request("http://x/api/work-dashboard/token-projects");
+      expect(ok.status).toBe(200);
+      const body = (await ok.json()) as {
+        range: { months: number | "all" };
+        projects: unknown[];
+      };
+      expect(body.range.months).toBe(6);
+      expect(Array.isArray(body.projects)).toBe(true);
+
+      const bad = await app.request(
+        "http://x/api/work-dashboard/token-projects?rangeMonths=2"
+      );
+      expect(bad.status).toBe(400);
+      const badBody = (await bad.json()) as { error: { message: string } };
+      expect(badBody.error.message).toMatch(/rangeMonths/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("GET /api/codex-token-usage/status returns index freshness", async () => {
+    const dbPath = join(tmpdir(), `ai2nao-codex-token-api-${Date.now()}.db`);
+    const db = openDatabase(dbPath);
+    try {
+      const app = createApp({ db });
+      const res = await app.request("http://x/api/codex-token-usage/status");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        fresh: boolean;
+        staleReasons: string[];
+      };
+      expect(body.fresh).toBe(false);
+      expect(body.staleReasons).toContain("not_built");
+    } finally {
+      db.close();
+    }
+  });
+
   it("GET /api/rag/status returns manifest and vector health", async () => {
     const base = join(tmpdir(), `ai2nao-rag-api-${Date.now()}`);
     const corpus = join(base, "notes");

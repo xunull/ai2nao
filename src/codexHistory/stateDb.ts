@@ -129,6 +129,73 @@ export function listThreadsFromStateDb(
   }));
 }
 
+export function listAllThreadsFromStateDb(
+  db: Database.Database,
+  dbPath: string,
+  filters: Omit<CodexListFilters, "limit" | "maxFiles">
+): CodexThreadRow[] {
+  assertThreadsSchema(db, dbPath);
+  const where: string[] = [];
+  const params: Record<string, unknown> = {};
+
+  where.push("archived = @archived");
+  params.archived = filters.archived ? 1 : 0;
+
+  if (filters.cwd?.trim()) {
+    where.push("cwd = @cwd");
+    params.cwd = filters.cwd.trim();
+  }
+  if (filters.gitBranch?.trim()) {
+    where.push("git_branch = @gitBranch");
+    params.gitBranch = filters.gitBranch.trim();
+  }
+  if (filters.model?.trim()) {
+    where.push("model = @model");
+    params.model = filters.model.trim();
+  }
+
+  const sql = `
+    SELECT
+      id,
+      rollout_path AS rolloutPath,
+      created_at AS createdAt,
+      updated_at AS updatedAt,
+      created_at_ms AS createdAtMs,
+      updated_at_ms AS updatedAtMs,
+      cwd,
+      title,
+      archived,
+      git_branch AS gitBranch,
+      model,
+      first_user_message AS firstUserMessage
+    FROM threads
+    WHERE ${where.join(" AND ")}
+    ORDER BY COALESCE(updated_at_ms, updated_at * 1000) DESC, id DESC
+  `;
+
+  let rows: Record<string, unknown>[];
+  try {
+    rows = db.prepare(sql).all(params) as Record<string, unknown>[];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new CodexHistoryError("schema-incompatible", msg, dbPath);
+  }
+
+  return rows.map((r) => ({
+    id: String(r.id ?? ""),
+    rolloutPath: String(r.rolloutPath ?? ""),
+    createdAt: dateFromMsOrSeconds(r.createdAtMs, r.createdAt),
+    lastUpdatedAt: dateFromMsOrSeconds(r.updatedAtMs, r.updatedAt),
+    title: String(r.title ?? ""),
+    cwd: String(r.cwd ?? ""),
+    archived: Boolean(r.archived),
+    gitBranch: typeof r.gitBranch === "string" ? r.gitBranch : undefined,
+    model: typeof r.model === "string" ? r.model : undefined,
+    firstUserMessage:
+      typeof r.firstUserMessage === "string" ? r.firstUserMessage : undefined,
+  }));
+}
+
 export function getThreadFromStateDb(
   db: Database.Database,
   dbPath: string,

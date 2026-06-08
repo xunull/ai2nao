@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.24 — 2026-06-08
+
+### Added
+
+- Add a work token ranking page that aggregates indexed Claude Code and Codex token usage by project.
+- Add reusable project-open actions for VS Code, Cursor, Warp, and iTerm2, including backend openers that launch terminal apps inside the project directory.
+- Add a Motion-powered hover treatment so project open actions stay visually quiet until the user focuses the card controls.
+- Add a work active-duration index that derives project activity from Claude Code and Codex JSONL timestamps with a 10-minute idle cap.
+
+### Changed
+
+- Refresh the combined work project statistics task so it rebuilds token totals and inferred active time together.
+- Show inferred active time beside token totals on ranking cards while keeping token ranking sorted by token volume.
+
+## 0.3.23 — 2026-06-06
+
+### Added
+
+- Add a local scheduler runtime that registers sync, scan, and derived rebuild tasks in SQLite with interval scheduling, leases, run history, and a CLI for status/run-now workflows.
+- Add a `/scheduler` Web console for enabling tasks, changing intervals, manually running tasks, and inspecting recent task runs.
+- Add scheduler documentation, including the current sync-task inventory and V1 design notes.
+
+### Changed
+
+- Start the scheduler loop from `serve`, so `npm run dev:ui` runs the API, Web UI, and scheduler runtime together while keeping every scheduled task disabled by default.
+
 ## 0.3.22 — 2026-06-03
 
 ### Added
