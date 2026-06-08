@@ -1,8 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { RefreshCw } from "lucide-react";
+import { motion } from "motion/react";
 import { useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
 
 type DashboardSource = "claude-code" | "codex";
@@ -182,9 +184,12 @@ export function WorkTokenRanking() {
       {ranking.data && ranking.data.projects.length > 0 && (
         <section className="mt-6 grid grid-cols-4 gap-4">
           {ranking.data.projects.map((project, idx) => (
-            <article
+            <motion.article
               key={project.key}
               className="rounded-lg border border-neutral-200 bg-white px-4 py-4 shadow-sm"
+              initial="idle"
+              animate="idle"
+              whileHover="parentHover"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -195,6 +200,7 @@ export function WorkTokenRanking() {
                     {project.label}
                   </h2>
                 </div>
+                <ProjectOpenActions path={project.path} />
               </div>
               <div className="mt-5 text-2xl font-semibold tracking-tight text-neutral-950">
                 {formatTokenCount(project.totalTokens)}
@@ -205,7 +211,7 @@ export function WorkTokenRanking() {
               <div className="mt-4 truncate font-mono text-[11px] text-neutral-500" title={project.path}>
                 {project.path}
               </div>
-            </article>
+            </motion.article>
           ))}
         </section>
       )}

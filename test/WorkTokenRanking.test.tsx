@@ -51,8 +51,37 @@ describe("WorkTokenRanking", () => {
     expect(screen.getByText("2 个项目")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
     expect(screen.getByText("1.5M")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "用 VS Code 打开项目" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "用 Cursor 打开项目" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "用 Warp 打开项目" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "用 iTerm2 打开项目" })).toHaveLength(2);
     expect(screen.queryByText("部分 token")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/work-dashboard/token-projects?rangeMonths=6&sources=claude-code%2Ccodex");
+  });
+
+  it("opens a ranked project with the selected opener", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/work-dashboard/token-projects")) {
+        return json(tokenRankingResponse());
+      }
+      if (url === "/api/project-openers/open" && init?.method === "POST") {
+        return json({ ok: true, opener: "warp", path: "/work/ai2nao" });
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    await screen.findByText("ai2nao");
+    await userEvent.click(screen.getAllByRole("button", { name: "用 Warp 打开项目" })[0]);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/project-openers/open")).toBe(true);
+    });
+    const call = fetchMock.mock.calls.find(([url]) => String(url) === "/api/project-openers/open");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ opener: "warp", path: "/work/ai2nao" });
   });
 
   it("updates API query params when filters change", async () => {
