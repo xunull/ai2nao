@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 24;
+const CURRENT_VERSION = 25;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -35,6 +35,7 @@ export function migrate(db: Database.Database): void {
     applyV22(db);
     applyV23(db);
     applyV24(db);
+    applyV25(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -65,6 +66,7 @@ export function migrate(db: Database.Database): void {
   if (v < 22) applyV22(db);
   if (v < 23) applyV23(db);
   if (v < 24) applyV24(db);
+  if (v < 25) applyV25(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1400,5 +1402,61 @@ function applyV24(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 24 WHERE id = 1;
+  `);
+}
+
+/** Derived Claude Code + Codex session active-duration index for work projects. */
+function applyV25(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS work_session_duration (
+      source TEXT NOT NULL CHECK (source IN ('claude-code', 'codex')),
+      session_id TEXT NOT NULL,
+      transcript_path TEXT NOT NULL,
+      transcript_mtime_ms INTEGER NOT NULL,
+      transcript_size_bytes INTEGER NOT NULL,
+      cwd TEXT NOT NULL,
+      project_key TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+      title TEXT,
+      started_at TEXT,
+      ended_at TEXT,
+      wall_ms INTEGER NOT NULL DEFAULT 0,
+      active_ms INTEGER NOT NULL DEFAULT 0,
+      event_count INTEGER NOT NULL DEFAULT 0,
+      idle_threshold_ms INTEGER NOT NULL,
+      duration_status TEXT NOT NULL CHECK (duration_status IN ('full', 'unknown', 'error')),
+      parse_error TEXT,
+      missing_since TEXT,
+      source_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source, session_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_work_duration_project_ended
+      ON work_session_duration(project_key, ended_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_source_session
+      ON work_session_duration(source, session_id);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_transcript
+      ON work_session_duration(transcript_path);
+    CREATE INDEX IF NOT EXISTS idx_work_duration_missing
+      ON work_session_duration(missing_since);
+
+    CREATE TABLE IF NOT EXISTS work_duration_state (
+      source TEXT PRIMARY KEY CHECK (source IN ('claude-code', 'codex')),
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_session_count INTEGER NOT NULL DEFAULT 0,
+      indexed_session_count INTEGER NOT NULL DEFAULT 0,
+      duration_known_session_count INTEGER NOT NULL DEFAULT 0,
+      duration_unknown_session_count INTEGER NOT NULL DEFAULT 0,
+      error_session_count INTEGER NOT NULL DEFAULT 0,
+      skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 25 WHERE id = 1;
   `);
 }

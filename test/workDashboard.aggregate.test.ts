@@ -204,6 +204,18 @@ describe("workDashboard aggregate", () => {
           fresh: true,
           staleReasons: [],
         }),
+        listWorkProjectDurationUsage: async () => new Map([
+          [root, {
+            projectKey: root,
+            projectPath: root,
+            activeMs: 90 * 60_000,
+            wallMs: 120 * 60_000,
+            knownSessions: 2,
+            totalSessions: 2,
+            errorSessions: 0,
+            coverage: "full",
+          }],
+        ]),
       }),
       new Date("2026-06-07T00:00:00.000Z")
     );
@@ -211,6 +223,7 @@ describe("workDashboard aggregate", () => {
       [root, 180],
       [other, 10],
     ]);
+    expect(ranking.projects[0].activeMs).toBe(90 * 60_000);
   });
 
   it("filters token ranking by source and month range", async () => {
@@ -288,6 +301,7 @@ describe("workDashboard aggregate", () => {
         label: "ai2nao",
         path: root,
         totalTokens: 100,
+        activeMs: 0,
       },
     ]);
   });

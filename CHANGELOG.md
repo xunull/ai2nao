@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.24 — 2026-06-08
+
+### Added
+
+- Add a work token ranking page that aggregates indexed Claude Code and Codex token usage by project.
+- Add reusable project-open actions for VS Code, Cursor, Warp, and iTerm2, including backend openers that launch terminal apps inside the project directory.
+- Add a Motion-powered hover treatment so project open actions stay visually quiet until the user focuses the card controls.
+- Add a work active-duration index that derives project activity from Claude Code and Codex JSONL timestamps with a 10-minute idle cap.
+
+### Changed
+
+- Refresh the combined work project statistics task so it rebuilds token totals and inferred active time together.
+- Show inferred active time beside token totals on ranking cards while keeping token ranking sorted by token volume.
+
 ## 0.3.23 — 2026-06-06
 
 ### Added

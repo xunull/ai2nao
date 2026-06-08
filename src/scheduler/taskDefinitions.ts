@@ -9,6 +9,7 @@ import { syncLmStudioModels } from "../lmstudio/sync.js";
 import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js";
 import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
+import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -200,8 +201,8 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
     },
     {
       key: "work.tokens.refresh",
-      label: "工作项目 token 统计刷新",
-      description: "刷新 Claude Code 与 Codex 项目级真实 token 派生索引。",
+      label: "工作项目统计刷新",
+      description: "刷新 Claude Code 与 Codex 项目级真实 token 和活跃时长派生索引。",
       category: "derived",
       defaultIntervalSeconds: oneHour,
       sensitivity: "high",
@@ -209,16 +210,17 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
         const full = Boolean(ctx.config.full);
         const codex = await refreshCodexTokenUsage(ctx.db, { full });
         const claude = await refreshClaudeTokenUsage(ctx.db, { full });
+        const duration = await refreshWorkDuration(ctx.db, { full });
         const status =
-          codex.status === "failed" || claude.status === "failed"
+          codex.status === "failed" || claude.status === "failed" || duration.status === "failed"
             ? "failed"
-            : codex.status === "partial" || claude.status === "partial"
+            : codex.status === "partial" || claude.status === "partial" || duration.status === "partial"
               ? "partial"
               : "success";
         return {
           status,
-          summary: { codex, claude },
-          errorSummary: codex.errors[0] ?? claude.errors[0] ?? null,
+          summary: { codex, claude, duration },
+          errorSummary: codex.errors[0] ?? claude.errors[0] ?? duration.errors[0] ?? null,
         };
       },
     },

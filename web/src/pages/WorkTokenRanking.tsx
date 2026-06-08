@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
-import { formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
+import { formatActiveDuration, formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
 
 type DashboardSource = "claude-code" | "codex";
 
@@ -14,6 +14,7 @@ type TokenRankingProject = {
   label: string;
   path: string;
   totalTokens: number;
+  activeMs: number;
 };
 
 type TokenRankingResponse = {
@@ -205,8 +206,11 @@ export function WorkTokenRanking() {
               <div className="mt-5 text-2xl font-semibold tracking-tight text-neutral-950">
                 {formatTokenCount(project.totalTokens)}
               </div>
-              <div className="mt-1 text-xs font-medium text-[var(--muted)]">
-                token
+              <div className="mt-1 flex items-center justify-between gap-3 text-xs font-medium text-[var(--muted)]">
+                <span>token</span>
+                <span title="由 Claude Code / Codex 本地 JSONL 时间戳推断">
+                  活跃 {formatActiveDuration(project.activeMs)}
+                </span>
               </div>
               <div className="mt-4 truncate font-mono text-[11px] text-neutral-500" title={project.path}>
                 {project.path}
