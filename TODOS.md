@@ -27,9 +27,11 @@
 25. Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
 26. Work Dashboard 项目摘要解释层
 27. Work Dashboard 全量 token 历史统计
+28. ai2nao apiKey 明文存储隐患（`~/.ai2nao/rag.json` 等）：迁移至 keychain / env var
+29. Cosmos 本地 embedding fallback（让 "local-first" 叙事完整）
 
 说明:
-前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。
+前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
 
 ## Claude Code 本地对话（v1）
 
@@ -840,3 +842,57 @@ Depends on / blocked by:
 - AI Chat Web Search 首版已落地
 - 至少一个 provider 的基础搜索稳定
 - 收集到真实“最新/最近”类查询样本
+
+---
+
+## clampLimit 跨项目 DRY 整合
+
+**What:** 把 `clampLimit()` 这个 6-7 行 helper 抽到 `src/util/numbers.ts`，三处调用点改为 import。
+
+**Why:** 项目里有 3 处近似实现：
+- `src/github/radar.ts:260`
+- `src/atuin/directoryActivity/queries.ts:17`
+- 即将新增的 `src/workRecap/scan.ts` (work-recap 设计文档)
+
+未来调整边界（如 max 值上限策略）需要同步三处，容易漂移。
+
+**Pros:**
+- DRY 烟消除，单点维护
+- 测试集中
+- 后续新增模块直接 import 即可
+
+**Cons:**
+- 抽公共 util 有 over-abstraction 风险（虽然 3 处明显够多了）
+- 现有调用点参数顺序不一定一致，可能需要小幅 refactor
+
+**Context:** 来源于 `/plan-eng-review` 对 work-recap 设计文档的审查（2026-06-09）。当时选择不在 work-recap PR 中处理以保持 PR 范围聚焦，但记录于此避免遗忘。
+
+**Depends on / blocked by:** 无。可以独立做。
+
+**Effort estimate:** S（human ~30min / CC ~10min）
+
+**Priority:** P3
+
+---
+
+## Diagnostic type 三处同款抽公共 util
+
+**What:** `src/util/diagnostics.ts` 抽 `type Diagnostic = { severity: "info" | "warning" | "error"; kind: string; message: string; ... }`，让 workDashboard / workRecap / workTokensTrend 全部 import。
+
+**Why:** 现有三处（含本 PR 即将引入的 workTokensTrend 是第四处）各定义同款 type，~10 行重复 × 4。未来加 source 会继续漂移；每加一处单点维护成本递增。
+
+**Pros:**
+- 单点 type 维护
+- 跨 module 互通 diagnostic 数组形状，可写公共 UI 组件统一渲染
+
+**Cons:**
+- 抽公共 util 有 over-abstraction 风险（虽然 4 处够多了）
+- 各 module 当前有 namespace-prefix 前缀（如 `WorkTokensTrendDiagnostic`），抽出后命名要重新决定
+
+**Context:** 来源于 `/plan-eng-review` 对 work-tokens-trend 设计文档的 Section 2 review（2026-06-10）。当时选不在本 PR 中处理以保持 PR 聚焦，但记录避免遗忘。同款 module: `src/workDashboard/types.ts DashboardDiagnostic`、`src/workRecap/types.ts WorkRecapDiagnostic`、`src/workTokensTrend/types.ts WorkTokensTrendDiagnostic`。
+
+**Depends on / blocked by:** work-tokens-trend ship 落地。
+
+**Effort estimate:** S（human ~30min / CC ~10min）
+
+**Priority:** P3
