@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 26;
+const CURRENT_VERSION = 27;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -37,6 +37,7 @@ export function migrate(db: Database.Database): void {
     applyV24(db);
     applyV25(db);
     applyV26(db);
+    applyV27(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -69,6 +70,7 @@ export function migrate(db: Database.Database): void {
   if (v < 24) applyV24(db);
   if (v < 25) applyV25(db);
   if (v < 26) applyV26(db);
+  if (v < 27) applyV27(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1493,5 +1495,86 @@ function applyV26(db: Database.Database): void {
       ON work_recap_runs(window_key, generated_at DESC);
 
     UPDATE meta_schema SET version = 26 WHERE id = 1;
+  `);
+}
+
+/**
+ * v27 — Activity Cosmos `/dashboard/cosmos` 派生索引。
+ *
+ * 两张表 + 单例 state（设计文档 D3 schema 决策）：
+ *
+ *   work_cosmos_points
+ *     - 每 session 一行；x/y 是 UMAP 投影后的 2D 坐标
+ *     - **不含** summary 文本（默认不进 API payload）
+ *     - source_mtime_ms / source_size_bytes 给 D2 增量 skip 用
+ *     - missing_since 跟 token usage 表语义一致
+ *
+ *   work_cosmos_embeddings
+ *     - sidecar：summary TEXT + vector BLOB（float32 raw bytes）
+ *     - 永远不进 API；只供 refresh.ts 自己读写
+ *     - FK 到 points.session_id；cascade delete 保证孤儿不会留下
+ *
+ *   work_cosmos_state
+ *     - 单例：rule_version、最近一次 refresh 统计
+ *     - rule_version 自愈跟 claudeTokenUsage 同 pattern（v1 起步）
+ */
+function applyV27(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS work_cosmos_points (
+      session_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL CHECK (source IN ('claude', 'codex')),
+      source_path TEXT NOT NULL,
+      source_mtime_ms INTEGER NOT NULL,
+      source_size_bytes INTEGER NOT NULL,
+      project_key TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      x REAL,
+      y REAL,
+      cluster_id TEXT,
+      token_status TEXT NOT NULL CHECK (token_status IN ('full', 'unknown', 'error')),
+      embedding_status TEXT NOT NULL CHECK (
+        embedding_status IN (
+          'ok', 'pending', 'no_summary', 'rate_limited', 'auth_failed', 'provider_error'
+        )
+      ),
+      missing_since TEXT,
+      source_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_work_cosmos_points_source_seen
+      ON work_cosmos_points(source_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_work_cosmos_points_project
+      ON work_cosmos_points(project_key);
+
+    CREATE TABLE IF NOT EXISTS work_cosmos_embeddings (
+      session_id TEXT PRIMARY KEY
+        REFERENCES work_cosmos_points(session_id) ON DELETE CASCADE,
+      embedding_dim INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      summary TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS work_cosmos_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rule_version INTEGER NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_session_count INTEGER NOT NULL DEFAULT 0,
+      indexed_session_count INTEGER NOT NULL DEFAULT 0,
+      embedded_session_count INTEGER NOT NULL DEFAULT 0,
+      no_summary_session_count INTEGER NOT NULL DEFAULT 0,
+      error_session_count INTEGER NOT NULL DEFAULT 0,
+      skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+      projection_method TEXT NOT NULL DEFAULT 'none'
+        CHECK (projection_method IN ('umap', 'pca', 'none')),
+      projected_session_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 27 WHERE id = 1;
   `);
 }
