@@ -1,4 +1,17 @@
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 1;
+/**
+ * Bump when the parsing/aggregation rules change in a way that makes
+ * previously-indexed `claude_session_token_usage` rows incorrect. The
+ * refresh entry point auto-forces `full=true` whenever the stored
+ * `state.rule_version` differs from this constant, so old DBs heal
+ * themselves on the next refresh tick without the user needing to know.
+ *
+ * History:
+ *   v1: input_tokens + output_tokens only.
+ *   v2: also sums cache_creation_input_tokens + cache_read_input_tokens
+ *       (Anthropic prompt-cache fields). v1 under-counts Claude Code by
+ *       ~100-1000× on long sessions. Investigation 2026-06-12.
+ */
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 2;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 

@@ -10,6 +10,7 @@ import { extractClaudeSessionUsage } from "../claudeCodeHistory/normalize.js";
 import { normalizeWorkProjectIdentity } from "../workProjects/identity.js";
 import {
   getClaudeTokenUsageRow,
+  getClaudeTokenUsageState,
   markClaudeTokenUsageRowSeen,
   markUnseenClaudeTokenRowsMissing,
   upsertClaudeTokenUsageRow,
@@ -179,6 +180,17 @@ export async function refreshClaudeTokenUsage(
   const errors: string[] = [];
   let sessions: SourceSession[] = [];
 
+  // Self-heal: when the stored state's rule_version no longer matches the
+  // running binary's CLAUDE_TOKEN_USAGE_RULE_VERSION, all previously-indexed
+  // rows were produced by an older parser and may be incorrect. Force full
+  // reparse for this one tick so the DB catches up. After this refresh
+  // writes the new state row, subsequent ticks return to incremental mode.
+  const storedState = getClaudeTokenUsageState(db);
+  const ruleVersionStale =
+    storedState != null &&
+    storedState.rule_version !== CLAUDE_TOKEN_USAGE_RULE_VERSION;
+  const effectiveOptions = ruleVersionStale ? { ...options, full: true } : options;
+
   try {
     sessions = await sourceSessions(projectsRoot);
   } catch (e) {
@@ -197,7 +209,7 @@ export async function refreshClaudeTokenUsage(
       const st = await stat(source.filePath);
       const existing = getClaudeTokenUsageRow(db, source.id);
       if (
-        !options.full &&
+        !effectiveOptions.full &&
         existing &&
         existing.file_path === source.filePath &&
         existing.file_mtime_ms === Math.trunc(st.mtimeMs) &&
