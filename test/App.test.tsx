@@ -477,7 +477,7 @@ describe("Layout navigation", () => {
     const expectedGroups = [
       {
         label: "工作台",
-        links: ["最近工作", "Token 排行"],
+        links: ["最近工作", "Token 排行", "Token 趋势", "工作回看"],
       },
       {
         label: "本机资产",
@@ -513,6 +513,22 @@ describe("Layout navigation", () => {
 
     expect(screen.queryByRole("link", { name: "搜索" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "AI 对话" })).not.toBeInTheDocument();
+  });
+
+  it("does not leak implementation taxonomy into the sidebar copy (work-recap)", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/repos");
+    const workbenchButton = screen.getByRole("button", { name: "切换到工作台" });
+    fireEvent.click(workbenchButton);
+    const nav = screen.getByRole("navigation", { name: "全站导航" });
+
+    // The work-recap entry must read as user-facing copy, not as implementation
+    // detail. Prior learning sidebar-implementation-label-leak (2026-06-01)
+    // pinned this to "no `(commit)` suffix, no `一级能力` taxonomy".
+    expect(within(nav).getByRole("link", { name: "工作回看" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /\(commit\)/i })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: /一级能力/ })).toBeNull();
   });
 
   it("marks the current route link as the active page", () => {

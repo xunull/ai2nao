@@ -99,6 +99,12 @@ const WorkDashboard = lazy(() =>
 const WorkTokenRanking = lazy(() =>
   import("./pages/WorkTokenRanking").then((m) => ({ default: m.WorkTokenRanking }))
 );
+const WorkRecap = lazy(() =>
+  import("./pages/WorkRecap").then((m) => ({ default: m.WorkRecap }))
+);
+const WorkTokensTrend = lazy(() =>
+  import("./pages/WorkTokensTrend").then((m) => ({ default: m.WorkTokensTrend }))
+);
 
 export function App() {
   return (
@@ -108,6 +114,8 @@ export function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<WorkDashboard />} />
           <Route path="/dashboard/tokens" element={<WorkTokenRanking />} />
+          <Route path="/work-recap" element={<WorkRecap />} />
+          <Route path="/dashboard/tokens-trend" element={<WorkTokensTrend />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/repos/:id/file" element={<FileView />} />

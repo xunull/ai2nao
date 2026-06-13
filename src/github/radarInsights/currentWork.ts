@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execGitSync } from "../../git/exec.js";
 import type { RadarInsightWarning } from "./types.js";
 
 export type CurrentWorkSourceKind = "todo" | "doc" | "git_commit" | "branch";
@@ -57,12 +57,12 @@ export function scanCurrentGitContext(args: CurrentWorkScanArgs = {}): CurrentWo
 
   const gitParts: string[] = [];
   try {
-    const branch = execGit(cwd, ["branch", "--show-current"]).trim();
+    const branch = execGitSync(["branch", "--show-current"], { cwd }).trim();
     if (branch) {
       gitParts.push(`branch:${branch}`);
       sources.push(source("branch", `branch: ${branch}`, null, branch));
     }
-    const log = execGit(cwd, ["log", "--oneline", "-30"]);
+    const log = execGitSync(["log", "--oneline", "-30"], { cwd });
     gitParts.push(log);
     for (const line of log.split("\n").filter(Boolean).slice(0, 30)) {
       sources.push(source("git_commit", `commit: ${safeCommit(line)}`, null, line));
@@ -115,14 +115,6 @@ export function source(
     terms: extractTerms(content),
     hash: sha1(content),
   };
-}
-
-function execGit(cwd: string, args: string[]): string {
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
 }
 
 function safeCommit(line: string): string {

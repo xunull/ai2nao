@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 25;
+const CURRENT_VERSION = 26;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -36,6 +36,7 @@ export function migrate(db: Database.Database): void {
     applyV23(db);
     applyV24(db);
     applyV25(db);
+    applyV26(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -67,6 +68,7 @@ export function migrate(db: Database.Database): void {
   if (v < 23) applyV23(db);
   if (v < 24) applyV24(db);
   if (v < 25) applyV25(db);
+  if (v < 26) applyV26(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1458,5 +1460,38 @@ function applyV25(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 25 WHERE id = 1;
+  `);
+}
+
+/**
+ * work_recap_runs: append-only event log of generated commit-based recaps.
+ *
+ * Each row = one (windowKey, generatedAt) snapshot. UI displays the latest
+ * per window and lets the user expand history. Retention is enforced
+ * application-side via cleanupRetention(windowKey, keep=200).
+ *
+ * facts_json and inference_json are stored as JSON-encoded TEXT so the
+ * payload shape can evolve without migrations as long as parsers are
+ * defensive (workRecap design Phase 1 keeps the shape strict; future
+ * evolution will bump prompt_version).
+ */
+function applyV26(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS work_recap_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      window_key TEXT NOT NULL CHECK (window_key IN ('1d', '3d', '7d', '14d', '30d')),
+      generated_at TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      facts_json TEXT NOT NULL,
+      inference_json TEXT NOT NULL,
+      degraded INTEGER NOT NULL DEFAULT 0,
+      degrade_reason TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_work_recap_runs_window_time
+      ON work_recap_runs(window_key, generated_at DESC);
+
+    UPDATE meta_schema SET version = 26 WHERE id = 1;
   `);
 }
