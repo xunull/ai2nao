@@ -22,7 +22,9 @@ import {
   Download,
   FolderCode,
   GitBranch,
+  GitCommit,
   GitFork,
+  TrendingUp,
   Globe,
   HardDrive,
   History,
@@ -68,6 +70,8 @@ const navGroups: NavGroup[] = [
     items: [
       { to: "/dashboard", label: "最近工作", icon: LayoutDashboard },
       { to: "/dashboard/tokens", label: "Token 排行", icon: BarChart3 },
+      { to: "/dashboard/tokens-trend", label: "Token 趋势", icon: TrendingUp },
+      { to: "/work-recap", label: "工作回看", icon: GitCommit },
     ],
   },
   {
