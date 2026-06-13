@@ -38,7 +38,23 @@ function mapTokenUsage(u: unknown): TokenUsage | undefined {
   const input = o.input_tokens;
   const output = o.output_tokens;
   if (typeof input !== "number" || typeof output !== "number") return undefined;
-  return { inputTokens: input, outputTokens: output };
+  // Claude API prompt cache: the headline `input_tokens` field is ONLY the
+  // bytes that hit the model fresh in this turn. `cache_creation_input_tokens`
+  // (just-written cache) and `cache_read_input_tokens` (replayed cache) both
+  // count toward billed prompt size. Long Claude Code sessions read tens of
+  // thousands of cache tokens per turn while `input_tokens` may be < 100;
+  // missing them under-reports Claude usage by 100-1000x.
+  // Ref: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+  const cacheCreation = typeof o.cache_creation_input_tokens === "number"
+    ? o.cache_creation_input_tokens
+    : 0;
+  const cacheRead = typeof o.cache_read_input_tokens === "number"
+    ? o.cache_read_input_tokens
+    : 0;
+  return {
+    inputTokens: input + cacheCreation + cacheRead,
+    outputTokens: output,
+  };
 }
 
 function sessionUsageFromMessages(messages: Message[]): SessionUsage | undefined {
