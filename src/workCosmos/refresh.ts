@@ -35,6 +35,12 @@ import {
   upsertCosmosState,
 } from "./queries.js";
 import { summarizeSessionForCosmos } from "./summarize.js";
+import { projectCosmosTo2D } from "./project.js";
+import {
+  finishCosmosProgress,
+  startCosmosProgress,
+  updateCosmosProgress,
+} from "./progress.js";
 import {
   COSMOS_RULE_VERSION,
   type CosmosEmbeddingStatus,
@@ -65,6 +71,8 @@ export type RefreshCosmosOptions = {
   embedTextOverride?: Map<string, string>;
   /** Inject an embedder — tests pass a stub instead of hitting DashScope. */
   embedder?: (texts: string[]) => Promise<EmbeddingResult[]>;
+  /** Skip the projection step (Day 2). Useful for `embed-only` smoke tests. */
+  skipProjection?: boolean;
 };
 
 function nowIso(): string {
@@ -182,6 +190,7 @@ export async function refreshCosmos(
   const effectiveOptions = ruleStale ? { ...options, full: true } : options;
 
   const sources = listSourceSessions(db);
+  startCosmosProgress(sources.length);
 
   let indexedSessionCount = 0;
   let noSummarySessionCount = 0;
@@ -299,17 +308,20 @@ export async function refreshCosmos(
       upsertCosmosPoint(db, { ...baseRow, embedding_status: "no_summary" });
       indexedSessionCount++;
       noSummarySessionCount++;
+      updateCosmosProgress({ indexedCount: indexedSessionCount });
       continue;
     }
 
     upsertCosmosPoint(db, baseRow);
     pending.push({ session_id: src.session_id, summary });
     indexedSessionCount++;
+    updateCosmosProgress({ indexedCount: indexedSessionCount });
   }
 
   // Embed pending
   let embeddedSessionCount = 0;
   if (pending.length > 0) {
+    updateCosmosProgress({ phase: "embedding" });
     const texts = pending.map((p) => p.summary);
     try {
       const embedder =
@@ -345,6 +357,7 @@ export async function refreshCosmos(
       });
       writeTx();
       embeddedSessionCount = pending.length;
+      updateCosmosProgress({ embeddedCount: embeddedSessionCount });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`embedding batch failed: ${msg}`);
@@ -373,14 +386,35 @@ export async function refreshCosmos(
     refreshedAt
   );
 
+  // Projection step. We project whatever's in `work_cosmos_embeddings` with
+  // `embedding_status='ok'` — not just sessions touched this run. Otherwise
+  // an incremental refresh that only re-embeds one stale session would leave
+  // every other point unprojected when called from an empty-state DB.
+  const previous = getCosmosState(db);
+  let projectionMethod: "umap" | "pca" | "none" = previous?.projection_method ?? "none";
+  let projectedSessionCount = previous?.projected_session_count ?? 0;
+
+  if (!effectiveOptions.skipProjection) {
+    updateCosmosProgress({ phase: "projecting" });
+    try {
+      const proj = projectCosmosTo2D(db);
+      projectionMethod = proj.method;
+      projectedSessionCount = proj.count;
+      // proj.fallbackReason is informational (method='pca' already signals it),
+      // not an error — don't push to errors[] or the caller will see status='partial'
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`projection failed: ${msg}`);
+    }
+  }
+
   const status: "success" | "partial" | "failed" =
     errors.length === 0
       ? "success"
-      : embeddedSessionCount + skippedUnchangedCount > 0
+      : embeddedSessionCount + skippedUnchangedCount + projectedSessionCount > 0
         ? "partial"
         : "failed";
 
-  const previous = getCosmosState(db);
   upsertCosmosState(db, {
     rule_version: COSMOS_RULE_VERSION,
     last_rebuilt_at: status === "failed" ? null : refreshedAt,
@@ -391,11 +425,13 @@ export async function refreshCosmos(
     no_summary_session_count: noSummarySessionCount,
     error_session_count: errorSessionCount,
     skipped_unchanged_count: skippedUnchangedCount,
-    projection_method: previous?.projection_method ?? "none",
-    projected_session_count: previous?.projected_session_count ?? 0,
+    projection_method: projectionMethod,
+    projected_session_count: projectedSessionCount,
     duration_ms: ms(started),
     updated_at: refreshedAt,
   });
+
+  finishCosmosProgress({ ok: status !== "failed", lastError: errors[0] });
 
   return {
     ok: status !== "failed",
@@ -407,8 +443,8 @@ export async function refreshCosmos(
     errorSessionCount,
     skippedUnchangedCount,
     missingMarkedCount,
-    projectionMethod: previous?.projection_method ?? "none",
-    projectedSessionCount: previous?.projected_session_count ?? 0,
+    projectionMethod,
+    projectedSessionCount,
     durationMs: ms(started),
     errors,
   };
