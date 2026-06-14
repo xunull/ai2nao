@@ -65,6 +65,7 @@
     "commander": "^12.1.0",
     "date-fns": "^4.1.0",
     "hono": "^4.12.11",
+    "html2canvas-pro": "^2.0.4",
     "lucide-react": "^1.17.0",
     "motion": "^12.40.0",
     "p-limit": "^7.3.0",
@@ -78,6 +79,7 @@
     "react-router-dom": "^7.14.0",
     "recharts": "^3.8.1",
     "rxjs": "7.8.1",
+    "umap-js": "^1.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

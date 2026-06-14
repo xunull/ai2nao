@@ -9,6 +9,7 @@ import { syncLmStudioModels } from "../lmstudio/sync.js";
 import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js";
 import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
+import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
@@ -221,6 +222,26 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status,
           summary: { codex, claude, duration },
           errorSummary: codex.errors[0] ?? claude.errors[0] ?? duration.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      // Activity Cosmos refresh. Default disabled so a fresh install doesn't
+      // hit DashScope without user opt-in; user clicks the in-page refresh
+      // button (which calls scheduler.runNow) to populate.
+      key: "work.cosmos.refresh",
+      label: "对话宇宙刷新",
+      description: "重算 /dashboard/cosmos 散点：summary → embedding → UMAP 投影。",
+      category: "derived",
+      defaultIntervalSeconds: sixHours,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const full = Boolean(ctx.config.full);
+        const result = await refreshCosmos(ctx.db, { full });
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: result.errors[0] ?? null,
         };
       },
     },

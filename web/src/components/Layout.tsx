@@ -37,6 +37,7 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  Sparkles,
   Tags,
   Terminal,
   Wrench,
@@ -72,6 +73,7 @@ const navGroups: NavGroup[] = [
       { to: "/dashboard/tokens", label: "Token 排行", icon: BarChart3 },
       { to: "/dashboard/tokens-trend", label: "Token 趋势", icon: TrendingUp },
       { to: "/work-recap", label: "工作回看", icon: GitCommit },
+      { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
     ],
   },
   {

@@ -477,7 +477,7 @@ describe("Layout navigation", () => {
     const expectedGroups = [
       {
         label: "工作台",
-        links: ["最近工作", "Token 排行", "Token 趋势", "工作回看"],
+        links: ["最近工作", "Token 排行", "Token 趋势", "工作回看", "对话宇宙"],
       },
       {
         label: "本机资产",
