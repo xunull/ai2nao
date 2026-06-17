@@ -34,6 +34,10 @@ type SeedRow = {
   project_key?: string;
   project_path?: string;
   total: number;
+  /** Optional input/output split. Default: input=total, output=0 (keeps the
+   *  per-row invariant total = input + output true for existing tests). */
+  input?: number;
+  output?: number;
   status?: "full" | "unknown" | "error";
   updated: string; // ISO UTC
   missingSince?: string | null;
@@ -43,6 +47,8 @@ let seq = 0;
 function seedSession(db: Database.Database, row: SeedRow): void {
   seq += 1;
   const id = row.session_id ?? `s-${seq}-${row.source}`;
+  const inputTokens = row.input ?? row.total;
+  const outputTokens = row.output ?? 0;
   const table =
     row.source === "claude"
       ? "claude_session_token_usage"
@@ -56,7 +62,7 @@ function seedSession(db: Database.Database, row: SeedRow): void {
           input_tokens, output_tokens, total_tokens, token_status,
           parse_error, missing_since, source_seen_at, updated_at)
        VALUES (?, ?, ?, 0, 0, ?, ?, ?, 'high',
-               null, null, ?, 0, 0, ?, ?, null, ?, ?, ?)`
+               null, null, ?, ?, ?, ?, ?, null, ?, ?, ?)`
     ).run(
       id,
       row.project_id ?? "p-test",
@@ -65,6 +71,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
       row.project_key ?? "/tmp/test",
       row.project_path ?? "/tmp/test",
       row.updated,
+      inputTokens,
+      outputTokens,
       row.total,
       row.status ?? "full",
       row.missingSince ?? null,
@@ -82,7 +90,7 @@ function seedSession(db: Database.Database, row: SeedRow): void {
         input_tokens, output_tokens, total_tokens, token_status,
         parse_error, missing_since, source_seen_at, updated_at)
      VALUES (?, ?, 0, 0, ?, ?, ?, 'high', null, null, null, null, ?,
-             0, 0, ?, ?, null, ?, ?, ?)`
+             ?, ?, ?, ?, null, ?, ?, ?)`
   ).run(
     id,
     row.file_path ?? "/tmp/r.jsonl",
@@ -90,6 +98,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
     row.project_key ?? "/tmp/test",
     row.project_path ?? "/tmp/test",
     row.updated,
+    inputTokens,
+    outputTokens,
     row.total,
     row.status ?? "full",
     row.missingSince ?? null,
@@ -205,6 +215,8 @@ describe("mergeAndZeroFill", () => {
         {
           bucket_key: "2026-06-10",
           total_tokens: 1000,
+          input_tokens: 800,
+          output_tokens: 200,
           session_count: 2,
           full_count: 2,
           unknown_count: 0,
@@ -219,6 +231,184 @@ describe("mergeAndZeroFill", () => {
     expect(merged[1].claudeTokens).toBe(0);
     expect(merged[1].codexTokens).toBe(0);
   });
+
+  it("carries input/output split per source and zero-fills the missing one", () => {
+    const buckets = [
+      { key: "2026-06-10", start: new Date(2026, 5, 10), end: new Date(2026, 5, 11) },
+    ];
+    const merged = mergeAndZeroFill(
+      buckets,
+      [
+        {
+          bucket_key: "2026-06-10",
+          total_tokens: 1000,
+          input_tokens: 800,
+          output_tokens: 200,
+          session_count: 1,
+          full_count: 1,
+          unknown_count: 0,
+          error_count: 0,
+        },
+      ],
+      [
+        {
+          bucket_key: "2026-06-10",
+          total_tokens: 60,
+          input_tokens: 50,
+          output_tokens: 10,
+          session_count: 1,
+          full_count: 1,
+          unknown_count: 0,
+          error_count: 0,
+        },
+      ]
+    );
+    expect(merged[0].claudeInputTokens).toBe(800);
+    expect(merged[0].claudeOutputTokens).toBe(200);
+    expect(merged[0].codexInputTokens).toBe(50);
+    expect(merged[0].codexOutputTokens).toBe(10);
+    // per-bucket invariant: input + output == tokens
+    expect(merged[0].claudeInputTokens + merged[0].claudeOutputTokens).toBe(
+      merged[0].claudeTokens
+    );
+    expect(merged[0].codexInputTokens + merged[0].codexOutputTokens).toBe(
+      merged[0].codexTokens
+    );
+  });
+
+  it("zero-fills input/output to 0 for a source with no row", () => {
+    const buckets = [
+      { key: "2026-06-10", start: new Date(2026, 5, 10), end: new Date(2026, 5, 11) },
+    ];
+    const merged = mergeAndZeroFill(
+      buckets,
+      [
+        {
+          bucket_key: "2026-06-10",
+          total_tokens: 1000,
+          input_tokens: 800,
+          output_tokens: 200,
+          session_count: 1,
+          full_count: 1,
+          unknown_count: 0,
+          error_count: 0,
+        },
+      ],
+      [] // no codex
+    );
+    expect(merged[0].codexInputTokens).toBe(0);
+    expect(merged[0].codexOutputTokens).toBe(0);
+  });
+});
+
+describe("input/output breakdown (2×3 matrix data)", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  it("queryBucketsBySource sums input/output split, full-only", () => {
+    // 2 full claude sessions + 1 unknown (must NOT contribute to input/output)
+    seedSession(db, {
+      source: "claude",
+      total: 1000,
+      input: 900,
+      output: 100,
+      updated: "2026-06-09T16:30:00Z",
+    });
+    seedSession(db, {
+      source: "claude",
+      total: 500,
+      input: 480,
+      output: 20,
+      updated: "2026-06-09T17:00:00Z",
+    });
+    seedSession(db, {
+      source: "claude",
+      total: 0,
+      input: 0,
+      output: 0,
+      status: "unknown",
+      updated: "2026-06-09T17:30:00Z",
+    });
+
+    const rows = queryBucketsBySource(
+      db,
+      "claude",
+      new Date(2026, 5, 10, 0, 0, 0, 0),
+      new Date(2026, 5, 11, 0, 0, 0, 0),
+      "day"
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].input_tokens).toBe(1380); // 900 + 480
+    expect(rows[0].output_tokens).toBe(120); // 100 + 20
+    expect(rows[0].total_tokens).toBe(1500);
+    // bucket-level invariant
+    expect(rows[0].input_tokens + rows[0].output_tokens).toBe(
+      rows[0].total_tokens
+    );
+  });
+
+  it("computeTotals sums the 2×3 matrix and the grand invariant holds", () => {
+    const t = computeTotals([
+      {
+        bucketStart: "x",
+        bucketEnd: "y",
+        claudeTokens: 1000,
+        codexTokens: 600,
+        claudeInputTokens: 900,
+        claudeOutputTokens: 100,
+        codexInputTokens: 550,
+        codexOutputTokens: 50,
+        claudeSessionCount: 1,
+        codexSessionCount: 1,
+        claudeCoveredSessionCount: 1,
+        codexCoveredSessionCount: 1,
+        claudeUnknownSessionCount: 0,
+        codexUnknownSessionCount: 0,
+        claudeErrorSessionCount: 0,
+        codexErrorSessionCount: 0,
+      },
+      {
+        bucketStart: "x2",
+        bucketEnd: "y2",
+        claudeTokens: 200,
+        codexTokens: 0,
+        claudeInputTokens: 180,
+        claudeOutputTokens: 20,
+        codexInputTokens: 0,
+        codexOutputTokens: 0,
+        claudeSessionCount: 1,
+        codexSessionCount: 0,
+        claudeCoveredSessionCount: 1,
+        codexCoveredSessionCount: 0,
+        claudeUnknownSessionCount: 0,
+        codexUnknownSessionCount: 0,
+        claudeErrorSessionCount: 0,
+        codexErrorSessionCount: 0,
+      },
+    ]);
+    expect(t.claudeInputTokens).toBe(1080); // 900 + 180
+    expect(t.claudeOutputTokens).toBe(120); // 100 + 20
+    expect(t.codexInputTokens).toBe(550);
+    expect(t.codexOutputTokens).toBe(50);
+    // grand invariant: 4 fields sum to totalTokens
+    expect(
+      t.claudeInputTokens +
+        t.claudeOutputTokens +
+        t.codexInputTokens +
+        t.codexOutputTokens
+    ).toBe(t.totalTokens);
+  });
+
+  it("empty input → all-zero matrix, no NaN", () => {
+    const t = computeTotals([]);
+    expect(t.claudeInputTokens).toBe(0);
+    expect(t.claudeOutputTokens).toBe(0);
+    expect(t.codexInputTokens).toBe(0);
+    expect(t.codexOutputTokens).toBe(0);
+    expect(Number.isNaN(t.claudeInputTokens)).toBe(false);
+  });
 });
 
 describe("computeTotals (3-state coverage)", () => {
@@ -229,6 +419,10 @@ describe("computeTotals (3-state coverage)", () => {
         bucketEnd: "y",
         claudeTokens: 1000,
         codexTokens: 500,
+        claudeInputTokens: 1000,
+        claudeOutputTokens: 0,
+        codexInputTokens: 500,
+        codexOutputTokens: 0,
         claudeSessionCount: 1,
         codexSessionCount: 1,
         claudeCoveredSessionCount: 1,
@@ -255,6 +449,10 @@ describe("computeTotals (3-state coverage)", () => {
         bucketEnd: "y",
         claudeTokens: 1000,
         codexTokens: 0,
+        claudeInputTokens: 1000,
+        claudeOutputTokens: 0,
+        codexInputTokens: 0,
+        codexOutputTokens: 0,
         claudeSessionCount: 2,
         codexSessionCount: 0,
         claudeCoveredSessionCount: 1,
@@ -278,6 +476,10 @@ describe("computeTotals (3-state coverage)", () => {
         bucketEnd: "y",
         claudeTokens: 0,
         codexTokens: 0,
+        claudeInputTokens: 0,
+        claudeOutputTokens: 0,
+        codexInputTokens: 0,
+        codexOutputTokens: 0,
         claudeSessionCount: 1,
         codexSessionCount: 0,
         claudeCoveredSessionCount: 0,
@@ -298,6 +500,10 @@ describe("computeTotals (3-state coverage)", () => {
         bucketEnd: "y",
         claudeTokens: 0,
         codexTokens: 0,
+        claudeInputTokens: 0,
+        claudeOutputTokens: 0,
+        codexInputTokens: 0,
+        codexOutputTokens: 0,
         claudeSessionCount: 3,
         codexSessionCount: 2,
         claudeCoveredSessionCount: 1,

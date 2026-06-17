@@ -85,6 +85,17 @@ export type WorkTokensTrendBucket = {
   bucketEnd: string; // ISO, exclusive upper bound
   claudeTokens: number;
   codexTokens: number;
+  /**
+   * Input / output split per source (token_status='full' only). For Claude,
+   * `*InputTokens` is the FUSED value (input + cache_creation + cache_read) —
+   * cache breakdown is a separate future change. Invariant per bucket:
+   *   claudeInputTokens + claudeOutputTokens == claudeTokens
+   *   codexInputTokens  + codexOutputTokens  == codexTokens
+   */
+  claudeInputTokens: number;
+  claudeOutputTokens: number;
+  codexInputTokens: number;
+  codexOutputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   /** token_status='full' — covered. */
@@ -104,6 +115,17 @@ export type WorkTokensTrendTotals = {
   totalTokens: number;
   claudeTokens: number;
   codexTokens: number;
+  /**
+   * Input / output split (token_status='full' only). Powers the 2×3 breakdown
+   * matrix. Invariant: claudeInput + claudeOutput + codexInput + codexOutput
+   * === totalTokens (exact — total_tokens is stored as input+output at parse
+   * time, same 'full' predicate). Claude input is cache-inflated (fused with
+   * cache_creation + cache_read); cache breakdown is a separate future change.
+   */
+  claudeInputTokens: number;
+  claudeOutputTokens: number;
+  codexInputTokens: number;
+  codexOutputTokens: number;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;

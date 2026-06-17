@@ -24,8 +24,11 @@ function seedClaude(
   id: string,
   total: number,
   updated: string,
-  status: "full" | "unknown" | "error" = "full"
+  status: "full" | "unknown" | "error" = "full",
+  io?: { input: number; output: number }
 ): void {
+  const input = io?.input ?? total;
+  const output = io?.output ?? 0;
   db.prepare(
     `INSERT INTO claude_session_token_usage
        (session_id, project_id, file_path, file_mtime_ms, file_size_bytes,
@@ -34,8 +37,29 @@ function seedClaude(
         input_tokens, output_tokens, total_tokens, token_status,
         parse_error, missing_since, source_seen_at, updated_at)
      VALUES (?, 'p', '/x', 0, 0, '/x', '/x', '/x', 'high',
-             null, null, ?, 0, 0, ?, ?, null, null, ?, ?)`
-  ).run(id, updated, total, status, updated, updated);
+             null, null, ?, ?, ?, ?, ?, null, null, ?, ?)`
+  ).run(id, updated, input, output, total, status, updated, updated);
+}
+
+function seedCodex(
+  db: Database.Database,
+  id: string,
+  total: number,
+  updated: string,
+  io?: { input: number; output: number }
+): void {
+  const input = io?.input ?? total;
+  const output = io?.output ?? 0;
+  db.prepare(
+    `INSERT INTO codex_session_token_usage
+       (session_id, rollout_path, rollout_mtime_ms, rollout_size_bytes,
+        cwd, project_key, project_path, identity_confidence,
+        title, model, git_branch, created_at, last_updated_at,
+        input_tokens, output_tokens, total_tokens, token_status,
+        parse_error, missing_since, source_seen_at, updated_at)
+     VALUES (?, '/r', 0, 0, '/x', '/x', '/x', 'high', null, null, null, null, ?,
+             ?, ?, ?, 'full', null, null, ?, ?)`
+  ).run(id, updated, input, output, total, updated, updated);
 }
 
 describe("generateTrend — window mode (happy)", () => {
@@ -93,6 +117,66 @@ describe("generateTrend — month mode (happy)", () => {
     expect(r.bucketGranularity).toBe("day");
     expect(r.buckets.length).toBe(30); // June has 30 days
     expect(r.totals.totalTokens).toBe(1000);
+  });
+});
+
+describe("generateTrend — input/output breakdown totals", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  it("window mode: totals expose per-source input/output + grand invariant", () => {
+    seedClaude(db, "c1", 1000, "2026-06-09T16:30:00Z", "full", {
+      input: 900,
+      output: 100,
+    });
+    seedCodex(db, "x1", 600, "2026-06-09T17:00:00Z", {
+      input: 550,
+      output: 50,
+    });
+    const r = generateTrend(db, {
+      window: "1w",
+      now: new Date(2026, 5, 10, 12, 0, 0, 0),
+    });
+    if (r.mode !== "window") throw new Error("type narrow");
+    expect(r.totals.claudeInputTokens).toBe(900);
+    expect(r.totals.claudeOutputTokens).toBe(100);
+    expect(r.totals.codexInputTokens).toBe(550);
+    expect(r.totals.codexOutputTokens).toBe(50);
+    expect(
+      r.totals.claudeInputTokens +
+        r.totals.claudeOutputTokens +
+        r.totals.codexInputTokens +
+        r.totals.codexOutputTokens
+    ).toBe(r.totals.totalTokens);
+  });
+
+  it("month mode: totals also expose per-source input/output", () => {
+    seedClaude(db, "c1", 1000, "2026-06-09T16:30:00Z", "full", {
+      input: 800,
+      output: 200,
+    });
+    const r = generateTrend(db, {
+      month: "2026-06",
+      now: new Date(2026, 5, 11, 12, 0, 0, 0),
+    });
+    if (r.mode !== "month") throw new Error("type narrow");
+    expect(r.totals.claudeInputTokens).toBe(800);
+    expect(r.totals.claudeOutputTokens).toBe(200);
+    expect(r.totals.codexInputTokens).toBe(0);
+    expect(r.totals.codexOutputTokens).toBe(0);
+  });
+
+  it("empty DB: breakdown is all-zero, no NaN", () => {
+    const r = generateTrend(db, {
+      window: "1w",
+      now: new Date(2026, 5, 10, 12, 0, 0, 0),
+    });
+    if (r.mode !== "window") throw new Error("type narrow");
+    expect(r.totals.claudeInputTokens).toBe(0);
+    expect(r.totals.codexOutputTokens).toBe(0);
+    expect(Number.isNaN(r.totals.claudeInputTokens)).toBe(false);
   });
 });
 

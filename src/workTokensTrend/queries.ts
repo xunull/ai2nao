@@ -18,6 +18,8 @@ const TABLE: Record<Source, string> = {
 type RawBucketRow = {
   bucket_key: string;
   total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
   session_count: number;
   full_count: number;
   unknown_count: number;
@@ -51,6 +53,8 @@ export function queryBucketsBySource(
     SELECT
       ${bucketExpr(granularity)} AS bucket_key,
       COALESCE(SUM(CASE WHEN token_status = 'full' THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+      COALESCE(SUM(CASE WHEN token_status = 'full' THEN input_tokens ELSE 0 END), 0) AS input_tokens,
+      COALESCE(SUM(CASE WHEN token_status = 'full' THEN output_tokens ELSE 0 END), 0) AS output_tokens,
       COUNT(*) AS session_count,
       SUM(CASE WHEN token_status = 'full' THEN 1 ELSE 0 END) AS full_count,
       SUM(CASE WHEN token_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_count,
@@ -87,6 +91,10 @@ export function mergeAndZeroFill(
       bucketEnd: b.end.toISOString(),
       claudeTokens: c?.total_tokens ?? 0,
       codexTokens: x?.total_tokens ?? 0,
+      claudeInputTokens: c?.input_tokens ?? 0,
+      claudeOutputTokens: c?.output_tokens ?? 0,
+      codexInputTokens: x?.input_tokens ?? 0,
+      codexOutputTokens: x?.output_tokens ?? 0,
       claudeSessionCount: c?.session_count ?? 0,
       codexSessionCount: x?.session_count ?? 0,
       claudeCoveredSessionCount: c?.full_count ?? 0,
@@ -116,12 +124,20 @@ export function computeTotals(
 ): WorkTokensTrendTotals {
   let claudeTokens = 0;
   let codexTokens = 0;
+  let claudeInputTokens = 0;
+  let claudeOutputTokens = 0;
+  let codexInputTokens = 0;
+  let codexOutputTokens = 0;
   let coveredSessionCount = 0;
   let unknownSessionCount = 0;
   let errorSessionCount = 0;
   for (const b of buckets) {
     claudeTokens += b.claudeTokens;
     codexTokens += b.codexTokens;
+    claudeInputTokens += b.claudeInputTokens;
+    claudeOutputTokens += b.claudeOutputTokens;
+    codexInputTokens += b.codexInputTokens;
+    codexOutputTokens += b.codexOutputTokens;
     coveredSessionCount +=
       b.claudeCoveredSessionCount + b.codexCoveredSessionCount;
     unknownSessionCount +=
@@ -148,6 +164,10 @@ export function computeTotals(
     totalTokens,
     claudeTokens,
     codexTokens,
+    claudeInputTokens,
+    claudeOutputTokens,
+    codexInputTokens,
+    codexOutputTokens,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
     coverage,

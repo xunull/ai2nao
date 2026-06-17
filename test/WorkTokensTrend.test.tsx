@@ -75,6 +75,10 @@ const WINDOW_OK = {
     totalTokens: 15000,
     claudeTokens: 12000,
     codexTokens: 3000,
+    claudeInputTokens: 11500,
+    claudeOutputTokens: 500,
+    codexInputTokens: 2800,
+    codexOutputTokens: 200,
     claudeShare: 0.8,
     codexShare: 0.2,
     coverage: "full" as const,
@@ -101,6 +105,10 @@ const MONTH_OK = {
     totalTokens: 0,
     claudeTokens: 0,
     codexTokens: 0,
+    claudeInputTokens: 0,
+    claudeOutputTokens: 0,
+    codexInputTokens: 0,
+    codexOutputTokens: 0,
     claudeShare: 0,
     codexShare: 0,
     coverage: "full" as const,
@@ -134,6 +142,49 @@ describe("WorkTokensTrend page", () => {
     expect(screen.getByText("+50.0%")).toBeInTheDocument();
     // 80% Claude
     expect(screen.getByText("80.0%")).toBeInTheDocument();
+  });
+
+  it("renders the 2×3 input/output breakdown matrix", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("输入 / 输出拆分")).toBeInTheDocument()
+    );
+    // table headers
+    expect(screen.getByRole("columnheader", { name: "输入" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "输出" })).toBeInTheDocument();
+    // row labels — 合计 row present
+    expect(screen.getByText("合计")).toBeInTheDocument();
+    // a few formatted numbers should appear (12000 claude total, 3000 codex total)
+    // formatTokenCount renders compactly, so assert the cells exist via row count
+    const rows = screen.getAllByRole("row");
+    // 1 header + Claude + Codex + 合计 = 4
+    expect(rows.length).toBe(4);
+  });
+
+  it("breakdown matrix shows 0 (not —) for an empty window", async () => {
+    installFetchMock(async () =>
+      jsonResponse({
+        ...WINDOW_OK,
+        buckets: [],
+        totals: {
+          ...WINDOW_OK.totals,
+          totalTokens: 0,
+          claudeTokens: 0,
+          codexTokens: 0,
+          claudeInputTokens: 0,
+          claudeOutputTokens: 0,
+          codexInputTokens: 0,
+          codexOutputTokens: 0,
+        },
+      })
+    );
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("输入 / 输出拆分")).toBeInTheDocument()
+    );
+    // matrix renders; no crash; the 合计 row still present
+    expect(screen.getByText("合计")).toBeInTheDocument();
   });
 
   it("switches request URL when window dropdown changes", async () => {

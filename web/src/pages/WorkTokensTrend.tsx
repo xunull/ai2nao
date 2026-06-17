@@ -49,6 +49,10 @@ type Totals = {
   totalTokens: number;
   claudeTokens: number;
   codexTokens: number;
+  claudeInputTokens: number;
+  claudeOutputTokens: number;
+  codexInputTokens: number;
+  codexOutputTokens: number;
   claudeShare: number;
   codexShare: number;
   coverage: Coverage;
@@ -143,6 +147,102 @@ function StatCard({
       <div className="mt-1 text-2xl font-semibold tabular-nums text-[var(--fg)]">{value}</div>
       {subtle && <div className="mt-1 text-xs text-[var(--fg-muted)]">{subtle}</div>}
     </div>
+  );
+}
+
+/**
+ * 2×3 input/output breakdown matrix.
+ *
+ * Rows: Claude / Codex / 合计. Cols: 输入 / 输出 / 小计.
+ * All numbers are token_status='full' only, scoped to the current window/month
+ * (same predicate as the chart). Empty cells render `0`, not `—`.
+ *
+ * Note: Claude 输入 is the FUSED value (includes cache_creation + cache_read),
+ * so it reads much larger than 输出 — that's billing-accurate, not a bug. A
+ * future change will split out cache hits separately.
+ */
+function BreakdownMatrix({ totals }: { totals: Totals }) {
+  const claudeTotal = totals.claudeInputTokens + totals.claudeOutputTokens;
+  const codexTotal = totals.codexInputTokens + totals.codexOutputTokens;
+  const inputTotal = totals.claudeInputTokens + totals.codexInputTokens;
+  const outputTotal = totals.claudeOutputTokens + totals.codexOutputTokens;
+  const grandTotal = inputTotal + outputTotal;
+
+  const rows: {
+    label: string;
+    dot?: string;
+    input: number;
+    output: number;
+    total: number;
+    bold?: boolean;
+  }[] = [
+    {
+      label: "Claude",
+      dot: "#d97757",
+      input: totals.claudeInputTokens,
+      output: totals.claudeOutputTokens,
+      total: claudeTotal,
+    },
+    {
+      label: "Codex",
+      dot: "#2563eb",
+      input: totals.codexInputTokens,
+      output: totals.codexOutputTokens,
+      total: codexTotal,
+    },
+    {
+      label: "合计",
+      input: inputTotal,
+      output: outputTotal,
+      total: grandTotal,
+      bold: true,
+    },
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--fg)]">输入 / 输出拆分</h2>
+        <span className="text-xs text-[var(--fg-muted)]">
+          仅统计完整 token 的 session · 含 cache
+        </span>
+      </div>
+      <table className="w-full text-sm tabular-nums">
+        <thead>
+          <tr className="text-xs uppercase tracking-wide text-[var(--fg-muted)]">
+            <th className="py-1.5 text-left font-medium">来源</th>
+            <th className="py-1.5 text-right font-medium">输入</th>
+            <th className="py-1.5 text-right font-medium">输出</th>
+            <th className="py-1.5 text-right font-medium">小计</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr
+              key={r.label}
+              className={`border-t border-[var(--border)] ${
+                r.bold ? "font-semibold text-[var(--fg)]" : "text-[var(--fg)]"
+              }`}
+            >
+              <td className="py-1.5 text-left">
+                <span className="flex items-center gap-1.5">
+                  {r.dot && (
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-sm"
+                      style={{ background: r.dot }}
+                    />
+                  )}
+                  {r.label}
+                </span>
+              </td>
+              <td className="py-1.5 text-right">{formatTokenCount(r.input)}</td>
+              <td className="py-1.5 text-right">{formatTokenCount(r.output)}</td>
+              <td className="py-1.5 text-right">{formatTokenCount(r.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -346,6 +446,8 @@ export function WorkTokensTrend() {
               <StatCard label="环比" value="—" subtle="月模式不展示环比" />
             )}
           </section>
+
+          <BreakdownMatrix totals={trend.data.totals} />
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="mb-3 flex items-center justify-between">
