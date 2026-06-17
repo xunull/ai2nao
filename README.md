@@ -4,6 +4,24 @@
 
 数据默认落在 `~/.ai2nao/index.db`（可用 `--db` 覆盖）。
 
+## Showcase
+
+### 对话宇宙 `/dashboard/cosmos`
+
+把本地所有 AI 对话 session（Claude Code + Codex）嵌入 2D 语义空间，渲染成一张
+散点图：**颜色 = 来源**（Claude 蓝 / Codex 橙），**大小 = token 量**。一眼看到
+"我和 AI 一年聊过的东西在语义空间里长什么样"，一键导出 PNG。
+
+<!-- 截图待手动补：启动 serve → 打开 /dashboard/cosmos → 点"刷新"生成散点 → 导出 PNG → 放到 docs/assets/cosmos.png 并在此处插入 ![](docs/assets/cosmos.png) -->
+
+- embedding 复用 RAG 的 provider 配置（`~/.ai2nao/rag.json`），默认走远端服务，
+  页面如实标注 embedding model。想完全 local-only 见 TODOS（本地 embedding fallback）。
+- session 内容不全量上传：每个 session 只取"首条实质提问 + 末条实质回复"的原文
+  节选（≤2K 字符，剥掉 CLI 控制标签 / ANSI）。数据边界详见
+  [Cosmos embedding 数据边界](local-docs/2026-06-14-cosmos-embedding-data-boundary/README.md)。
+- 工程细节（数据流、schema、UMAP 投影、API、Phase 2 路线）见
+  [Activity Cosmos 技术文档](docs/activity-cosmos.md)。
+
 ## 要求
 
 - Node.js **20+**
