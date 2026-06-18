@@ -11,8 +11,12 @@
  *   v2: output = output_tokens (reasoning already included). 2026-06-18.
  *   v3: also persists reasoning_output_tokens in its own column (subset of
  *       output) to power the "Codex 输出构成" display. 2026-06-18.
+ *   v4: also records per-event token deltas into codex_token_usage_event so the
+ *       trend page can bucket Codex tokens by the day they were consumed,
+ *       instead of collapsing a multi-day resumed session onto its last day.
+ *       2026-06-18.
  */
-export const CODEX_TOKEN_USAGE_RULE_VERSION = 3;
+export const CODEX_TOKEN_USAGE_RULE_VERSION = 4;
 
 export type CodexTokenStatus = "full" | "unknown" | "error";
 
@@ -40,6 +44,22 @@ export type CodexTokenUsageRow = {
   missing_since: string | null;
   source_seen_at: string;
   updated_at: string;
+};
+
+/**
+ * One `token_count` event's per-event token delta, tied to its rollout
+ * timestamp. Summed over a session these equal the session's totals (same
+ * accounting as {@link extractCodexSessionUsage}); split by `event_at` they
+ * let the trend page bucket Codex tokens by the day they were consumed.
+ */
+export type CodexTokenUsageEventRow = {
+  session_id: string;
+  /** ISO-8601 UTC timestamp of the rollout event. */
+  event_at: string;
+  input_tokens: number;
+  output_tokens: number;
+  /** Subset of output_tokens that was reasoning (thinking). */
+  reasoning_output_tokens: number;
 };
 
 export type CodexTokenUsageStateRow = {

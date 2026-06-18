@@ -180,6 +180,14 @@ state DB 元数据。state DB 一旦 stale,token 没丢但会被错误分桶,从
 "消失"。** 排查"数据消失"类问题,先分清是"数据没采到"还是"采到了但元数据
 (日期)错位"。
 
+> **后续(2026-06-18):这个 state-DB 修复之后数据仍不对——只剩 6/18 有 Codex。**
+> 那是**第二个、独立的 bug**:本修复只把"折叠点"从 6/13 挪到了 6/18,没解决
+> "折叠"本身。一个从 6/11 续用到 6/18 的 session,它一周的 token 仍被整块记到
+> `last_updated_at`(6/18)那一天。根因:`codex_session_token_usage` 每 session
+> 一行、单个日期。修复见
+> [`docs/codex-token-daily-bucketing.md`](codex-token-daily-bucketing.md):按
+> `token_count` 事件时间戳逐天归属(新表 `codex_token_usage_event`)。
+
 ---
 
 ## 6. 相关文件

@@ -34,9 +34,29 @@ type RawBucketRow = {
 /**
  * Per-source aggregate for a single `[from, to)` range bucketed by `granularity`.
  *
- * Returns one row per bucket that has at least one session. The caller
- * (`mergeAndZeroFill`) is responsible for filling in zero buckets via
- * `iterateBuckets()` so the response shape is contiguous.
+ * Claude reads straight from its per-session table (one short-lived session per
+ * conversation, so per-session bucketing is already correct). **Codex is
+ * special**: a session can be resumed across many days (Codex appends to one
+ * rollout), so bucketing its total on `last_updated_at` collapses a week of
+ * usage onto one day. For Codex the token sums come from the per-event timeline
+ * (`codex_token_usage_event`, bucketed by `event_at`) while session counts /
+ * coverage stay on the per-session table. See `queryCodexBuckets`.
+ */
+export function queryBucketsBySource(
+  db: Database.Database,
+  source: Source,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): RawBucketRow[] {
+  if (source === "codex") {
+    return queryCodexBuckets(db, from, to, granularity);
+  }
+  return querySessionTableBuckets(db, source, from, to, granularity);
+}
+
+/**
+ * Per-session-table aggregate, bucketed by `last_updated_at`.
  *
  * Filter rules (P11, single predicate for both SUM and count):
  *   - `last_updated_at` BETWEEN from AND to (half-open: < to)
@@ -47,7 +67,7 @@ type RawBucketRow = {
  * NOT to the token sum. This is the ai2nao "real tokens only, never estimate"
  * convention — same as `buildWorkTokenRanking()`.
  */
-export function queryBucketsBySource(
+function querySessionTableBuckets(
   db: Database.Database,
   source: Source,
   from: Date,
@@ -93,6 +113,103 @@ export function queryBucketsBySource(
   const fromIso = from.toISOString();
   const toIso = to.toISOString();
   return db.prepare(sql).all(fromIso, toIso) as RawBucketRow[];
+}
+
+type CodexTokenSumRow = {
+  bucket_key: string;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+};
+
+/**
+ * Codex token sums bucketed by `event_at` (the per-event timeline), joined to
+ * the per-session table so the same `token_status='full'` + `missing_since IS
+ * NULL` filters apply. `total = input + output` (Codex/OpenAI semantics, same
+ * as the session table's `total_tokens`); reasoning is a subset of output,
+ * reported separately.
+ */
+function queryCodexTokenSumsByBucket(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): CodexTokenSumRow[] {
+  const sql = `
+    SELECT
+      ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+      COALESCE(SUM(e.input_tokens + e.output_tokens), 0) AS total_tokens,
+      COALESCE(SUM(e.input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(e.output_tokens), 0) AS output_tokens,
+      COALESCE(SUM(e.reasoning_output_tokens), 0) AS reasoning_output_tokens
+    FROM codex_token_usage_event e
+    JOIN codex_session_token_usage s ON s.session_id = e.session_id
+    WHERE e.event_at >= ?
+      AND e.event_at < ?
+      AND s.missing_since IS NULL
+      AND s.token_status = 'full'
+    GROUP BY bucket_key
+    ORDER BY bucket_key ASC
+  `;
+  return db
+    .prepare(sql)
+    .all(from.toISOString(), to.toISOString()) as CodexTokenSumRow[];
+}
+
+/**
+ * Codex bucket rows: token sums from the per-event timeline (bucketed by the
+ * day each token was consumed), session counts / coverage from the per-session
+ * table (bucketed by `last_updated_at`, unchanged). A bucket can therefore have
+ * tokens with `session_count = 0` (a still-running session consumed tokens that
+ * day but was last *touched* on a later day) — that's honest, and the per-bucket
+ * session-count detail only surfaces in the tooltip when coverage is partial.
+ */
+function queryCodexBuckets(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): RawBucketRow[] {
+  const byKey = new Map<string, RawBucketRow>();
+  // Counts / coverage from the session table; zero the token fields — they'll
+  // be replaced by the event-timeline sums below.
+  for (const c of querySessionTableBuckets(db, "codex", from, to, granularity)) {
+    byKey.set(c.bucket_key, {
+      ...c,
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      reasoning_output_tokens: 0,
+    });
+  }
+  // Token sums from the per-event timeline.
+  for (const t of queryCodexTokenSumsByBucket(db, from, to, granularity)) {
+    const existing = byKey.get(t.bucket_key);
+    if (existing) {
+      existing.total_tokens = t.total_tokens;
+      existing.input_tokens = t.input_tokens;
+      existing.output_tokens = t.output_tokens;
+      existing.reasoning_output_tokens = t.reasoning_output_tokens;
+    } else {
+      byKey.set(t.bucket_key, {
+        bucket_key: t.bucket_key,
+        total_tokens: t.total_tokens,
+        input_tokens: t.input_tokens,
+        output_tokens: t.output_tokens,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        reasoning_output_tokens: t.reasoning_output_tokens,
+        session_count: 0,
+        full_count: 0,
+        unknown_count: 0,
+        error_count: 0,
+      });
+    }
+  }
+  return [...byKey.values()].sort((a, b) =>
+    a.bucket_key < b.bucket_key ? -1 : a.bucket_key > b.bucket_key ? 1 : 0
+  );
 }
 
 /**
@@ -227,6 +344,9 @@ export function computePreviousWindowTotal(
   const prevFrom = new Date(from.getTime() - span);
   const prevTo = new Date(from.getTime());
 
+  // Claude from its per-session table (bucketed by last_updated_at); Codex from
+  // the per-event timeline (bucketed by event_at) so the comparison window
+  // matches how the bars distribute resumed-session tokens by consumption day.
   const sql = `
     SELECT COALESCE(SUM(total_tokens), 0) AS total
     FROM (
@@ -236,11 +356,13 @@ export function computePreviousWindowTotal(
          AND missing_since IS NULL
          AND token_status = 'full'
       UNION ALL
-      SELECT total_tokens FROM codex_session_token_usage
-       WHERE last_updated_at >= ?
-         AND last_updated_at < ?
-         AND missing_since IS NULL
-         AND token_status = 'full'
+      SELECT (e.input_tokens + e.output_tokens) AS total_tokens
+        FROM codex_token_usage_event e
+        JOIN codex_session_token_usage s ON s.session_id = e.session_id
+       WHERE e.event_at >= ?
+         AND e.event_at < ?
+         AND s.missing_since IS NULL
+         AND s.token_status = 'full'
     )
   `;
   const fromIso = prevFrom.toISOString();

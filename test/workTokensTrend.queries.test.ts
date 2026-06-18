@@ -117,6 +117,15 @@ function seedSession(db: Database.Database, row: SeedRow): void {
     row.updated,
     row.updated
   );
+  // Codex trend token sums read from the per-event timeline. Mirror this
+  // session as a single event at `updated` (the JOIN re-applies the
+  // token_status='full' + missing_since filters, so unknown/error/missing
+  // sessions still contribute 0).
+  db.prepare(
+    `INSERT INTO codex_token_usage_event
+       (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, row.updated, inputTokens, outputTokens, row.reasoning ?? 0);
   void table;
 }
 
