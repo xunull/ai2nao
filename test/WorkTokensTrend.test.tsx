@@ -83,6 +83,7 @@ const WINDOW_OK = {
     claudeCacheReadInputTokens: 9000,
     claudeCacheCreationInputTokens: 2000,
     codexReasoningOutputTokens: 140, // subset of codexOutputTokens (200)
+    codexCachedInputTokens: 1400, // subset of codexInputTokens (2800) → 50% hit
     claudeShare: 0.8,
     codexShare: 0.2,
     coverage: "full" as const,
@@ -116,6 +117,7 @@ const MONTH_OK = {
     claudeCacheReadInputTokens: 0,
     claudeCacheCreationInputTokens: 0,
     codexReasoningOutputTokens: 0,
+    codexCachedInputTokens: 0,
     claudeShare: 0,
     codexShare: 0,
     coverage: "full" as const,
@@ -178,13 +180,34 @@ describe("WorkTokensTrend page", () => {
     await waitFor(() =>
       expect(screen.getByText("Claude 输入构成")).toBeInTheDocument()
     );
+    // Scope to the Claude card — the Codex 输入构成 card shares row labels.
+    const claudeCard = screen
+      .getByText("Claude 输入构成")
+      .closest("section") as HTMLElement;
     // hit rate = read / input = 9000 / 11500 = 78.3%
-    expect(screen.getByText(/cache 命中率 78\.3%/)).toBeInTheDocument();
-    // three composition rows
-    expect(screen.getByText("真实新增")).toBeInTheDocument();
-    expect(screen.getByText("写入 cache")).toBeInTheDocument();
-    expect(screen.getByText("命中 cache")).toBeInTheDocument();
-    expect(screen.getByText("输入合计")).toBeInTheDocument();
+    expect(within(claudeCard).getByText(/cache 命中率 78\.3%/)).toBeInTheDocument();
+    // three composition rows (Claude has cache-creation, unlike Codex)
+    expect(within(claudeCard).getByText("真实新增")).toBeInTheDocument();
+    expect(within(claudeCard).getByText("写入 cache")).toBeInTheDocument();
+    expect(within(claudeCard).getByText("命中 cache")).toBeInTheDocument();
+    expect(within(claudeCard).getByText("输入合计")).toBeInTheDocument();
+  });
+
+  it("renders Codex 输入构成 with cache hit rate (two-part, no cache-creation)", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Codex 输入构成")).toBeInTheDocument()
+    );
+    const codexCard = screen
+      .getByText("Codex 输入构成")
+      .closest("section") as HTMLElement;
+    // hit rate = cached / input = 1400 / 2800 = 50.0%
+    expect(within(codexCard).getByText(/cache 命中率 50\.0%/)).toBeInTheDocument();
+    expect(within(codexCard).getByText("真实新增")).toBeInTheDocument();
+    expect(within(codexCard).getByText("命中 cache")).toBeInTheDocument();
+    // Codex has NO cache-creation segment.
+    expect(within(codexCard).queryByText("写入 cache")).toBeNull();
   });
 
   it("renders Codex 输出构成 with reasoning rate", async () => {

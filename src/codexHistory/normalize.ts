@@ -120,6 +120,10 @@ type CodexTokenUsage = {
   /** Reasoning (thinking) tokens. SUBSET of outputTokens — already counted
    *  inside it, never added on top. Tracked separately for display only. */
   reasoningOutputTokens: number;
+  /** Cached input tokens. SUBSET of inputTokens — already counted inside it,
+   *  never added on top. Codex's cache-hit replay (mirror of Claude's
+   *  cache_read). Tracked separately for the cache toggle + 输入构成 display. */
+  cachedInputTokens: number;
 };
 
 type CodexTokenCountUsage =
@@ -149,6 +153,12 @@ function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | 
     "total_reasoning_output_tokens",
     "totalReasoningOutputTokens",
   ]);
+  const cachedInput = numberField(candidate, [
+    "cached_input_tokens",
+    "cachedInputTokens",
+    "total_cached_input_tokens",
+    "totalCachedInputTokens",
+  ]);
   if (input == null || output == null) return undefined;
   // NOTE: do NOT add reasoning_output_tokens to output. Codex (OpenAI
   // semantics) reports reasoning as a SUBSET of output_tokens, not an extra
@@ -158,10 +168,14 @@ function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | 
   // 2026-06-18; root cause present since the first Codex backend (4dbdc34).
   // reasoningOutputTokens is tracked separately for the "Codex 输出构成"
   // display, never summed into outputTokens.
+  // cached_input_tokens is a SUBSET of input_tokens (like reasoning ⊆ output),
+  // so it is NOT added to inputTokens — only tracked alongside for the cache
+  // toggle. total stays input + output.
   return {
     inputTokens: input,
     outputTokens: output,
     reasoningOutputTokens: reasoningOutput ?? 0,
+    cachedInputTokens: cachedInput ?? 0,
   };
 }
 
@@ -206,6 +220,8 @@ function mergeUsage(
       (current?.totalOutputTokens ?? 0) + next.outputTokens,
     totalReasoningOutputTokens:
       (current?.totalReasoningOutputTokens ?? 0) + next.reasoningOutputTokens,
+    totalCachedInputTokens:
+      (current?.totalCachedInputTokens ?? 0) + next.cachedInputTokens,
   };
 }
 
@@ -222,8 +238,13 @@ function deltaUsage(
     0,
     total.reasoningOutputTokens - previousTotal.reasoningOutputTokens
   );
+  // cached is a subset of input; clamp at 0 (same guard as reasoning).
+  const cachedInputTokens = Math.max(
+    0,
+    total.cachedInputTokens - previousTotal.cachedInputTokens
+  );
   if (inputTokens < 0 || outputTokens < 0) return undefined;
-  return { inputTokens, outputTokens, reasoningOutputTokens };
+  return { inputTokens, outputTokens, reasoningOutputTokens, cachedInputTokens };
 }
 
 /**

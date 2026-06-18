@@ -25,6 +25,8 @@ type RawBucketRow = {
   cache_creation_input_tokens: number;
   /** Codex-only reasoning output. Always 0 for claude (no such column). */
   reasoning_output_tokens: number;
+  /** Codex-only cached input (cache-hit replay). Always 0 for claude. */
+  codex_cached_input_tokens: number;
   session_count: number;
   full_count: number;
   unknown_count: number;
@@ -99,6 +101,7 @@ function querySessionTableBuckets(
       ${cacheReadExpr} AS cache_read_input_tokens,
       ${cacheCreationExpr} AS cache_creation_input_tokens,
       ${reasoningExpr} AS reasoning_output_tokens,
+      0 AS codex_cached_input_tokens,
       COUNT(*) AS session_count,
       SUM(CASE WHEN token_status = 'full' THEN 1 ELSE 0 END) AS full_count,
       SUM(CASE WHEN token_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_count,
@@ -121,6 +124,7 @@ type CodexTokenSumRow = {
   input_tokens: number;
   output_tokens: number;
   reasoning_output_tokens: number;
+  cached_input_tokens: number;
 };
 
 /**
@@ -142,7 +146,8 @@ function queryCodexTokenSumsByBucket(
       COALESCE(SUM(e.input_tokens + e.output_tokens), 0) AS total_tokens,
       COALESCE(SUM(e.input_tokens), 0) AS input_tokens,
       COALESCE(SUM(e.output_tokens), 0) AS output_tokens,
-      COALESCE(SUM(e.reasoning_output_tokens), 0) AS reasoning_output_tokens
+      COALESCE(SUM(e.reasoning_output_tokens), 0) AS reasoning_output_tokens,
+      COALESCE(SUM(e.cached_input_tokens), 0) AS cached_input_tokens
     FROM codex_token_usage_event e
     JOIN codex_session_token_usage s ON s.session_id = e.session_id
     WHERE e.event_at >= ?
@@ -181,6 +186,7 @@ function queryCodexBuckets(
       input_tokens: 0,
       output_tokens: 0,
       reasoning_output_tokens: 0,
+      codex_cached_input_tokens: 0,
     });
   }
   // Token sums from the per-event timeline.
@@ -191,6 +197,7 @@ function queryCodexBuckets(
       existing.input_tokens = t.input_tokens;
       existing.output_tokens = t.output_tokens;
       existing.reasoning_output_tokens = t.reasoning_output_tokens;
+      existing.codex_cached_input_tokens = t.cached_input_tokens;
     } else {
       byKey.set(t.bucket_key, {
         bucket_key: t.bucket_key,
@@ -200,6 +207,7 @@ function queryCodexBuckets(
         cache_read_input_tokens: 0,
         cache_creation_input_tokens: 0,
         reasoning_output_tokens: t.reasoning_output_tokens,
+        codex_cached_input_tokens: t.cached_input_tokens,
         session_count: 0,
         full_count: 0,
         unknown_count: 0,
@@ -239,6 +247,7 @@ export function mergeAndZeroFill(
       claudeCacheReadInputTokens: c?.cache_read_input_tokens ?? 0,
       claudeCacheCreationInputTokens: c?.cache_creation_input_tokens ?? 0,
       codexReasoningOutputTokens: x?.reasoning_output_tokens ?? 0,
+      codexCachedInputTokens: x?.codex_cached_input_tokens ?? 0,
       claudeSessionCount: c?.session_count ?? 0,
       codexSessionCount: x?.session_count ?? 0,
       claudeCoveredSessionCount: c?.full_count ?? 0,
@@ -275,6 +284,7 @@ export function computeTotals(
   let claudeCacheReadInputTokens = 0;
   let claudeCacheCreationInputTokens = 0;
   let codexReasoningOutputTokens = 0;
+  let codexCachedInputTokens = 0;
   let coveredSessionCount = 0;
   let unknownSessionCount = 0;
   let errorSessionCount = 0;
@@ -288,6 +298,7 @@ export function computeTotals(
     claudeCacheReadInputTokens += b.claudeCacheReadInputTokens;
     claudeCacheCreationInputTokens += b.claudeCacheCreationInputTokens;
     codexReasoningOutputTokens += b.codexReasoningOutputTokens;
+    codexCachedInputTokens += b.codexCachedInputTokens;
     coveredSessionCount +=
       b.claudeCoveredSessionCount + b.codexCoveredSessionCount;
     unknownSessionCount +=
@@ -321,6 +332,7 @@ export function computeTotals(
     claudeCacheReadInputTokens,
     claudeCacheCreationInputTokens,
     codexReasoningOutputTokens,
+    codexCachedInputTokens,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
     coverage,
@@ -343,7 +355,11 @@ export function computePreviousWindowTotal(
   db: Database.Database,
   from: Date,
   to: Date
-): { total: number; claudeCacheReadInputTokens: number } {
+): {
+  total: number;
+  claudeCacheReadInputTokens: number;
+  codexCachedInputTokens: number;
+} {
   const span = to.getTime() - from.getTime();
   const prevFrom = new Date(from.getTime() - span);
   const prevTo = new Date(from.getTime());
@@ -354,16 +370,21 @@ export function computePreviousWindowTotal(
   const sql = `
     SELECT
       COALESCE(SUM(total_tokens), 0) AS total,
-      COALESCE(SUM(cache_read), 0) AS claude_cache_read
+      COALESCE(SUM(claude_cache_read), 0) AS claude_cache_read,
+      COALESCE(SUM(codex_cached), 0) AS codex_cached
     FROM (
-      SELECT total_tokens, cache_read_input_tokens AS cache_read
+      SELECT total_tokens,
+             cache_read_input_tokens AS claude_cache_read,
+             0 AS codex_cached
         FROM claude_session_token_usage
        WHERE last_updated_at >= ?
          AND last_updated_at < ?
          AND missing_since IS NULL
          AND token_status = 'full'
       UNION ALL
-      SELECT (e.input_tokens + e.output_tokens) AS total_tokens, 0 AS cache_read
+      SELECT (e.input_tokens + e.output_tokens) AS total_tokens,
+             0 AS claude_cache_read,
+             e.cached_input_tokens AS codex_cached
         FROM codex_token_usage_event e
         JOIN codex_session_token_usage s ON s.session_id = e.session_id
        WHERE e.event_at >= ?
@@ -377,10 +398,12 @@ export function computePreviousWindowTotal(
   const row = db.prepare(sql).get(fromIso, toIso, fromIso, toIso) as {
     total: number;
     claude_cache_read: number;
+    codex_cached: number;
   };
   return {
     total: row.total,
     claudeCacheReadInputTokens: row.claude_cache_read,
+    codexCachedInputTokens: row.codex_cached,
   };
 }
 

@@ -107,6 +107,9 @@ export type WorkTokensTrendBucket = {
   /** Codex-only reasoning (thinking) output (subset of codexOutputTokens).
    *  正常输出 = codexOutputTokens - this. Claude has no reasoning concept. */
   codexReasoningOutputTokens: number;
+  /** Codex-only cached input (cache-hit replay, subset of codexInputTokens).
+   *  Codex's mirror of claudeCacheReadInputTokens. */
+  codexCachedInputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   /** token_status='full' — covered. */
@@ -152,6 +155,12 @@ export type WorkTokensTrendTotals = {
    * (正常输出 = codexOutputTokens - codexReasoningOutputTokens).
    */
   codexReasoningOutputTokens: number;
+  /**
+   * Codex-only cached input (cache-hit replay, subset of codexInputTokens).
+   * Powers the "Codex 输入构成" breakdown (命中 cache vs 真实新增) and the
+   * tokens-trend cache toggle. Codex's mirror of claudeCacheReadInputTokens.
+   */
+  codexCachedInputTokens: number;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;
@@ -200,6 +209,12 @@ export type WorkTokensTrendResponse =
        * while the rest of the page switches. Always a number (0 when none).
        */
       previousWindowClaudeCacheReadInputTokens: number;
+      /**
+       * Codex `cached_input_tokens` summed over the SAME previous window — the
+       * Codex mirror of the field above, so the cache toggle recomputes 环比
+       * consistently for Codex too. Always a number (0 when none).
+       */
+      previousWindowCodexCachedInputTokens: number;
       /** (current - prev) / prev; null only when prev === 0. */
       deltaRatio: number | null;
       monthRange: MonthRange;

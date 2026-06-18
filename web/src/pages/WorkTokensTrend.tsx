@@ -37,6 +37,8 @@ type Bucket = {
   codexTokens: number;
   /** Claude cache_read in this bucket — subtracted when the cache toggle is off. */
   claudeCacheReadInputTokens: number;
+  /** Codex cached_input in this bucket — subtracted when the cache toggle is off. */
+  codexCachedInputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   claudeCoveredSessionCount: number;
@@ -58,6 +60,7 @@ type Totals = {
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
   codexReasoningOutputTokens: number;
+  codexCachedInputTokens: number;
   claudeShare: number;
   codexShare: number;
   coverage: Coverage;
@@ -87,6 +90,7 @@ type TrendResponse =
       totals: Totals;
       previousWindowTotal: number;
       previousWindowClaudeCacheReadInputTokens: number;
+      previousWindowCodexCachedInputTokens: number;
       deltaRatio: number | null;
       monthRange: MonthRange;
       diagnostics: Diagnostic[];
@@ -216,7 +220,7 @@ function BreakdownMatrix({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--fg)]">输入 / 输出拆分</h2>
         <span className="text-xs text-[var(--fg-muted)]">
-          仅统计完整 token 的 session · {includeCache ? "含 cache" : "不含 Claude 命中 cache"}
+          仅统计完整 token 的 session · {includeCache ? "含 cache" : "不含命中 cache"}
         </span>
       </div>
       <table className="w-full text-sm tabular-nums">
@@ -286,6 +290,78 @@ function ClaudeInputComposition({ totals }: { totals: Totals }) {
     <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输入构成</h2>
+        <span className="text-xs text-[var(--fg-muted)]">
+          cache 命中率 {hitRate.toFixed(1)}%
+        </span>
+      </div>
+      {/* stacked proportion bar */}
+      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
+        {segments.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              width: `${input === 0 ? 0 : (s.value / input) * 100}%`,
+              background: s.color,
+            }}
+            title={`${s.label} ${formatTokenCount(s.value)}`}
+          />
+        ))}
+      </div>
+      <table className="w-full text-sm tabular-nums">
+        <tbody>
+          {segments.map((s) => (
+            <tr key={s.label} className="text-[var(--fg)]">
+              <td className="py-1 text-left">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{ background: s.color }}
+                  />
+                  {s.label}
+                  <span className="text-xs text-[var(--fg-muted)]">{s.hint}</span>
+                </span>
+              </td>
+              <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
+              <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
+                {input === 0 ? "0%" : `${((s.value / input) * 100).toFixed(1)}%`}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
+            <td className="py-1 text-left">输入合计</td>
+            <td className="py-1 text-right">{formatTokenCount(input)}</td>
+            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/**
+ * Codex 输入构成 —— mirror of ClaudeInputComposition, on the Codex input side.
+ * Codex reports cached_input_tokens (cache-hit replay) as a subset of its input,
+ * but has NO cache-creation concept (unlike Claude), so the split is two parts:
+ *   命中 cache (hit) = codexCachedInputTokens
+ *   真实新增 (fresh) = codexInputTokens - cached
+ * 命中率 = cached / input. Hidden when there is no Codex input in the window.
+ */
+function CodexInputComposition({ totals }: { totals: Totals }) {
+  const input = totals.codexInputTokens;
+  if (input <= 0) return null;
+  const cached = totals.codexCachedInputTokens;
+  const fresh = Math.max(0, input - cached);
+  const hitRate = input === 0 ? 0 : (cached / input) * 100;
+
+  const segments: { label: string; value: number; color: string; hint: string }[] = [
+    { label: "真实新增", value: fresh, color: "#2563eb", hint: "本轮首次喂入的新内容" },
+    { label: "命中 cache", value: cached, color: "#9ca3af", hint: "从 cache 回放（命中）" },
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--fg)]">Codex 输入构成</h2>
         <span className="text-xs text-[var(--fg-muted)]">
           cache 命中率 {hitRate.toFixed(1)}%
         </span>
@@ -485,25 +561,30 @@ function useStickyToggle(
 
 /**
  * Re-derive the totals card under the cache toggle. When `includeCache` is
- * false we strip Claude's `cache_read_input_tokens` (the per-turn cache replay
- * that dominates long sessions) from Claude's totals and recompute the grand
- * total + shares. Codex is untouched — this toggle is about Claude cache only.
- * Raw cache fields are preserved so the "Claude 输入构成" explainer card still
- * shows the full split regardless of the toggle.
+ * false we strip the per-turn cache replay that dominates long sessions:
+ * Claude's `cache_read_input_tokens` AND Codex's `cached_input_tokens` (its
+ * mirror). Both are subtracted from the respective input/totals, then the grand
+ * total + shares recompute. Raw cache fields are preserved so the
+ * "Claude/Codex 输入构成" explainer cards still show the full split regardless.
  */
 function deriveTotals(totals: Totals, includeCache: boolean): Totals {
   if (includeCache) return totals;
-  const cut = totals.claudeCacheReadInputTokens;
-  const claudeTokens = Math.max(0, totals.claudeTokens - cut);
-  const claudeInputTokens = Math.max(0, totals.claudeInputTokens - cut);
-  const totalTokens = claudeTokens + totals.codexTokens;
+  const claudeCut = totals.claudeCacheReadInputTokens;
+  const codexCut = totals.codexCachedInputTokens;
+  const claudeTokens = Math.max(0, totals.claudeTokens - claudeCut);
+  const codexTokens = Math.max(0, totals.codexTokens - codexCut);
+  const claudeInputTokens = Math.max(0, totals.claudeInputTokens - claudeCut);
+  const codexInputTokens = Math.max(0, totals.codexInputTokens - codexCut);
+  const totalTokens = claudeTokens + codexTokens;
   return {
     ...totals,
     claudeTokens,
+    codexTokens,
     claudeInputTokens,
+    codexInputTokens,
     totalTokens,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
-    codexShare: totalTokens === 0 ? 0 : totals.codexTokens / totalTokens,
+    codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
   };
 }
 
@@ -521,10 +602,10 @@ function CacheToggle({
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      title="关掉后，总量/占比/拆分/柱状图都不计入 Claude 的命中 cache（每轮重放）"
+      title="关掉后，总量/占比/拆分/柱状图都不计入命中 cache（Claude + Codex 每轮重放的缓存）"
       className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--fg-muted)] hover:bg-[var(--surface-2)]"
     >
-      <span className="text-[var(--fg)]">计入 Claude 缓存命中</span>
+      <span className="text-[var(--fg)]">计入缓存命中</span>
       <span
         className={`relative inline-block h-4 w-7 rounded-full transition-colors ${
           on ? "bg-[#d97757]" : "bg-[var(--border)]"
@@ -565,7 +646,9 @@ export function WorkTokensTrend() {
       claudeFullTokens: includeCache
         ? b.claudeTokens
         : Math.max(0, b.claudeTokens - b.claudeCacheReadInputTokens),
-      codexFullTokens: b.codexTokens,
+      codexFullTokens: includeCache
+        ? b.codexTokens
+        : Math.max(0, b.codexTokens - b.codexCachedInputTokens),
     }));
   }, [trend.data, includeCache]);
 
@@ -582,7 +665,8 @@ export function WorkTokensTrend() {
         : Math.max(
             0,
             trend.data.previousWindowTotal -
-              trend.data.previousWindowClaudeCacheReadInputTokens
+              trend.data.previousWindowClaudeCacheReadInputTokens -
+              trend.data.previousWindowCodexCachedInputTokens
           )
       : 0;
   const effectiveDeltaRatio =
@@ -687,8 +771,8 @@ export function WorkTokensTrend() {
         <>
           {!includeCache && (
             <div className="mb-4 rounded-md bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--fg-muted)] ring-1 ring-[var(--border)]">
-              已排除 Claude 命中 cache（每轮重放的缓存）。总量、占比、拆分、柱状图与环比均按此口径；
-              下方「Claude 输入构成」始终展示完整三段。
+              已排除命中 cache（Claude + Codex 每轮重放的缓存）。总量、占比、拆分、柱状图与环比均按此口径；
+              下方「输入构成」卡始终展示完整拆分。
             </div>
           )}
           <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -725,6 +809,8 @@ export function WorkTokensTrend() {
           <BreakdownMatrix totals={effectiveTotals} includeCache={includeCache} />
 
           <ClaudeInputComposition totals={trend.data.totals} />
+
+          <CodexInputComposition totals={trend.data.totals} />
 
           <CodexOutputComposition totals={trend.data.totals} />
 
