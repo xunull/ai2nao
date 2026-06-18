@@ -38,6 +38,9 @@ type SeedRow = {
    *  per-row invariant total = input + output true for existing tests). */
   input?: number;
   output?: number;
+  /** Claude-only cache split (ignored for codex — no such columns). */
+  cacheRead?: number;
+  cacheCreation?: number;
   status?: "full" | "unknown" | "error";
   updated: string; // ISO UTC
   missingSince?: string | null;
@@ -49,6 +52,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
   const id = row.session_id ?? `s-${seq}-${row.source}`;
   const inputTokens = row.input ?? row.total;
   const outputTokens = row.output ?? 0;
+  const cacheRead = row.cacheRead ?? 0;
+  const cacheCreation = row.cacheCreation ?? 0;
   const table =
     row.source === "claude"
       ? "claude_session_token_usage"
@@ -59,10 +64,11 @@ function seedSession(db: Database.Database, row: SeedRow): void {
          (session_id, project_id, file_path, file_mtime_ms, file_size_bytes,
           cwd, project_key, project_path, identity_confidence,
           title, created_at, last_updated_at,
-          input_tokens, output_tokens, total_tokens, token_status,
+          input_tokens, output_tokens, total_tokens,
+          cache_read_input_tokens, cache_creation_input_tokens, token_status,
           parse_error, missing_since, source_seen_at, updated_at)
        VALUES (?, ?, ?, 0, 0, ?, ?, ?, 'high',
-               null, null, ?, ?, ?, ?, ?, null, ?, ?, ?)`
+               null, null, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?)`
     ).run(
       id,
       row.project_id ?? "p-test",
@@ -74,6 +80,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
       inputTokens,
       outputTokens,
       row.total,
+      cacheRead,
+      cacheCreation,
       row.status ?? "full",
       row.missingSince ?? null,
       row.updated,
@@ -307,6 +315,46 @@ describe("input/output breakdown (2×3 matrix data)", () => {
     db = freshDb();
   });
 
+  it("queryBucketsBySource sums Claude cache split; codex returns 0", () => {
+    seedSession(db, {
+      source: "claude",
+      total: 70837,
+      input: 70585,
+      output: 252,
+      cacheRead: 22924,
+      cacheCreation: 47655,
+      updated: "2026-06-09T16:30:00Z",
+    });
+    seedSession(db, {
+      source: "codex",
+      total: 600,
+      input: 550,
+      output: 50,
+      updated: "2026-06-09T17:00:00Z",
+    });
+
+    const claudeRows = queryBucketsBySource(
+      db,
+      "claude",
+      new Date(2026, 5, 10, 0, 0, 0, 0),
+      new Date(2026, 5, 11, 0, 0, 0, 0),
+      "day"
+    );
+    expect(claudeRows[0].cache_read_input_tokens).toBe(22924);
+    expect(claudeRows[0].cache_creation_input_tokens).toBe(47655);
+
+    const codexRows = queryBucketsBySource(
+      db,
+      "codex",
+      new Date(2026, 5, 10, 0, 0, 0, 0),
+      new Date(2026, 5, 11, 0, 0, 0, 0),
+      "day"
+    );
+    // codex table has no cache columns → literal 0
+    expect(codexRows[0].cache_read_input_tokens).toBe(0);
+    expect(codexRows[0].cache_creation_input_tokens).toBe(0);
+  });
+
   it("queryBucketsBySource sums input/output split, full-only", () => {
     // 2 full claude sessions + 1 unknown (must NOT contribute to input/output)
     seedSession(db, {
@@ -360,6 +408,8 @@ describe("input/output breakdown (2×3 matrix data)", () => {
         claudeOutputTokens: 100,
         codexInputTokens: 550,
         codexOutputTokens: 50,
+        claudeCacheReadInputTokens: 500,
+        claudeCacheCreationInputTokens: 300,
         claudeSessionCount: 1,
         codexSessionCount: 1,
         claudeCoveredSessionCount: 1,
@@ -378,6 +428,8 @@ describe("input/output breakdown (2×3 matrix data)", () => {
         claudeOutputTokens: 20,
         codexInputTokens: 0,
         codexOutputTokens: 0,
+        claudeCacheReadInputTokens: 100,
+        claudeCacheCreationInputTokens: 50,
         claudeSessionCount: 1,
         codexSessionCount: 0,
         claudeCoveredSessionCount: 1,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { refreshClaudeTokenUsage } from "../src/claudeTokenUsage/refresh.js";
 import {
+  getClaudeTokenUsageRow,
   getClaudeTokenUsageStatus,
   listClaudeProjectTokenUsage,
 } from "../src/claudeTokenUsage/queries.js";
@@ -18,7 +19,20 @@ function makeFixture() {
   return { projectsRoot, projectDir, indexDb };
 }
 
-function transcript(input: number, output: number, cwd = "/work/app") {
+function transcript(
+  input: number,
+  output: number,
+  cwd = "/work/app",
+  cache?: { read: number; creation: number }
+) {
+  const usage: Record<string, number> = {
+    input_tokens: input,
+    output_tokens: output,
+  };
+  if (cache) {
+    usage.cache_read_input_tokens = cache.read;
+    usage.cache_creation_input_tokens = cache.creation;
+  }
   return [
     JSON.stringify({
       type: "user",
@@ -37,7 +51,7 @@ function transcript(input: number, output: number, cwd = "/work/app") {
       message: {
         role: "assistant",
         content: [{ type: "text", text: "world" }],
-        usage: { input_tokens: input, output_tokens: output },
+        usage,
       },
     }),
   ].join("\n");
@@ -71,6 +85,34 @@ describe("claude token usage refresh", () => {
         coverage: "full",
       });
       expect(getClaudeTokenUsageStatus(indexDb).fresh).toBe(true);
+    } finally {
+      indexDb.close();
+    }
+  });
+
+  it("v3: persists cache_read / cache_creation columns into the row", async () => {
+    const { projectsRoot, projectDir, indexDb } = makeFixture();
+    try {
+      // input_tokens=6 fresh, cache write 47655, cache read 22924
+      writeFileSync(
+        join(projectDir, "s1.jsonl"),
+        transcript(6, 252, "/work/app", { read: 22924, creation: 47655 }),
+        "utf8"
+      );
+      await refreshClaudeTokenUsage(indexDb, { projectsRoot });
+
+      const row = getClaudeTokenUsageRow(indexDb, "-work-app:s1");
+      expect(row).not.toBeNull();
+      // fused input = 6 + 47655 + 22924 = 70585
+      expect(row!.input_tokens).toBe(70585);
+      expect(row!.cache_read_input_tokens).toBe(22924);
+      expect(row!.cache_creation_input_tokens).toBe(47655);
+      // 真实新增 = input - read - creation = 6
+      expect(
+        row!.input_tokens -
+          row!.cache_read_input_tokens -
+          row!.cache_creation_input_tokens
+      ).toBe(6);
     } finally {
       indexDb.close();
     }

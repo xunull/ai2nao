@@ -54,6 +54,8 @@ function mapTokenUsage(u: unknown): TokenUsage | undefined {
   return {
     inputTokens: input + cacheCreation + cacheRead,
     outputTokens: output,
+    cacheReadInputTokens: cacheRead,
+    cacheCreationInputTokens: cacheCreation,
   };
 }
 
@@ -73,6 +75,8 @@ function sessionUsageFromMessages(messages: Message[]): SessionUsage | undefined
 export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let totalCacheReadInputTokens = 0;
+  let totalCacheCreationInputTokens = 0;
   let hasUsage = false;
   for (const { record } of parse.okLines) {
     if (!isAssistantShape(record)) continue;
@@ -81,9 +85,18 @@ export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage
     if (!tokenUsage) continue;
     totalInputTokens += tokenUsage.inputTokens;
     totalOutputTokens += tokenUsage.outputTokens;
+    totalCacheReadInputTokens += tokenUsage.cacheReadInputTokens ?? 0;
+    totalCacheCreationInputTokens += tokenUsage.cacheCreationInputTokens ?? 0;
     hasUsage = true;
   }
-  return hasUsage ? { totalInputTokens, totalOutputTokens } : undefined;
+  return hasUsage
+    ? {
+        totalInputTokens,
+        totalOutputTokens,
+        totalCacheReadInputTokens,
+        totalCacheCreationInputTokens,
+      }
+    : undefined;
 }
 
 function assistantFromContent(content: unknown): {

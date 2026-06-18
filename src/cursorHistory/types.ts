@@ -486,10 +486,17 @@ export interface BackupInfo {
  * Token usage for a single message (input/output tokens consumed)
  */
 export interface TokenUsage {
-  /** Number of input tokens (prompt tokens) */
+  /** Number of input tokens (prompt tokens). For Claude Code this is the
+   *  FUSED billed input = fresh input + cache_creation + cache_read. */
   inputTokens: number;
   /** Number of output tokens (completion tokens) */
   outputTokens: number;
+  /** Claude prompt-cache: tokens replayed from cache this turn (cache hit).
+   *  Subset of inputTokens. Undefined for sources without prompt caching. */
+  cacheReadInputTokens?: number;
+  /** Claude prompt-cache: tokens written to cache this turn (cache creation).
+   *  Subset of inputTokens. Undefined for sources without prompt caching. */
+  cacheCreationInputTokens?: number;
 }
 
 /**
@@ -502,10 +509,16 @@ export interface SessionUsage {
   contextTokenLimit?: number;
   /** Context usage percentage (may be int or float, normalize to float) */
   contextUsagePercent?: number;
-  /** Total input tokens across all messages */
+  /** Total input tokens across all messages (Claude: fused, includes cache) */
   totalInputTokens?: number;
   /** Total output tokens across all messages */
   totalOutputTokens?: number;
+  /** Claude prompt-cache: total cache-hit (read) input tokens. Subset of
+   *  totalInputTokens. Undefined for sources without prompt caching. */
+  totalCacheReadInputTokens?: number;
+  /** Claude prompt-cache: total cache-creation (write) input tokens. Subset of
+   *  totalInputTokens. Undefined for sources without prompt caching. */
+  totalCacheCreationInputTokens?: number;
 }
 
 /**

@@ -96,6 +96,14 @@ export type WorkTokensTrendBucket = {
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  /**
+   * Claude-only prompt-cache split (subset of claudeInputTokens). Cache 命中
+   * (read) is what gets replayed; cache 写入 (creation) is first-time cache
+   * fill. 真实新增 = claudeInputTokens - read - creation. Codex has no cache
+   * concept so there are no codex equivalents.
+   */
+  claudeCacheReadInputTokens: number;
+  claudeCacheCreationInputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   /** token_status='full' — covered. */
@@ -126,6 +134,15 @@ export type WorkTokensTrendTotals = {
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  /**
+   * Claude-only prompt-cache split (subset of claudeInputTokens). Powers the
+   * "Claude 输入构成" breakdown:
+   *   命中 cache (read)  = claudeCacheReadInputTokens
+   *   写入 cache (write) = claudeCacheCreationInputTokens
+   *   真实新增 (fresh)   = claudeInputTokens - read - creation
+   */
+  claudeCacheReadInputTokens: number;
+  claudeCacheCreationInputTokens: number;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;

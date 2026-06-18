@@ -124,6 +124,8 @@ function rowFromUsage(args: {
   });
   const inputTokens = usage?.totalInputTokens ?? 0;
   const outputTokens = usage?.totalOutputTokens ?? 0;
+  const cacheReadInputTokens = usage?.totalCacheReadInputTokens ?? 0;
+  const cacheCreationInputTokens = usage?.totalCacheCreationInputTokens ?? 0;
   const tokenStatus = args.error ? "error" : usage ? "full" : "unknown";
   return {
     session_id: args.source.id,
@@ -141,6 +143,8 @@ function rowFromUsage(args: {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
+    cache_read_input_tokens: cacheReadInputTokens,
+    cache_creation_input_tokens: cacheCreationInputTokens,
     token_status: tokenStatus,
     parse_error: args.error,
     missing_since: null,

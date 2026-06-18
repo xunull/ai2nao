@@ -53,6 +53,8 @@ type Totals = {
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  claudeCacheReadInputTokens: number;
+  claudeCacheCreationInputTokens: number;
   claudeShare: number;
   codexShare: number;
   coverage: Coverage;
@@ -240,6 +242,82 @@ function BreakdownMatrix({ totals }: { totals: Totals }) {
               <td className="py-1.5 text-right">{formatTokenCount(r.total)}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/**
+ * Claude 输入构成 —— breaks Claude's (cache-inflated) input into three parts:
+ *   命中 cache (read)  — replayed from cache, cheap, the bulk on long sessions
+ *   写入 cache (write) — first-time cache fill
+ *   真实新增 (fresh)   — claudeInput - read - write, the actually-new bytes
+ *
+ * Cache is a Claude-only concept (Codex has no equivalent), so this lives in
+ * its own section rather than the shared 2×3 matrix. 命中率 = read / input.
+ * Hidden entirely when there are no Claude input tokens in the window.
+ */
+function ClaudeInputComposition({ totals }: { totals: Totals }) {
+  const input = totals.claudeInputTokens;
+  if (input <= 0) return null;
+  const read = totals.claudeCacheReadInputTokens;
+  const creation = totals.claudeCacheCreationInputTokens;
+  const fresh = Math.max(0, input - read - creation);
+  const hitRate = input === 0 ? 0 : (read / input) * 100;
+
+  const segments: { label: string; value: number; color: string; hint: string }[] = [
+    { label: "真实新增", value: fresh, color: "#d97757", hint: "本轮首次喂入的新内容" },
+    { label: "写入 cache", value: creation, color: "#f0a868", hint: "首次写入 prompt cache" },
+    { label: "命中 cache", value: read, color: "#9ca3af", hint: "从 cache 回放（命中）" },
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输入构成</h2>
+        <span className="text-xs text-[var(--fg-muted)]">
+          cache 命中率 {hitRate.toFixed(1)}%
+        </span>
+      </div>
+      {/* stacked proportion bar */}
+      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
+        {segments.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              width: `${input === 0 ? 0 : (s.value / input) * 100}%`,
+              background: s.color,
+            }}
+            title={`${s.label} ${formatTokenCount(s.value)}`}
+          />
+        ))}
+      </div>
+      <table className="w-full text-sm tabular-nums">
+        <tbody>
+          {segments.map((s) => (
+            <tr key={s.label} className="text-[var(--fg)]">
+              <td className="py-1 text-left">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{ background: s.color }}
+                  />
+                  {s.label}
+                  <span className="text-xs text-[var(--fg-muted)]">{s.hint}</span>
+                </span>
+              </td>
+              <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
+              <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
+                {input === 0 ? "0%" : `${((s.value / input) * 100).toFixed(1)}%`}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
+            <td className="py-1 text-left">输入合计</td>
+            <td className="py-1 text-right">{formatTokenCount(input)}</td>
+            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -448,6 +526,8 @@ export function WorkTokensTrend() {
           </section>
 
           <BreakdownMatrix totals={trend.data.totals} />
+
+          <ClaudeInputComposition totals={trend.data.totals} />
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="mb-3 flex items-center justify-between">
