@@ -13,8 +13,12 @@
  *   v3: persists cache_read_input_tokens + cache_creation_input_tokens as
  *       separate columns (still summed into input_tokens). Powers the
  *       "Claude 输入构成" cache-hit breakdown. 2026-06-18.
+ *   v4: dedupes usage by message.id (max per field). Claude Code repeats the
+ *       same message.usage across every content-block / streaming line, so v1-v3
+ *       summed per line and double-counted ~2x (mostly cache_read replay).
+ *       Investigation 2026-06-18.
  */
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 3;
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 4;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 

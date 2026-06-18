@@ -59,44 +59,62 @@ function mapTokenUsage(u: unknown): TokenUsage | undefined {
   };
 }
 
-function sessionUsageFromMessages(messages: Message[]): SessionUsage | undefined {
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let hasUsage = false;
-  for (const message of messages) {
-    if (!message.tokenUsage) continue;
-    totalInputTokens += message.tokenUsage.inputTokens;
-    totalOutputTokens += message.tokenUsage.outputTokens;
-    hasUsage = true;
-  }
-  return hasUsage ? { totalInputTokens, totalOutputTokens } : undefined;
-}
 
 export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let totalCacheReadInputTokens = 0;
-  let totalCacheCreationInputTokens = 0;
-  let hasUsage = false;
+  // Claude Code writes ONE assistant JSONL line per content block, plus extra
+  // lines as the response streams — and every one of those lines repeats the
+  // SAME `message.usage` (the streaming lines only grow `output_tokens`). A
+  // single API request (one `message.id`) is billed once, so summing usage
+  // per line double-counts: corpus-wide ≈2x overall, dominated by cache_read
+  // replay (one turn with 16 tool_use blocks → its cache_read counted 16x).
+  //
+  // Dedupe by `message.id`, taking the MAX of each field: input / cache_* are
+  // fixed for a request, `output_tokens` grows while the response streams so
+  // its max is the final billed value. Lines without a `message.id` can't be
+  // deduped, so each gets a synthetic key and is counted once.
+  type Acc = {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+  };
+  const byMessageId = new Map<string, Acc>();
+  let synthetic = 0;
   for (const { record } of parse.okLines) {
     if (!isAssistantShape(record)) continue;
     const msg = record.message as Record<string, unknown>;
     const tokenUsage = mapTokenUsage(msg.usage);
     if (!tokenUsage) continue;
-    totalInputTokens += tokenUsage.inputTokens;
-    totalOutputTokens += tokenUsage.outputTokens;
-    totalCacheReadInputTokens += tokenUsage.cacheReadInputTokens ?? 0;
-    totalCacheCreationInputTokens += tokenUsage.cacheCreationInputTokens ?? 0;
-    hasUsage = true;
+    const key =
+      typeof msg.id === "string" && msg.id ? msg.id : `__noid_${synthetic++}`;
+    const prev = byMessageId.get(key);
+    byMessageId.set(key, {
+      input: Math.max(prev?.input ?? 0, tokenUsage.inputTokens),
+      output: Math.max(prev?.output ?? 0, tokenUsage.outputTokens),
+      cacheRead: Math.max(prev?.cacheRead ?? 0, tokenUsage.cacheReadInputTokens ?? 0),
+      cacheCreation: Math.max(
+        prev?.cacheCreation ?? 0,
+        tokenUsage.cacheCreationInputTokens ?? 0
+      ),
+    });
   }
-  return hasUsage
-    ? {
-        totalInputTokens,
-        totalOutputTokens,
-        totalCacheReadInputTokens,
-        totalCacheCreationInputTokens,
-      }
-    : undefined;
+  if (byMessageId.size === 0) return undefined;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheReadInputTokens = 0;
+  let totalCacheCreationInputTokens = 0;
+  for (const acc of byMessageId.values()) {
+    totalInputTokens += acc.input;
+    totalOutputTokens += acc.output;
+    totalCacheReadInputTokens += acc.cacheRead;
+    totalCacheCreationInputTokens += acc.cacheCreation;
+  }
+  return {
+    totalInputTokens,
+    totalOutputTokens,
+    totalCacheReadInputTokens,
+    totalCacheCreationInputTokens,
+  };
 }
 
 function assistantFromContent(content: unknown): {
@@ -290,7 +308,9 @@ export function buildClaudeSession(options: {
     workspaceId: projectId,
     workspacePath,
     source: "claude-code",
-    usage: sessionUsageFromMessages(messages),
+    // Deduped by message.id — see extractClaudeSessionUsage. (Per-message
+    // tokenUsage stays per-line for individual message display.)
+    usage: extractClaudeSessionUsage(parse),
   };
 
   const summary: ChatSessionSummary = {
