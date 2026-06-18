@@ -15,6 +15,7 @@ import type { CodexThreadRow } from "../codexHistory/types.js";
 import { normalizeWorkProjectIdentity } from "../workProjects/identity.js";
 import {
   getCodexTokenUsageRow,
+  getCodexTokenUsageState,
   markCodexTokenUsageRowSeen,
   markUnseenCodexTokenRowsMissing,
   upsertCodexTokenUsageRow,
@@ -222,6 +223,17 @@ export async function refreshCodexTokenUsage(
   let source: "sqlite" | "fallback" = "sqlite";
   let sourceSessions: SourceSession[] = [];
 
+  // Self-heal: when the stored state's rule_version no longer matches the
+  // running binary, every previously-indexed row was produced by an older
+  // parser and may be wrong. Force a full reparse for this one tick so the
+  // DB catches up; subsequent ticks return to incremental mode. Same pattern
+  // as claudeTokenUsage.
+  const storedState = getCodexTokenUsageState(db);
+  const ruleVersionStale =
+    storedState != null &&
+    storedState.rule_version !== CODEX_TOKEN_USAGE_RULE_VERSION;
+  const effectiveOptions = ruleVersionStale ? { ...options, full: true } : options;
+
   try {
     sourceSessions = await sqliteSourceSessions(stateDbPath);
   } catch (e) {
@@ -247,7 +259,7 @@ export async function refreshCodexTokenUsage(
       const st = await stat(filePath);
       const existing = getCodexTokenUsageRow(db, sourceSession.id);
       if (
-        !options.full &&
+        !effectiveOptions.full &&
         existing &&
         existing.rollout_path === filePath &&
         existing.rollout_mtime_ms === Math.trunc(st.mtimeMs) &&

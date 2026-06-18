@@ -1,4 +1,16 @@
-export const CODEX_TOKEN_USAGE_RULE_VERSION = 1;
+/**
+ * Bump when the Codex parsing/aggregation rules change in a way that makes
+ * previously-indexed `codex_session_token_usage` rows incorrect. The refresh
+ * entry point auto-forces `full=true` when the stored `state.rule_version`
+ * differs from this constant, so old DBs self-heal on the next refresh.
+ *
+ * History:
+ *   v1: output = output_tokens + reasoning_output_tokens (DOUBLE-COUNTED —
+ *       reasoning is a subset of output, so this inflated Codex output by
+ *       ~22.6%).
+ *   v2: output = output_tokens (reasoning already included). 2026-06-18.
+ */
+export const CODEX_TOKEN_USAGE_RULE_VERSION = 2;
 
 export type CodexTokenStatus = "full" | "unknown" | "error";
 
