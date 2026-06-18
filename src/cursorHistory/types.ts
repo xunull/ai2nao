@@ -519,6 +519,10 @@ export interface SessionUsage {
   /** Claude prompt-cache: total cache-creation (write) input tokens. Subset of
    *  totalInputTokens. Undefined for sources without prompt caching. */
   totalCacheCreationInputTokens?: number;
+  /** Codex: total reasoning (thinking) output tokens. SUBSET of
+   *  totalOutputTokens (never added on top). Undefined for sources without a
+   *  reasoning concept (e.g. Claude). */
+  totalReasoningOutputTokens?: number;
 }
 
 /**

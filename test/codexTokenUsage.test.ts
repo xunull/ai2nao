@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { refreshCodexTokenUsage } from "../src/codexTokenUsage/refresh.js";
 import {
+  getCodexTokenUsageRow,
   getCodexTokenUsageStatus,
   listCodexProjectTokenUsage,
 } from "../src/codexTokenUsage/queries.js";
@@ -188,6 +189,10 @@ describe("codex token usage refresh", () => {
         outputTokens: 30,
         totalTokens: 130,
       });
+      // v3: reasoning is persisted in its own column (subset of output)
+      const row = getCodexTokenUsageRow(indexDb, id);
+      expect(row?.reasoning_output_tokens).toBe(7);
+      expect(row!.reasoning_output_tokens).toBeLessThanOrEqual(row!.output_tokens);
     } finally {
       indexDb.close();
     }

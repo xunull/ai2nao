@@ -114,7 +114,7 @@ describe("codexHistory", () => {
       failedCommandCount: 1,
       fileCount: 1,
     });
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 11, totalOutputTokens: 7 });
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 11, totalOutputTokens: 7, totalReasoningOutputTokens: 0 });
     expect(detail?.session.source).toBe("codex");
     expect(detail?.session.messages.some((m) => m.metadata?.codexFailed)).toBe(true);
     expect(detail?.session.messages.some((m) => m.content.includes("secret output"))).toBe(false);
@@ -193,8 +193,13 @@ describe("codexHistory", () => {
     createStateDb(root, [{ id, rolloutPath: goodPath }]);
 
     const detail = await loadCodexSessionDetail(root, id);
-    // output is 30, NOT 37 — reasoning is already inside output
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 100, totalOutputTokens: 30 });
+    // output is 30, NOT 37 — reasoning is already inside output;
+    // reasoning is tracked separately (7) for the "Codex 输出构成" display
+    expect(detail?.session.usage).toEqual({
+      totalInputTokens: 100,
+      totalOutputTokens: 30,
+      totalReasoningOutputTokens: 7,
+    });
   });
 
   it("diffs cumulative Codex info.total_token_usage instead of double-counting totals", async () => {
@@ -240,8 +245,14 @@ describe("codexHistory", () => {
     createStateDb(root, [{ id, rolloutPath: goodPath }]);
 
     const detail = await loadCodexSessionDetail(root, id);
-    // cumulative total → diffed; output is 8 (NOT 12 — reasoning not double-counted)
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 25, totalOutputTokens: 8 });
+    // cumulative total → diffed; output is 8 (NOT 12 — reasoning not double-counted).
+    // reasoning: first total (prev=undefined) contributes its full 2, second
+    // contributes delta 4-2=2 → total 4.
+    expect(detail?.session.usage).toEqual({
+      totalInputTokens: 25,
+      totalOutputTokens: 8,
+      totalReasoningOutputTokens: 4,
+    });
   });
 
   it("falls back to bounded JSONL scan when SQLite is unavailable", async () => {

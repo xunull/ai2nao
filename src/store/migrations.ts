@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 28;
+const CURRENT_VERSION = 29;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -39,6 +39,7 @@ export function migrate(db: Database.Database): void {
     applyV26(db);
     applyV27(db);
     applyV28(db);
+    applyV29(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -73,6 +74,7 @@ export function migrate(db: Database.Database): void {
   if (v < 26) applyV26(db);
   if (v < 27) applyV27(db);
   if (v < 28) applyV28(db);
+  if (v < 29) applyV29(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1602,5 +1604,27 @@ function applyV28(db: Database.Database): void {
       ADD COLUMN cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0;
 
     UPDATE meta_schema SET version = 28 WHERE id = 1;
+  `);
+}
+
+/**
+ * v29 — Codex reasoning (thinking) output breakdown.
+ *
+ * `codex_session_token_usage.output_tokens` is the full output. Codex reports
+ * reasoning_output_tokens as a SUBSET of it (OpenAI semantics). We store it
+ * separately so the "Codex 输出构成" view can show how much output was
+ * reasoning vs visible output. 正常输出 = output_tokens - reasoning.
+ *
+ * Defaults 0; existing rows get 0 until the next refresh, which self-heals
+ * (CODEX_TOKEN_USAGE_RULE_VERSION bumped 2->3) and reparses every Codex
+ * session to fill it. Claude has no reasoning concept — its table is left
+ * unchanged.
+ */
+function applyV29(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE codex_session_token_usage
+      ADD COLUMN reasoning_output_tokens INTEGER NOT NULL DEFAULT 0;
+
+    UPDATE meta_schema SET version = 29 WHERE id = 1;
   `);
 }

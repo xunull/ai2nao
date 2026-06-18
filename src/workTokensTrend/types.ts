@@ -104,6 +104,9 @@ export type WorkTokensTrendBucket = {
    */
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
+  /** Codex-only reasoning (thinking) output (subset of codexOutputTokens).
+   *  正常输出 = codexOutputTokens - this. Claude has no reasoning concept. */
+  codexReasoningOutputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   /** token_status='full' — covered. */
@@ -143,6 +146,12 @@ export type WorkTokensTrendTotals = {
    */
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
+  /**
+   * Codex-only reasoning (thinking) output tokens (subset of codexOutputTokens).
+   * Powers the "Codex 输出构成" breakdown: 推理 vs 正常输出
+   * (正常输出 = codexOutputTokens - codexReasoningOutputTokens).
+   */
+  codexReasoningOutputTokens: number;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;

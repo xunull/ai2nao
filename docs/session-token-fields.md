@@ -293,7 +293,7 @@ total_tokens         = input_tokens + output_tokens
 |------|---------------|------|
 | `input_tokens`(及别名 `inputTokens`/`prompt_tokens`/...) | ✅ | 输入总量 |
 | `output_tokens`(及别名) | ✅ | 输出总量(已含 reasoning) |
-| `reasoning_output_tokens`(及别名) | ❌ | **不再相加**(它已在 output 内,见下方) |
+| `reasoning_output_tokens`(及别名) | ✅ | **单独存列**(`reasoning_output_tokens`)供「Codex 输出构成」展示;**不相加**进 output(它已在 output 内) |
 | `cached_input_tokens` | ❌ | 未单独展示,也不从 input 扣减 |
 | `total_tokens` | ❌ | 不直接用,自己用 input+output 重算 |
 | `model_context_window` | ❌ | 未读 |
@@ -308,6 +308,13 @@ total_tokens         = input_tokens + output_tokens
 > reasoning 量)。现已改为 `output = output_tokens`,`reasoning_output_tokens`
 > 不再相加。`CODEX_TOKEN_USAGE_RULE_VERSION` 升到 2,refresh 入口加了 self-heal
 > 自动重算历史行。
+>
+> 🆕 **reasoning 现在单独展示**(2026-06-18,RULE_VERSION 3):`reasoning_output_tokens`
+> 单独存进 `codex_session_token_usage.reasoning_output_tokens` 列(output 的子集,
+> 不相加),tokens-trend 页新增「Codex 输出构成」小节展示「推理 vs 正常输出」+
+> 推理占比。实测真实库 reasoning ≈ 4.3M / output 19M ≈ **22.6%**,所有 session
+> 满足 `reasoning ≤ output`。这是跟 Claude「输入构成」(cache 拆分)镜像对称的
+> 「输出构成」——cache 是 Claude-only,reasoning 是 Codex-only。
 
 ---
 

@@ -23,6 +23,8 @@ type RawBucketRow = {
   /** Claude-only prompt-cache split. Always 0 for codex (no such columns). */
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
+  /** Codex-only reasoning output. Always 0 for claude (no such column). */
+  reasoning_output_tokens: number;
   session_count: number;
   full_count: number;
   unknown_count: number;
@@ -62,6 +64,12 @@ export function queryBucketsBySource(
     source === "claude"
       ? "COALESCE(SUM(CASE WHEN token_status = 'full' THEN cache_creation_input_tokens ELSE 0 END), 0)"
       : "0";
+  // Mirror of the cache columns, opposite direction: reasoning_output_tokens
+  // only exists on the Codex table. For Claude emit literal 0.
+  const reasoningExpr =
+    source === "codex"
+      ? "COALESCE(SUM(CASE WHEN token_status = 'full' THEN reasoning_output_tokens ELSE 0 END), 0)"
+      : "0";
   const sql = `
     SELECT
       ${bucketExpr(granularity)} AS bucket_key,
@@ -70,6 +78,7 @@ export function queryBucketsBySource(
       COALESCE(SUM(CASE WHEN token_status = 'full' THEN output_tokens ELSE 0 END), 0) AS output_tokens,
       ${cacheReadExpr} AS cache_read_input_tokens,
       ${cacheCreationExpr} AS cache_creation_input_tokens,
+      ${reasoningExpr} AS reasoning_output_tokens,
       COUNT(*) AS session_count,
       SUM(CASE WHEN token_status = 'full' THEN 1 ELSE 0 END) AS full_count,
       SUM(CASE WHEN token_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_count,
@@ -112,6 +121,7 @@ export function mergeAndZeroFill(
       codexOutputTokens: x?.output_tokens ?? 0,
       claudeCacheReadInputTokens: c?.cache_read_input_tokens ?? 0,
       claudeCacheCreationInputTokens: c?.cache_creation_input_tokens ?? 0,
+      codexReasoningOutputTokens: x?.reasoning_output_tokens ?? 0,
       claudeSessionCount: c?.session_count ?? 0,
       codexSessionCount: x?.session_count ?? 0,
       claudeCoveredSessionCount: c?.full_count ?? 0,
@@ -147,6 +157,7 @@ export function computeTotals(
   let codexOutputTokens = 0;
   let claudeCacheReadInputTokens = 0;
   let claudeCacheCreationInputTokens = 0;
+  let codexReasoningOutputTokens = 0;
   let coveredSessionCount = 0;
   let unknownSessionCount = 0;
   let errorSessionCount = 0;
@@ -159,6 +170,7 @@ export function computeTotals(
     codexOutputTokens += b.codexOutputTokens;
     claudeCacheReadInputTokens += b.claudeCacheReadInputTokens;
     claudeCacheCreationInputTokens += b.claudeCacheCreationInputTokens;
+    codexReasoningOutputTokens += b.codexReasoningOutputTokens;
     coveredSessionCount +=
       b.claudeCoveredSessionCount + b.codexCoveredSessionCount;
     unknownSessionCount +=
@@ -191,6 +203,7 @@ export function computeTotals(
     codexOutputTokens,
     claudeCacheReadInputTokens,
     claudeCacheCreationInputTokens,
+    codexReasoningOutputTokens,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
     coverage,
