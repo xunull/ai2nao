@@ -75,6 +75,14 @@ function seedCodex(
      VALUES (?, '/r', 0, 0, '/x', '/x', '/x', 'high', null, null, null, null, ?,
              ?, ?, ?, ?, 'full', null, null, ?, ?)`
   ).run(id, updated, input, output, total, reasoning, updated, updated);
+  // Codex trend token sums come from the per-event timeline, not the session
+  // row. A single-event session attributes all its tokens to `updated` (no
+  // multi-day spread), matching the legacy per-session bucketing.
+  db.prepare(
+    `INSERT INTO codex_token_usage_event
+       (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, updated, input, output, reasoning);
 }
 
 describe("generateTrend — window mode (happy)", () => {

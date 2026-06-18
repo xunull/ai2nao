@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 29;
+const CURRENT_VERSION = 30;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -40,6 +40,7 @@ export function migrate(db: Database.Database): void {
     applyV27(db);
     applyV28(db);
     applyV29(db);
+    applyV30(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -75,6 +76,7 @@ export function migrate(db: Database.Database): void {
   if (v < 27) applyV27(db);
   if (v < 28) applyV28(db);
   if (v < 29) applyV29(db);
+  if (v < 30) applyV30(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1626,5 +1628,44 @@ function applyV29(db: Database.Database): void {
       ADD COLUMN reasoning_output_tokens INTEGER NOT NULL DEFAULT 0;
 
     UPDATE meta_schema SET version = 29 WHERE id = 1;
+  `);
+}
+
+/**
+ * v30 — Codex per-event token timeline (`codex_token_usage_event`).
+ *
+ * Problem: `codex_session_token_usage` stores ONE row per session with a single
+ * `last_updated_at`. The trend page buckets by that date, so a session resumed
+ * across many days (Codex keeps appending to one rollout) collapses ALL its
+ * tokens onto its final day — e.g. a 6/11→6/18 session put 200M tokens on 6/18
+ * and left 6/11..6/17 empty even though Codex ran heavily every day. Claude
+ * dodges this only because it opens a fresh session file per conversation.
+ *
+ * Fix: record each `token_count` event's per-event token delta against its own
+ * timestamp. The trend reads codex token sums from this table (bucketed by
+ * `event_at`), so tokens land on the day they were actually consumed. Session
+ * counts / coverage stay on the per-session table (they're about sessions, not
+ * time-distributed tokens). Investigation 2026-06-18.
+ *
+ * Rows are (re)written per session during refresh (delete-then-insert), gated
+ * by CODEX_TOKEN_USAGE_RULE_VERSION (bumped 3->4) so existing installs backfill
+ * on the next tick. No data is derived here; the table starts empty and the
+ * self-heal full reparse populates it.
+ */
+function applyV30(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS codex_token_usage_event (
+      session_id TEXT NOT NULL,
+      event_at TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      reasoning_output_tokens INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_codex_token_event_session
+      ON codex_token_usage_event(session_id);
+    CREATE INDEX IF NOT EXISTS idx_codex_token_event_at
+      ON codex_token_usage_event(event_at);
+
+    UPDATE meta_schema SET version = 30 WHERE id = 1;
   `);
 }

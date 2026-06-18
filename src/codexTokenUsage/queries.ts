@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import {
   CODEX_TOKEN_USAGE_RULE_VERSION,
   type CodexProjectTokenUsage,
+  type CodexTokenUsageEventRow,
   type CodexTokenUsageRow,
   type CodexTokenUsageStateRow,
   type CodexTokenUsageStatus,
@@ -96,6 +97,32 @@ export function upsertCodexTokenUsageRow(
       source_seen_at = excluded.source_seen_at,
       updated_at = excluded.updated_at`
   ).run(row);
+}
+
+/**
+ * Replace ALL per-event token rows for one session (delete-then-insert in a
+ * single transaction). Called on every reparse so the event timeline always
+ * matches the current rollout contents. Pass `[]` to clear (unknown/error
+ * sessions have no usable per-event tokens).
+ */
+export function replaceCodexTokenUsageEvents(
+  db: Database.Database,
+  sessionId: string,
+  events: CodexTokenUsageEventRow[]
+): void {
+  const del = db.prepare(
+    "DELETE FROM codex_token_usage_event WHERE session_id = ?"
+  );
+  const ins = db.prepare(
+    `INSERT INTO codex_token_usage_event
+       (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens)
+     VALUES (@session_id, @event_at, @input_tokens, @output_tokens, @reasoning_output_tokens)`
+  );
+  const tx = db.transaction(() => {
+    del.run(sessionId);
+    for (const event of events) ins.run(event);
+  });
+  tx();
 }
 
 export function markCodexTokenUsageRowSeen(

@@ -15,28 +15,34 @@ import {
  * guard is a fail-safe so a future refactor cannot let user-derived strings
  * leak in.
  *
- * All four expressions take `last_updated_at` (stored as ISO-8601 UTC) and
- * project to the user's **local** time bucket (`'localtime'` modifier).
+ * All four expressions project an ISO-8601 UTC timestamp column to the user's
+ * **local** time bucket (`'localtime'` modifier). The column defaults to
+ * `last_updated_at` (per-session tables); the codex trend passes `event_at`
+ * (per-event timeline) so resumed multi-day sessions bucket by the day each
+ * token was actually consumed.
  */
-export function bucketExpr(granularity: BucketGranularity): string {
+export function bucketExpr(
+  granularity: BucketGranularity,
+  col = "last_updated_at"
+): string {
   switch (granularity) {
     case "hour":
-      return "strftime('%Y-%m-%d %H:00:00', last_updated_at, 'localtime')";
+      return `strftime('%Y-%m-%d %H:00:00', ${col}, 'localtime')`;
     case "3hour":
       // Floor local hour to nearest 3-hour boundary: 00:00 / 03:00 / 06:00 / ...
       return (
-        "strftime('%Y-%m-%d ', last_updated_at, 'localtime') || " +
+        `strftime('%Y-%m-%d ', ${col}, 'localtime') || ` +
         "printf('%02d:00:00', " +
-        "  (CAST(strftime('%H', last_updated_at, 'localtime') AS INTEGER) / 3) * 3)"
+        `  (CAST(strftime('%H', ${col}, 'localtime') AS INTEGER) / 3) * 3)`
       );
     case "day":
-      return "strftime('%Y-%m-%d', last_updated_at, 'localtime')";
+      return `strftime('%Y-%m-%d', ${col}, 'localtime')`;
     case "week":
       // ISO week start (Monday). %w gives 0=Sunday, so (w + 6) % 7 maps Mon → 0.
       // date() is calendar-aware (handles month / year rollover).
       return (
-        "date(last_updated_at, 'localtime', " +
-        "'-' || ((CAST(strftime('%w', last_updated_at, 'localtime') AS INTEGER) + 6) % 7) || ' days')"
+        `date(${col}, 'localtime', ` +
+        `'-' || ((CAST(strftime('%w', ${col}, 'localtime') AS INTEGER) + 6) % 7) || ' days')`
       );
   }
 }

@@ -226,21 +226,54 @@ function deltaUsage(
   return { inputTokens, outputTokens, reasoningOutputTokens };
 }
 
-export function extractCodexSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
-  let usage: SessionUsage | undefined;
+/**
+ * One `token_count` event's per-event token contribution, tied to its rollout
+ * timestamp. `at` is the event's ISO timestamp, or null when the record had no
+ * parseable timestamp.
+ */
+export type CodexUsageEvent = {
+  at: string | null;
+  usage: CodexTokenUsage;
+};
+
+/**
+ * Walk the rollout's `token_count` events and yield each event's per-event
+ * token delta with its timestamp. This is the SINGLE accounting walk:
+ * `extractCodexSessionUsage` is just the sum of these, so per-day buckets
+ * derived from these events always reconcile to the session total exactly.
+ *
+ * Contribution rules mirror the session total:
+ *   - increment event: contribute `last_token_usage` directly.
+ *   - total event: contribute the delta from the previous cumulative total
+ *     (skipped when non-monotonic — same no-op as merging `undefined`).
+ */
+export function extractCodexUsageEvents(parse: ParseJsonlResult): CodexUsageEvent[] {
+  const events: CodexUsageEvent[] = [];
   let previousTotalUsage: CodexTokenUsage | undefined;
   for (const { record } of parse.okLines) {
     const payload = asObj(record.payload);
     if (str(record.type) !== "event_msg" || !payload) continue;
     if (str(payload.type) !== "token_count") continue;
     const tokenCount = usageFromTokenCountPayload(payload);
+    let contribution: CodexTokenUsage | undefined;
     if (tokenCount?.kind === "increment") {
-      usage = mergeUsage(usage, tokenCount.usage);
+      contribution = tokenCount.usage;
       if (tokenCount.totalUsage) previousTotalUsage = tokenCount.totalUsage;
     } else if (tokenCount?.kind === "total") {
-      usage = mergeUsage(usage, deltaUsage(tokenCount.usage, previousTotalUsage));
+      contribution = deltaUsage(tokenCount.usage, previousTotalUsage);
       previousTotalUsage = tokenCount.usage;
     }
+    if (!contribution) continue;
+    const at = isoDate(record.timestamp);
+    events.push({ at: at ? at.toISOString() : null, usage: contribution });
+  }
+  return events;
+}
+
+export function extractCodexSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
+  let usage: SessionUsage | undefined;
+  for (const event of extractCodexUsageEvents(parse)) {
+    usage = mergeUsage(usage, event.usage);
   }
   return usage;
 }

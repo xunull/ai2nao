@@ -5,7 +5,10 @@ import type Database from "better-sqlite3";
 import { parseJsonlText, type ParseJsonlResult } from "../localJsonl/parse.js";
 import { assertRealPathInsideRoot, isPathInsideRoot } from "../localJsonl/path.js";
 import { listCodexTranscriptFiles } from "../codexHistory/discover.js";
-import { extractCodexSessionUsage } from "../codexHistory/normalize.js";
+import {
+  extractCodexSessionUsage,
+  extractCodexUsageEvents,
+} from "../codexHistory/normalize.js";
 import { codexSessionsRoot, codexStateDbPath, resolveCodexRoot } from "../codexHistory/paths.js";
 import {
   listAllThreadsFromStateDb,
@@ -18,11 +21,13 @@ import {
   getCodexTokenUsageState,
   markCodexTokenUsageRowSeen,
   markUnseenCodexTokenRowsMissing,
+  replaceCodexTokenUsageEvents,
   upsertCodexTokenUsageRow,
   upsertCodexTokenUsageState,
 } from "./queries.js";
 import {
   CODEX_TOKEN_USAGE_RULE_VERSION,
+  type CodexTokenUsageEventRow,
   type CodexTokenUsageRefreshResult,
   type CodexTokenUsageRow,
 } from "./types.js";
@@ -174,6 +179,26 @@ function rowFromUsage(args: {
   };
 }
 
+/**
+ * Per-event token rows for the codex_token_usage_event timeline. Events with
+ * no parseable timestamp fall back to the session's last_updated_at so they
+ * still count (and land on a plausible day). The sum of these equals the
+ * session row totals by construction (same accounting walk).
+ */
+function eventsFromParse(
+  sessionId: string,
+  parse: ParseJsonlResult,
+  fallbackIso: string
+): CodexTokenUsageEventRow[] {
+  return extractCodexUsageEvents(parse).map((event) => ({
+    session_id: sessionId,
+    event_at: event.at ?? fallbackIso,
+    input_tokens: event.usage.inputTokens,
+    output_tokens: event.usage.outputTokens,
+    reasoning_output_tokens: event.usage.reasoningOutputTokens,
+  }));
+}
+
 async function sqliteSourceSessions(
   stateDbPath: string
 ): Promise<SourceSession[]> {
@@ -295,6 +320,11 @@ export async function refreshCodexTokenUsage(
         nowIso: refreshedAt,
       });
       upsertCodexTokenUsageRow(db, row);
+      replaceCodexTokenUsageEvents(
+        db,
+        sourceSession.id,
+        eventsFromParse(sourceSession.id, parse, row.last_updated_at)
+      );
       indexedSessionCount++;
       if (row.token_status === "full") tokenKnownSessionCount++;
       else if (row.token_status === "error") errorSessionCount++;
@@ -312,6 +342,8 @@ export async function refreshCodexTokenUsage(
         nowIso: refreshedAt,
       });
       upsertCodexTokenUsageRow(db, row);
+      // No usable parse → clear any stale per-event rows for this session.
+      replaceCodexTokenUsageEvents(db, sourceSession.id, []);
       indexedSessionCount++;
       errorSessionCount++;
     }
