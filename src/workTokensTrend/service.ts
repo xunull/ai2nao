@@ -102,7 +102,8 @@ function generateWindow(
   const granularity = windowToGranularity(windowKey);
   const { from, to } = windowToRange(windowKey, now);
   const buckets = enumerateAndAggregate(db, from, to, granularity);
-  const previousWindowTotal = safePreviousWindowTotal(db, from, to, buckets.diagnostics);
+  const prev = safePreviousWindowTotal(db, from, to, buckets.diagnostics);
+  const previousWindowTotal = prev.total;
   const deltaRatio =
     previousWindowTotal === 0
       ? null
@@ -117,6 +118,7 @@ function generateWindow(
     buckets: buckets.data,
     totals: buckets.totals,
     previousWindowTotal,
+    previousWindowClaudeCacheReadInputTokens: prev.claudeCacheReadInputTokens,
     deltaRatio,
     monthRange: safeMonthRange(db, now, buckets.diagnostics),
     diagnostics: buckets.diagnostics,
@@ -197,7 +199,7 @@ function safePreviousWindowTotal(
   from: Date,
   to: Date,
   diagnostics: WorkTokensTrendDiagnostic[]
-): number {
+): { total: number; claudeCacheReadInputTokens: number } {
   try {
     return computePreviousWindowTotal(db, from, to);
   } catch (e) {
@@ -207,7 +209,7 @@ function safePreviousWindowTotal(
       kind: "previous_window_query_failed",
       message: `previous window total query failed: ${msg}`,
     });
-    return 0;
+    return { total: 0, claudeCacheReadInputTokens: 0 };
   }
 }
 

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
@@ -35,6 +35,8 @@ type Bucket = {
   bucketEnd: string;
   claudeTokens: number;
   codexTokens: number;
+  /** Claude cache_read in this bucket — subtracted when the cache toggle is off. */
+  claudeCacheReadInputTokens: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   claudeCoveredSessionCount: number;
@@ -84,6 +86,7 @@ type TrendResponse =
       buckets: Bucket[];
       totals: Totals;
       previousWindowTotal: number;
+      previousWindowClaudeCacheReadInputTokens: number;
       deltaRatio: number | null;
       monthRange: MonthRange;
       diagnostics: Diagnostic[];
@@ -164,7 +167,13 @@ function StatCard({
  * so it reads much larger than 输出 — that's billing-accurate, not a bug. A
  * future change will split out cache hits separately.
  */
-function BreakdownMatrix({ totals }: { totals: Totals }) {
+function BreakdownMatrix({
+  totals,
+  includeCache,
+}: {
+  totals: Totals;
+  includeCache: boolean;
+}) {
   const claudeTotal = totals.claudeInputTokens + totals.claudeOutputTokens;
   const codexTotal = totals.codexInputTokens + totals.codexOutputTokens;
   const inputTotal = totals.claudeInputTokens + totals.codexInputTokens;
@@ -207,7 +216,7 @@ function BreakdownMatrix({ totals }: { totals: Totals }) {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--fg)]">输入 / 输出拆分</h2>
         <span className="text-xs text-[var(--fg-muted)]">
-          仅统计完整 token 的 session · 含 cache
+          仅统计完整 token 的 session · {includeCache ? "含 cache" : "不含 Claude 命中 cache"}
         </span>
       </div>
       <table className="w-full text-sm tabular-nums">
@@ -448,6 +457,89 @@ function buildMonthOptions(range: MonthRange | undefined): string[] {
   return out;
 }
 
+const CACHE_TOGGLE_KEY = "tokensTrend.includeCache";
+
+/** Boolean toggle persisted to localStorage (survives refresh). */
+function useStickyToggle(
+  key: string,
+  initial: boolean
+): [boolean, (next: boolean) => void] {
+  const [value, setValue] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? initial : raw === "1";
+    } catch {
+      return initial;
+    }
+  });
+  const set = (next: boolean): void => {
+    setValue(next);
+    try {
+      localStorage.setItem(key, next ? "1" : "0");
+    } catch {
+      /* localStorage unavailable (private mode) — keep in-memory only */
+    }
+  };
+  return [value, set];
+}
+
+/**
+ * Re-derive the totals card under the cache toggle. When `includeCache` is
+ * false we strip Claude's `cache_read_input_tokens` (the per-turn cache replay
+ * that dominates long sessions) from Claude's totals and recompute the grand
+ * total + shares. Codex is untouched — this toggle is about Claude cache only.
+ * Raw cache fields are preserved so the "Claude 输入构成" explainer card still
+ * shows the full split regardless of the toggle.
+ */
+function deriveTotals(totals: Totals, includeCache: boolean): Totals {
+  if (includeCache) return totals;
+  const cut = totals.claudeCacheReadInputTokens;
+  const claudeTokens = Math.max(0, totals.claudeTokens - cut);
+  const claudeInputTokens = Math.max(0, totals.claudeInputTokens - cut);
+  const totalTokens = claudeTokens + totals.codexTokens;
+  return {
+    ...totals,
+    claudeTokens,
+    claudeInputTokens,
+    totalTokens,
+    claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
+    codexShare: totalTokens === 0 ? 0 : totals.codexTokens / totalTokens,
+  };
+}
+
+/** Header toggle: include Claude cache hits in the aggregate numbers. */
+function CacheToggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      title="关掉后，总量/占比/拆分/柱状图都不计入 Claude 的命中 cache（每轮重放）"
+      className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--fg-muted)] hover:bg-[var(--surface-2)]"
+    >
+      <span className="text-[var(--fg)]">计入 Claude 缓存命中</span>
+      <span
+        className={`relative inline-block h-4 w-7 rounded-full transition-colors ${
+          on ? "bg-[#d97757]" : "bg-[var(--border)]"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${
+            on ? "left-3.5" : "left-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 export function WorkTokensTrend() {
   const [searchParams, setSearchParams] = useSearchParams();
   const monthRaw = searchParams.get("month");
@@ -457,6 +549,8 @@ export function WorkTokensTrend() {
   const queryUrl = isMonthMode
     ? `/api/work-tokens-trend?month=${monthRaw}`
     : `/api/work-tokens-trend?window=${currentWindow}`;
+
+  const [includeCache, setIncludeCache] = useStickyToggle(CACHE_TOGGLE_KEY, true);
 
   const trend = useQuery<TrendResponse>({
     queryKey: ["work-tokens-trend", isMonthMode ? `month:${monthRaw}` : `window:${currentWindow}`],
@@ -468,10 +562,33 @@ export function WorkTokensTrend() {
     return trend.data.buckets.map((b) => ({
       ...b,
       label: bucketLabel(b, trend.data!.bucketGranularity),
-      claudeFullTokens: b.claudeTokens,
+      claudeFullTokens: includeCache
+        ? b.claudeTokens
+        : Math.max(0, b.claudeTokens - b.claudeCacheReadInputTokens),
       codexFullTokens: b.codexTokens,
     }));
-  }, [trend.data]);
+  }, [trend.data, includeCache]);
+
+  // Totals + 环比 under the cache toggle. Raw totals still feed the
+  // "Claude 输入构成" explainer; everything aggregate uses the effective view.
+  const effectiveTotals = useMemo(
+    () => (trend.data ? deriveTotals(trend.data.totals, includeCache) : null),
+    [trend.data, includeCache]
+  );
+  const effectivePrevTotal =
+    trend.data?.mode === "window"
+      ? includeCache
+        ? trend.data.previousWindowTotal
+        : Math.max(
+            0,
+            trend.data.previousWindowTotal -
+              trend.data.previousWindowClaudeCacheReadInputTokens
+          )
+      : 0;
+  const effectiveDeltaRatio =
+    effectiveTotals && effectivePrevTotal > 0
+      ? (effectiveTotals.totalTokens - effectivePrevTotal) / effectivePrevTotal
+      : null;
 
   const monthOptions = useMemo(
     () => buildMonthOptions(trend.data?.monthRange),
@@ -497,6 +614,7 @@ export function WorkTokensTrend() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <CacheToggle on={includeCache} onChange={setIncludeCache} />
           <label className="flex items-center gap-2 text-xs text-[var(--fg-muted)]">
             窗口
             <select
@@ -565,40 +683,46 @@ export function WorkTokensTrend() {
         </div>
       )}
 
-      {trend.data && (
+      {trend.data && effectiveTotals && (
         <>
+          {!includeCache && (
+            <div className="mb-4 rounded-md bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--fg-muted)] ring-1 ring-[var(--border)]">
+              已排除 Claude 命中 cache（每轮重放的缓存）。总量、占比、拆分、柱状图与环比均按此口径；
+              下方「Claude 输入构成」始终展示完整三段。
+            </div>
+          )}
           <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="窗口内总 token"
-              value={formatTokenCount(trend.data.totals.totalTokens)}
-              subtle={`${trend.data.totals.totalSessionCount} session`}
+              value={formatTokenCount(effectiveTotals.totalTokens)}
+              subtle={`${effectiveTotals.totalSessionCount} session`}
             />
             <StatCard
               label="Claude 占比"
-              value={`${(trend.data.totals.claudeShare * 100).toFixed(1)}%`}
-              subtle={formatTokenCount(trend.data.totals.claudeTokens)}
+              value={`${(effectiveTotals.claudeShare * 100).toFixed(1)}%`}
+              subtle={formatTokenCount(effectiveTotals.claudeTokens)}
             />
             <StatCard
               label="Codex 占比"
-              value={`${(trend.data.totals.codexShare * 100).toFixed(1)}%`}
-              subtle={formatTokenCount(trend.data.totals.codexTokens)}
+              value={`${(effectiveTotals.codexShare * 100).toFixed(1)}%`}
+              subtle={formatTokenCount(effectiveTotals.codexTokens)}
             />
             {trend.data.mode === "window" ? (
               <StatCard
                 label="环比上一窗口"
                 value={
-                  trend.data.deltaRatio === null
+                  effectiveDeltaRatio === null
                     ? "—"
-                    : `${trend.data.deltaRatio >= 0 ? "+" : ""}${(trend.data.deltaRatio * 100).toFixed(1)}%`
+                    : `${effectiveDeltaRatio >= 0 ? "+" : ""}${(effectiveDeltaRatio * 100).toFixed(1)}%`
                 }
-                subtle={`前期 ${formatTokenCount(trend.data.previousWindowTotal)}`}
+                subtle={`前期 ${formatTokenCount(effectivePrevTotal)}`}
               />
             ) : (
               <StatCard label="环比" value="—" subtle="月模式不展示环比" />
             )}
           </section>
 
-          <BreakdownMatrix totals={trend.data.totals} />
+          <BreakdownMatrix totals={effectiveTotals} includeCache={includeCache} />
 
           <ClaudeInputComposition totals={trend.data.totals} />
 
