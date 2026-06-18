@@ -119,6 +119,7 @@ function generateWindow(
     totals: buckets.totals,
     previousWindowTotal,
     previousWindowClaudeCacheReadInputTokens: prev.claudeCacheReadInputTokens,
+    previousWindowCodexCachedInputTokens: prev.codexCachedInputTokens,
     deltaRatio,
     monthRange: safeMonthRange(db, now, buckets.diagnostics),
     diagnostics: buckets.diagnostics,
@@ -199,7 +200,11 @@ function safePreviousWindowTotal(
   from: Date,
   to: Date,
   diagnostics: WorkTokensTrendDiagnostic[]
-): { total: number; claudeCacheReadInputTokens: number } {
+): {
+  total: number;
+  claudeCacheReadInputTokens: number;
+  codexCachedInputTokens: number;
+} {
   try {
     return computePreviousWindowTotal(db, from, to);
   } catch (e) {
@@ -209,7 +214,7 @@ function safePreviousWindowTotal(
       kind: "previous_window_query_failed",
       message: `previous window total query failed: ${msg}`,
     });
-    return { total: 0, claudeCacheReadInputTokens: 0 };
+    return { total: 0, claudeCacheReadInputTokens: 0, codexCachedInputTokens: 0 };
   }
 }
 

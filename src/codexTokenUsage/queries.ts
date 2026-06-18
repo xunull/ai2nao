@@ -49,8 +49,8 @@ export function getCodexTokenUsageRow(
         `SELECT session_id, rollout_path, rollout_mtime_ms, rollout_size_bytes,
                 cwd, project_key, project_path, identity_confidence, title, model,
                 git_branch, created_at, last_updated_at, input_tokens, output_tokens,
-                total_tokens, reasoning_output_tokens, token_status, parse_error,
-                missing_since, source_seen_at, updated_at
+                total_tokens, reasoning_output_tokens, cached_input_tokens, token_status,
+                parse_error, missing_since, source_seen_at, updated_at
          FROM codex_session_token_usage
          WHERE session_id = ?`
       )
@@ -67,12 +67,12 @@ export function upsertCodexTokenUsageRow(
       session_id, rollout_path, rollout_mtime_ms, rollout_size_bytes,
       cwd, project_key, project_path, identity_confidence, title, model,
       git_branch, created_at, last_updated_at, input_tokens, output_tokens,
-      total_tokens, reasoning_output_tokens, token_status, parse_error, missing_since, source_seen_at, updated_at
+      total_tokens, reasoning_output_tokens, cached_input_tokens, token_status, parse_error, missing_since, source_seen_at, updated_at
     ) VALUES (
       @session_id, @rollout_path, @rollout_mtime_ms, @rollout_size_bytes,
       @cwd, @project_key, @project_path, @identity_confidence, @title, @model,
       @git_branch, @created_at, @last_updated_at, @input_tokens, @output_tokens,
-      @total_tokens, @reasoning_output_tokens, @token_status, @parse_error, @missing_since, @source_seen_at, @updated_at
+      @total_tokens, @reasoning_output_tokens, @cached_input_tokens, @token_status, @parse_error, @missing_since, @source_seen_at, @updated_at
     )
     ON CONFLICT(session_id) DO UPDATE SET
       rollout_path = excluded.rollout_path,
@@ -91,6 +91,7 @@ export function upsertCodexTokenUsageRow(
       output_tokens = excluded.output_tokens,
       total_tokens = excluded.total_tokens,
       reasoning_output_tokens = excluded.reasoning_output_tokens,
+      cached_input_tokens = excluded.cached_input_tokens,
       token_status = excluded.token_status,
       parse_error = excluded.parse_error,
       missing_since = excluded.missing_since,
@@ -115,8 +116,8 @@ export function replaceCodexTokenUsageEvents(
   );
   const ins = db.prepare(
     `INSERT INTO codex_token_usage_event
-       (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens)
-     VALUES (@session_id, @event_at, @input_tokens, @output_tokens, @reasoning_output_tokens)`
+       (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens, cached_input_tokens)
+     VALUES (@session_id, @event_at, @input_tokens, @output_tokens, @reasoning_output_tokens, @cached_input_tokens)`
   );
   const tx = db.transaction(() => {
     del.run(sessionId);

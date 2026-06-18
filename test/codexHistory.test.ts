@@ -114,7 +114,7 @@ describe("codexHistory", () => {
       failedCommandCount: 1,
       fileCount: 1,
     });
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 11, totalOutputTokens: 7, totalReasoningOutputTokens: 0 });
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 11, totalOutputTokens: 7, totalReasoningOutputTokens: 0, totalCachedInputTokens: 0 });
     expect(detail?.session.source).toBe("codex");
     expect(detail?.session.messages.some((m) => m.metadata?.codexFailed)).toBe(true);
     expect(detail?.session.messages.some((m) => m.content.includes("secret output"))).toBe(false);
@@ -199,6 +199,7 @@ describe("codexHistory", () => {
       totalInputTokens: 100,
       totalOutputTokens: 30,
       totalReasoningOutputTokens: 7,
+      totalCachedInputTokens: 20,
     });
   });
 
@@ -221,6 +222,7 @@ describe("codexHistory", () => {
                 input_tokens: 10,
                 output_tokens: 3, // includes its 2 reasoning tokens
                 reasoning_output_tokens: 2,
+                cached_input_tokens: 6, // subset of input
               },
             },
           },
@@ -235,6 +237,7 @@ describe("codexHistory", () => {
                 input_tokens: 25,
                 output_tokens: 8, // includes its 4 reasoning tokens
                 reasoning_output_tokens: 4,
+                cached_input_tokens: 15, // subset of input
               },
             },
           },
@@ -247,11 +250,12 @@ describe("codexHistory", () => {
     const detail = await loadCodexSessionDetail(root, id);
     // cumulative total → diffed; output is 8 (NOT 12 — reasoning not double-counted).
     // reasoning: first total (prev=undefined) contributes its full 2, second
-    // contributes delta 4-2=2 → total 4.
+    // contributes delta 4-2=2 → total 4. cached mirrors: 6 + (15-6) = 15.
     expect(detail?.session.usage).toEqual({
       totalInputTokens: 25,
       totalOutputTokens: 8,
       totalReasoningOutputTokens: 4,
+      totalCachedInputTokens: 15,
     });
   });
 

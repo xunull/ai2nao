@@ -523,6 +523,10 @@ export interface SessionUsage {
    *  totalOutputTokens (never added on top). Undefined for sources without a
    *  reasoning concept (e.g. Claude). */
   totalReasoningOutputTokens?: number;
+  /** Codex: total cached input tokens (cache-hit replay). SUBSET of
+   *  totalInputTokens (never added on top) — Codex's mirror of Claude's
+   *  totalCacheReadInputTokens. Undefined for sources without it. */
+  totalCachedInputTokens?: number;
 }
 
 /**

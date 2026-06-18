@@ -15,8 +15,11 @@
  *       trend page can bucket Codex tokens by the day they were consumed,
  *       instead of collapsing a multi-day resumed session onto its last day.
  *       2026-06-18.
+ *   v5: also persists cached_input_tokens (cache-hit replay, subset of input)
+ *       on both the session row and the per-event timeline, so the tokens-trend
+ *       cache toggle can exclude Codex cache symmetrically with Claude. 2026-06-18.
  */
-export const CODEX_TOKEN_USAGE_RULE_VERSION = 4;
+export const CODEX_TOKEN_USAGE_RULE_VERSION = 5;
 
 export type CodexTokenStatus = "full" | "unknown" | "error";
 
@@ -39,6 +42,8 @@ export type CodexTokenUsageRow = {
   total_tokens: number;
   /** Subset of output_tokens that was reasoning (thinking). */
   reasoning_output_tokens: number;
+  /** Subset of input_tokens that was cache-hit replay (Codex's cache_read). */
+  cached_input_tokens: number;
   token_status: CodexTokenStatus;
   parse_error: string | null;
   missing_since: string | null;
@@ -60,6 +65,8 @@ export type CodexTokenUsageEventRow = {
   output_tokens: number;
   /** Subset of output_tokens that was reasoning (thinking). */
   reasoning_output_tokens: number;
+  /** Subset of input_tokens that was cache-hit replay. */
+  cached_input_tokens: number;
 };
 
 export type CodexTokenUsageStateRow = {

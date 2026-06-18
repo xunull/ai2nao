@@ -28,7 +28,13 @@ afterAll(() => {
   process.env.TZ = PRIOR_TZ;
 });
 
-function tokenCountTotal(ts: string, input: number, output: number, reasoning = 0) {
+function tokenCountTotal(
+  ts: string,
+  input: number,
+  output: number,
+  reasoning = 0,
+  cached = 0
+) {
   return JSON.stringify({
     type: "event_msg",
     timestamp: ts,
@@ -39,6 +45,7 @@ function tokenCountTotal(ts: string, input: number, output: number, reasoning = 
           input_tokens: input,
           output_tokens: output,
           reasoning_output_tokens: reasoning,
+          cached_input_tokens: cached,
         },
       },
     },
@@ -50,9 +57,9 @@ describe("extractCodexUsageEvents", () => {
     // Cumulative totals across 3 events on 2 different local days.
     const transcript = [
       JSON.stringify({ type: "session_meta", timestamp: "2026-06-15T01:00:00.000Z", payload: { cwd: "/w" } }),
-      tokenCountTotal("2026-06-15T02:00:00.000Z", 10, 4, 2),
-      tokenCountTotal("2026-06-15T10:00:00.000Z", 30, 9, 5),
-      tokenCountTotal("2026-06-16T03:00:00.000Z", 55, 14, 6),
+      tokenCountTotal("2026-06-15T02:00:00.000Z", 10, 4, 2, 6),
+      tokenCountTotal("2026-06-15T10:00:00.000Z", 30, 9, 5, 18),
+      tokenCountTotal("2026-06-16T03:00:00.000Z", 55, 14, 6, 33),
     ].join("\n");
     const parse = parseJsonlText(transcript);
 
@@ -62,16 +69,19 @@ describe("extractCodexUsageEvents", () => {
     const sumInput = events.reduce((a, e) => a + e.usage.inputTokens, 0);
     const sumOutput = events.reduce((a, e) => a + e.usage.outputTokens, 0);
     const sumReason = events.reduce((a, e) => a + e.usage.reasoningOutputTokens, 0);
+    const sumCached = events.reduce((a, e) => a + e.usage.cachedInputTokens, 0);
 
     const total = extractCodexSessionUsage(parse);
     expect(sumInput).toBe(total?.totalInputTokens);
     expect(sumOutput).toBe(total?.totalOutputTokens);
     expect(sumReason).toBe(total?.totalReasoningOutputTokens);
-    // sanity: cumulative 55/14 → final totals
+    expect(sumCached).toBe(total?.totalCachedInputTokens);
+    // sanity: cumulative 55/14 → final totals; cached delta 6 + 12 + 15 = 33.
     expect(total).toEqual({
       totalInputTokens: 55,
       totalOutputTokens: 14,
       totalReasoningOutputTokens: 6,
+      totalCachedInputTokens: 33,
     });
   });
 
@@ -113,9 +123,9 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
     seedCodexSession(db, "long-1", "2026-06-18T09:00:00Z");
     replaceCodexTokenUsageEvents(db, "long-1", [
       // Local Asia/Shanghai: UTC 6/15 02:00 → local 6/15 10:00
-      { session_id: "long-1", event_at: "2026-06-15T02:00:00Z", input_tokens: 100, output_tokens: 20, reasoning_output_tokens: 5 },
-      { session_id: "long-1", event_at: "2026-06-16T02:00:00Z", input_tokens: 200, output_tokens: 30, reasoning_output_tokens: 7 },
-      { session_id: "long-1", event_at: "2026-06-18T01:00:00Z", input_tokens: 50, output_tokens: 10, reasoning_output_tokens: 2 },
+      { session_id: "long-1", event_at: "2026-06-15T02:00:00Z", input_tokens: 100, output_tokens: 20, reasoning_output_tokens: 5, cached_input_tokens: 60 },
+      { session_id: "long-1", event_at: "2026-06-16T02:00:00Z", input_tokens: 200, output_tokens: 30, reasoning_output_tokens: 7, cached_input_tokens: 120 },
+      { session_id: "long-1", event_at: "2026-06-18T01:00:00Z", input_tokens: 50, output_tokens: 10, reasoning_output_tokens: 2, cached_input_tokens: 20 },
     ]);
 
     const rows = queryBucketsBySource(
@@ -138,6 +148,7 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
     expect(byDay.get("2026-06-16")?.input_tokens).toBe(200);
     expect(byDay.get("2026-06-16")?.output_tokens).toBe(30);
     expect(byDay.get("2026-06-16")?.reasoning_output_tokens).toBe(7);
+    expect(byDay.get("2026-06-16")?.codex_cached_input_tokens).toBe(120);
 
     // grand total across days equals the session's full consumption.
     const grand = rows.reduce((a, r) => a + r.total_tokens, 0);
@@ -151,7 +162,7 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
       "UPDATE codex_session_token_usage SET missing_since = ? WHERE session_id = 'gone'"
     ).run("2026-06-17T00:00:00Z");
     replaceCodexTokenUsageEvents(db, "gone", [
-      { session_id: "gone", event_at: "2026-06-16T02:00:00Z", input_tokens: 999, output_tokens: 9, reasoning_output_tokens: 0 },
+      { session_id: "gone", event_at: "2026-06-16T02:00:00Z", input_tokens: 999, output_tokens: 9, reasoning_output_tokens: 0, cached_input_tokens: 0 },
     ]);
 
     const rows = queryBucketsBySource(

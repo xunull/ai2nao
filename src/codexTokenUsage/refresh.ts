@@ -152,6 +152,7 @@ function rowFromUsage(args: {
   const inputTokens = usage?.totalInputTokens ?? 0;
   const outputTokens = usage?.totalOutputTokens ?? 0;
   const reasoningOutputTokens = usage?.totalReasoningOutputTokens ?? 0;
+  const cachedInputTokens = usage?.totalCachedInputTokens ?? 0;
   const tokenStatus = args.error ? "error" : usage ? "full" : "unknown";
   return {
     session_id: args.source.id,
@@ -171,6 +172,7 @@ function rowFromUsage(args: {
     output_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
     reasoning_output_tokens: reasoningOutputTokens,
+    cached_input_tokens: cachedInputTokens,
     token_status: tokenStatus,
     parse_error: args.error,
     missing_since: null,
@@ -196,6 +198,7 @@ function eventsFromParse(
     input_tokens: event.usage.inputTokens,
     output_tokens: event.usage.outputTokens,
     reasoning_output_tokens: event.usage.reasoningOutputTokens,
+    cached_input_tokens: event.usage.cachedInputTokens,
   }));
 }
 

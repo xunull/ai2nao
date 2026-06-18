@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 30;
+const CURRENT_VERSION = 31;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -41,6 +41,7 @@ export function migrate(db: Database.Database): void {
     applyV28(db);
     applyV29(db);
     applyV30(db);
+    applyV31(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -77,6 +78,7 @@ export function migrate(db: Database.Database): void {
   if (v < 28) applyV28(db);
   if (v < 29) applyV29(db);
   if (v < 30) applyV30(db);
+  if (v < 31) applyV31(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1667,5 +1669,30 @@ function applyV30(db: Database.Database): void {
       ON codex_token_usage_event(event_at);
 
     UPDATE meta_schema SET version = 30 WHERE id = 1;
+  `);
+}
+
+/**
+ * v31 — Codex cached-input (cache-hit) breakdown.
+ *
+ * Codex reports `cached_input_tokens` as a SUBSET of `input_tokens` (its mirror
+ * of Claude's cache_read) — typically ~95% of input on long sessions. We never
+ * captured it (input_tokens already includes it, so the total was always right;
+ * nothing needed the split until the tokens-trend cache toggle). Persist it on
+ * BOTH the per-session row and the per-event timeline so the toggle can exclude
+ * Codex cache symmetrically with Claude.
+ *
+ * Defaults 0; existing rows backfill on the next refresh via the
+ * CODEX_TOKEN_USAGE_RULE_VERSION 4->5 self-heal. total_tokens is unchanged
+ * (cached ⊆ input, never added on top). Investigation 2026-06-18.
+ */
+function applyV31(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE codex_session_token_usage
+      ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE codex_token_usage_event
+      ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0;
+
+    UPDATE meta_schema SET version = 31 WHERE id = 1;
   `);
 }
