@@ -10,8 +10,11 @@
  *   v2: also sums cache_creation_input_tokens + cache_read_input_tokens
  *       (Anthropic prompt-cache fields). v1 under-counts Claude Code by
  *       ~100-1000× on long sessions. Investigation 2026-06-12.
+ *   v3: persists cache_read_input_tokens + cache_creation_input_tokens as
+ *       separate columns (still summed into input_tokens). Powers the
+ *       "Claude 输入构成" cache-hit breakdown. 2026-06-18.
  */
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 2;
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 3;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 
@@ -31,6 +34,10 @@ export type ClaudeTokenUsageRow = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  /** Subset of input_tokens replayed from prompt cache (cache hit). */
+  cache_read_input_tokens: number;
+  /** Subset of input_tokens written to prompt cache (cache creation). */
+  cache_creation_input_tokens: number;
   token_status: ClaudeTokenStatus;
   parse_error: string | null;
   missing_since: string | null;

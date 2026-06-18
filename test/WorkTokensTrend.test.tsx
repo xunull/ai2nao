@@ -8,6 +8,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -79,6 +80,8 @@ const WINDOW_OK = {
     claudeOutputTokens: 500,
     codexInputTokens: 2800,
     codexOutputTokens: 200,
+    claudeCacheReadInputTokens: 9000,
+    claudeCacheCreationInputTokens: 2000,
     claudeShare: 0.8,
     codexShare: 0.2,
     coverage: "full" as const,
@@ -109,6 +112,8 @@ const MONTH_OK = {
     claudeOutputTokens: 0,
     codexInputTokens: 0,
     codexOutputTokens: 0,
+    claudeCacheReadInputTokens: 0,
+    claudeCacheCreationInputTokens: 0,
     claudeShare: 0,
     codexShare: 0,
     coverage: "full" as const,
@@ -155,11 +160,48 @@ describe("WorkTokensTrend page", () => {
     expect(screen.getByRole("columnheader", { name: "输出" })).toBeInTheDocument();
     // row labels — 合计 row present
     expect(screen.getByText("合计")).toBeInTheDocument();
-    // a few formatted numbers should appear (12000 claude total, 3000 codex total)
-    // formatTokenCount renders compactly, so assert the cells exist via row count
-    const rows = screen.getAllByRole("row");
+    // scope row count to the matrix table (identified by its 来源 header),
+    // since the page also renders the Claude composition table
+    const matrixTable = screen
+      .getByRole("columnheader", { name: "来源" })
+      .closest("table") as HTMLTableElement;
+    const rows = within(matrixTable).getAllByRole("row");
     // 1 header + Claude + Codex + 合计 = 4
     expect(rows.length).toBe(4);
+  });
+
+  it("renders Claude 输入构成 with cache hit rate", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Claude 输入构成")).toBeInTheDocument()
+    );
+    // hit rate = read / input = 9000 / 11500 = 78.3%
+    expect(screen.getByText(/cache 命中率 78\.3%/)).toBeInTheDocument();
+    // three composition rows
+    expect(screen.getByText("真实新增")).toBeInTheDocument();
+    expect(screen.getByText("写入 cache")).toBeInTheDocument();
+    expect(screen.getByText("命中 cache")).toBeInTheDocument();
+    expect(screen.getByText("输入合计")).toBeInTheDocument();
+  });
+
+  it("hides Claude 输入构成 when there are no Claude input tokens", async () => {
+    installFetchMock(async () =>
+      jsonResponse({
+        ...WINDOW_OK,
+        totals: {
+          ...WINDOW_OK.totals,
+          claudeInputTokens: 0,
+          claudeCacheReadInputTokens: 0,
+          claudeCacheCreationInputTokens: 0,
+        },
+      })
+    );
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("输入 / 输出拆分")).toBeInTheDocument()
+    );
+    expect(screen.queryByText("Claude 输入构成")).not.toBeInTheDocument();
   });
 
   it("breakdown matrix shows 0 (not —) for an empty window", async () => {

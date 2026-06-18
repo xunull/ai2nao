@@ -20,7 +20,8 @@ describe("schema v27 — work_cosmos_* tables", () => {
     const version = (db.prepare(
       "SELECT version FROM meta_schema WHERE id = 1"
     ).get() as { version: number }).version;
-    expect(version).toBe(27);
+    // fresh DB migrates to the latest version; v27 created the cosmos tables
+    expect(version).toBe(28);
 
     const tables = db
       .prepare(

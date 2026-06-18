@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildClaudeSession } from "../src/claudeCodeHistory/normalize.js";
+import {
+  buildClaudeSession,
+  extractClaudeSessionUsage,
+} from "../src/claudeCodeHistory/normalize.js";
 import { parseJsonlText } from "../src/localJsonl/parse.js";
 
 /**
@@ -109,5 +112,76 @@ describe("Claude Code token usage — prompt cache fields (regression)", () => {
     // sum: 62013
     expect(session.session.usage?.totalInputTokens).toBe(62013);
     expect(session.session.usage?.totalOutputTokens).toBe(300);
+  });
+});
+
+/**
+ * v3: extractClaudeSessionUsage keeps the cache split separate so the
+ * "Claude 输入构成" breakdown can show how much input is cache replay vs
+ * fresh. inputTokens stays fused (input + creation + read); the cache fields
+ * are subsets of it.
+ */
+describe("extractClaudeSessionUsage — cache split (v3)", () => {
+  function usageFromRecords(records: object[]) {
+    const dir = mkdtempSync(join(tmpdir(), "ai2nao-claude-cachesplit-"));
+    const file = join(dir, "t.jsonl");
+    writeFileSync(file, records.map((l) => JSON.stringify(l)).join("\n"));
+    return extractClaudeSessionUsage(parseJsonlText(readFileSync(file, "utf8")));
+  }
+
+  it("accumulates cache_read and cache_creation separately, subset of input", () => {
+    const usage = usageFromRecords([
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "t1" }],
+          usage: {
+            input_tokens: 5,
+            cache_creation_input_tokens: 30000,
+            cache_read_input_tokens: 0,
+            output_tokens: 100,
+          },
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "t2" }],
+          usage: {
+            input_tokens: 8,
+            cache_creation_input_tokens: 2000,
+            cache_read_input_tokens: 30000,
+            output_tokens: 200,
+          },
+        },
+      },
+    ]);
+    expect(usage?.totalInputTokens).toBe(62013); // 5+30000+0 + 8+2000+30000
+    expect(usage?.totalCacheReadInputTokens).toBe(30000); // 0 + 30000
+    expect(usage?.totalCacheCreationInputTokens).toBe(32000); // 30000 + 2000
+    // 真实新增 = input - read - creation = 62013 - 30000 - 32000 = 13
+    const fresh =
+      usage!.totalInputTokens! -
+      usage!.totalCacheReadInputTokens! -
+      usage!.totalCacheCreationInputTokens!;
+    expect(fresh).toBe(13); // 5 + 8 raw input
+  });
+
+  it("missing cache fields → cache totals are 0, input == raw", () => {
+    const usage = usageFromRecords([
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "x" }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+      },
+    ]);
+    expect(usage?.totalInputTokens).toBe(100);
+    expect(usage?.totalCacheReadInputTokens).toBe(0);
+    expect(usage?.totalCacheCreationInputTokens).toBe(0);
   });
 });

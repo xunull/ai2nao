@@ -25,20 +25,34 @@ function seedClaude(
   total: number,
   updated: string,
   status: "full" | "unknown" | "error" = "full",
-  io?: { input: number; output: number }
+  io?: { input: number; output: number; cacheRead?: number; cacheCreation?: number }
 ): void {
   const input = io?.input ?? total;
   const output = io?.output ?? 0;
+  const cacheRead = io?.cacheRead ?? 0;
+  const cacheCreation = io?.cacheCreation ?? 0;
   db.prepare(
     `INSERT INTO claude_session_token_usage
        (session_id, project_id, file_path, file_mtime_ms, file_size_bytes,
         cwd, project_key, project_path, identity_confidence,
         title, created_at, last_updated_at,
-        input_tokens, output_tokens, total_tokens, token_status,
+        input_tokens, output_tokens, total_tokens,
+        cache_read_input_tokens, cache_creation_input_tokens, token_status,
         parse_error, missing_since, source_seen_at, updated_at)
      VALUES (?, 'p', '/x', 0, 0, '/x', '/x', '/x', 'high',
-             null, null, ?, ?, ?, ?, ?, null, null, ?, ?)`
-  ).run(id, updated, input, output, total, status, updated, updated);
+             null, null, ?, ?, ?, ?, ?, ?, ?, null, null, ?, ?)`
+  ).run(
+    id,
+    updated,
+    input,
+    output,
+    total,
+    cacheRead,
+    cacheCreation,
+    status,
+    updated,
+    updated
+  );
 }
 
 function seedCodex(
@@ -177,6 +191,55 @@ describe("generateTrend — input/output breakdown totals", () => {
     expect(r.totals.claudeInputTokens).toBe(0);
     expect(r.totals.codexOutputTokens).toBe(0);
     expect(Number.isNaN(r.totals.claudeInputTokens)).toBe(false);
+  });
+
+  it("Claude cache split surfaces in totals; codex contributes 0", () => {
+    // Claude: fused input 70585 = fresh 6 + creation 47655 + read 22924
+    seedClaude(db, "c1", 70837, "2026-06-09T16:30:00Z", "full", {
+      input: 70585,
+      output: 252,
+      cacheRead: 22924,
+      cacheCreation: 47655,
+    });
+    // Codex has no cache concept — must not add to the cache totals
+    seedCodex(db, "x1", 600, "2026-06-09T17:00:00Z", {
+      input: 550,
+      output: 50,
+    });
+    const r = generateTrend(db, {
+      window: "1w",
+      now: new Date(2026, 5, 10, 12, 0, 0, 0),
+    });
+    if (r.mode !== "window") throw new Error("type narrow");
+    expect(r.totals.claudeCacheReadInputTokens).toBe(22924);
+    expect(r.totals.claudeCacheCreationInputTokens).toBe(47655);
+    // 真实新增 = claudeInput - read - creation
+    const fresh =
+      r.totals.claudeInputTokens -
+      r.totals.claudeCacheReadInputTokens -
+      r.totals.claudeCacheCreationInputTokens;
+    expect(fresh).toBe(6);
+    // cache fields are a subset of claude input (never exceed it)
+    expect(
+      r.totals.claudeCacheReadInputTokens +
+        r.totals.claudeCacheCreationInputTokens
+    ).toBeLessThanOrEqual(r.totals.claudeInputTokens);
+  });
+
+  it("month mode also exposes Claude cache split", () => {
+    seedClaude(db, "c1", 1000, "2026-06-09T16:30:00Z", "full", {
+      input: 1000,
+      output: 0,
+      cacheRead: 600,
+      cacheCreation: 300,
+    });
+    const r = generateTrend(db, {
+      month: "2026-06",
+      now: new Date(2026, 5, 11, 12, 0, 0, 0),
+    });
+    if (r.mode !== "month") throw new Error("type narrow");
+    expect(r.totals.claudeCacheReadInputTokens).toBe(600);
+    expect(r.totals.claudeCacheCreationInputTokens).toBe(300);
   });
 });
 

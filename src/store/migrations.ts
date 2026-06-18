@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 27;
+const CURRENT_VERSION = 28;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -38,6 +38,7 @@ export function migrate(db: Database.Database): void {
     applyV25(db);
     applyV26(db);
     applyV27(db);
+    applyV28(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -71,6 +72,7 @@ export function migrate(db: Database.Database): void {
   if (v < 25) applyV25(db);
   if (v < 26) applyV26(db);
   if (v < 27) applyV27(db);
+  if (v < 28) applyV28(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1576,5 +1578,29 @@ function applyV27(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 27 WHERE id = 1;
+  `);
+}
+
+/**
+ * v28 — Claude prompt-cache input breakdown.
+ *
+ * `claude_session_token_usage.input_tokens` is the FUSED billed input
+ * (fresh + cache_creation + cache_read). To show "how much of my Claude
+ * input is cache replay", we store the two cache components separately.
+ * `真实新增 input` is derived as input_tokens - creation - read.
+ *
+ * Both default 0; existing rows get 0 until the next refresh, which
+ * self-heals (CLAUDE_TOKEN_USAGE_RULE_VERSION bumped 2→3) and reparses
+ * every Claude session to fill them. Codex has no equivalent — its table
+ * is intentionally left unchanged.
+ */
+function applyV28(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE claude_session_token_usage
+      ADD COLUMN cache_read_input_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE claude_session_token_usage
+      ADD COLUMN cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0;
+
+    UPDATE meta_schema SET version = 28 WHERE id = 1;
   `);
 }
