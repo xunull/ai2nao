@@ -185,3 +185,94 @@ describe("extractClaudeSessionUsage — cache split (v3)", () => {
     expect(usage?.totalCacheCreationInputTokens).toBe(0);
   });
 });
+
+/**
+ * v4 regression (2026-06-18 /investigate): Claude Code writes ONE assistant
+ * JSONL line per content block (and extra lines as the response streams),
+ * each repeating the SAME `message.usage`. A single API request (one
+ * `message.id`) is billed once, but v1-v3 summed per line and double-counted
+ * ~2x corpus-wide (mostly cache_read replay). extractClaudeSessionUsage now
+ * dedupes by message.id, taking the max of each field.
+ */
+describe("extractClaudeSessionUsage — dedupe by message.id (v4)", () => {
+  function usageFromRecords(records: object[]) {
+    const dir = mkdtempSync(join(tmpdir(), "ai2nao-claude-dedupe-"));
+    const file = join(dir, "t.jsonl");
+    writeFileSync(file, records.map((l) => JSON.stringify(l)).join("\n"));
+    return extractClaudeSessionUsage(parseJsonlText(readFileSync(file, "utf8")));
+  }
+
+  it("counts a message.id once even when repeated across content-block lines", () => {
+    // One assistant turn (msg_A) made 3 tool_use blocks → 3 jsonl lines, each
+    // carrying the identical usage. Must count once, NOT 3x.
+    const sameUsage = {
+      input_tokens: 10,
+      cache_creation_input_tokens: 5000,
+      cache_read_input_tokens: 200000,
+      output_tokens: 300,
+    };
+    const line = (text: string) => ({
+      type: "assistant",
+      message: {
+        id: "msg_A",
+        role: "assistant",
+        content: [{ type: "text", text }],
+        usage: sameUsage,
+      },
+    });
+    const usage = usageFromRecords([line("a"), line("b"), line("c")]);
+    // fused input = 10 + 5000 + 200000 = 205010 (counted ONCE, not 615030)
+    expect(usage?.totalInputTokens).toBe(205010);
+    expect(usage?.totalCacheReadInputTokens).toBe(200000);
+    expect(usage?.totalCacheCreationInputTokens).toBe(5000);
+    expect(usage?.totalOutputTokens).toBe(300);
+  });
+
+  it("takes max output_tokens across streaming lines of one message.id", () => {
+    // Streaming writes the same message.id with a growing output_tokens.
+    const streamed = (output: number) => ({
+      type: "assistant",
+      message: {
+        id: "msg_B",
+        role: "assistant",
+        content: [{ type: "text", text: "partial" }],
+        usage: {
+          input_tokens: 7,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 50000,
+          output_tokens: output,
+        },
+      },
+    });
+    const usage = usageFromRecords([streamed(1), streamed(120), streamed(503)]);
+    expect(usage?.totalInputTokens).toBe(50007); // 7 + 50000, once
+    expect(usage?.totalOutputTokens).toBe(503); // max, not 1 and not 624
+  });
+
+  it("still sums DISTINCT message.ids", () => {
+    const turn = (id: string, cacheRead: number, output: number) => ({
+      type: "assistant",
+      message: {
+        id,
+        role: "assistant",
+        content: [{ type: "text", text: id }],
+        usage: {
+          input_tokens: 5,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: cacheRead,
+          output_tokens: output,
+        },
+      },
+    });
+    // msg_1 repeated 2x (dedupe to once) + msg_2 once.
+    const usage = usageFromRecords([
+      turn("msg_1", 10000, 100),
+      turn("msg_1", 10000, 100),
+      turn("msg_2", 20000, 200),
+    ]);
+    // input: (5+10000) + (5+20000) = 30010 ; cache_read: 30000 ; output: 300
+    expect(usage?.totalInputTokens).toBe(30010);
+    expect(usage?.totalCacheReadInputTokens).toBe(30000);
+    expect(usage?.totalOutputTokens).toBe(300);
+  });
+});

@@ -49,7 +49,14 @@ describe("claudeCodeHistory normalize", () => {
     expect(warnings).toEqual([]);
     expect(session.messages.filter((m) => m.role === "user")).toHaveLength(1);
     expect(session.messages.filter((m) => m.role === "assistant")).toHaveLength(2);
-    expect(session.usage).toEqual({ totalInputTokens: 1, totalOutputTokens: 2 });
+    // session.usage now comes from extractClaudeSessionUsage (deduped by
+    // message.id), which also carries the cache split (0 here, no cache fields).
+    expect(session.usage).toEqual({
+      totalInputTokens: 1,
+      totalOutputTokens: 2,
+      totalCacheReadInputTokens: 0,
+      totalCacheCreationInputTokens: 0,
+    });
     const appendix = session.messages.find(
       (m) => m.metadata?.claudeAppendix === true
     );
