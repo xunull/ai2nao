@@ -9,8 +9,10 @@
  *       reasoning is a subset of output, so this inflated Codex output by
  *       ~22.6%).
  *   v2: output = output_tokens (reasoning already included). 2026-06-18.
+ *   v3: also persists reasoning_output_tokens in its own column (subset of
+ *       output) to power the "Codex 输出构成" display. 2026-06-18.
  */
-export const CODEX_TOKEN_USAGE_RULE_VERSION = 2;
+export const CODEX_TOKEN_USAGE_RULE_VERSION = 3;
 
 export type CodexTokenStatus = "full" | "unknown" | "error";
 
@@ -31,6 +33,8 @@ export type CodexTokenUsageRow = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  /** Subset of output_tokens that was reasoning (thinking). */
+  reasoning_output_tokens: number;
   token_status: CodexTokenStatus;
   parse_error: string | null;
   missing_since: string | null;

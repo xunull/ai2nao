@@ -55,6 +55,7 @@ type Totals = {
   codexOutputTokens: number;
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
+  codexReasoningOutputTokens: number;
   claudeShare: number;
   codexShare: number;
   coverage: Coverage;
@@ -324,6 +325,78 @@ function ClaudeInputComposition({ totals }: { totals: Totals }) {
   );
 }
 
+/**
+ * Codex 输出构成 —— mirror of ClaudeInputComposition, on the output side.
+ * Codex's output_tokens already includes reasoning (thinking) tokens, so we
+ * split the total output into 推理 (reasoning) + 正常输出 (visible output =
+ * output - reasoning). reasoning is a Codex-only concept (Claude has none),
+ * so this lives in its own section, not the shared 2×3 matrix. 推理占比 =
+ * reasoning / output. Hidden when there is no Codex output in the window.
+ */
+function CodexOutputComposition({ totals }: { totals: Totals }) {
+  const output = totals.codexOutputTokens;
+  if (output <= 0) return null;
+  const reasoning = totals.codexReasoningOutputTokens;
+  const visible = Math.max(0, output - reasoning);
+  const reasoningRate = output === 0 ? 0 : (reasoning / output) * 100;
+
+  const segments: { label: string; value: number; color: string; hint: string }[] = [
+    { label: "正常输出", value: visible, color: "#2563eb", hint: "模型实际产出的可见输出" },
+    { label: "推理", value: reasoning, color: "#9ca3af", hint: "thinking / reasoning，已含在输出内" },
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--fg)]">Codex 输出构成</h2>
+        <span className="text-xs text-[var(--fg-muted)]">
+          推理占比 {reasoningRate.toFixed(1)}%
+        </span>
+      </div>
+      {/* stacked proportion bar */}
+      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
+        {segments.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              width: `${output === 0 ? 0 : (s.value / output) * 100}%`,
+              background: s.color,
+            }}
+            title={`${s.label} ${formatTokenCount(s.value)}`}
+          />
+        ))}
+      </div>
+      <table className="w-full text-sm tabular-nums">
+        <tbody>
+          {segments.map((s) => (
+            <tr key={s.label} className="text-[var(--fg)]">
+              <td className="py-1 text-left">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{ background: s.color }}
+                  />
+                  {s.label}
+                  <span className="text-xs text-[var(--fg-muted)]">{s.hint}</span>
+                </span>
+              </td>
+              <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
+              <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
+                {output === 0 ? "0%" : `${((s.value / output) * 100).toFixed(1)}%`}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
+            <td className="py-1 text-left">输出合计</td>
+            <td className="py-1 text-right">{formatTokenCount(output)}</td>
+            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 // Recharts 2.x's TooltipProps surface drifts across minor versions, so we
 // type the prop bag locally instead of importing it.
 type CustomTooltipProps = {
@@ -528,6 +601,8 @@ export function WorkTokensTrend() {
           <BreakdownMatrix totals={trend.data.totals} />
 
           <ClaudeInputComposition totals={trend.data.totals} />
+
+          <CodexOutputComposition totals={trend.data.totals} />
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="mb-3 flex items-center justify-between">

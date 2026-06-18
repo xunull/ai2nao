@@ -60,20 +60,21 @@ function seedCodex(
   id: string,
   total: number,
   updated: string,
-  io?: { input: number; output: number }
+  io?: { input: number; output: number; reasoning?: number }
 ): void {
   const input = io?.input ?? total;
   const output = io?.output ?? 0;
+  const reasoning = io?.reasoning ?? 0;
   db.prepare(
     `INSERT INTO codex_session_token_usage
        (session_id, rollout_path, rollout_mtime_ms, rollout_size_bytes,
         cwd, project_key, project_path, identity_confidence,
         title, model, git_branch, created_at, last_updated_at,
-        input_tokens, output_tokens, total_tokens, token_status,
+        input_tokens, output_tokens, total_tokens, reasoning_output_tokens, token_status,
         parse_error, missing_since, source_seen_at, updated_at)
      VALUES (?, '/r', 0, 0, '/x', '/x', '/x', 'high', null, null, null, null, ?,
-             ?, ?, ?, 'full', null, null, ?, ?)`
-  ).run(id, updated, input, output, total, updated, updated);
+             ?, ?, ?, ?, 'full', null, null, ?, ?)`
+  ).run(id, updated, input, output, total, reasoning, updated, updated);
 }
 
 describe("generateTrend — window mode (happy)", () => {
@@ -224,6 +225,46 @@ describe("generateTrend — input/output breakdown totals", () => {
       r.totals.claudeCacheReadInputTokens +
         r.totals.claudeCacheCreationInputTokens
     ).toBeLessThanOrEqual(r.totals.claudeInputTokens);
+  });
+
+  it("Codex reasoning surfaces in totals; claude contributes 0", () => {
+    // Codex output 600 includes 200 reasoning (subset)
+    seedCodex(db, "x1", 600, "2026-06-09T17:00:00Z", {
+      input: 550,
+      output: 600,
+      reasoning: 200,
+    });
+    // Claude has no reasoning concept — must not add to the reasoning total
+    seedClaude(db, "c1", 1000, "2026-06-09T16:30:00Z", "full", {
+      input: 900,
+      output: 100,
+    });
+    const r = generateTrend(db, {
+      window: "1w",
+      now: new Date(2026, 5, 10, 12, 0, 0, 0),
+    });
+    if (r.mode !== "window") throw new Error("type narrow");
+    expect(r.totals.codexReasoningOutputTokens).toBe(200);
+    // reasoning is a subset of codex output (never exceeds it)
+    expect(r.totals.codexReasoningOutputTokens).toBeLessThanOrEqual(
+      r.totals.codexOutputTokens
+    );
+    // 正常输出 = output - reasoning
+    expect(r.totals.codexOutputTokens - r.totals.codexReasoningOutputTokens).toBe(400);
+  });
+
+  it("month mode also exposes Codex reasoning", () => {
+    seedCodex(db, "x1", 1000, "2026-06-09T16:30:00Z", {
+      input: 400,
+      output: 600,
+      reasoning: 250,
+    });
+    const r = generateTrend(db, {
+      month: "2026-06",
+      now: new Date(2026, 5, 11, 12, 0, 0, 0),
+    });
+    if (r.mode !== "month") throw new Error("type narrow");
+    expect(r.totals.codexReasoningOutputTokens).toBe(250);
   });
 
   it("month mode also exposes Claude cache split", () => {

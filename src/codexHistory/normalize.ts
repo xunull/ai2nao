@@ -117,6 +117,9 @@ function findObject(value: unknown, keys: string[]): Record<string, unknown> | u
 type CodexTokenUsage = {
   inputTokens: number;
   outputTokens: number;
+  /** Reasoning (thinking) tokens. SUBSET of outputTokens — already counted
+   *  inside it, never added on top. Tracked separately for display only. */
+  reasoningOutputTokens: number;
 };
 
 type CodexTokenCountUsage =
@@ -140,6 +143,12 @@ function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | 
     "total_output_tokens",
     "totalOutputTokens",
   ]);
+  const reasoningOutput = numberField(candidate, [
+    "reasoning_output_tokens",
+    "reasoningOutputTokens",
+    "total_reasoning_output_tokens",
+    "totalReasoningOutputTokens",
+  ]);
   if (input == null || output == null) return undefined;
   // NOTE: do NOT add reasoning_output_tokens to output. Codex (OpenAI
   // semantics) reports reasoning as a SUBSET of output_tokens, not an extra
@@ -147,9 +156,12 @@ function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | 
   // on 23202/23202 reasoning>0 samples (NOT input+output+reasoning). Adding it
   // double-counted reasoning, inflating Codex output by ~22.6%. Investigation
   // 2026-06-18; root cause present since the first Codex backend (4dbdc34).
+  // reasoningOutputTokens is tracked separately for the "Codex 输出构成"
+  // display, never summed into outputTokens.
   return {
     inputTokens: input,
     outputTokens: output,
+    reasoningOutputTokens: reasoningOutput ?? 0,
   };
 }
 
@@ -192,6 +204,8 @@ function mergeUsage(
       (current?.totalInputTokens ?? 0) + next.inputTokens,
     totalOutputTokens:
       (current?.totalOutputTokens ?? 0) + next.outputTokens,
+    totalReasoningOutputTokens:
+      (current?.totalReasoningOutputTokens ?? 0) + next.reasoningOutputTokens,
   };
 }
 
@@ -202,8 +216,14 @@ function deltaUsage(
   if (!previousTotal) return total;
   const inputTokens = total.inputTokens - previousTotal.inputTokens;
   const outputTokens = total.outputTokens - previousTotal.outputTokens;
+  // reasoning is a subset of output; clamp at 0 so a non-monotonic blip never
+  // produces a negative subset (output delta already guards the row).
+  const reasoningOutputTokens = Math.max(
+    0,
+    total.reasoningOutputTokens - previousTotal.reasoningOutputTokens
+  );
   if (inputTokens < 0 || outputTokens < 0) return undefined;
-  return { inputTokens, outputTokens };
+  return { inputTokens, outputTokens, reasoningOutputTokens };
 }
 
 export function extractCodexSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {

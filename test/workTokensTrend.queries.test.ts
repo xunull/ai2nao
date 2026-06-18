@@ -41,6 +41,8 @@ type SeedRow = {
   /** Claude-only cache split (ignored for codex — no such columns). */
   cacheRead?: number;
   cacheCreation?: number;
+  /** Codex-only reasoning output (ignored for claude — no such column). */
+  reasoning?: number;
   status?: "full" | "unknown" | "error";
   updated: string; // ISO UTC
   missingSince?: string | null;
@@ -95,10 +97,10 @@ function seedSession(db: Database.Database, row: SeedRow): void {
        (session_id, rollout_path, rollout_mtime_ms, rollout_size_bytes,
         cwd, project_key, project_path, identity_confidence,
         title, model, git_branch, created_at, last_updated_at,
-        input_tokens, output_tokens, total_tokens, token_status,
+        input_tokens, output_tokens, total_tokens, reasoning_output_tokens, token_status,
         parse_error, missing_since, source_seen_at, updated_at)
      VALUES (?, ?, 0, 0, ?, ?, ?, 'high', null, null, null, null, ?,
-             ?, ?, ?, ?, null, ?, ?, ?)`
+             ?, ?, ?, ?, ?, null, ?, ?, ?)`
   ).run(
     id,
     row.file_path ?? "/tmp/r.jsonl",
@@ -109,6 +111,7 @@ function seedSession(db: Database.Database, row: SeedRow): void {
     inputTokens,
     outputTokens,
     row.total,
+    row.reasoning ?? 0,
     row.status ?? "full",
     row.missingSince ?? null,
     row.updated,
@@ -355,6 +358,44 @@ describe("input/output breakdown (2×3 matrix data)", () => {
     expect(codexRows[0].cache_creation_input_tokens).toBe(0);
   });
 
+  it("queryBucketsBySource sums Codex reasoning; claude returns 0", () => {
+    // mirror of the cache test, opposite direction
+    seedSession(db, {
+      source: "codex",
+      total: 600,
+      input: 550,
+      output: 600,
+      reasoning: 200,
+      updated: "2026-06-09T17:00:00Z",
+    });
+    seedSession(db, {
+      source: "claude",
+      total: 1000,
+      input: 900,
+      output: 100,
+      updated: "2026-06-09T16:30:00Z",
+    });
+
+    const codexRows = queryBucketsBySource(
+      db,
+      "codex",
+      new Date(2026, 5, 10, 0, 0, 0, 0),
+      new Date(2026, 5, 11, 0, 0, 0, 0),
+      "day"
+    );
+    expect(codexRows[0].reasoning_output_tokens).toBe(200);
+
+    const claudeRows = queryBucketsBySource(
+      db,
+      "claude",
+      new Date(2026, 5, 10, 0, 0, 0, 0),
+      new Date(2026, 5, 11, 0, 0, 0, 0),
+      "day"
+    );
+    // claude table has no reasoning column → literal 0
+    expect(claudeRows[0].reasoning_output_tokens).toBe(0);
+  });
+
   it("queryBucketsBySource sums input/output split, full-only", () => {
     // 2 full claude sessions + 1 unknown (must NOT contribute to input/output)
     seedSession(db, {
@@ -410,6 +451,7 @@ describe("input/output breakdown (2×3 matrix data)", () => {
         codexOutputTokens: 50,
         claudeCacheReadInputTokens: 500,
         claudeCacheCreationInputTokens: 300,
+        codexReasoningOutputTokens: 20,
         claudeSessionCount: 1,
         codexSessionCount: 1,
         claudeCoveredSessionCount: 1,
@@ -430,6 +472,7 @@ describe("input/output breakdown (2×3 matrix data)", () => {
         codexOutputTokens: 0,
         claudeCacheReadInputTokens: 100,
         claudeCacheCreationInputTokens: 50,
+        codexReasoningOutputTokens: 0,
         claudeSessionCount: 1,
         codexSessionCount: 0,
         claudeCoveredSessionCount: 1,

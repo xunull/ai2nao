@@ -82,6 +82,7 @@ const WINDOW_OK = {
     codexOutputTokens: 200,
     claudeCacheReadInputTokens: 9000,
     claudeCacheCreationInputTokens: 2000,
+    codexReasoningOutputTokens: 140, // subset of codexOutputTokens (200)
     claudeShare: 0.8,
     codexShare: 0.2,
     coverage: "full" as const,
@@ -114,6 +115,7 @@ const MONTH_OK = {
     codexOutputTokens: 0,
     claudeCacheReadInputTokens: 0,
     claudeCacheCreationInputTokens: 0,
+    codexReasoningOutputTokens: 0,
     claudeShare: 0,
     codexShare: 0,
     coverage: "full" as const,
@@ -183,6 +185,37 @@ describe("WorkTokensTrend page", () => {
     expect(screen.getByText("写入 cache")).toBeInTheDocument();
     expect(screen.getByText("命中 cache")).toBeInTheDocument();
     expect(screen.getByText("输入合计")).toBeInTheDocument();
+  });
+
+  it("renders Codex 输出构成 with reasoning rate", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Codex 输出构成")).toBeInTheDocument()
+    );
+    // reasoning rate = reasoning / output = 140 / 200 = 70.0%
+    expect(screen.getByText(/推理占比 70\.0%/)).toBeInTheDocument();
+    expect(screen.getByText("正常输出")).toBeInTheDocument();
+    expect(screen.getByText("推理")).toBeInTheDocument();
+    expect(screen.getByText("输出合计")).toBeInTheDocument();
+  });
+
+  it("hides Codex 输出构成 when there are no Codex output tokens", async () => {
+    installFetchMock(async () =>
+      jsonResponse({
+        ...WINDOW_OK,
+        totals: {
+          ...WINDOW_OK.totals,
+          codexOutputTokens: 0,
+          codexReasoningOutputTokens: 0,
+        },
+      })
+    );
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("输入 / 输出拆分")).toBeInTheDocument()
+    );
+    expect(screen.queryByText("Codex 输出构成")).not.toBeInTheDocument();
   });
 
   it("hides Claude 输入构成 when there are no Claude input tokens", async () => {
