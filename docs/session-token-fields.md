@@ -292,21 +292,22 @@ total_tokens         = input_tokens + output_tokens
 | 字段 | ai2nao 是否读 | 用途 |
 |------|---------------|------|
 | `input_tokens`(及别名 `inputTokens`/`prompt_tokens`/...) | ✅ | 输入总量 |
-| `output_tokens`(及别名) | ✅ | 输出总量 |
-| `reasoning_output_tokens`(及别名) | ✅ | **额外加到** output 上(见下方警告) |
+| `output_tokens`(及别名) | ✅ | 输出总量(已含 reasoning) |
+| `reasoning_output_tokens`(及别名) | ❌ | **不再相加**(它已在 output 内,见下方) |
 | `cached_input_tokens` | ❌ | 未单独展示,也不从 input 扣减 |
 | `total_tokens` | ❌ | 不直接用,自己用 input+output 重算 |
 | `model_context_window` | ❌ | 未读 |
 | `rate_limits` | ❌ | 未读 |
 | `last_token_usage` vs `total_token_usage` | ✅ | 增量优先;纯 total 走差分 |
 
-> ⚠️ **已知疑似重复计数**:ai2nao 当前算 `output = output_tokens + reasoning_output_tokens`
-> (`src/codexHistory/normalize.ts:usageFromObject`)。但本文 §2.4 实测表明
-> `reasoning_output_tokens` 是 `output_tokens` 的**子集**(OpenAI 官方语义里
-> reasoning 也属于 completion 的一部分),所以这个加法会把推理部分算两次,使
-> ai2nao 报告的 Codex 输出(及总量)偏大。修复方向:直接用 `output_tokens`,
-> 把 `reasoning_output_tokens` 仅作展示项,不相加。**本文档不改代码,留作后续
-> /investigate**。
+> ✅ **已修复的重复计数**(2026-06-18 /investigate):此前 ai2nao 算
+> `output = output_tokens + reasoning_output_tokens`,但 §2.4 实测证明 reasoning
+> 是 output 的**子集**(23202/23202 个 reasoning>0 样本满足 `total == input + output`,
+> 不是 `input+output+reasoning`)。这个加法把推理算了两次,使 Codex 输出虚高
+> **~22.6%**(真实库重算后 output 从 23.3M 降到 19.0M,降幅正好等于被重复加的
+> reasoning 量)。现已改为 `output = output_tokens`,`reasoning_output_tokens`
+> 不再相加。`CODEX_TOKEN_USAGE_RULE_VERSION` 升到 2,refresh 入口加了 self-heal
+> 自动重算历史行。
 
 ---
 

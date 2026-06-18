@@ -140,16 +140,16 @@ function usageFromObject(candidate: Record<string, unknown>): CodexTokenUsage | 
     "total_output_tokens",
     "totalOutputTokens",
   ]);
-  const reasoningOutput = numberField(candidate, [
-    "reasoning_output_tokens",
-    "reasoningOutputTokens",
-    "total_reasoning_output_tokens",
-    "totalReasoningOutputTokens",
-  ]);
   if (input == null || output == null) return undefined;
+  // NOTE: do NOT add reasoning_output_tokens to output. Codex (OpenAI
+  // semantics) reports reasoning as a SUBSET of output_tokens, not an extra
+  // amount — verified against real rollouts: total_tokens == input + output
+  // on 23202/23202 reasoning>0 samples (NOT input+output+reasoning). Adding it
+  // double-counted reasoning, inflating Codex output by ~22.6%. Investigation
+  // 2026-06-18; root cause present since the first Codex backend (4dbdc34).
   return {
     inputTokens: input,
-    outputTokens: output + (reasoningOutput ?? 0),
+    outputTokens: output,
   };
 }
 

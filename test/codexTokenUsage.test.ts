@@ -19,11 +19,17 @@ function makeFixture() {
   return { base, codexRoot, sessions, indexDb };
 }
 
-function transcript(input: number, output: number, cwd = "/work/app") {
+function transcript(input: number, output: number, cwd = "/work/app", reasoning?: number) {
+  const tokenCount: Record<string, unknown> = {
+    type: "token_count",
+    input_tokens: input,
+    output_tokens: output,
+  };
+  if (reasoning != null) tokenCount.reasoning_output_tokens = reasoning;
   return [
     JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd } }),
     JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "user_message", message: "hello" } }),
-    JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.000Z", payload: { type: "token_count", input_tokens: input, output_tokens: output } }),
+    JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.000Z", payload: tokenCount }),
   ].join("\n");
 }
 
@@ -157,6 +163,69 @@ describe("codex token usage refresh", () => {
         totalSessions: 1,
         coverage: "unknown",
       });
+    } finally {
+      indexDb.close();
+    }
+  });
+
+  it("v2: does NOT double-count reasoning into the indexed row output", async () => {
+    const { codexRoot, sessions, indexDb } = makeFixture();
+    try {
+      const id = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+      const path = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+      // output 30 already includes the 7 reasoning tokens
+      writeFileSync(path, transcript(100, 30, "/work/app", 7), "utf8");
+      createStateDb(codexRoot, [{ id, rolloutPath: path }]);
+
+      await refreshCodexTokenUsage(indexDb, { codexRoot });
+      const usage = listCodexProjectTokenUsage(indexDb, {
+        projectKeys: ["/work/app"],
+        from: null,
+      }).get("/work/app");
+      // output is 30, NOT 37 — reasoning is a subset of output, not extra
+      expect(usage).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 30,
+        totalTokens: 130,
+      });
+    } finally {
+      indexDb.close();
+    }
+  });
+
+  it("self-heals: stale state.rule_version forces a full reparse", async () => {
+    const { codexRoot, sessions, indexDb } = makeFixture();
+    try {
+      const id = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+      const path = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+      writeFileSync(path, transcript(100, 30, "/work/app", 7), "utf8");
+      createStateDb(codexRoot, [{ id, rolloutPath: path }]);
+
+      // First refresh populates the row + writes current rule_version.
+      await refreshCodexTokenUsage(indexDb, { codexRoot });
+
+      // Corrupt the stored output to a stale (wrong) value and downgrade
+      // rule_version, simulating a DB indexed under the old buggy parser.
+      indexDb
+        .prepare(
+          "UPDATE codex_session_token_usage SET output_tokens = 37, total_tokens = 137 WHERE session_id = ?"
+        )
+        .run(id);
+      indexDb
+        .prepare("UPDATE codex_token_usage_state SET rule_version = 1 WHERE id = 1")
+        .run();
+
+      // Incremental refresh should auto-force full (rule_version mismatch) and
+      // rewrite the row to the correct value despite mtime/size being unchanged.
+      const result = await refreshCodexTokenUsage(indexDb, { codexRoot });
+      expect(result.skippedUnchangedCount).toBe(0); // not skipped — self-heal forced full
+
+      const usage = listCodexProjectTokenUsage(indexDb, {
+        projectKeys: ["/work/app"],
+        from: null,
+      }).get("/work/app");
+      expect(usage).toMatchObject({ outputTokens: 30, totalTokens: 130 });
+      expect(getCodexTokenUsageStatus(indexDb).fresh).toBe(true);
     } finally {
       indexDb.close();
     }

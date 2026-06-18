@@ -151,7 +151,11 @@ describe("codexHistory", () => {
     expect(detail?.session.usage).toBeUndefined();
   });
 
-  it("loads usage from Codex info.last_token_usage and includes reasoning output", async () => {
+  it("does NOT double-count reasoning into output (reasoning ⊆ output_tokens)", async () => {
+    // Realistic Codex shape: reasoning_output_tokens is a SUBSET of
+    // output_tokens, so total_tokens == input + output (NOT + reasoning).
+    // Verified against real rollouts (23202/23202). Regression: old code did
+    // output + reasoning, inflating Codex output by ~22.6%.
     const { root, sessions } = makeRoot();
     const id = "99999999-9999-9999-9999-999999999999";
     const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
@@ -169,16 +173,16 @@ describe("codexHistory", () => {
               last_token_usage: {
                 input_tokens: 100,
                 cached_input_tokens: 20,
-                output_tokens: 30,
+                output_tokens: 30, // already includes the 7 reasoning tokens
                 reasoning_output_tokens: 7,
-                total_tokens: 137,
+                total_tokens: 130, // == input(100) + output(30), reasoning NOT added
               },
               total_token_usage: {
                 input_tokens: 100,
                 cached_input_tokens: 20,
                 output_tokens: 30,
                 reasoning_output_tokens: 7,
-                total_tokens: 137,
+                total_tokens: 130,
               },
             },
           },
@@ -189,7 +193,8 @@ describe("codexHistory", () => {
     createStateDb(root, [{ id, rolloutPath: goodPath }]);
 
     const detail = await loadCodexSessionDetail(root, id);
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 100, totalOutputTokens: 37 });
+    // output is 30, NOT 37 — reasoning is already inside output
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 100, totalOutputTokens: 30 });
   });
 
   it("diffs cumulative Codex info.total_token_usage instead of double-counting totals", async () => {
@@ -209,7 +214,7 @@ describe("codexHistory", () => {
             info: {
               total_token_usage: {
                 input_tokens: 10,
-                output_tokens: 3,
+                output_tokens: 3, // includes its 2 reasoning tokens
                 reasoning_output_tokens: 2,
               },
             },
@@ -223,7 +228,7 @@ describe("codexHistory", () => {
             info: {
               total_token_usage: {
                 input_tokens: 25,
-                output_tokens: 8,
+                output_tokens: 8, // includes its 4 reasoning tokens
                 reasoning_output_tokens: 4,
               },
             },
@@ -235,7 +240,8 @@ describe("codexHistory", () => {
     createStateDb(root, [{ id, rolloutPath: goodPath }]);
 
     const detail = await loadCodexSessionDetail(root, id);
-    expect(detail?.session.usage).toEqual({ totalInputTokens: 25, totalOutputTokens: 12 });
+    // cumulative total → diffed; output is 8 (NOT 12 — reasoning not double-counted)
+    expect(detail?.session.usage).toEqual({ totalInputTokens: 25, totalOutputTokens: 8 });
   });
 
   it("falls back to bounded JSONL scan when SQLite is unavailable", async () => {
