@@ -193,6 +193,13 @@ export type WorkTokensTrendResponse =
        * Always a number; 0 when no prior sessions; never null in window mode.
        */
       previousWindowTotal: number;
+      /**
+       * Claude `cache_read_input_tokens` summed over the SAME previous window.
+       * Lets the frontend "exclude cache hits" toggle recompute the prior-window
+       * total consistently (prev − this) instead of leaving 环比 cache-inclusive
+       * while the rest of the page switches. Always a number (0 when none).
+       */
+      previousWindowClaudeCacheReadInputTokens: number;
       /** (current - prev) / prev; null only when prev === 0. */
       deltaRatio: number | null;
       monthRange: MonthRange;

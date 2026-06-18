@@ -636,7 +636,8 @@ describe("computePreviousWindowTotal (T-A5)", () => {
       new Date(2026, 5, 3),
       new Date(2026, 5, 10)
     );
-    expect(t).toBe(0);
+    expect(t.total).toBe(0);
+    expect(t.claudeCacheReadInputTokens).toBe(0);
   });
 
   it("strictly non-overlapping: counts only sessions in [from-span, from)", () => {
@@ -649,7 +650,25 @@ describe("computePreviousWindowTotal (T-A5)", () => {
       new Date(2026, 5, 3),
       new Date(2026, 5, 10)
     );
-    expect(t).toBe(500);
+    expect(t.total).toBe(500);
+  });
+
+  it("also returns Claude cache_read summed over the prior window (cache toggle)", () => {
+    // prev window 2026-05-27..2026-06-03: one claude session with cache_read.
+    seedSession(db, {
+      source: "claude",
+      total: 1000,
+      cacheRead: 700,
+      updated: "2026-05-30T10:00:00Z",
+    });
+    seedSession(db, { source: "codex", total: 300, updated: "2026-06-01T10:00:00Z" }); // no cache field
+    const t = computePreviousWindowTotal(
+      db,
+      new Date(2026, 5, 3),
+      new Date(2026, 5, 10)
+    );
+    expect(t.total).toBe(1300);
+    expect(t.claudeCacheReadInputTokens).toBe(700); // only Claude contributes
   });
 });
 

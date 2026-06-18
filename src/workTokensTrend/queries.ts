@@ -334,12 +334,16 @@ export function computeTotals(
 /**
  * Strictly-preceding equal-length window total. Returns 0 (never null) when
  * the prior range has no qualifying sessions — design doc F2 / Open Questions.
+ *
+ * Also returns the Claude `cache_read_input_tokens` summed over the SAME prior
+ * window so the frontend "exclude cache hits" toggle can recompute the
+ * comparison total (prev − cacheRead) consistently with the rest of the page.
  */
 export function computePreviousWindowTotal(
   db: Database.Database,
   from: Date,
   to: Date
-): number {
+): { total: number; claudeCacheReadInputTokens: number } {
   const span = to.getTime() - from.getTime();
   const prevFrom = new Date(from.getTime() - span);
   const prevTo = new Date(from.getTime());
@@ -348,15 +352,18 @@ export function computePreviousWindowTotal(
   // the per-event timeline (bucketed by event_at) so the comparison window
   // matches how the bars distribute resumed-session tokens by consumption day.
   const sql = `
-    SELECT COALESCE(SUM(total_tokens), 0) AS total
+    SELECT
+      COALESCE(SUM(total_tokens), 0) AS total,
+      COALESCE(SUM(cache_read), 0) AS claude_cache_read
     FROM (
-      SELECT total_tokens FROM claude_session_token_usage
+      SELECT total_tokens, cache_read_input_tokens AS cache_read
+        FROM claude_session_token_usage
        WHERE last_updated_at >= ?
          AND last_updated_at < ?
          AND missing_since IS NULL
          AND token_status = 'full'
       UNION ALL
-      SELECT (e.input_tokens + e.output_tokens) AS total_tokens
+      SELECT (e.input_tokens + e.output_tokens) AS total_tokens, 0 AS cache_read
         FROM codex_token_usage_event e
         JOIN codex_session_token_usage s ON s.session_id = e.session_id
        WHERE e.event_at >= ?
@@ -369,8 +376,12 @@ export function computePreviousWindowTotal(
   const toIso = prevTo.toISOString();
   const row = db.prepare(sql).get(fromIso, toIso, fromIso, toIso) as {
     total: number;
+    claude_cache_read: number;
   };
-  return row.total;
+  return {
+    total: row.total,
+    claudeCacheReadInputTokens: row.claude_cache_read,
+  };
 }
 
 /**
