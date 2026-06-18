@@ -334,6 +334,13 @@ RAG embedding 环境变量回退：`OPENAI_API_KEY` / `AI2NAO_LLM_API_KEY`。Dee
 npm test
 ```
 
+## 文档
+
+Token 相关:
+
+- [Session 文件的 Token 字段参考](docs/session-token-fields.md) — Claude Code 与 Codex session 文件里**所有** token 字段的完整枚举(位置、类型、含义、真实样本)
+- [Token 计算管线](docs/token-usage-pipeline.md) — ai2nao 如何解析、聚合、落库 token
+
 ## 许可
 
 MIT（见仓库内 `LICENSE`）。
