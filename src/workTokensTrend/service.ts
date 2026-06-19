@@ -175,9 +175,11 @@ function enumerateAndAggregate(
   // USD cost: priced separately (per bucket+model via the static snapshot), then
   // patched onto each bucket DTO. Isolated so a pricing error can't 500 tokens.
   let unpricedTokenCount = 0;
+  let priceSnapshotDate: string | null = null;
   try {
     const cost = priceCostByBucket(db, from, to, granularity);
     unpricedTokenCount = cost.unpricedTokenCount;
+    priceSnapshotDate = cost.priceSnapshotDate;
     // cost.byBucket is keyed by the local-time bucketExpr key; the DTO carries
     // bucketStart (ISO). Remap via the enumerated bucketKeys.
     const keyByStart = new Map(
@@ -201,6 +203,7 @@ function enumerateAndAggregate(
 
   const totals = computeTotals(data);
   totals.unpricedTokenCount = unpricedTokenCount;
+  if (priceSnapshotDate) totals.priceSnapshotDate = priceSnapshotDate;
   return { data, totals, diagnostics };
 }
 

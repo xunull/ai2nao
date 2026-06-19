@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 32;
+const CURRENT_VERSION = 33;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -43,6 +43,7 @@ export function migrate(db: Database.Database): void {
     applyV30(db);
     applyV31(db);
     applyV32(db);
+    applyV33(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -81,6 +82,7 @@ export function migrate(db: Database.Database): void {
   if (v < 30) applyV30(db);
   if (v < 31) applyV31(db);
   if (v < 32) applyV32(db);
+  if (v < 33) applyV33(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1718,5 +1720,37 @@ function applyV32(db: Database.Database): void {
       ADD COLUMN model TEXT;
 
     UPDATE meta_schema SET version = 32 WHERE id = 1;
+  `);
+}
+
+/**
+ * v33 — synced model prices (models.dev) for the USD cost view.
+ *
+ * The cost view priced from a vendored static snapshot in src/cost/pricing.ts.
+ * This table lets the `model-price-sync` scheduler task keep prices fresh and
+ * auto-cover new models (e.g. gpt-5.5). pricing.ts becomes DB-first: the
+ * vendored map is the seed/fallback, rows here override it (synced wins).
+ *
+ * Costs are stored as USD PER TOKEN (models.dev gives per-1M; the sync divides
+ * by 1e6). cache_creation maps models.dev's cache_write. Starts empty; the
+ * task is default-disabled (no network until the user enables it). 2026-06-19.
+ */
+function applyV33(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS model_prices (
+      provider TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      input REAL NOT NULL,
+      output REAL NOT NULL,
+      cache_read REAL NOT NULL DEFAULT 0,
+      cache_creation REAL NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'models.dev',
+      synced_at TEXT NOT NULL,
+      PRIMARY KEY (provider, model_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_model_prices_model
+      ON model_prices(model_id);
+
+    UPDATE meta_schema SET version = 33 WHERE id = 1;
   `);
 }

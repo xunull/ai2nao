@@ -9,6 +9,7 @@ import { syncLmStudioModels } from "../lmstudio/sync.js";
 import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js";
 import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
+import { syncModelPrices } from "../cost/modelsDevSync.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
@@ -242,6 +243,27 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: result.status,
           summary: result,
           errorSummary: result.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      // Model price sync. Default disabled (all tasks seed disabled) so a fresh
+      // install doesn't hit the network until the user enables it. Fetches
+      // models.dev/api.json and refreshes anthropic+openai prices for the USD
+      // cost view; failure leaves the last synced prices in place.
+      key: "model.prices.sync",
+      label: "模型价格同步",
+      description:
+        "从 models.dev 同步 Anthropic / OpenAI 模型单价（供 token 成本估算使用）。",
+      category: "model_cache",
+      defaultIntervalSeconds: 7 * oneDay,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const result = await syncModelPrices(ctx.db);
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: result.error ?? null,
         };
       },
     },

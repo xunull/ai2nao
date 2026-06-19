@@ -49,8 +49,13 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   // "gpt-5.5": fill from OpenAI pricing — absent from LiteLLM snapshot.
 };
 
+/** A model-name → price lookup. The vendored MODEL_PRICES is the default; the
+ *  trend layer passes a DB-overlaid map (synced models.dev prices win). */
+export type PriceMap = Record<string, ModelPrice>;
+
 /**
- * Resolve a raw model string (from a session) to a price entry.
+ * Resolve a raw model string (from a session) to a price entry, against a price
+ * map (defaults to the vendored snapshot).
  *
  * Real model strings carry suffixes the price keys don't: Claude jsonl emits
  * `claude-haiku-4-5-20251001`, Bedrock emits `...-v1:0`, some carry a provider
@@ -58,24 +63,27 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
  * trailing `-YYYYMMDD` / `-vN...` → longest known-key prefix. Null when nothing
  * matches (caller treats as unpriced).
  */
-export function priceFor(model: string | null | undefined): ModelPrice | null {
+export function priceFor(
+  model: string | null | undefined,
+  priceMap: PriceMap = MODEL_PRICES
+): ModelPrice | null {
   if (!model) return null;
-  if (MODEL_PRICES[model]) return MODEL_PRICES[model];
+  if (priceMap[model]) return priceMap[model];
 
   // strip provider prefix like "anthropic." / "openai/"
   let key = model.replace(/^[a-z0-9_]+[./]/i, "");
-  if (MODEL_PRICES[key]) return MODEL_PRICES[key];
+  if (priceMap[key]) return priceMap[key];
 
   // strip trailing date (-YYYYMMDD) and/or bedrock version (-vN:N / -vN)
   key = key.replace(/-v\d+(?::\d+)?$/i, "").replace(/-\d{8}$/, "");
-  if (MODEL_PRICES[key]) return MODEL_PRICES[key];
+  if (priceMap[key]) return priceMap[key];
 
   // longest known-key prefix the model starts with (handles unseen suffixes)
   let best: ModelPrice | null = null;
   let bestLen = 0;
-  for (const k of Object.keys(MODEL_PRICES)) {
+  for (const k of Object.keys(priceMap)) {
     if (key.startsWith(k) && k.length > bestLen) {
-      best = MODEL_PRICES[k];
+      best = priceMap[k];
       bestLen = k.length;
     }
   }
@@ -101,9 +109,10 @@ export type CostResult =
 /** USD cost of one model's token components, or unpriced when the model is unknown. */
 export function computeCost(
   components: CostComponents,
-  model: string | null | undefined
+  model: string | null | undefined,
+  priceMap: PriceMap = MODEL_PRICES
 ): CostResult {
-  const p = priceFor(model);
+  const p = priceFor(model, priceMap);
   if (!p) return { priced: false, usd: 0 };
   const usd =
     components.fresh * p.input +
