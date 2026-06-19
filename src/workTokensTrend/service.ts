@@ -11,6 +11,7 @@ import {
   computePreviousWindowTotal,
   computeTotals,
   mergeAndZeroFill,
+  priceCostByBucket,
   queryBucketsBySource,
 } from "./queries.js";
 import {
@@ -170,7 +171,36 @@ function enumerateAndAggregate(
     claudeRows,
     codexRows
   );
+
+  // USD cost: priced separately (per bucket+model via the static snapshot), then
+  // patched onto each bucket DTO. Isolated so a pricing error can't 500 tokens.
+  let unpricedTokenCount = 0;
+  try {
+    const cost = priceCostByBucket(db, from, to, granularity);
+    unpricedTokenCount = cost.unpricedTokenCount;
+    // cost.byBucket is keyed by the local-time bucketExpr key; the DTO carries
+    // bucketStart (ISO). Remap via the enumerated bucketKeys.
+    const keyByStart = new Map(
+      bucketKeys.map((b) => [b.start.toISOString(), b.key])
+    );
+    for (const b of data) {
+      const costKey = keyByStart.get(b.bucketStart);
+      const c = costKey ? cost.byBucket.get(costKey) : undefined;
+      if (c) {
+        b.claudeCostUsd = c.claudeCostUsd;
+        b.codexCostUsd = c.codexCostUsd;
+      }
+    }
+  } catch (e) {
+    diagnostics.push({
+      severity: "warning",
+      kind: "cost_pricing_failed",
+      message: `cost pricing failed: ${e instanceof Error ? e.message : String(e)}`,
+    });
+  }
+
   const totals = computeTotals(data);
+  totals.unpricedTokenCount = unpricedTokenCount;
   return { data, totals, diagnostics };
 }
 

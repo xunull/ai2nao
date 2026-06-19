@@ -117,6 +117,50 @@ export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage
   };
 }
 
+/**
+ * The session's DOMINANT model: the one with the most (deduped) output tokens.
+ * Used to price the session for the USD cost view (Opus vs Sonnet differ ~5x);
+ * 96% of real sessions are single-model so the dominant is exact. Dedupes by
+ * message.id (same streaming-duplication guard as usage), ignores the
+ * `<synthetic>` placeholder and null. Returns null when no real model is found
+ * → cost shows "—" (unpriced), never guessed.
+ */
+export function extractClaudeDominantModel(parse: ParseJsonlResult): string | null {
+  // Per message.id: keep the max-output line's model (a request's lines all
+  // share one model; output grows while streaming).
+  const byMessageId = new Map<string, { model: string | null; output: number }>();
+  let synthetic = 0;
+  for (const { record } of parse.okLines) {
+    if (!isAssistantShape(record)) continue;
+    const msg = record.message as Record<string, unknown>;
+    const usage = msg.usage as Record<string, unknown> | undefined;
+    const output =
+      usage && typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
+    const model =
+      typeof msg.model === "string" && msg.model && msg.model !== "<synthetic>"
+        ? msg.model
+        : null;
+    const key =
+      typeof msg.id === "string" && msg.id ? msg.id : `__noid_${synthetic++}`;
+    const prev = byMessageId.get(key);
+    if (!prev || output > prev.output) byMessageId.set(key, { model, output });
+  }
+  const outputByModel = new Map<string, number>();
+  for (const { model, output } of byMessageId.values()) {
+    if (!model) continue;
+    outputByModel.set(model, (outputByModel.get(model) ?? 0) + output);
+  }
+  let best: string | null = null;
+  let bestOutput = -1;
+  for (const [model, output] of outputByModel) {
+    if (output > bestOutput) {
+      bestOutput = output;
+      best = model;
+    }
+  }
+  return best;
+}
+
 function assistantFromContent(content: unknown): {
   text: string;
   thinking?: string;

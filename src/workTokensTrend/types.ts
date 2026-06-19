@@ -110,6 +110,10 @@ export type WorkTokensTrendBucket = {
   /** Codex-only cached input (cache-hit replay, subset of codexInputTokens).
    *  Codex's mirror of claudeCacheReadInputTokens. */
   codexCachedInputTokens: number;
+  /** Estimated USD cost of this bucket's PRICED tokens (unknown models excluded).
+   *  Independent of the cache toggle — priced from raw components per model. */
+  claudeCostUsd: number;
+  codexCostUsd: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   /** token_status='full' — covered. */
@@ -161,6 +165,20 @@ export type WorkTokensTrendTotals = {
    * tokens-trend cache toggle. Codex's mirror of claudeCacheReadInputTokens.
    */
   codexCachedInputTokens: number;
+  /**
+   * Estimated USD cost — "equivalent API cost", NOT a subscription bill. Priced
+   * per session by its model from a static snapshot (PRICE_SNAPSHOT_DATE).
+   * Tokens whose model has no price entry are EXCLUDED from cost and counted in
+   * unpricedTokenCount (honesty: never guessed, never $0). Independent of the
+   * cache toggle. claudeCostUsd + codexCostUsd === totalCostUsd.
+   */
+  totalCostUsd: number;
+  claudeCostUsd: number;
+  codexCostUsd: number;
+  /** Tokens (input+output) whose model had no price entry — surfaced, not priced. */
+  unpricedTokenCount: number;
+  /** Static price snapshot date (shown on the UI for honesty). */
+  priceSnapshotDate: string;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;
