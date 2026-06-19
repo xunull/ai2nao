@@ -85,6 +85,7 @@ import { SchedulerRuntime } from "../scheduler/runner.js";
 import { registerVscodeRoutes } from "../vscode/routes.js";
 import { registerWebSearchRoutes } from "../webSearch/routes.js";
 import { registerWorkCosmosRoutes } from "../workCosmos/routes.js";
+import { registerProviderRoutes } from "./providerRoutes.js";
 import { registerWorkDashboardRoutes } from "../workDashboard/routes.js";
 import { registerWorkRecapRoutes } from "../workRecap/routes.js";
 import { registerWorkTokensTrendRoutes } from "../workTokensTrend/routes.js";
@@ -222,6 +223,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerWorkRecapRoutes(app, db);
   registerWorkTokensTrendRoutes(app, db);
   registerWorkCosmosRoutes(app, db, opts.schedulerRuntime);
+  registerProviderRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);
   registerProjectOpenerRoutes(app);
   if (opts.schedulerRuntime) {

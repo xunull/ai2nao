@@ -10,6 +10,7 @@ import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js"
 import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
 import { syncModelPrices } from "../cost/modelsDevSync.js";
+import { syncEnabledProviders } from "../providers/sync.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
@@ -264,6 +265,28 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: result.status,
           summary: result,
           errorSummary: result.error ?? null,
+        };
+      },
+    },
+    {
+      // External provider usage sync (MiniMax #1). Default disabled (no network
+      // until enabled). Iterates ENABLED providers; per-provider errors are
+      // isolated. Toggling a provider on/off and entering its key happens on
+      // the /providers management page, not here.
+      key: "provider.usage.sync",
+      label: "外部平台用量同步",
+      description:
+        "同步已启用的外部 AI 平台（如 MiniMax）的用量快照,供 /providers 页展示。",
+      category: "model_cache",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const result = await syncEnabledProviders(ctx.db);
+        const failed = result.results.find((r) => r.status === "failed");
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: failed?.error ?? null,
         };
       },
     },

@@ -33,6 +33,7 @@ import {
   Package,
   PanelLeftClose,
   PanelLeftOpen,
+  Plug,
   Radar,
   Search,
   Shield,
@@ -74,6 +75,7 @@ const navGroups: NavGroup[] = [
       { to: "/dashboard/tokens-trend", label: "Token 趋势", icon: TrendingUp },
       { to: "/work-recap", label: "工作回看", icon: GitCommit },
       { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
+      { to: "/providers", label: "外部平台", icon: Plug },
     ],
   },
   {

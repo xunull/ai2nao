@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 33;
+const CURRENT_VERSION = 34;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -44,6 +44,7 @@ export function migrate(db: Database.Database): void {
     applyV31(db);
     applyV32(db);
     applyV33(db);
+    applyV34(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -83,6 +84,7 @@ export function migrate(db: Database.Database): void {
   if (v < 31) applyV31(db);
   if (v < 32) applyV32(db);
   if (v < 33) applyV33(db);
+  if (v < 34) applyV34(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1735,6 +1737,44 @@ function applyV32(db: Database.Database): void {
  * by 1e6). cache_creation maps models.dev's cache_write. Starts empty; the
  * task is default-disabled (no network until the user enables it). 2026-06-19.
  */
+/**
+ * v34 — pluggable external-provider usage sync (MiniMax #1).
+ *
+ * `provider_config`: per-provider enable flag + API key (local-first secret,
+ * stored plaintext in the local DB; NEVER returned over the API — routes mask
+ * it to `hasKey`). `provider_usage`: the latest usage SNAPSHOT per provider,
+ * one row per item (e.g. MiniMax returns per-model-group remaining quota, so
+ * item_key = model_name). Snapshot-only — these providers expose a current
+ * remaining-quota snapshot, not per-day history. Both seed empty; the
+ * `provider.usage.sync` scheduler task (default-disabled) populates them.
+ * 2026-06-19.
+ */
+function applyV34(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS provider_config (
+      provider TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      api_key TEXT,
+      last_sync_at TEXT,
+      last_status TEXT,
+      last_error TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS provider_usage (
+      provider TEXT NOT NULL,
+      item_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      remaining_percent REAL,
+      reset_at TEXT,
+      detail_json TEXT,
+      synced_at TEXT NOT NULL,
+      PRIMARY KEY (provider, item_key)
+    );
+
+    UPDATE meta_schema SET version = 34 WHERE id = 1;
+  `);
+}
+
 function applyV33(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS model_prices (
