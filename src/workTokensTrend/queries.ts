@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { computeCost, PRICE_SNAPSHOT_DATE } from "../cost/pricing.js";
+import { latestSyncedAt, loadPriceMap } from "../cost/priceStore.js";
 import { bucketExpr } from "./bucket.js";
 import type {
   BucketGranularity,
@@ -88,9 +89,15 @@ export function priceCostByBucket(
   from: Date,
   to: Date,
   granularity: BucketGranularity
-): { byBucket: Map<string, BucketCost>; unpricedTokenCount: number } {
+): {
+  byBucket: Map<string, BucketCost>;
+  unpricedTokenCount: number;
+  priceSnapshotDate: string;
+} {
   const byBucket = new Map<string, BucketCost>();
   let unpricedTokenCount = 0;
+  // Merge vendored snapshot ← synced DB prices (synced wins). One read per request.
+  const priceMap = loadPriceMap(db);
   const apply = (source: Source) => {
     for (const r of queryCostComponentsByBucket(db, source, from, to, granularity)) {
       const result = computeCost(
@@ -100,7 +107,8 @@ export function priceCostByBucket(
           cacheCreation: r.cache_creation,
           output: r.output,
         },
-        r.model || null
+        r.model || null,
+        priceMap
       );
       if (!result.priced) {
         // input(fresh+hit+creation) + output tokens that we couldn't price.
@@ -119,7 +127,9 @@ export function priceCostByBucket(
   };
   apply("claude");
   apply("codex");
-  return { byBucket, unpricedTokenCount };
+  // Snapshot date shown on the UI: latest sync, else the vendored snapshot.
+  const priceSnapshotDate = latestSyncedAt(db) ?? PRICE_SNAPSHOT_DATE;
+  return { byBucket, unpricedTokenCount, priceSnapshotDate };
 }
 
 type RawBucketRow = {
