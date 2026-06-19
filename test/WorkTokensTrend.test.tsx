@@ -84,6 +84,11 @@ const WINDOW_OK = {
     claudeCacheCreationInputTokens: 2000,
     codexReasoningOutputTokens: 140, // subset of codexOutputTokens (200)
     codexCachedInputTokens: 1400, // subset of codexInputTokens (2800) → 50% hit
+    totalCostUsd: 1.2345,
+    claudeCostUsd: 1.0,
+    codexCostUsd: 0.2345,
+    unpricedTokenCount: 500,
+    priceSnapshotDate: "2026-06-19",
     claudeShare: 0.8,
     codexShare: 0.2,
     coverage: "full" as const,
@@ -118,6 +123,11 @@ const MONTH_OK = {
     claudeCacheCreationInputTokens: 0,
     codexReasoningOutputTokens: 0,
     codexCachedInputTokens: 0,
+    totalCostUsd: 0,
+    claudeCostUsd: 0,
+    codexCostUsd: 0,
+    unpricedTokenCount: 0,
+    priceSnapshotDate: "2026-06-19",
     claudeShare: 0,
     codexShare: 0,
     coverage: "full" as const,
@@ -208,6 +218,24 @@ describe("WorkTokensTrend page", () => {
     expect(within(codexCard).getByText("命中 cache")).toBeInTheDocument();
     // Codex has NO cache-creation segment.
     expect(within(codexCard).queryByText("写入 cache")).toBeNull();
+  });
+
+  it("cost toggle off by default; on → cost card + snapshot date + unpriced note", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("窗口内总 token")).toBeInTheDocument()
+    );
+    // default OFF: no cost card
+    expect(screen.queryByText("等价 API 成本（估算）")).toBeNull();
+    // flip the cost toggle on
+    fireEvent.click(screen.getByText("显示 USD 成本"));
+    expect(screen.getByText("等价 API 成本（估算）")).toBeInTheDocument();
+    expect(screen.getByText(/价格快照 2026-06-19/)).toBeInTheDocument();
+    // totalCostUsd 1.2345 → $1.23
+    expect(screen.getByText("$1.23")).toBeInTheDocument();
+    // unpricedTokenCount 500 → note present
+    expect(screen.getByText(/未计入成本/)).toBeInTheDocument();
   });
 
   it("renders Codex 输出构成 with reasoning rate", async () => {

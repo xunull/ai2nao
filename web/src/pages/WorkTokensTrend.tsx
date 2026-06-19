@@ -39,6 +39,9 @@ type Bucket = {
   claudeCacheReadInputTokens: number;
   /** Codex cached_input in this bucket — subtracted when the cache toggle is off. */
   codexCachedInputTokens: number;
+  /** Estimated USD cost of priced tokens in this bucket (unknown models excluded). */
+  claudeCostUsd: number;
+  codexCostUsd: number;
   claudeSessionCount: number;
   codexSessionCount: number;
   claudeCoveredSessionCount: number;
@@ -61,6 +64,11 @@ type Totals = {
   claudeCacheCreationInputTokens: number;
   codexReasoningOutputTokens: number;
   codexCachedInputTokens: number;
+  totalCostUsd: number;
+  claudeCostUsd: number;
+  codexCostUsd: number;
+  unpricedTokenCount: number;
+  priceSnapshotDate: string;
   claudeShare: number;
   codexShare: number;
   coverage: Coverage;
@@ -488,22 +496,26 @@ type CustomTooltipProps = {
   active?: boolean;
   payload?: Array<{ payload: ChartRow }>;
   label?: string | number;
+  costMode?: boolean;
 };
 
-function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.ReactElement | null {
+function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps): React.ReactElement | null {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
+  const claude = costMode ? row.claudeCostUsd : row.claudeFullTokens;
+  const codex = costMode ? row.codexCostUsd : row.codexFullTokens;
+  const fmt = costMode ? formatUsd : formatTokenCount;
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-xs shadow-sm">
       <div className="mb-1 font-semibold text-[var(--fg)]">{label}</div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
         <span className="text-[var(--fg-muted)]">Claude:</span>
-        <span className="text-right text-[var(--fg)]">{formatTokenCount(row.claudeFullTokens)}</span>
+        <span className="text-right text-[var(--fg)]">{fmt(claude)}</span>
         <span className="text-[var(--fg-muted)]">Codex:</span>
-        <span className="text-right text-[var(--fg)]">{formatTokenCount(row.codexFullTokens)}</span>
+        <span className="text-right text-[var(--fg)]">{fmt(codex)}</span>
         <span className="text-[var(--fg-muted)]">合计:</span>
         <span className="text-right font-semibold text-[var(--fg)]">
-          {formatTokenCount(row.claudeFullTokens + row.codexFullTokens)}
+          {fmt(claude + codex)}
         </span>
       </div>
       {(row.claudeUnknownSessionCount + row.codexUnknownSessionCount + row.claudeErrorSessionCount + row.codexErrorSessionCount) > 0 && (
@@ -534,6 +546,15 @@ function buildMonthOptions(range: MonthRange | undefined): string[] {
 }
 
 const CACHE_TOGGLE_KEY = "tokensTrend.includeCache";
+const COST_TOGGLE_KEY = "tokensTrend.showCost";
+
+/** Format a USD amount: $1.23, $12.3K, $1.23M. Always shows the $ sign. */
+function formatUsd(usd: number): string {
+  if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(2)}M`;
+  if (usd >= 1_000) return `$${(usd / 1_000).toFixed(1)}K`;
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(2)}`;
+}
 
 /** Boolean toggle persisted to localStorage (survives refresh). */
 function useStickyToggle(
@@ -621,6 +642,39 @@ function CacheToggle({
   );
 }
 
+/** Header toggle: show estimated USD cost (equivalent API cost, not a bill). */
+function CostToggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      title="显示等价 API 成本（按模型单价估算，非实际订阅扣费）"
+      className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--fg-muted)] hover:bg-[var(--surface-2)]"
+    >
+      <span className="text-[var(--fg)]">显示 USD 成本</span>
+      <span
+        className={`relative inline-block h-4 w-7 rounded-full transition-colors ${
+          on ? "bg-emerald-600" : "bg-[var(--border)]"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${
+            on ? "left-3.5" : "left-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 export function WorkTokensTrend() {
   const [searchParams, setSearchParams] = useSearchParams();
   const monthRaw = searchParams.get("month");
@@ -632,6 +686,7 @@ export function WorkTokensTrend() {
     : `/api/work-tokens-trend?window=${currentWindow}`;
 
   const [includeCache, setIncludeCache] = useStickyToggle(CACHE_TOGGLE_KEY, true);
+  const [showCost, setShowCost] = useStickyToggle(COST_TOGGLE_KEY, false);
 
   const trend = useQuery<TrendResponse>({
     queryKey: ["work-tokens-trend", isMonthMode ? `month:${monthRaw}` : `window:${currentWindow}`],
@@ -698,6 +753,7 @@ export function WorkTokensTrend() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <CostToggle on={showCost} onChange={setShowCost} />
           <CacheToggle on={includeCache} onChange={setIncludeCache} />
           <label className="flex items-center gap-2 text-xs text-[var(--fg-muted)]">
             窗口
@@ -806,6 +862,40 @@ export function WorkTokensTrend() {
             )}
           </section>
 
+          {showCost && (
+            <section className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[var(--fg)]">
+                  等价 API 成本（估算）
+                </h2>
+                <span className="text-xs text-[var(--fg-muted)]">
+                  非实际订阅扣费 · 价格快照 {trend.data.totals.priceSnapshotDate}
+                </span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <StatCard
+                  label="总成本"
+                  value={formatUsd(trend.data.totals.totalCostUsd)}
+                  subtle="按模型单价 · 含 cache 分段计价"
+                />
+                <StatCard
+                  label="Claude 成本"
+                  value={formatUsd(trend.data.totals.claudeCostUsd)}
+                />
+                <StatCard
+                  label="Codex 成本"
+                  value={formatUsd(trend.data.totals.codexCostUsd)}
+                />
+              </div>
+              {trend.data.totals.unpricedTokenCount > 0 && (
+                <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                  有 {formatTokenCount(trend.data.totals.unpricedTokenCount)} token
+                  的模型不在价格快照中，未计入成本（不猜测）。
+                </div>
+              )}
+            </section>
+          )}
+
           <BreakdownMatrix totals={effectiveTotals} includeCache={includeCache} />
 
           <ClaudeInputComposition totals={trend.data.totals} />
@@ -841,12 +931,12 @@ export function WorkTokensTrend() {
                     axisLine={false}
                     tickLine={false}
                     fontSize={11}
-                    tickFormatter={(v: number) => formatTokenCount(v)}
+                    tickFormatter={(v: number) => (showCost ? formatUsd(v) : formatTokenCount(v))}
                     width={50}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-                  <Bar dataKey="claudeFullTokens" stackId="tokens" fill="#d97757" radius={0} />
-                  <Bar dataKey="codexFullTokens" stackId="tokens" fill="#2563eb" radius={0} />
+                  <Tooltip content={<CustomTooltip costMode={showCost} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
+                  <Bar dataKey={showCost ? "claudeCostUsd" : "claudeFullTokens"} stackId="tokens" fill="#d97757" radius={0} />
+                  <Bar dataKey={showCost ? "codexCostUsd" : "codexFullTokens"} stackId="tokens" fill="#2563eb" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 31;
+const CURRENT_VERSION = 32;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -42,6 +42,7 @@ export function migrate(db: Database.Database): void {
     applyV29(db);
     applyV30(db);
     applyV31(db);
+    applyV32(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -79,6 +80,7 @@ export function migrate(db: Database.Database): void {
   if (v < 29) applyV29(db);
   if (v < 30) applyV30(db);
   if (v < 31) applyV31(db);
+  if (v < 32) applyV32(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1694,5 +1696,27 @@ function applyV31(db: Database.Database): void {
       ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0;
 
     UPDATE meta_schema SET version = 31 WHERE id = 1;
+  `);
+}
+
+/**
+ * v32 — Claude per-session dominant model (for USD cost estimation).
+ *
+ * The Claude token row had no model; the model lives per-message in the jsonl.
+ * The tokens-trend cost view prices each session by its model (Opus vs Sonnet
+ * differ ~5x), so we capture the session's DOMINANT model (the one with the
+ * most output tokens, real data: 96% of sessions are single-model). Codex
+ * already stores its model.
+ *
+ * Defaults NULL; existing rows backfill on the next refresh via the
+ * CLAUDE_TOKEN_USAGE_RULE_VERSION 4->5 self-heal. NULL model → cost shows "—"
+ * (unpriced), never guessed. Investigation 2026-06-19.
+ */
+function applyV32(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE claude_session_token_usage
+      ADD COLUMN model TEXT;
+
+    UPDATE meta_schema SET version = 32 WHERE id = 1;
   `);
 }

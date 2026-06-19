@@ -17,8 +17,10 @@
  *       same message.usage across every content-block / streaming line, so v1-v3
  *       summed per line and double-counted ~2x (mostly cache_read replay).
  *       Investigation 2026-06-18.
+ *   v5: captures the session's dominant model (most output tokens) to power the
+ *       USD cost view (Opus vs Sonnet differ ~5x). 2026-06-19.
  */
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 4;
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 5;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 
@@ -42,6 +44,8 @@ export type ClaudeTokenUsageRow = {
   cache_read_input_tokens: number;
   /** Subset of input_tokens written to prompt cache (cache creation). */
   cache_creation_input_tokens: number;
+  /** Session's dominant model (most output tokens). NULL → cost unpriced. */
+  model: string | null;
   token_status: ClaudeTokenStatus;
   parse_error: string | null;
   missing_since: string | null;

@@ -6,7 +6,10 @@ import {
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
 import { parseJsonlText, type ParseJsonlResult } from "../claudeCodeHistory/parseJsonl.js";
-import { extractClaudeSessionUsage } from "../claudeCodeHistory/normalize.js";
+import {
+  extractClaudeDominantModel,
+  extractClaudeSessionUsage,
+} from "../claudeCodeHistory/normalize.js";
 import { normalizeWorkProjectIdentity } from "../workProjects/identity.js";
 import {
   getClaudeTokenUsageRow,
@@ -126,6 +129,7 @@ function rowFromUsage(args: {
   const outputTokens = usage?.totalOutputTokens ?? 0;
   const cacheReadInputTokens = usage?.totalCacheReadInputTokens ?? 0;
   const cacheCreationInputTokens = usage?.totalCacheCreationInputTokens ?? 0;
+  const model = args.parse ? extractClaudeDominantModel(args.parse) : null;
   const tokenStatus = args.error ? "error" : usage ? "full" : "unknown";
   return {
     session_id: args.source.id,
@@ -145,6 +149,7 @@ function rowFromUsage(args: {
     total_tokens: inputTokens + outputTokens,
     cache_read_input_tokens: cacheReadInputTokens,
     cache_creation_input_tokens: cacheCreationInputTokens,
+    model,
     token_status: tokenStatus,
     parse_error: args.error,
     missing_since: null,

@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { computeCost, PRICE_SNAPSHOT_DATE } from "../cost/pricing.js";
 import { bucketExpr } from "./bucket.js";
 import type {
   BucketGranularity,
@@ -14,6 +15,112 @@ const TABLE: Record<Source, string> = {
   claude: "claude_session_token_usage",
   codex: "codex_session_token_usage",
 };
+
+/**
+ * Per-(bucket, model) token components for USD cost pricing. Cost lives on a
+ * SEPARATE path from token bucketing — the model dimension is only needed to
+ * price, and pricing is done in TS (rates never enter SQL). Only token_status
+ * = 'full' rows contribute (real tokens only). Codex pulls from the per-event
+ * timeline (so multi-day costs land on the right day) and JOINs the session
+ * table for the model.
+ */
+export type CostComponentRow = {
+  bucket_key: string;
+  /** Empty string when the session has no model (→ unpriced downstream). */
+  model: string;
+  fresh: number;
+  cache_hit: number;
+  cache_creation: number;
+  output: number;
+};
+
+export function queryCostComponentsByBucket(
+  db: Database.Database,
+  source: Source,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): CostComponentRow[] {
+  const sql =
+    source === "claude"
+      ? `
+        SELECT
+          ${bucketExpr(granularity)} AS bucket_key,
+          COALESCE(model, '') AS model,
+          COALESCE(SUM(input_tokens - cache_read_input_tokens - cache_creation_input_tokens), 0) AS fresh,
+          COALESCE(SUM(cache_read_input_tokens), 0) AS cache_hit,
+          COALESCE(SUM(cache_creation_input_tokens), 0) AS cache_creation,
+          COALESCE(SUM(output_tokens), 0) AS output
+        FROM claude_session_token_usage
+        WHERE last_updated_at >= ? AND last_updated_at < ?
+          AND missing_since IS NULL AND token_status = 'full'
+        GROUP BY bucket_key, model
+      `
+      : `
+        SELECT
+          ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+          COALESCE(s.model, '') AS model,
+          COALESCE(SUM(e.input_tokens - e.cached_input_tokens), 0) AS fresh,
+          COALESCE(SUM(e.cached_input_tokens), 0) AS cache_hit,
+          0 AS cache_creation,
+          COALESCE(SUM(e.output_tokens), 0) AS output
+        FROM codex_token_usage_event e
+        JOIN codex_session_token_usage s ON s.session_id = e.session_id
+        WHERE e.event_at >= ? AND e.event_at < ?
+          AND s.missing_since IS NULL AND s.token_status = 'full'
+        GROUP BY bucket_key, model
+      `;
+  return db
+    .prepare(sql)
+    .all(from.toISOString(), to.toISOString()) as CostComponentRow[];
+}
+
+export type BucketCost = { claudeCostUsd: number; codexCostUsd: number };
+
+/**
+ * Price both sources per (bucket, model) and fold into per-bucket USD cost.
+ * Returns the per-bucket cost map + total tokens whose model had no price
+ * (surfaced, never summed into cost). Pricing is in TS via the vendored
+ * snapshot; SQL only aggregated the token components.
+ */
+export function priceCostByBucket(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): { byBucket: Map<string, BucketCost>; unpricedTokenCount: number } {
+  const byBucket = new Map<string, BucketCost>();
+  let unpricedTokenCount = 0;
+  const apply = (source: Source) => {
+    for (const r of queryCostComponentsByBucket(db, source, from, to, granularity)) {
+      const result = computeCost(
+        {
+          fresh: r.fresh,
+          cacheHit: r.cache_hit,
+          cacheCreation: r.cache_creation,
+          output: r.output,
+        },
+        r.model || null
+      );
+      if (!result.priced) {
+        // input(fresh+hit+creation) + output tokens that we couldn't price.
+        unpricedTokenCount +=
+          r.fresh + r.cache_hit + r.cache_creation + r.output;
+        continue;
+      }
+      const cur = byBucket.get(r.bucket_key) ?? {
+        claudeCostUsd: 0,
+        codexCostUsd: 0,
+      };
+      if (source === "claude") cur.claudeCostUsd += result.usd;
+      else cur.codexCostUsd += result.usd;
+      byBucket.set(r.bucket_key, cur);
+    }
+  };
+  apply("claude");
+  apply("codex");
+  return { byBucket, unpricedTokenCount };
+}
 
 type RawBucketRow = {
   bucket_key: string;
@@ -248,6 +355,9 @@ export function mergeAndZeroFill(
       claudeCacheCreationInputTokens: c?.cache_creation_input_tokens ?? 0,
       codexReasoningOutputTokens: x?.reasoning_output_tokens ?? 0,
       codexCachedInputTokens: x?.codex_cached_input_tokens ?? 0,
+      // Cost is patched in by the service after pricing (separate path).
+      claudeCostUsd: 0,
+      codexCostUsd: 0,
       claudeSessionCount: c?.session_count ?? 0,
       codexSessionCount: x?.session_count ?? 0,
       claudeCoveredSessionCount: c?.full_count ?? 0,
@@ -285,6 +395,8 @@ export function computeTotals(
   let claudeCacheCreationInputTokens = 0;
   let codexReasoningOutputTokens = 0;
   let codexCachedInputTokens = 0;
+  let claudeCostUsd = 0;
+  let codexCostUsd = 0;
   let coveredSessionCount = 0;
   let unknownSessionCount = 0;
   let errorSessionCount = 0;
@@ -299,6 +411,8 @@ export function computeTotals(
     claudeCacheCreationInputTokens += b.claudeCacheCreationInputTokens;
     codexReasoningOutputTokens += b.codexReasoningOutputTokens;
     codexCachedInputTokens += b.codexCachedInputTokens;
+    claudeCostUsd += b.claudeCostUsd;
+    codexCostUsd += b.codexCostUsd;
     coveredSessionCount +=
       b.claudeCoveredSessionCount + b.codexCoveredSessionCount;
     unknownSessionCount +=
@@ -333,6 +447,13 @@ export function computeTotals(
     claudeCacheCreationInputTokens,
     codexReasoningOutputTokens,
     codexCachedInputTokens,
+    totalCostUsd: claudeCostUsd + codexCostUsd,
+    claudeCostUsd,
+    codexCostUsd,
+    // unpricedTokenCount is patched in by the service (cross-cutting, not
+    // derivable from per-bucket DTOs); default 0 here.
+    unpricedTokenCount: 0,
+    priceSnapshotDate: PRICE_SNAPSHOT_DATE,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
     coverage,
