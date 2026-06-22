@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { formatFileTimeMs } from "../util/formatDisplay";
+import { formatRelative } from "../lib/time";
 
 type Status = {
   platform: string;
@@ -16,6 +17,7 @@ type ProjectRow = {
   sessionCount: number;
   decodedWorkspacePath: string | null;
   slugDecodeIncomplete: boolean;
+  lastActiveAt: string | null;
 };
 
 type SessionSummary = {
@@ -251,8 +253,11 @@ export function ClaudeCodeHistory() {
                         未能从本机路径完全还原（仍可浏览会话）
                       </div>
                     )}
-                    <div className="mt-0.5 text-[11px] text-neutral-500">
-                      {p.sessionCount} 个会话
+                    <div className="mt-0.5 flex items-center justify-between text-[11px] text-neutral-500">
+                      <span>{p.sessionCount} 个会话</span>
+                      <span title={p.lastActiveAt ?? undefined}>
+                        最后活跃 {formatRelative(p.lastActiveAt)}
+                      </span>
                     </div>
                   </button>
                 </li>

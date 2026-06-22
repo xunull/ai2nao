@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GhRepo } from "../types/github";
+import { formatRelative } from "../lib/time";
 
 type Props = {
   repo: GhRepo;
@@ -8,17 +9,6 @@ type Props = {
 function formatDay(iso: string | null): string {
   if (!iso) return "—";
   return iso.slice(0, 10);
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return "—";
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const days = Math.floor((now - then) / (1000 * 60 * 60 * 24));
-  if (days < 1) return "今天";
-  if (days < 30) return `${days} 天前`;
-  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
-  return `${Math.floor(days / 365)} 年前`;
 }
 
 function commitCountLabel(repo: GhRepo): string {
