@@ -55,11 +55,13 @@ import {
 } from "../cursorHistory/json.js";
 import {
   ClaudeTranscriptTooLargeError,
+  computeProjectLastActive,
   listProjects,
   listSessionSummaries,
   loadSessionDetail,
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
+import { projectSessionTimes } from "../claudeTokenUsage/queries.js";
 import {
   listCodexSessionSummaries,
   loadCodexSessionDetail,
@@ -574,15 +576,43 @@ export function createApp(opts: ServeOptions): Hono {
     try {
       const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
       const projects = await listProjects(root);
+
+      // Recency sort: upgrade each project's "last active" with parsed times from
+      // the token DB (accurate), falling back to current file mtime (cold/unsynced).
+      // listProjects stays alpha-stable for its other consumers; we re-sort here.
+      const timesByProject = projectSessionTimes(
+        db,
+        projects.map((p) => p.id)
+      );
+      const lastActive = new Map<string, string | null>();
+      for (const p of projects) {
+        lastActive.set(
+          p.id,
+          computeProjectLastActive(p.sessionFiles, timesByProject.get(p.id) ?? new Map())
+        );
+      }
+      const sorted = [...projects].sort((a, b) => {
+        const ta = lastActive.get(a.id) ?? null;
+        const tb = lastActive.get(b.id) ?? null;
+        if (ta && tb) {
+          if (ta !== tb) return ta < tb ? 1 : -1; // DESC (newer first)
+          return a.id.localeCompare(b.id);
+        }
+        if (ta) return -1; // time-bearing before null
+        if (tb) return 1;
+        return a.id.localeCompare(b.id); // both null -> stable by id
+      });
+
       return c.json({
         ok: true,
         projectsRoot: root,
-        projects: projects.map((p) => ({
+        projects: sorted.map((p) => ({
           id: p.id,
           path: p.path,
           sessionCount: p.sessionCount,
           decodedWorkspacePath: p.decodedWorkspacePath,
           slugDecodeIncomplete: p.slugDecodeIncomplete,
+          lastActiveAt: lastActive.get(p.id) ?? null,
         })),
       });
     } catch (e) {

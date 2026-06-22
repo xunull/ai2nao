@@ -29,6 +29,8 @@
 27. Work Dashboard 全量 token 历史统计
 28. ai2nao apiKey 明文存储隐患（`~/.ai2nao/rag.json` 等）：迁移至 keychain / env var
 29. Cosmos 本地 embedding fallback（让 "local-first" 叙事完整）
+30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
+31. Codex / Cursor 历史页也按最近活跃排序（与 Claude 项目列表平行）
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
@@ -894,5 +896,53 @@ Depends on / blocked by:
 **Depends on / blocked by:** work-tokens-trend ship 落地。
 
 **Effort estimate:** S（human ~30min / CC ~10min）
+
+**Priority:** P3
+
+---
+
+## 30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
+
+**What:** `workDashboard/aggregate.ts:291` 与 `sessionMemory/service.ts:246` 都 `listProjects(root)` 后 `projects.slice(0, limit)` 取前 N 个项目；当前 `listProjects` 默认 alpha 序，所以取的是「字母前 N」。改为按最近活跃取「最近 N」。
+
+**Why:** 用户在首页/检索里真正想看的是最近在动的项目，不是 a-开头的项目。alpha 前 N 在项目多时会漏掉今天刚用的项目。
+
+**Pros:**
+- 首页与 session 检索覆盖到真正活跃的项目
+- 复用本 PR 给 `listProjects` 加的 `sort` 参数（未来的 `"recency"` 变体）
+
+**Cons:**
+- recency 排序若要 DB 级精确，调用点需注入 db（discover 层保持无 DB，纯 mtime 变体则可无 db）
+- 改动两个消费者的取样语义，需各自回归
+
+**Context:** 来自 `/plan-eng-review`（Claude 项目列表按最近活跃排序，2026-06-22）的 Codex 外部意见 #3 旁支。本 PR 已把 `listProjects` 参数化为 `{ sort?: "alpha" }`（默认 alpha，零回归），留好了扩展点；本 TODO 是后续把消费者切到 recency。相关行：`src/workDashboard/aggregate.ts:291,314`、`src/sessionMemory/service.ts:246,249`。
+
+**Depends on / blocked by:** 本 PR 的 `listProjects` sort 参数落地。
+
+**Effort estimate:** S（human ~1h / CC ~15min）
+
+**Priority:** P3
+
+---
+
+## 31. Codex / Cursor 历史页也按最近活跃排序
+
+**What:** 把「项目列表按最近活跃倒序」从 Claude Code 历史页平移到 Codex、Cursor 历史页。
+
+**Why:** 三个工具页排序口径一致，用户体验统一；现在只有 Claude 页是最近序，另两个仍是旧序。
+
+**Pros:**
+- 体验一致
+- `codex_session_token_usage` 有同款结构与索引（`migrations.ts:1345`），算法可直接平移
+
+**Cons:**
+- Cursor 侧需确认有等价的 per-session last_updated_at 落库；没有则要先补
+- 三处各自的发现层 + 端点要分别改，量不小
+
+**Context:** 来自 `/plan-eng-review`（Claude 项目列表按最近活跃排序，2026-06-22）。本设计明确范围只做 Claude Code；Codex 同款表已就绪，Cursor 需先核对数据源。
+
+**Depends on / blocked by:** Claude 项目列表 PR 落地（作为参考实现）；Cursor 侧需确认 session 元数据已入库。
+
+**Effort estimate:** M（human ~半天 / CC ~30min）
 
 **Priority:** P3

@@ -21,6 +21,12 @@ export function assertPathInsideRoot(root: string, candidate: string): string {
   return target;
 }
 
+export type ClaudeProjectSessionFile = {
+  filePath: string;
+  mtimeMs: number;
+  size: number;
+};
+
 export type ClaudeProjectRow = {
   id: string;
   path: string;
@@ -29,7 +35,19 @@ export type ClaudeProjectRow = {
   decodedWorkspacePath: string | null;
   /** True when decoding stopped early (path moved/removed, or ambiguous on disk) */
   slugDecodeIncomplete: boolean;
+  /**
+   * Current on-disk session files (path + mtime + size), already stat'd while
+   * counting sessions. Callers that sort by recency consume these without extra IO.
+   */
+  sessionFiles: ClaudeProjectSessionFile[];
 };
+
+/**
+ * Discovery sort order. `"alpha"` (default) is the stable dir-name order that
+ * workDashboard / sessionMemory rely on for `projects.slice(0, limit)`. Recency
+ * ordering needs the token DB, so it stays in the endpoint layer, not here.
+ */
+export type ListProjectsSort = "alpha";
 
 export type ClaudeSessionFileRow = {
   id: string;
@@ -38,7 +56,10 @@ export type ClaudeSessionFileRow = {
   size: number;
 };
 
-export async function listProjects(root: string): Promise<ClaudeProjectRow[]> {
+export async function listProjects(
+  root: string,
+  opts?: { sort?: ListProjectsSort }
+): Promise<ClaudeProjectRow[]> {
   const base = resolve(root);
   let entries: Dirent[];
   try {
@@ -61,9 +82,20 @@ export async function listProjects(root: string): Promise<ClaudeProjectRow[]> {
       sessionCount: jsonls.length,
       decodedWorkspacePath: decoded.incomplete ? null : decoded.path,
       slugDecodeIncomplete: decoded.incomplete,
+      sessionFiles: jsonls.map((f) => ({
+        filePath: f.filePath,
+        mtimeMs: f.mtimeMs,
+        size: f.size,
+      })),
     });
   }
-  rows.sort((a, b) => a.id.localeCompare(b.id));
+  // Default "alpha": stable dir-name order. Existing consumers (workDashboard,
+  // sessionMemory) take projects.slice(0, limit) and depend on this determinism.
+  // Recency sorting needs the token DB and lives in the endpoint layer.
+  const sort: ListProjectsSort = opts?.sort ?? "alpha";
+  if (sort === "alpha") {
+    rows.sort((a, b) => a.id.localeCompare(b.id));
+  }
   return rows;
 }
 

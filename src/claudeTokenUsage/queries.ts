@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { ProjectSessionTime } from "../claudeCodeHistory/projectLastActive.js";
 import {
   CLAUDE_TOKEN_USAGE_RULE_VERSION,
   type ClaudeProjectTokenUsage,
@@ -221,4 +222,57 @@ export function listClaudeProjectTokenUsage(
       return [row.projectKey, { ...row, coverage }];
     })
   );
+}
+
+/**
+ * Per-session timing facts (parsed last_updated_at + the file mtime/size captured
+ * at sync), grouped `project_id -> file_path -> {...}`. Feeds
+ * {@link computeProjectLastActive} so the project list can sort by recency without
+ * re-parsing any jsonl. Joins on `project_id` (the dir slug, == ClaudeProjectRow.id);
+ * the `project_key` index does not apply, but the table is a few hundred rows.
+ *
+ * `missing_since IS NULL` mirrors {@link listClaudeProjectTokenUsage} so deleted
+ * (and later restored) sessions never surface stale rows.
+ */
+export function projectSessionTimes(
+  db: Database.Database,
+  projectIds: string[]
+): Map<string, Map<string, ProjectSessionTime>> {
+  const out = new Map<string, Map<string, ProjectSessionTime>>();
+  if (projectIds.length === 0) return out;
+
+  const rows = db
+    .prepare(
+      `SELECT project_id   AS projectId,
+              file_path     AS filePath,
+              last_updated_at AS lastUpdatedAt,
+              file_mtime_ms  AS fileMtimeMs,
+              file_size_bytes AS fileSizeBytes
+       FROM claude_session_token_usage
+       WHERE missing_since IS NULL
+         AND project_id IN (${projectIds.map(() => "?").join(", ")})`
+    )
+    .all(...projectIds) as Array<{
+      projectId: string;
+      filePath: string;
+      lastUpdatedAt: string | null;
+      fileMtimeMs: number;
+      fileSizeBytes: number;
+    }>;
+
+  for (const row of rows) {
+    if (!row.lastUpdatedAt) continue;
+    let byPath = out.get(row.projectId);
+    if (!byPath) {
+      byPath = new Map<string, ProjectSessionTime>();
+      out.set(row.projectId, byPath);
+    }
+    byPath.set(row.filePath, {
+      lastUpdatedAt: row.lastUpdatedAt,
+      fileMtimeMs: row.fileMtimeMs,
+      fileSizeBytes: row.fileSizeBytes,
+    });
+  }
+
+  return out;
 }

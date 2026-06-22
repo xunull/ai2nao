@@ -12,7 +12,15 @@ export {
   listProjects,
   listSessionJsonlFiles,
 } from "./discover.js";
-export type { ClaudeProjectRow, ClaudeSessionFileRow } from "./discover.js";
+export type {
+  ClaudeProjectRow,
+  ClaudeProjectSessionFile,
+  ClaudeSessionFileRow,
+} from "./discover.js";
+export {
+  computeProjectLastActive,
+  type ProjectSessionTime,
+} from "./projectLastActive.js";
 export { parseJsonlText } from "./parseJsonl.js";
 export type {
   JsonlLineError,
