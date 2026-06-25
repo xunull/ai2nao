@@ -135,7 +135,7 @@ Then ask directly in chat, e.g. "how many tokens did this repo burn this week" o
 - `time_spent` — honest active coding time per project
 - `external_usage` — remaining quota for external providers (e.g. MiniMax); never returns API keys
 
-Read-only: the MCP server opens the index DB with a separate read-only handle, so no tool can write. A connection failure when `serve` isn't running is expected.
+Read-only: the MCP server opens the index DB with a separate read-only handle, so no tool can write. A connection failure when `serve` isn't running is expected. Full tool reference, architecture, security boundaries, and troubleshooting: [MCP server technical doc](docs/mcp-server.md) (Chinese).
 
 ## Local LLM config for AI chat
 
@@ -247,6 +247,10 @@ Cost & tokens:
 Visualization:
 
 - [Activity Cosmos technical doc](docs/activity-cosmos.md) — data flow, schema, UMAP, and API behind the conversation cosmos
+
+MCP:
+
+- [MCP server technical doc](docs/mcp-server.md) (Chinese) — the MCP server that lets agents query ai2nao: tool reference, architecture, security boundaries, troubleshooting
 
 ## License
 
