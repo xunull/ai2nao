@@ -9,6 +9,8 @@ import { createDefaultScheduledTaskDefinitions } from "../scheduler/taskDefiniti
 
 export type RunServeOptions = {
   db: Database.Database;
+  /** Read-only index DB handle for the MCP server; owned + closed here. */
+  mcpDb?: Database.Database;
   /** Optional Atuin history.db (read-only). */
   atuin?: { db: Database.Database; path: string };
   dailySummary?: {
@@ -35,6 +37,7 @@ export function runServe(opts: RunServeOptions): { url: string; close: () => voi
   const schedulerLoop = new SchedulerLoop({ runtime: schedulerRuntime });
   const app = createApp({
     db: opts.db,
+    mcpDb: opts.mcpDb,
     atuin: opts.atuin,
     dailySummary: opts.dailySummary,
     rag: opts.rag,
@@ -58,6 +61,7 @@ export function runServe(opts: RunServeOptions): { url: string; close: () => voi
     close: () => {
       schedulerLoop.stop();
       server.close();
+      opts.mcpDb?.close();
     },
   };
 }

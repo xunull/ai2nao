@@ -31,6 +31,7 @@
 29. Cosmos 本地 embedding fallback（让 "local-first" 叙事完整）
 30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
 31. Codex / Cursor 历史页也按最近活跃排序（与 Claude 项目列表平行）
+32. MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
@@ -944,5 +945,33 @@ Depends on / blocked by:
 **Depends on / blocked by:** Claude 项目列表 PR 落地（作为参考实现）；Cursor 侧需确认 session 元数据已入库。
 
 **Effort estimate:** M（human ~半天 / CC ~30min）
+
+**Priority:** P3
+
+---
+
+## 32. MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
+
+**What:** ai2nao MCP server 首版只暴露 3 个薄 SELECT tool（project_tokens / time_spent / external_usage）。v2 补三件重的：
+- `search_history`：包 `createSessionMemoryService`，「我上次怎么解决 X」。
+- `project_overview`：包 `buildWorkDashboard`，某 repo 的 token/时间/session 快照。
+- `cost_trend` 按项目 USD 成本（现成只给全局/分桶）。
+
+**Why:** 这三个价值高但首版风险大；先让 transport / 条件挂载 / 只读句柄 / payload 限制跨稳，再加。
+
+**Pros:**
+- search_history 是「数字孪生问答」的核心入口
+- project_overview 让 agent 一句话拿到 repo 全景
+
+**Cons:**
+- `search_history`：`createSessionMemoryService` 是服务工厂，要接 cursor/cherry/llmChat 句柄 + claude/codex 根，会扩 `ServeOptions`，依赖装配要先理清
+- `project_overview`：`buildWorkDashboard` async + 每次读整个历史目录 + 慢 + 可能抛，要配超时/降级/缓存
+- 按项目 USD 成本是新聚合（`priceCostByBucket` 无 project 参）
+
+**Context:** 来自 `/plan-eng-review`（MCP 记忆器官，2026-06-25）。首版范围决策 A 把这三件移出，性能评审 + Codex 外部意见双双指向瘦身。参考设计：`~/.gstack/projects/xunull-ai2nao/you-main-design-20260625-144326-mcp-memory-organ.md`。
+
+**Depends on / blocked by:** MCP v1（3 薄 tool + WebStandard transport + 条件挂载 + 只读句柄 + payload 限制）落地。
+
+**Effort estimate:** M（human ~1天 / CC ~40min）
 
 **Priority:** P3

@@ -1207,8 +1207,11 @@ program
       ragDb: string;
     }) => {
       let db;
+      let mcpDb;
       try {
         db = openDatabase(opts.db);
+        // Separate read-only handle for the MCP server (read-only enforcement).
+        mcpDb = openReadOnlyDatabase(opts.db);
       } catch (e) {
         console.error(String(e));
         process.exitCode = 1;
@@ -1297,6 +1300,7 @@ program
       const withStatic = !opts.apiOnly && existsSync(dist);
       const { url, close } = runServe({
         db,
+        mcpDb,
         atuin,
         dailySummary,
         rag,
