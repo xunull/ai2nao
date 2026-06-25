@@ -62,6 +62,7 @@ import {
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
 import { projectSessionTimes } from "../claudeTokenUsage/queries.js";
+import { createMcpHandler } from "../mcp/server.js";
 import {
   listCodexSessionSummaries,
   loadCodexSessionDetail,
@@ -173,6 +174,13 @@ function codexHistoryErr(e: unknown) {
 
 export type ServeOptions = {
   db: Database.Database;
+  /**
+   * Read-only index DB handle for the MCP server. When provided, `/mcp` is mounted
+   * (Streamable HTTP); when omitted (the ~30 test callers), `/mcp` is absent → 404.
+   * Caller owns + closes this handle (runServe), so MCP gets read-only enforcement
+   * without reusing the read-write `db`.
+   */
+  mcpDb?: Database.Database;
   /** Absolute path to `web/dist` when serving production build; omit in dev (Vite handles UI). */
   staticRoot?: string;
   /** Optional read-only Atuin `history.db` (separate SQLite file). */
@@ -191,8 +199,15 @@ function jsonErr(status: number, message: string) {
 }
 
 export function createApp(opts: ServeOptions): Hono {
-  const { db, atuin, dailySummary, rag } = opts;
+  const { db, atuin, dailySummary, rag, mcpDb } = opts;
   const app = new Hono();
+
+  // MCP server (Streamable HTTP) — only when a read-only handle is supplied.
+  // Without it (test callers), /mcp is never registered and resolves to 404.
+  if (mcpDb) {
+    const mcpHandler = createMcpHandler(mcpDb);
+    app.all("/mcp", (c) => mcpHandler(c.req.raw));
+  }
   const bashPermissionRules = createSqliteBashPermissionRuleStore(db);
   const bashApprovalStore = createBashApprovalStore({ ruleStore: bashPermissionRules });
 

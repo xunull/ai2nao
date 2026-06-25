@@ -132,6 +132,22 @@ node dist/cli.js serve
 
 打开 `/scheduler` 可以启用/关闭任务、调整 interval、手动 Run now、查看最近运行历史。V1 已注册的任务包括 `downloads.scan`、`mac_apps.sync`、`brew.sync`、`huggingface.models.sync`、`lmstudio.models.sync`、`vscode.recent.sync`、`cursor.projects.sync`、`chrome.history.sync`、`chrome.domains.rebuild` 和 `atuin.directories.rebuild`。更多设计细节见 [Scheduler 设计](docs/scheduler-design.md)。
 
+### MCP 记忆器官（让 AI 工具来查 ai2nao）
+
+`serve` 跑着时会在 `/mcp` 暴露一个本地 MCP server（只读、绑 `127.0.0.1`），把 ai2nao 的数据当成 tool 给 Claude Code / Codex 等 agent 调用。在 Claude Code 里注册一次：
+
+```bash
+claude mcp add --transport http ai2nao http://127.0.0.1:8787/mcp
+```
+
+注册后即可在对话里直接问，例如「这个 repo 这周烧了多少 token」「我在哪个项目花的时间最多」。首版 tool：
+
+- `project_tokens` — 各项目 Claude Code token 用量（可按项目/起始日期过滤）
+- `time_spent` — 各项目诚实活跃工时
+- `external_usage` — 外部平台（MiniMax 等）剩余额度（不返回 API key）
+
+只读：MCP 用独立的只读句柄打开 index DB，任何 tool 都改不了库。`serve` 没起时连接失败属预期。
+
 ### RAG 本地笔记
 
 ```bash
