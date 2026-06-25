@@ -135,7 +135,7 @@ claude mcp add --transport http ai2nao http://127.0.0.1:8787/mcp
 - `time_spent` — 各项目诚实活跃工时
 - `external_usage` — 外部平台（MiniMax 等）剩余额度（不返回 API key）
 
-只读:MCP 用独立的只读句柄打开 index DB,任何 tool 都改不了库。`serve` 没起时连接失败属预期。
+只读:MCP 用独立的只读句柄打开 index DB,任何 tool 都改不了库。`serve` 没起时连接失败属预期。完整 tool 参考、架构、安全边界与故障排查见 [MCP 记忆器官技术文档](docs/mcp-server.md)。
 
 ## AI 对话本机 LLM 配置
 
@@ -247,6 +247,10 @@ npm test
 可视化:
 
 - [Activity Cosmos 技术文档](docs/activity-cosmos.md) — 对话宇宙的数据流、schema、UMAP、API
+
+MCP:
+
+- [MCP 记忆器官技术文档](docs/mcp-server.md) — 让 agent 查 ai2nao 的 MCP server:tool 参考、架构、安全边界、故障排查
 
 ## 许可
 
