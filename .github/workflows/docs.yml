@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20' # package.json engines 要求 node >=20，钉死不依赖 runner 默认
+          node-version: '22' # package.json engines 要求 node >=22（Pyodide code runner 在 node 20 上不可用），钉死不依赖 runner 默认
           cache: npm
       - run: npm ci
       - name: Build VitePress site
