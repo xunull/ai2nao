@@ -1,0 +1,9 @@
+# 提交期 PII/密钥拦截（gitleaks）。一次性安装：
+#   brew install pre-commit   # 或 pip install pre-commit / pipx install pre-commit
+#   pre-commit install
+# 之后每次 git commit 会自动扫 staged 内容；命中 PII/密钥则拒绝提交。
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1 # 与本机/CI 版本一致；可用 `pre-commit autoupdate` 更新
+    hooks:
+      - id: gitleaks
