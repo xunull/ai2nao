@@ -1,3 +1,8 @@
+---
+title: Local AI Session Token Usage
+category: Token 与成本
+order: 80
+---
 # Local AI Session Token Usage
 
 本文说明 ai2nao 如何从本机 Codex 与 Claude Code session 文件中计算 token 消耗，以及

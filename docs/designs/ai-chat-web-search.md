@@ -1,6 +1,8 @@
 ---
 status: IMPLEMENTED_V1
-source: /Users/you/.gstack/projects/xunull-ai2nao/ceo-plans/2026-05-17-ai-chat-web-search.md
+title: AI Chat Web Search
+category: 架构与 AI 对话
+order: 60
 ---
 
 # AI Chat Web Search

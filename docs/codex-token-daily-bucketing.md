@@ -1,3 +1,8 @@
+---
+title: Codex 跨天 session 的 token 逐天归属
+category: Token 与成本
+order: 70
+---
 # Codex 跨天 session 的 token 逐天归属
 
 > 续用一个 Codex session 好几天,趋势页却只在最后一天显示 token,前面几天空白。

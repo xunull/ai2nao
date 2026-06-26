@@ -1,3 +1,8 @@
+---
+title: Work Recap Prompt 技术文档
+category: 调度与运维
+order: 30
+---
 # Work Recap Prompt 技术文档
 
 本文档说明 `/work-recap` 功能用来生成自然语言摘要的 LLM Prompt 的**结构、
@@ -5,7 +10,7 @@
 问题时参考。
 
 > 这是一份「prompt 解剖文档」，不是产品设计文档。功能本身的设计约束见
-> `~/.gstack/projects/xunull-ai2nao/you-main-design-20260609-190620-work-recap.md`，
+> `~/.gstack/projects/xunull-ai2nao/<user>-main-design-20260609-190620-work-recap.md`，
 > 以及相邻文档 `daily-summary.md`（同款事实层 + LLM 层分离的工程模式）。
 
 ---
@@ -474,5 +479,5 @@ Output JSON only, no markdown fences, no commentary.
 - `src/workRecap/types.ts` —— `WorkRecapInference` 契约 + budget 常量
 - `src/dailySummary/llm.ts` —— 同款工程模式的姐妹实现（Atuin 单日视角）
 - `docs/daily-summary.md` —— 第 6.4 节「事实与推断的权力边界」
-- `~/.gstack/projects/xunull-ai2nao/you-main-design-20260609-190620-work-recap.md`
+- `~/.gstack/projects/xunull-ai2nao/<user>-main-design-20260609-190620-work-recap.md`
   —— 完整设计文档（含 12 条前提、降级 reason code 全表、failure modes 表）

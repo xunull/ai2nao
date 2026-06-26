@@ -1,3 +1,8 @@
+---
+title: Claude Code 与 Codex Session 文件的 Token 字段参考
+category: Token 与成本
+order: 20
+---
 # Claude Code 与 Codex Session 文件的 Token 字段参考
 
 > 本文是**字段级参考**：穷举 Claude Code 和 Codex 的本地 session 文件里**能拿

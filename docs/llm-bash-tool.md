@@ -1,3 +1,8 @@
+---
+title: ai2nao_run_shell 受控 Bash 工具
+category: LLM 工具
+order: 10
+---
 # ai2nao_run_shell 受控 Bash 工具
 
 `ai2nao_run_shell` 是 `/ai-chat` 的后端 AI-callable tool，用来执行经过校验的本机 Bash 命令。它借鉴 Claude Code BashTool 的分层思路：模型只提出命令请求，真正执行前必须经过权限校验、复合命令拆分、危险语义拦截、受限环境、超时和输出裁剪。
