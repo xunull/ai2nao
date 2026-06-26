@@ -104,6 +104,18 @@ npm run test:watch
 npm run test:e2e
 ```
 
+## 文档站（VitePress）
+
+把 `docs/` 下的设计笔记构建成可浏览、可搜索的静态站点，发布到 GitHub Pages。
+
+| 命令 | 底层命令 | 作用 |
+|---|---|---|
+| `npm run docs:dev` | `vitepress dev docs --port 5180` | 本地启动文档站开发服务，端口 `5180`（特意避开 `dev:web` 的 `5173`）。改 `docs/` 下 markdown 时实时预览。 |
+| `npm run docs:build` | `vitepress build docs` | 构建文档站，产物在 `docs/.vitepress/dist`（已 gitignore）。CI 与发布前验收用。 |
+| `npm run docs:preview` | `vitepress preview docs` | 本地预览已构建的产物（端口默认 `4173`），用于核对最终静态站。 |
+
+侧边栏由 `docs/.vitepress/sidebar.ts` 按每篇 markdown 的 `category` / `order` frontmatter 自动分组生成；加新文档只需写 frontmatter，无需手改配置。
+
 ## 使用建议
 
 - 日常开发 Web UI：优先用 `npm run dev:ui`。
