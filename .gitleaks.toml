@@ -1,0 +1,49 @@
+# gitleaks 配置：默认密钥规则 + 自定义 PII 规则（本机路径 / 私人邮箱）。
+# 拦截目标是“把别人/自己的本机用户名路径、私人邮箱提交进公开仓库”这类 PII，
+# 不只是 API key。CI 用 `gitleaks dir`（扫工作树文件，不看历史）。
+title = "ai2nao secret & PII scan"
+
+# 保留 gitleaks 内置的密钥规则（API key / token / 私钥等）。
+[extend]
+useDefault = true
+
+# --- 自定义 PII 规则 ---
+
+[[rules]]
+id = "local-home-path"
+description = "Local home directory path (leaks OS username)"
+regex = '''/Users/[a-z_][a-z0-9_-]{1,30}/'''
+tags = ["pii", "local-path"]
+
+[[rules]]
+id = "personal-email"
+description = "Personal email address committed into repo content"
+regex = '''[a-z0-9._%+-]+@(gmail|qq|163|outlook|hotmail|foxmail)\.com'''
+tags = ["pii", "email"]
+
+# --- 全局 allowlist ---
+# 当前语法是 [[allowlists]]（双括号复数）；旧版 [allowlist]（单数）已弃用。
+[[allowlists]]
+description = "Vendor/build artifacts, legit local-path fixtures, and placeholders"
+# 路径级跳过：
+#  - 厂商/构建产物（本地存在但不入库；CI 干净检出里本就没有，写在这里让本地扫描结果与 CI 一致）
+#  - test/e2e/web 页面里 /Users/<name> 是功能性夹具 / UI placeholder，不是新泄露（设计 Open Q2）
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)\.git/''',
+  '''docs/\.vitepress/(dist|cache)/''',
+  '''(^|/)graphify-out/''',
+  '''(^|/)local-docs/''',
+  '''(^|/)test/''',
+  '''(^|/)e2e/''',
+  '''(^|/)web/src/pages/''',
+  '''package-lock\.json$''',
+  '''\.(png|jpg|jpeg|svg|gif|ico|woff2?)$''',
+]
+# 内容级跳过：脱敏后留下的占位符 / 明显是示例的假用户名。
+regexes = [
+  '''/Users/(<you>|me|test|you)/''',
+  '''you@example\.com''',
+  '''<user>-main-design''',
+]
