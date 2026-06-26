@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.25 — 2026-06-26
+
+### Added
+
+- Add a VitePress documentation site that publishes the `docs/` design and architecture notes to GitHub Pages, with a frontmatter-driven grouped sidebar, local search, and an automated build/deploy workflow (`.github/workflows/docs.yml`). New scripts: `docs:dev` (port 5180, avoids the app's 5173), `docs:build`, `docs:preview`.
+
+### Changed
+
+- Add `title` / `category` / `order` frontmatter to the 42 design-note markdown files under `docs/` to drive the documentation site's grouped navigation. Files stay in place; no `docs/` paths moved.
+
+### Fixed
+
+- Scrub local absolute paths (`/Users/<username>/…`, `~/.gstack/projects/<user>-…`) and a personal email address out of `docs/` notes before public publishing.
+
 ## 0.3.24 — 2026-06-08
 
 ### Added
