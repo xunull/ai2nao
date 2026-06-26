@@ -1,0 +1,29 @@
+name: gitleaks
+
+# 不可绕过的服务器端兜底：扫工作树文件里有没有 PII（本机路径/私人邮箱）或密钥。
+# 故意不用 gitleaks-action@v2 —— 它基于 Node 20，GitHub 2026-09-16 移除 Node 20 后会停摆。
+# 直接装 gitleaks 二进制跑 `gitleaks dir`：只扫检出的当前文件，不看 git 历史
+# （所以历史里的旧 PII 不会让这里永远红），也不扫 node_modules（干净检出里本就没有）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # 浅克隆即可，不设 fetch-depth:0
+      - name: Install gitleaks
+        run: |
+          VER=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Scan working tree for PII / secrets
+        run: gitleaks dir . --no-banner --redact --config .gitleaks.toml

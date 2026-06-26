@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.26 — 2026-06-26
+
+### Added
+
+- Add a gitleaks-based guard against committing PII (local home-directory paths, personal email addresses) and secrets. A local `pre-commit` hook (`.pre-commit-config.yaml`, pinned to gitleaks v8.30.1) scans staged content on every commit; a CI workflow (`.github/workflows/gitleaks.yml`) runs the gitleaks binary directly (`gitleaks dir`, deliberately not the Node-20 `gitleaks-action`) as an un-bypassable backstop. Custom rules + allowlist live in `.gitleaks.toml`; contributor setup is documented in `CONTRIBUTING.md`.
+
 ## 0.3.25 — 2026-06-26
 
 ### Added
