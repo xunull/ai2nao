@@ -9,6 +9,7 @@
 ### Changed
 
 - Add `title` / `category` / `order` frontmatter to the 42 design-note markdown files under `docs/` to drive the documentation site's grouped navigation. Files stay in place; no `docs/` paths moved.
+- Require Node.js >= 22 (`engines`) and drop Node 20 from CI. The Pyodide-based `ai2nao_run_code` sandbox does not initialize on Node 20 (`result.ok === false`); Node 22+ works.
 
 ### Fixed
 
