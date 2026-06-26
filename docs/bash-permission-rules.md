@@ -1,3 +1,8 @@
+---
+title: Bash 权限规则匹配与行为说明
+category: LLM 工具
+order: 50
+---
 # Bash 权限规则匹配与行为说明
 
 本文说明 Bash tool 权限规则中的三种匹配方式，以及 `allow` / `ask` / `deny` 三种规则行为的技术语义。
@@ -200,10 +205,10 @@ behavior: allow
 ruleType: prefix
 ruleContent: npm run:*
 scopeType: directory
-scopeValue: /Users/you/project-a
+scopeValue: /Users/<you>/project-a
 ```
 
-这表示在 `/Users/you/project-a` 目录树内，命中 `npm run:*` 的已允许项目脚本可以不再询问。
+这表示在 `/Users/<you>/project-a` 目录树内，命中 `npm run:*` 的已允许项目脚本可以不再询问。
 
 ### ask：总是询问
 
@@ -230,7 +235,7 @@ behavior: ask
 ruleType: exact
 ruleContent: npm run build
 scopeType: directory
-scopeValue: /Users/you/project-a
+scopeValue: /Users/<you>/project-a
 ```
 
 这表示在该目录树内，`npm run build` 每次都要用户确认。
@@ -254,7 +259,7 @@ behavior: deny
 ruleType: exact
 ruleContent: npm run smoke
 scopeType: directory
-scopeValue: /Users/you/project-a
+scopeValue: /Users/<you>/project-a
 ```
 
 这表示在该目录树内，`npm run smoke` 会被规则层直接拒绝。

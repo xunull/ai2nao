@@ -1,3 +1,8 @@
+---
+title: Token Usage Pipeline (Claude Code & Codex)
+category: Token 与成本
+order: 10
+---
 # Token Usage Pipeline (Claude Code & Codex)
 
 > 本文档详细记录 ai2nao 当前是如何从本机 Claude Code、Codex 的 session

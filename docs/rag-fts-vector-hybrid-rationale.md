@@ -1,3 +1,8 @@
+---
+title: RAG 为什么不只使用向量数据库
+category: RAG 与检索
+order: 10
+---
 # RAG 为什么不只使用向量数据库
 
 ## 结论

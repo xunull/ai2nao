@@ -1,3 +1,8 @@
+---
+title: VS Code `state.vscdb` 可用数据分析
+category: 数据源与同步
+order: 50
+---
 # VS Code `state.vscdb` 可用数据分析
 
 本文档记录 VS Code 全局状态库 `state.vscdb` 中哪些数据适合被 ai2nao 使用，哪些数据只能在用户明确开启后使用，哪些数据应默认跳过。

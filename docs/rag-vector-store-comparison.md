@@ -1,3 +1,8 @@
+---
+title: Chroma、Qdrant、LanceDB 技术对比
+category: RAG 与检索
+order: 50
+---
 # Chroma、Qdrant、LanceDB 技术对比
 
 **状态：** Draft  

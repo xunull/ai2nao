@@ -1,3 +1,8 @@
+---
+title: Activity Cosmos (`/dashboard/cosmos`)
+category: 架构与 AI 对话
+order: 50
+---
 # Activity Cosmos (`/dashboard/cosmos`)
 
 > 把本地所有 AI 对话 session 嵌入 2D 语义空间，渲染成一张散点图。颜色 =
@@ -9,7 +14,7 @@
 > 本文是工程参考。**发给 embedding 的数据边界 + session 来源**的隐私向说明
 > 见 `local-docs/2026-06-14-cosmos-embedding-data-boundary/README.md`。
 > 设计 / 评审记录见
-> `~/.gstack/projects/xunull-ai2nao/you-main-design-20260612-193633-activity-cosmos.md`。
+> `~/.gstack/projects/xunull-ai2nao/<user>-main-design-20260612-193633-activity-cosmos.md`。
 >
 > 版本：`COSMOS_RULE_VERSION = 1`。更新：2026-06-14。
 

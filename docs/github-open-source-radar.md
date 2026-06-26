@@ -1,3 +1,8 @@
+---
+title: GitHub 开源雷达（设计规格）
+category: 数据源与同步
+order: 10
+---
 # GitHub 开源雷达（设计规格）
 
 **状态：** 已实现（v1）  

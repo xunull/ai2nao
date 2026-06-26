@@ -1,3 +1,8 @@
+---
+title: Codex State DB 迁移与 ai2nao 的 stale 路径问题
+category: 调度与运维
+order: 50
+---
 # Codex State DB 迁移与 ai2nao 的 stale 路径问题
 
 > 本文记录一个真实排查：新版 Codex 把它的 SQLite 数据库挪到了 `~/.codex/sqlite/`

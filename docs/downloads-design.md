@@ -1,7 +1,12 @@
+---
+title: 下载目录索引（设计规格）
+category: 数据源与同步
+order: 40
+---
 # 下载目录索引（设计规格）
 
 **状态：** 已实现（v1）  
-**主文档副本（会话/修订历史）：** `~/.gstack/projects/xunull-ai2nao/you-main-design-20260408-095619.md`
+**主文档副本（会话/修订历史）：** `~/.gstack/projects/xunull-ai2nao/<user>-main-design-20260408-095619.md`
 
 ---
 
@@ -69,4 +74,4 @@
 
 ---
 
-与主文档不一致时，以 **`~/.gstack/projects/xunull-ai2nao/you-main-design-*.md`** 中最新日期版本为准，并同步更新本文件。
+与主文档不一致时，以 **`~/.gstack/projects/xunull-ai2nao/<user>-main-design-*.md`** 中最新日期版本为准，并同步更新本文件。

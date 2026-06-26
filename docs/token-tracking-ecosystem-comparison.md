@@ -1,3 +1,8 @@
+---
+title: Token 统计开源生态对照：ai2nao vs ccusage 等
+category: Token 与成本
+order: 50
+---
 # Token 统计开源生态对照：ai2nao vs ccusage 等
 
 > 调研其他开源项目怎么统计 Claude Code / Codex 的 token 消耗,和 ai2nao 做对照。

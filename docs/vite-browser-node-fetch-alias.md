@@ -1,3 +1,8 @@
+---
+title: Vite Browser Build and node-fetch Alias
+category: 调度与运维
+order: 60
+---
 # Vite Browser Build and node-fetch Alias
 
 本文说明 ai2nao 前端 Vite 构建中 `node-fetch externalized` 警告的成因、为什么可以用
@@ -142,7 +147,7 @@ bundle。`web/src/App.tsx` 已经使用 route-level `React.lazy` 和 `Suspense` 
 前端构建验证：
 
 ```bash
-/Users/you/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node ./node_modules/.bin/vite build --config web/vite.config.ts
+node ./node_modules/.bin/vite build --config web/vite.config.ts
 ```
 
 期望结果：
