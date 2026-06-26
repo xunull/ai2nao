@@ -1,3 +1,8 @@
+---
+title: GitHub 开源雷达下一版设计：从 Star 库存到技术线索图
+category: 数据源与同步
+order: 20
+---
 # GitHub 开源雷达下一版设计：从 Star 库存到技术线索图
 
 **状态：** Draft

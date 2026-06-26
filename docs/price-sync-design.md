@@ -1,3 +1,8 @@
+---
+title: 设计：从 models.dev 同步模型价格（scheduler 任务）
+category: 数据源与同步
+order: 90
+---
 # 设计：从 models.dev 同步模型价格（scheduler 任务）
 
 > 状态：**设计已锁定，待实现**（office-hours 2026-06-19）。下一步 `/plan-eng-review`。

@@ -1,3 +1,8 @@
+---
+title: RAG Reranker 技术介绍
+category: RAG 与检索
+order: 30
+---
 # RAG Reranker 技术介绍
 
 ## 什么是 Reranker

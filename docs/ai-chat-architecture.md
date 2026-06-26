@@ -1,3 +1,8 @@
+---
+title: AI 对话架构
+category: 架构与 AI 对话
+order: 10
+---
 # AI 对话架构
 
 本文记录 `/ai-chat` 的当前实现边界。AI 对话已经从 assistant-ui 切换为 CopilotKit，历史协议统一为 CopilotKit / AG-UI，旧 assistant-ui 数据在 schema v18 迁移中被主动清空。
