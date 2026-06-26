@@ -1,3 +1,8 @@
+---
+title: MCP 记忆器官（ai2nao MCP server）
+category: 架构与 AI 对话
+order: 40
+---
 # MCP 记忆器官（ai2nao MCP server）
 
 把 ai2nao 暴露成一个本地 **MCP（Model Context Protocol）server**，让 Claude Code / Codex 这类 agent 在写代码的当下**直接查询你的开发数据**——token 用量、活跃工时、外部平台额度等。ai2nao 从「你打开网页去看的看板」升维成「你的 AI 工具共享的记忆层」。

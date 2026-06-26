@@ -1,3 +1,8 @@
+---
+title: LLM Web Search Tool 技术说明
+category: LLM 工具
+order: 30
+---
 # LLM Web Search Tool 技术说明
 
 本文说明 ai2nao 的 Web Search tool 如何接入 LLM 对话链路。核心原则是：CopilotKit 只负责前端 UI 和最薄 runtime transport adapter，不参与后端 tool 选择、执行、消息修复、AI SDK stream conversion 或最终回答生成；这些逻辑全部由 ai2nao 后端 turn runner 控制。

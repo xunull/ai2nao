@@ -1,3 +1,8 @@
+---
+title: 成本计费：每段 token 怎么计价
+category: Token 与成本
+order: 30
+---
 # 成本计费：每段 token 怎么计价
 
 > tokens-trend 的「显示 USD 成本」开关给出的是**等价 API 成本（估算）**——同样的

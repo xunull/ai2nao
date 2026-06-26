@@ -1,3 +1,8 @@
+---
+title: ai2nao_run_code 本地沙盒代码执行
+category: LLM 工具
+order: 20
+---
 # ai2nao_run_code 本地沙盒代码执行
 
 `ai2nao_run_code` 是 `/ai-chat` 的后端 AI-callable tool，用来让模型在本机执行短小 Python 代码。它的目标是确定性计算、小型文本/CSV/JSON 处理、算法验证和临时数据转换，不是终端、不是 shell，也不是本机文件访问入口。

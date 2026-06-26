@@ -1,3 +1,8 @@
+---
+title: Bash Tool 安全设计
+category: LLM 工具
+order: 40
+---
 # Bash Tool 安全设计
 
 Bash tool 是让 AI agent 请求执行命令的能力。它的价值很高：可以跑测试、查文件、构建项目、验证修复结果。它的风险也同样高：一旦设计成“模型给什么命令就执行什么命令”，它就变成了一个可被 prompt injection 驱动的本机终端。

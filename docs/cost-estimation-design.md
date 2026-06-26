@@ -1,3 +1,8 @@
+---
+title: 设计：tokens-trend 可选 USD 成本估算
+category: Token 与成本
+order: 40
+---
 # 设计：tokens-trend 可选 USD 成本估算
 
 > 状态：**设计已锁定，待实现**（office-hours 2026-06-19）。下一步 `/plan-eng-review`。

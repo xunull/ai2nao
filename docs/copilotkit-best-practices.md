@@ -1,3 +1,8 @@
+---
+title: CopilotKit 最佳实践与使用场景
+category: 架构与 AI 对话
+order: 30
+---
 # CopilotKit 最佳实践与使用场景
 
 本文总结 CopilotKit 在 ai2nao 这类本机 AI 工作台里的最佳使用方式。重点不是“让 AI 帮用户点按钮”，而是把自然语言意图映射成前端应用中的状态读取、工作流编排、可视化反馈和人工确认。

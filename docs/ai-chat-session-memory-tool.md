@@ -1,3 +1,8 @@
+---
+title: AI Chat Session Memory Tool
+category: 架构与 AI 对话
+order: 20
+---
 # AI Chat Session Memory Tool
 
 本文说明 `ai2nao_search_session_memory` 的实现原理、查询范围、触发方式和安全边界。它是 AI Chat 里的后端只读工具，用来让模型在回答“之前我们怎么决定的”“上次 Codex/Claude/Cursor 里做过什么”这类问题时，可以检索本机已有会话记录，而不是凭记忆猜。

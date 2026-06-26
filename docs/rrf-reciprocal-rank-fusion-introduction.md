@@ -1,3 +1,8 @@
+---
+title: RRF Reciprocal Rank Fusion 技术介绍
+category: RAG 与检索
+order: 40
+---
 # RRF Reciprocal Rank Fusion 技术介绍
 
 ## 什么是 RRF

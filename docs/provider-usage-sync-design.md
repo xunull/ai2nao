@@ -1,3 +1,8 @@
+---
+title: 设计：可插拔的「外部 AI 平台用量」同步（MiniMax 为第一个）
+category: 数据源与同步
+order: 80
+---
 # 设计：可插拔的「外部 AI 平台用量」同步（MiniMax 为第一个）
 
 > 状态：**设计已锁定，待实现**（office-hours 2026-06-19）。下一步 `/plan-eng-review`。

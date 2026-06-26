@@ -1,3 +1,8 @@
+---
+title: Claude token 按行累加导致 ~2x 重复计数
+category: Token 与成本
+order: 60
+---
 # Claude token 按行累加导致 ~2x 重复计数
 
 > Claude 的 token 在仪表盘上偏大约一倍。根因:Claude Code 把一条 assistant 消息

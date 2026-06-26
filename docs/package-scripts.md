@@ -1,3 +1,8 @@
+---
+title: package.json scripts 说明
+category: 调度与运维
+order: 40
+---
 # package.json scripts 说明
 
 本文记录 `package.json` 中 `scripts` 字段的各项命令用途。
