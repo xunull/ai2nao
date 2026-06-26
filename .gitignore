@@ -15,3 +15,7 @@ note.md
 local-docs
 test-results/
 graphify-out/
+
+# VitePress 文档站构建产物
+docs/.vitepress/dist
+docs/.vitepress/cache
