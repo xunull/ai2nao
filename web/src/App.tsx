@@ -105,6 +105,9 @@ const WorkRecap = lazy(() =>
 const WorkTokensTrend = lazy(() =>
   import("./pages/WorkTokensTrend").then((m) => ({ default: m.WorkTokensTrend }))
 );
+const ProjectOutput = lazy(() =>
+  import("./pages/ProjectOutput").then((m) => ({ default: m.ProjectOutput }))
+);
 const Cosmos = lazy(() =>
   import("./pages/Cosmos").then((m) => ({ default: m.Cosmos }))
 );
@@ -122,6 +125,7 @@ export function App() {
           <Route path="/dashboard/tokens" element={<WorkTokenRanking />} />
           <Route path="/work-recap" element={<WorkRecap />} />
           <Route path="/dashboard/tokens-trend" element={<WorkTokensTrend />} />
+          <Route path="/dashboard/project-output" element={<ProjectOutput />} />
           <Route path="/dashboard/cosmos" element={<Cosmos />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/repos" element={<Repos />} />
