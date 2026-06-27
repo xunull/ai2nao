@@ -50,7 +50,8 @@ export type GenerateRecapResult =
   | { kind: "ok"; run: WorkRecapRun }
   | { kind: "empty"; response: WorkRecapEmptyResponse };
 
-function resolveGlobalAuthorEmail(): string | null {
+/** The machine's global git author email (`git config --global user.email`), or null. */
+export function resolveGlobalAuthorEmail(): string | null {
   try {
     const out = execGitSync(["config", "--global", "user.email"], {
       cwd: process.cwd(),

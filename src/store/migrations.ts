@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 34;
+const CURRENT_VERSION = 35;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -45,6 +45,7 @@ export function migrate(db: Database.Database): void {
     applyV32(db);
     applyV33(db);
     applyV34(db);
+    applyV35(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -85,6 +86,7 @@ export function migrate(db: Database.Database): void {
   if (v < 32) applyV32(db);
   if (v < 33) applyV33(db);
   if (v < 34) applyV34(db);
+  if (v < 35) applyV35(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1772,6 +1774,41 @@ function applyV34(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 34 WHERE id = 1;
+  `);
+}
+
+/**
+ * Per-project git line churn (token-vs-git output analysis).
+ *
+ *   git_line_churn       : repo-level (project_key = repos.path_canonical) per-day
+ *                          added/deleted/commits. day = author-date local calendar day.
+ *   git_line_churn_state : per-repo incremental cursor. `rule_version` forces a full
+ *                          rescan when denoise/author/tz/floor cohort changes (the
+ *                          incremental path never self-heals a cohort change).
+ */
+function applyV35(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS git_line_churn (
+      project_key TEXT NOT NULL,
+      day TEXT NOT NULL,
+      added INTEGER NOT NULL DEFAULT 0,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      commits INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (project_key, day)
+    );
+    CREATE INDEX IF NOT EXISTS idx_git_line_churn_day
+      ON git_line_churn(day);
+
+    CREATE TABLE IF NOT EXISTS git_line_churn_state (
+      repo_path TEXT PRIMARY KEY,
+      last_synced_sha TEXT,
+      rule_version INTEGER NOT NULL DEFAULT 0,
+      author_email TEXT,
+      updated_at TEXT NOT NULL,
+      last_error TEXT
+    );
+
+    UPDATE meta_schema SET version = 35 WHERE id = 1;
   `);
 }
 

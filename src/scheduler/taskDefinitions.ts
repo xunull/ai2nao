@@ -13,6 +13,7 @@ import { syncModelPrices } from "../cost/modelsDevSync.js";
 import { syncEnabledProviders } from "../providers/sync.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
+import { syncAllReposChurn } from "../gitChurn/sync.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -224,6 +225,26 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status,
           summary: { codex, claude, duration },
           errorSummary: codex.errors[0] ?? claude.errors[0] ?? duration.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      // Git line churn sync (project token-vs-output analysis). Default disabled
+      // (all tasks seed disabled) so a fresh install doesn't run git over every
+      // scanned repo until the user opts in. Incremental per repo; rebase-safe.
+      key: "git.line_churn.sync",
+      label: "Git 代码产出统计",
+      description:
+        "按作者增量统计各仓库每日新增/删除行（供项目级 token-vs-产出分析）。",
+      category: "derived",
+      defaultIntervalSeconds: sixHours,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const result = await syncAllReposChurn(ctx.db);
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: result.errors[0] ?? null,
         };
       },
     },

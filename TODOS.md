@@ -32,6 +32,7 @@
 30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
 31. Codex / Cursor 历史页也按最近活跃排序（与 Claude 项目列表平行）
 32. MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
+33. token-vs-git v2：per-commit churn + 降噪 config + 子目录二级粒度 + 精确剔除非 AI 提交
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
@@ -971,6 +972,30 @@ Depends on / blocked by:
 **Context:** 来自 `/plan-eng-review`（MCP 记忆器官，2026-06-25）。首版范围决策 A 把这三件移出，性能评审 + Codex 外部意见双双指向瘦身。参考设计：`~/.gstack/projects/xunull-ai2nao/you-main-design-20260625-144326-mcp-memory-organ.md`。
 
 **Depends on / blocked by:** MCP v1（3 薄 tool + WebStandard transport + 条件挂载 + 只读句柄 + payload 限制）落地。
+
+**Effort estimate:** M（human ~1天 / CC ~40min）
+
+**Priority:** P3
+
+---
+
+## 33. token-vs-git v2
+
+**What:** 项目级「token 消耗 vs git 产出」分析的 v1 落地后,补几件延后的:
+- **per-commit churn 存储**(Approach C):存到每个 commit(sha/author/ts/added/deleted),支持「这次很贵的 session → 对应哪几个 commit」精细关联。
+- **降噪 glob 的 config 覆盖**:v1 硬编码默认排除列表,v2 允许 `~/.ai2nao/config.json` 覆盖。
+- **子目录二级粒度**:v1 输出 repo 级,v2 可展开看 repo 内子目录 token 占比。
+- **精确剔除非 AI 提交**:把 AI session 时间窗对到 commit,只算 AI 辅助的提交,而非作者的全部提交。
+
+**Why:** v1 把指标做对(多指标面板、token/行 当透镜、repo 级、窗口准确),但比值分子分母仍是「AI token ÷ 你所有提交的行」的近似;v2 把归因做精。
+
+**Cons:**
+- per-commit 存储让 churn 表与查询都变重
+- 精确剔除非 AI 提交需要把 session 窗口与 commit 时间对齐,复杂度高
+
+**Context:** 来自 `/plan-eng-review`(项目级 token vs git 产出,2026-06-26)。v1 设计:`~/.gstack/projects/xunull-ai2nao/quincy-main-design-20260626-214731-token-vs-git-output.md`。office-hours + eng-review + Codex 一致把这些移出 v1 以保持「engineered enough」。
+
+**Depends on / blocked by:** v1（git_line_churn 表 + scheduler + 分析页）落地。
 
 **Effort estimate:** M（human ~1天 / CC ~40min）
 
