@@ -93,6 +93,7 @@ import { registerWorkDashboardRoutes } from "../workDashboard/routes.js";
 import { registerWorkRecapRoutes } from "../workRecap/routes.js";
 import { registerWorkTokensTrendRoutes } from "../workTokensTrend/routes.js";
 import { registerGitChurnRoutes } from "../gitChurn/routes.js";
+import { registerSettingsRoutes } from "./settingsRoutes.js";
 import { registerCodexTokenUsageRoutes } from "../codexTokenUsage/routes.js";
 import { registerProjectOpenerRoutes } from "../projectOpeners/routes.js";
 
@@ -241,6 +242,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerWorkRecapRoutes(app, db);
   registerWorkTokensTrendRoutes(app, db);
   registerGitChurnRoutes(app, db);
+  registerSettingsRoutes(app, db);
   registerWorkCosmosRoutes(app, db, opts.schedulerRuntime);
   registerProviderRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);

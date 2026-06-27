@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 35;
+const CURRENT_VERSION = 36;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -46,6 +46,7 @@ export function migrate(db: Database.Database): void {
     applyV33(db);
     applyV34(db);
     applyV35(db);
+    applyV36(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -87,6 +88,7 @@ export function migrate(db: Database.Database): void {
   if (v < 33) applyV33(db);
   if (v < 34) applyV34(db);
   if (v < 35) applyV35(db);
+  if (v < 36) applyV36(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1809,6 +1811,24 @@ function applyV35(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 35 WHERE id = 1;
+  `);
+}
+
+/**
+ * App-level config (settings page). Flat key/value bag for NON-secret preferences
+ * (e.g. `scan.roots`). Secrets do NOT live here — the GitHub token stays in its
+ * 0600 file via src/github/config.ts. `value` is JSON, guarded by a json_valid
+ * CHECK so a corrupt/hand-edited row can't smuggle non-JSON into accessors.
+ */
+function applyV36(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL CHECK (json_valid(value)),
+      updated_at TEXT NOT NULL
+    );
+
+    UPDATE meta_schema SET version = 36 WHERE id = 1;
   `);
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { Command } from "commander";
 import { join, resolve } from "node:path";
@@ -18,6 +18,7 @@ import { ingestCorpus, type IngestFileProgress } from "./rag/ingest.js";
 import { loadRagEvalCases, runRagEval } from "./rag/eval.js";
 import { cleanupDeletedRagFileManifests } from "./rag/manifest.js";
 import { openRagDatabase } from "./rag/open.js";
+import { getScanRoots } from "./appConfig/index.js";
 import { createVectorStore } from "./rag/vectorStore/factory.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
@@ -130,11 +131,40 @@ program
   .option("--db <path>", "SQLite database path", defaultDbPath())
   .option("--json", "print machine-readable JSON", false)
   .action((opts: { root: string[]; db: string; json: boolean }) => {
-    const roots = (opts.root?.length ? opts.root : [process.cwd()]).map((r) =>
-      resolve(r)
-    );
     const db = openDatabase(opts.db);
     try {
+      let roots: string[];
+      if (opts.root?.length) {
+        roots = opts.root.map((r) => resolve(r));
+      } else {
+        // No --root: fall back to configured default scan roots (Settings page).
+        // Re-validate at scan time — a stored dir can be deleted/swapped, and an
+        // invalid root makes discoverGitRepos return [] (silent "scanned 0 repos"
+        // false success). All-invalid -> error + non-zero exit, NOT a silent cwd scan.
+        const configured = getScanRoots(db);
+        if (configured.length > 0) {
+          const valid = configured.filter((p) => {
+            try {
+              return statSync(p).isDirectory();
+            } catch {
+              return false;
+            }
+          });
+          for (const p of configured) {
+            if (!valid.includes(p)) console.error(`warning: skipping missing scan root: ${p}`);
+          }
+          if (valid.length === 0) {
+            console.error(
+              "error: all configured scan roots are missing/invalid; fix them in Settings or pass --root"
+            );
+            process.exitCode = 1;
+            return;
+          }
+          roots = valid;
+        } else {
+          roots = [process.cwd()];
+        }
+      }
       const result = runScan(db, roots);
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));

@@ -1,8 +1,13 @@
 import {
   chmodSync,
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -118,20 +123,46 @@ export function loadGithubToken(): {
 }
 
 /**
- * Write a new token file. Creates `~/.ai2nao/` if missing and forces 0600
- * immediately after write so the token never lingers world-readable even
- * on systems with a loose umask.
+ * Write a new token file ATOMICALLY: write a 0600 temp file in the same dir,
+ * fsync it, then rename over the target (atomic on POSIX). On failure the old
+ * file is left intact — a crash mid-write can never truncate an existing token,
+ * and the token never lingers world-readable even under a loose umask.
  */
 export function writeGithubConfig(cfg: GithubConfig, explicitPath?: string): string {
   const path = explicitPath ? resolve(explicitPath) : configPathFromEnv();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { encoding: "utf8" });
+  const tmp = `${path}.tmp`;
+  const body = JSON.stringify(cfg, null, 2) + "\n";
   try {
-    chmodSync(path, 0o600);
-  } catch {
-    /* chmod is best-effort on Windows; file is still written */
+    const fd = openSync(tmp, "w", 0o600); // created 0600 from the start
+    try {
+      writeFileSync(fd, body, { encoding: "utf8" });
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, path); // atomic replace; old file survives until this point
+    try {
+      chmodSync(path, 0o600); // belt-and-suspenders (rename may carry target's old mode)
+    } catch {
+      /* chmod is best-effort on Windows; file is still written */
+    }
+  } catch (e) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* temp cleanup best-effort */
+    }
+    throw e;
   }
   return path;
+}
+
+/** Delete the on-disk token file (best-effort; no error if absent). Does NOT
+ * affect a `GITHUB_TOKEN` env var, which still takes precedence after deletion. */
+export function deleteGithubConfig(explicitPath?: string): void {
+  const path = explicitPath ? resolve(explicitPath) : configPathFromEnv();
+  rmSync(path, { force: true });
 }
 
 export function githubTokenStatus(): GithubTokenStatus {

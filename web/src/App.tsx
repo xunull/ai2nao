@@ -108,6 +108,9 @@ const WorkTokensTrend = lazy(() =>
 const ProjectOutput = lazy(() =>
   import("./pages/ProjectOutput").then((m) => ({ default: m.ProjectOutput }))
 );
+const Settings = lazy(() =>
+  import("./pages/Settings").then((m) => ({ default: m.Settings }))
+);
 const Cosmos = lazy(() =>
   import("./pages/Cosmos").then((m) => ({ default: m.Cosmos }))
 );
@@ -126,6 +129,7 @@ export function App() {
           <Route path="/work-recap" element={<WorkRecap />} />
           <Route path="/dashboard/tokens-trend" element={<WorkTokensTrend />} />
           <Route path="/dashboard/project-output" element={<ProjectOutput />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/dashboard/cosmos" element={<Cosmos />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/repos" element={<Repos />} />

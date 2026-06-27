@@ -25,6 +25,7 @@ import {
   GitCommit,
   GitFork,
   Gauge,
+  Settings as SettingsIcon,
   TrendingUp,
   Globe,
   HardDrive,
@@ -63,6 +64,7 @@ type NavGroup = {
 
 const primaryNavItems: NavItem[] = [
   { to: "/ai-chat", label: "AI 对话", icon: BrainCircuit },
+  { to: "/settings", label: "设置", icon: SettingsIcon },
 ];
 
 const navGroups: NavGroup[] = [
