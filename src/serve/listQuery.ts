@@ -6,6 +6,10 @@ export type ListQueryOptions = {
   includeMissing: boolean;
   limit: number;
   offset: number;
+  /** Raw sort key — table-agnostic here; validated against a per-table allowlist downstream. */
+  sort?: string;
+  /** Validated sort direction; undefined when absent or malformed. */
+  dir?: "asc" | "desc";
 };
 
 export type ListQueryConfig = {
@@ -13,6 +17,8 @@ export type ListQueryConfig = {
   maxLimit?: number;
   maxQLength?: number;
   maxOffset?: number;
+  /** Cap for the raw sort key length (defense in depth; the allowlist is the real gate). */
+  maxSortLength?: number;
 };
 
 export function parseListQuery(
@@ -33,11 +39,20 @@ export function parseListQuery(
   }
   const includeRaw = query("includeMissing");
   const includeMissing = includeRaw === "1" || includeRaw === "true";
+  // sort: raw key only (the allowlist downstream is the real validation). Cap length
+  // as cheap defense in depth. dir: validated here to the asc/desc union.
+  const maxSortLength = config.maxSortLength ?? 64;
+  const sortRaw = cleanOptionalString(query("sort"));
+  const sort = sortRaw && sortRaw.length <= maxSortLength ? sortRaw : undefined;
+  const dirRaw = query("dir");
+  const dir = dirRaw === "asc" || dirRaw === "desc" ? dirRaw : undefined;
   return {
     q,
     includeMissing,
     limit: Math.min(maxLimit, limitParsed),
     offset: offsetParsed,
+    sort,
+    dir,
   };
 }
 

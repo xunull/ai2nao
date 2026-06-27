@@ -73,6 +73,17 @@ export function HuggingFaceModels() {
   const [submittedQ, setSubmittedQ] = useState("");
   const [includeMissing, setIncludeMissing] = useState(false);
   const [offset, setOffset] = useState(0);
+  // Server-side sort: local state (matches the page's offset/q pattern; not URL).
+  // key is a backend allowlist key ("size" | "name"); null = backend default.
+  const [sort, setSort] = useState<{ key: "size" | "name"; dir: "asc" | "desc" } | null>(null);
+  // Toggle a column: same column flips dir, new column starts desc. Any sort change
+  // resets offset to page 1 (else you'd sit on page 3 of a freshly-reordered list).
+  function toggleSort(key: "size" | "name") {
+    setOffset(0);
+    setSort((cur) =>
+      cur?.key === key ? { key, dir: cur.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }
+    );
+  }
 
   const rootParam = submittedRoot ? `root=${encodeURIComponent(submittedRoot)}` : "";
   const statusQ = useQuery({
@@ -80,7 +91,7 @@ export function HuggingFaceModels() {
     queryFn: () => apiGet<HfStatus>(`/api/huggingface/status${rootParam ? `?${rootParam}` : ""}`),
   });
   const listQ = useQuery({
-    queryKey: ["huggingface-models", submittedRoot, submittedQ, includeMissing, offset],
+    queryKey: ["huggingface-models", submittedRoot, submittedQ, includeMissing, offset, sort?.key, sort?.dir],
     queryFn: () => {
       const qs = new URLSearchParams();
       qs.set("limit", String(PAGE_SIZE));
@@ -88,6 +99,10 @@ export function HuggingFaceModels() {
       qs.set("includeMissing", includeMissing ? "1" : "0");
       if (submittedRoot) qs.set("root", submittedRoot);
       if (submittedQ) qs.set("q", submittedQ);
+      if (sort) {
+        qs.set("sort", sort.key);
+        qs.set("dir", sort.dir);
+      }
       return apiGet<ModelsRes>(`/api/huggingface/models?${qs.toString()}`);
     },
   });
@@ -181,6 +196,8 @@ export function HuggingFaceModels() {
         error={listQ.error}
         offset={offset}
         setOffset={setOffset}
+        sort={sort}
+        onToggleSort={toggleSort}
       />
     </div>
   );
@@ -252,18 +269,53 @@ function RunSummary({ run }: { run: SyncRun | null }) {
   );
 }
 
+type SortKey = "size" | "name";
+type SortState = { key: SortKey; dir: "asc" | "desc" } | null;
+
+function SortHeader({
+  label,
+  col,
+  sort,
+  onToggle,
+}: {
+  label: string;
+  col: SortKey;
+  sort: SortState;
+  onToggle: (k: SortKey) => void;
+}) {
+  const active = sort?.key === col;
+  return (
+    <th className="px-3 py-2 font-medium">
+      <button
+        type="button"
+        onClick={() => onToggle(col)}
+        className={`inline-flex items-center gap-1 hover:text-neutral-900 ${active ? "text-neutral-900" : ""}`}
+      >
+        {label}
+        <span className="text-[10px]" aria-hidden="true">
+          {active ? (sort!.dir === "asc" ? "▲" : "▼") : "⇅"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 function ModelList({
   res,
   isLoading,
   error,
   offset,
   setOffset,
+  sort,
+  onToggleSort,
 }: {
   res: ModelsRes | undefined;
   isLoading: boolean;
   error: unknown;
   offset: number;
   setOffset: (n: number) => void;
+  sort: SortState;
+  onToggleSort: (k: SortKey) => void;
 }) {
   if (isLoading) return <p className="text-sm text-[var(--muted)]">加载列表…</p>;
   if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
@@ -278,8 +330,8 @@ function ModelList({
         <table className="min-w-full text-sm">
           <thead className="bg-neutral-50 text-left">
             <tr>
-              <th className="px-3 py-2 font-medium">模型</th>
-              <th className="px-3 py-2 font-medium">大小</th>
+              <SortHeader label="模型" col="name" sort={sort} onToggle={onToggleSort} />
+              <SortHeader label="大小" col="size" sort={sort} onToggle={onToggleSort} />
               <th className="px-3 py-2 font-medium">Revision / Blob</th>
               <th className="px-3 py-2 font-medium">Refs</th>
               <th className="px-3 py-2 font-medium">最近修改</th>

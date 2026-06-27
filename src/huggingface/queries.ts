@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { getLatestInventorySyncRun } from "../localInventory/syncRuns.js";
 import type { PageResult } from "../software/types.js";
+import { orderByClause } from "../serve/orderBy.js";
 import { resolveHuggingfaceHubCacheRoot } from "./roots.js";
 
 export type HuggingfaceModelRow = {
@@ -32,6 +33,19 @@ export type HuggingfaceListOptions = {
   cacheRoot?: string;
   limit: number;
   offset: number;
+  sort?: string;
+  dir?: "asc" | "desc";
+};
+
+/**
+ * Server-side sort allowlist (the only columns a user can sort by). The user's
+ * `sort` value is a KEY here — never SQL. "last modified" is intentionally absent:
+ * the main query has no last_modified_ms (it lives in huggingface_model_revisions),
+ * so sorting by date needs a SQL aggregation first (deferred follow-up).
+ */
+const HF_SORT_ALLOWED = {
+  size: { expr: "size_bytes", defaultDir: "desc" as const },
+  name: { expr: "repo_id COLLATE NOCASE", defaultDir: "asc" as const },
 };
 
 export function getHuggingfaceStatus(db: Database.Database, root?: string) {
@@ -93,6 +107,15 @@ export function listHuggingfaceModels(
     params.push(`%${opts.q}%`);
   }
   const clause = `WHERE ${where.join(" AND ")}`;
+  const orderBy = orderByClause({
+    sort: opts.sort,
+    dir: opts.dir,
+    allowed: HF_SORT_ALLOWED,
+    prefix: "missing_since IS NOT NULL",
+    defaultSortKey: "size",
+    defaultDir: "desc",
+    tiebreaker: "repo_id COLLATE NOCASE",
+  });
   const total = (
     db.prepare(`SELECT COUNT(*) AS n FROM huggingface_models ${clause}`).get(...params) as {
       n: number;
@@ -105,7 +128,7 @@ export function listHuggingfaceModels(
               last_seen_at, missing_since, updated_at
        FROM huggingface_models
        ${clause}
-       ORDER BY missing_since IS NOT NULL, size_bytes DESC, repo_id COLLATE NOCASE
+       ${orderBy}
        LIMIT ? OFFSET ?`
     )
     .all(...params, opts.limit, opts.offset) as Omit<HuggingfaceModelRow, "revisions">[];
