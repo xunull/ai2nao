@@ -466,69 +466,50 @@ describe("Layout navigation", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the first-level AI chat action, workspace domains, and each route entry in the active domain panel", () => {
+  it("shows the AI chat action plus every group label and route link in one sidebar", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/repos");
 
-    const domainRail = screen.getByRole("navigation", { name: "工作域" });
-    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toBeInTheDocument();
+    const navEl = screen.getByRole("navigation", { name: "全站导航" });
+    expect(within(navEl).getByRole("link", { name: "AI 对话" })).toBeInTheDocument();
 
-    const expectedGroups = [
-      {
-        label: "工作台",
-        links: ["最近工作", "Token 排行", "Token 趋势", "工作回看", "对话宇宙"],
-      },
+    const groups = [
+      { label: "工作台", links: ["最近工作", "Token 排行", "Token 趋势", "工作回看", "对话宇宙"] },
       {
         label: "本机资产",
         links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "Atuin", "Atuin 目录"],
       },
-      {
-        label: "浏览器",
-        links: ["Chrome 历史", "Chrome 域名", "Chrome 下载"],
-      },
-      {
-        label: "AI 记录",
-        links: ["Cherry 对话", "Cursor 对话", "Claude", "Codex"],
-      },
-      {
-        label: "AI 工具",
-        links: ["Shell 权限", "Shell 沙箱", "RAG 状态", "RAG 调试"],
-      },
-      {
-        label: "GitHub/开源",
-        links: ["GitHub", "开源雷达", "Star Tag"],
-      },
+      { label: "浏览器", links: ["Chrome 历史", "Chrome 域名", "Chrome 下载"] },
+      { label: "AI 记录", links: ["Cherry 对话", "Cursor 对话", "Claude", "Codex"] },
+      { label: "AI 工具", links: ["Shell 权限", "Shell 沙箱", "RAG 状态", "RAG 调试"] },
+      { label: "GitHub/开源", links: ["GitHub", "开源雷达", "Star Tag"] },
     ];
 
-    for (const group of expectedGroups) {
-      const domainButton = within(domainRail).getByRole("button", { name: `切换到${group.label}` });
-      fireEvent.click(domainButton);
-      expect(screen.getByRole("heading", { name: group.label })).toBeInTheDocument();
-      const nav = screen.getByRole("navigation", { name: "全站导航" });
+    // Single-column: every group label + every route link is visible at once,
+    // no rail-icon click / panel switch needed.
+    for (const group of groups) {
+      expect(within(navEl).getByText(group.label)).toBeInTheDocument();
       for (const link of group.links) {
-        expect(within(nav).getByRole("link", { name: link })).toBeInTheDocument();
+        expect(within(navEl).getByRole("link", { name: link })).toBeInTheDocument();
       }
     }
 
-    expect(screen.queryByRole("link", { name: "搜索" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "AI 对话" })).not.toBeInTheDocument();
+    // Settings is pinned to the bottom, present exactly once.
+    expect(screen.getAllByRole("link", { name: "设置" })).toHaveLength(1);
   });
 
   it("does not leak implementation taxonomy into the sidebar copy (work-recap)", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/repos");
-    const workbenchButton = screen.getByRole("button", { name: "切换到工作台" });
-    fireEvent.click(workbenchButton);
-    const nav = screen.getByRole("navigation", { name: "全站导航" });
+    const navEl = screen.getByRole("navigation", { name: "全站导航" });
 
-    // The work-recap entry must read as user-facing copy, not as implementation
-    // detail. Prior learning sidebar-implementation-label-leak (2026-06-01)
-    // pinned this to "no `(commit)` suffix, no `一级能力` taxonomy".
-    expect(within(nav).getByRole("link", { name: "工作回看" })).toBeInTheDocument();
-    expect(within(nav).queryByRole("link", { name: /\(commit\)/i })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: /一级能力/ })).toBeNull();
+    // Prior learning sidebar-implementation-label-leak (2026-06-01): user-facing
+    // copy, no `(commit)` suffix, no `一级能力` taxonomy.
+    expect(within(navEl).getByRole("link", { name: "工作回看" })).toBeInTheDocument();
+    expect(within(navEl).queryByRole("link", { name: /\(commit\)/i })).toBeNull();
+    expect(within(navEl).queryByRole("link", { name: /一级能力/ })).toBeNull();
   });
 
   it("marks the current route link as the active page", () => {
@@ -560,71 +541,42 @@ describe("Layout navigation", () => {
 
     renderLayout("/github/radar");
 
+    // Collapsed = icon-only rail: the product wordmark is hidden, expand control shown.
     expect(screen.getByRole("button", { name: "展开侧边导航" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "开源雷达" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换到GitHub/开源" })).toBeInTheDocument();
+    expect(screen.queryByText("ai2nao")).not.toBeInTheDocument();
   });
 
-  it("expands from the collapsed domain rail", () => {
+  it("expands the sidebar from the collapsed state", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "true");
 
     renderLayout("/github/radar");
-    fireEvent.click(screen.getByRole("button", { name: "切换到GitHub/开源" }));
+    expect(screen.queryByText("ai2nao")).not.toBeInTheDocument();
 
-    expect(screen.getByRole("link", { name: "开源雷达" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边导航" }));
+
+    expect(screen.getByText("ai2nao")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起侧边导航" })).toHaveAttribute(
       "aria-expanded",
       "true"
     );
   });
 
-  it("switches the active domain panel from the rail", () => {
-    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
-
-    renderLayout("/repos");
-    const domainRail = screen.getByRole("navigation", { name: "工作域" });
-
-    expect(screen.getByRole("heading", { name: "本机资产" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "仓库" })).toBeInTheDocument();
-
-    fireEvent.click(within(domainRail).getByRole("button", { name: "切换到AI 工具" }));
-
-    expect(screen.getByRole("heading", { name: "AI 工具" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "RAG 状态" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "仓库" })).not.toBeInTheDocument();
-    expect(within(domainRail).getByRole("button", { name: "切换到AI 工具" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
-  });
-
-  it("keeps AI chat as an active first-level rail item", () => {
+  it("marks AI chat as the active page", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/ai-chat");
-    const domainRail = screen.getByRole("navigation", { name: "工作域" });
 
-    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "AI 对话" })).toHaveAttribute(
       "aria-current",
       "page"
     );
-    expect(screen.getByText("独立工作台")).toBeInTheDocument();
-    expect(screen.queryByText("一级能力")).not.toBeInTheDocument();
-    expect(screen.queryByText("当前一级能力")).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "全站导航" })).not.toBeInTheDocument();
   });
 
-  it("keeps the work dashboard inside the workbench group", () => {
+  it("marks the work dashboard route as active", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/dashboard");
-    const domainRail = screen.getByRole("navigation", { name: "工作域" });
 
-    expect(within(domainRail).getByRole("button", { name: "切换到工作台" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
-    expect(screen.getByRole("heading", { name: "工作台" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "最近工作" })).toHaveAttribute(
       "aria-current",
       "page"
@@ -637,7 +589,6 @@ describe("Layout navigation", () => {
 
     renderLayout("/dashboard/tokens");
 
-    expect(screen.getByRole("heading", { name: "工作台" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Token 排行" })).toHaveAttribute(
       "aria-current",
       "page"
@@ -648,20 +599,12 @@ describe("Layout navigation", () => {
     );
   });
 
-  it("can switch to a domain panel while the current route is the first-level AI chat item", () => {
+  it("pins Settings at the bottom as a standalone link", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
-    renderLayout("/ai-chat");
-    const domainRail = screen.getByRole("navigation", { name: "工作域" });
+    renderLayout("/repos");
 
-    fireEvent.click(within(domainRail).getByRole("button", { name: "切换到AI 记录" }));
-
-    expect(within(domainRail).getByRole("link", { name: "打开AI 对话" })).toHaveAttribute(
-      "aria-current",
-      "page"
-    );
-    expect(screen.getByRole("heading", { name: "AI 记录" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Cursor 对话" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "设置" })).toBeInTheDocument();
   });
 
   it("submits the command-style search to the search route", () => {
