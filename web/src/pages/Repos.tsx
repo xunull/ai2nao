@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
@@ -51,6 +51,10 @@ export function Repos() {
       apiGet<RepoList>(
         `/api/repos?page=${page}&limit=${PAGE_SIZE}`
       ),
+    // Keep the current page's rows on screen while the next page loads, so
+    // changing `page` does NOT flip `isLoading` and unmount the whole page
+    // (the full-page "加载中…" flicker). Only the table body swaps in place.
+    placeholderData: keepPreviousData,
   });
 
   const totalPages = list.data
@@ -146,7 +150,12 @@ export function Repos() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
+          <div
+            aria-busy={list.isPlaceholderData}
+            className={`overflow-x-auto rounded border border-[var(--border)] bg-white transition-opacity duration-150 ${
+              list.isPlaceholderData ? "opacity-60" : "opacity-100"
+            }`}
+          >
             <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
               <h2 className="font-medium">仓库清单</h2>
               <span className="text-[var(--muted)]">
