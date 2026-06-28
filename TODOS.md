@@ -1000,3 +1000,28 @@ Depends on / blocked by:
 **Effort estimate:** M（human ~1天 / CC ~40min）
 
 **Priority:** P3
+
+---
+
+## 34. 其余页面增量迁移到 `<Page>` 框架
+
+**What:** app 壳 + `<Page>` 框架(固定页头 + 内容区滚动)已落地,但**只迁移了 Scheduler 一个样板**。其余 **41 个页面**仍未迁移 —— 它们在新壳下能正常滚动,但页头还在内容流里、滚动时会滚走(= 用户最初的痛点在这 41 页未消)。按难度分批迁移:
+
+- **A 组 · 普通数据页(直接 `<Page title subtitle actions>` 包裹,约 34 页)**:Atuin、BashSandboxSettings、ChromeDownloads、ChromeHistory、ChromeHistoryDomains、ClaudeCodeHistory、CodexHistory、CursorHistory、CursorProjects、Cosmos(注意自带 `bg-slate-50 px-6 py-6`)、Downloads、EditorRecentPage、FileView、Github、GithubRadar、GithubTags、Homebrew、HuggingFaceModels、LmStudioModels、MacApps、ProjectOutput、Providers、RagDebug、RagStatus、RepoDetail、Repos、Search、Settings、Vscode、WorkDashboard、WorkRecap、WorkTokenRanking、WorkTokensTrend + 几个微型 stub(CherryStudioHistorySession 145B、Vscode 508B 等)。
+- **B 组 · 自有 sticky 页头,迁移时把手搓的 `sticky top-0 ... backdrop-blur` 段去重换成 `<Page>`(3 页)**:CodexHistorySession、ClaudeCodeHistorySession、CursorHistorySession。
+- **C 组 · 内部 `thead sticky top-0`,迁移后必须给 thead 加 `top-[57px]` 偏移(= `<Page>` 页头高),否则表头吸到同一 top:0 被页头遮挡(2 页)**:BashPermissions、AtuinDirectories。
+- **D 组 · 全高/聊天页,需先给 `<Page>` 加 `fill` 模式(内容占满滚动区、页面不滚)再迁(2 页)**:AiChat、CherryStudioHistory。**AiChat 迁移只能动外层布局,绝不碰 CopilotKit/chat runtime/后端(CLAUDE.md AI 铁律)。**
+
+**Why:** 让全部页面页头钉住、内容区滚动,彻底消掉"看下面内容要把页头滚出屏幕"的反人类体验(CLAUDE.md「禁止垂直堆太多超屏」)。当前只有 Scheduler 享受到。
+
+**Cons:**
+- 41 页逐个迁移,体力活;每批要浏览器验收(单测证不了滚动模型)。
+- D 组要先扩 `<Page>` 契约(加 fill),改动面更大。
+
+**Context:** 来自本会话 `/design-review` → `/plan-eng-review`。计划文档:`~/.gstack/projects/xunull-ai2nao/quincy-main-plan-appshell-page-frame-20260628.md`。首 PR 已落 3 commit(82935fb tab 重做 / 764a3be 壳改+ScrollToTop+vh 风险页 / e9a3cd0 `<Page>`+Scheduler)。建议迁移顺序:高频数据台先(Repos/Settings/Downloads/Github/WorkDashboard)→ A 组列表类批量 → C 组(加 thead offset)→ B 组(去重)→ D 组(先扩 fill)。每批一个小 PR、独立浏览器验收。
+
+**Depends on / blocked by:** 首 PR 壳改(764a3be)已落地;D 组额外依赖 `<Page>` 加 `fill` 模式。
+
+**Effort estimate:** L（human ~2-3天 / CC ~2-3h,分多批）
+
+**Priority:** P3（增量,不阻塞;按页面重要度逐批做）
