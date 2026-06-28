@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { apiGet, apiPatch, apiPost } from "../api";
+import { Page } from "../components/Page";
 
 type RunStatus = "running" | "success" | "partial" | "failed" | "skipped";
 type Trigger = "manual" | "scheduled" | "cli";
@@ -110,14 +111,10 @@ export function Scheduler() {
   const [tab, setTab] = useState<"tasks" | "runs">("tasks");
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">定时任务</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            统一管理本机同步、扫描和派生重建任务。
-          </p>
-        </div>
+    <Page
+      title="定时任务"
+      subtitle="统一管理本机同步、扫描和派生重建任务。"
+      actions={
         <button
           type="button"
           onClick={() => {
@@ -129,8 +126,9 @@ export function Scheduler() {
           <RefreshCw aria-hidden="true" className="h-4 w-4" />
           刷新
         </button>
-      </header>
-
+      }
+    >
+      <div className="space-y-4">
       <div className="flex gap-3">
         <Metric label="已注册" value={String(tasks.length)} />
         <Metric label="已启用" value={String(enabledCount)} />
@@ -220,7 +218,8 @@ export function Scheduler() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </Page>
   );
 }
 
