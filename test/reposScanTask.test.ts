@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
-import { setScanRoots } from "../src/appConfig/index.js";
+import { setScanRoots, setScanMaxDocs } from "../src/appConfig/index.js";
 import { createDefaultScheduledTaskDefinitions } from "../src/scheduler/taskDefinitions.js";
 
 let base: string;
@@ -72,6 +72,22 @@ describe("repos.scan scheduler task", () => {
     expect(res.status).toBe("success");
     expect(repoCount()).toBe(1);
     expect(jobCount()).toBe(1); // runScan wrote exactly one job row
+  });
+
+  it("treats docs over the per-repo cap as success, not partial (cappedDocs in summary)", async () => {
+    const root = join(base, "code");
+    const repo = join(root, "proj");
+    mkdirSync(join(repo, "docs"), { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: repo, stdio: ["ignore", "pipe", "ignore"] });
+    writeFileSync(join(repo, "docs", "a.md"), "# a");
+    writeFileSync(join(repo, "docs", "b.md"), "# b");
+    setScanRoots(db, [root]);
+    setScanMaxDocs(db, 1); // cap of 1 -> the 2nd doc is capped
+
+    const res = await run();
+    expect(res.status).toBe("success"); // capping is benign, NOT partial
+    expect(res.errorSummary).toBeNull();
+    expect((res.summary as { cappedDocs: number }).cappedDocs).toBe(1);
   });
 
   it("skips a deleted root but still scans the valid ones (partial-aware summary)", async () => {

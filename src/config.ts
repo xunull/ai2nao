@@ -15,7 +15,7 @@ export const DEFAULT_MANIFEST_RELS = [
 export const DEFAULT_PROJECT_CONTEXT = {
   fixedManifestRels: DEFAULT_MANIFEST_RELS,
   docsRootRel: "docs",
-  maxDocsPerRepo: 40,
+  maxDocsPerRepo: 100,
   maxDocBytes: 64 * 1024,
   maxRadarProjects: 80,
   maxRadarSources: 500,

@@ -16,6 +16,9 @@ export type ScanResult = {
   jobId: number;
   reposFound: number;
   manifestsIndexed: number;
+  /** Docs intentionally NOT indexed because a repo hit the per-repo doc cap or a
+   *  doc exceeded the byte limit. Benign/by-design — NOT an error. */
+  cappedDocs: number;
   errors: string[];
 };
 
@@ -23,18 +26,20 @@ export function runScan(
   db: Database.Database,
   roots: string[],
   manifestRels: readonly string[] = DEFAULT_PROJECT_CONTEXT.fixedManifestRels,
-  maxDepth?: number
+  opts: { maxDepth?: number; maxDocs?: number } = {}
 ): ScanResult {
   const errors: string[] = [];
   const jobId = startJob(db, "scan");
   let manifestsIndexed = 0;
+  let cappedDocs = 0;
   const seenRepos = new Set<string>();
+  const maxDocs = opts.maxDocs ?? DEFAULT_PROJECT_CONTEXT.maxDocsPerRepo;
 
   try {
     for (const root of roots) {
       let repos;
       try {
-        repos = discoverGitRepos(root, { maxDepth });
+        repos = discoverGitRepos(root, { maxDepth: opts.maxDepth });
       } catch (e) {
         errors.push(`root ${root}: ${String(e)}`);
         continue;
@@ -61,12 +66,13 @@ export function runScan(
           manifestsIndexed += 1;
         }
         const markdownDocs = listMarkdownDocs(repo.rootCanonical, DEFAULT_PROJECT_CONTEXT.docsRootRel, {
-          maxDocs: DEFAULT_PROJECT_CONTEXT.maxDocsPerRepo,
+          maxDocs,
           maxDocBytes: DEFAULT_PROJECT_CONTEXT.maxDocBytes,
         });
-        if (markdownDocs.skipped > 0) {
-          errors.push(`repo ${repo.rootCanonical}: skipped ${markdownDocs.skipped} docs by scan limits`);
-        }
+        // Hitting the per-repo doc cap / byte limit is expected and benign — it
+        // must NOT push the scan to `partial`. Surface it as a count in the
+        // summary instead. Only real failures (a root that throws) go to errors.
+        cappedDocs += markdownDocs.skipped;
         for (const rel of markdownDocs.docs) {
           if (manifestRels.includes(rel)) continue;
           const data = readManifestIfPresent(repo.rootCanonical, rel);
@@ -92,6 +98,7 @@ export function runScan(
       jobId,
       reposFound: seenRepos.size,
       manifestsIndexed,
+      cappedDocs,
       errors,
     };
   } catch (e) {

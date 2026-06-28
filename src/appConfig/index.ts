@@ -21,6 +21,11 @@ const KEY_SCAN_MAX_DEPTH = "scan.maxDepth";
 export const DEFAULT_SCAN_MAX_DEPTH = 8;
 const MAX_SCAN_DEPTH = 64;
 
+const KEY_SCAN_MAX_DOCS = "scan.maxDocsPerRepo";
+/** Default cap on markdown docs indexed per repo (docs/ folder). */
+export const DEFAULT_SCAN_MAX_DOCS = 100;
+const MAX_SCAN_DOCS = 5000;
+
 /** Read + JSON.parse a config row; undefined when absent or unparseable. */
 function readRaw(db: Database.Database, key: string): unknown {
   const row = db.prepare("SELECT value FROM app_config WHERE key = ?").get(key) as
@@ -143,4 +148,27 @@ export function setScanMaxDepth(db: Database.Database, depth: number): number {
   }
   writeRaw(db, KEY_SCAN_MAX_DEPTH, depth);
   return depth;
+}
+
+/**
+ * Cap on markdown docs indexed per repo (the repo's docs/ folder). Returns the
+ * configured value or {@link DEFAULT_SCAN_MAX_DOCS}; a missing / corrupt /
+ * out-of-range row resolves to the default (corruption-tolerant).
+ */
+export function getScanMaxDocs(db: Database.Database): number {
+  const raw = readRaw(db, KEY_SCAN_MAX_DOCS);
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > MAX_SCAN_DOCS) {
+    if (raw !== undefined) console.warn("app_config: scan.maxDocsPerRepo out of range; using default");
+    return DEFAULT_SCAN_MAX_DOCS;
+  }
+  return raw;
+}
+
+/** Validate + store the per-repo doc cap. Throws (caller -> 400) on a non-integer or out-of-range value. */
+export function setScanMaxDocs(db: Database.Database, maxDocs: number): number {
+  if (typeof maxDocs !== "number" || !Number.isInteger(maxDocs) || maxDocs < 1 || maxDocs > MAX_SCAN_DOCS) {
+    throw new Error(`scan maxDocs must be an integer 1..${MAX_SCAN_DOCS}`);
+  }
+  writeRaw(db, KEY_SCAN_MAX_DOCS, maxDocs);
+  return maxDocs;
 }

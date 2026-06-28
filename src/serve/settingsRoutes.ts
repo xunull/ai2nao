@@ -5,6 +5,8 @@ import {
   setScanRoots,
   getScanMaxDepth,
   setScanMaxDepth,
+  getScanMaxDocs,
+  setScanMaxDocs,
 } from "../appConfig/index.js";
 import {
   deleteGithubConfig,
@@ -31,6 +33,7 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
   const settingsDto = () => ({
     scanRoots: getScanRoots(db),
     scanMaxDepth: getScanMaxDepth(db),
+    scanMaxDocs: getScanMaxDocs(db),
     github: githubDto(),
   });
 
@@ -45,9 +48,10 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     } catch {
       return jsonErr(400, "invalid JSON body");
     }
-    const { scanRoots, scanMaxDepth } = body as {
+    const { scanRoots, scanMaxDepth, scanMaxDocs } = body as {
       scanRoots?: unknown;
       scanMaxDepth?: unknown;
+      scanMaxDocs?: unknown;
     };
     try {
       if (scanRoots !== undefined) {
@@ -58,6 +62,10 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
       if (scanMaxDepth !== undefined) {
         if (typeof scanMaxDepth !== "number") return jsonErr(400, "scanMaxDepth must be a number");
         setScanMaxDepth(db, scanMaxDepth);
+      }
+      if (scanMaxDocs !== undefined) {
+        if (typeof scanMaxDocs !== "number") return jsonErr(400, "scanMaxDocs must be a number");
+        setScanMaxDocs(db, scanMaxDocs);
       }
     } catch (e) {
       return jsonErr(400, e instanceof Error ? e.message : "invalid settings");

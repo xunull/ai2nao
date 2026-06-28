@@ -10,6 +10,9 @@ import {
   getScanMaxDepth,
   setScanMaxDepth,
   DEFAULT_SCAN_MAX_DEPTH,
+  getScanMaxDocs,
+  setScanMaxDocs,
+  DEFAULT_SCAN_MAX_DOCS,
 } from "../src/appConfig/index.js";
 
 let base: string;
@@ -107,5 +110,28 @@ describe("getScanMaxDepth / setScanMaxDepth", () => {
   it("falls back to default on a corrupt / out-of-range stored value", () => {
     db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('scan.maxDepth', '999', 't')").run();
     expect(getScanMaxDepth(db)).toBe(DEFAULT_SCAN_MAX_DEPTH);
+  });
+});
+
+describe("getScanMaxDocs / setScanMaxDocs", () => {
+  it("defaults to DEFAULT_SCAN_MAX_DOCS (100) when unset", () => {
+    expect(getScanMaxDocs(db)).toBe(DEFAULT_SCAN_MAX_DOCS);
+    expect(DEFAULT_SCAN_MAX_DOCS).toBe(100);
+  });
+
+  it("stores and reads back a valid cap", () => {
+    expect(setScanMaxDocs(db, 250)).toBe(250);
+    expect(getScanMaxDocs(db)).toBe(250);
+  });
+
+  it("rejects non-integers and out-of-range values (min 1)", () => {
+    expect(() => setScanMaxDocs(db, 0)).toThrow();
+    expect(() => setScanMaxDocs(db, 2.5)).toThrow();
+    expect(() => setScanMaxDocs(db, 99999)).toThrow();
+  });
+
+  it("falls back to default on a corrupt / out-of-range stored value", () => {
+    db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('scan.maxDocsPerRepo', '0', 't')").run();
+    expect(getScanMaxDocs(db)).toBe(DEFAULT_SCAN_MAX_DOCS);
   });
 });

@@ -16,7 +16,7 @@ import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
 import { runScan } from "../scan/runScan.js";
 import { resolveScanRoots } from "../scan/roots.js";
-import { getScanMaxDepth } from "../appConfig/index.js";
+import { getScanMaxDepth, getScanMaxDocs } from "../appConfig/index.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -278,7 +278,10 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
             errorSummary: "所有默认扫描根都无效/不存在",
           });
         }
-        const result = runScan(ctx.db, resolved.valid, undefined, getScanMaxDepth(ctx.db));
+        const result = runScan(ctx.db, resolved.valid, undefined, {
+          maxDepth: getScanMaxDepth(ctx.db),
+          maxDocs: getScanMaxDocs(ctx.db),
+        });
         return Promise.resolve({
           status: result.errors.length > 0 ? "partial" : "success",
           summary: { ...result, skipped: resolved.skipped },

@@ -6,6 +6,7 @@ import { apiDelete, apiGet, apiPatch } from "../api";
 type SettingsRes = {
   scanRoots: string[];
   scanMaxDepth: number;
+  scanMaxDocs: number;
   github: { set: boolean; source: "env" | "file" | null };
 };
 
@@ -38,6 +39,7 @@ export function Settings() {
           <ScanRootsSection
             roots={q.data.scanRoots}
             maxDepth={q.data.scanMaxDepth}
+            maxDocs={q.data.scanMaxDocs}
             onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })}
           />
           <GithubTokenSection github={q.data.github} onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })} />
@@ -60,15 +62,18 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 function ScanRootsSection({
   roots,
   maxDepth,
+  maxDocs,
   onChanged,
 }: {
   roots: string[];
   maxDepth: number;
+  maxDocs: number;
   onChanged: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [depth, setDepth] = useState(String(maxDepth));
+  const [docs, setDocs] = useState(String(maxDocs));
 
   const save = useMutation({
     mutationFn: (next: string[]) => apiPatch<SettingsRes>("/api/settings", { scanRoots: next }),
@@ -82,6 +87,11 @@ function ScanRootsSection({
 
   const saveDepth = useMutation({
     mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanMaxDepth: n }),
+    onSuccess: () => onChanged(),
+  });
+
+  const saveDocs = useMutation({
+    mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanMaxDocs: n }),
     onSuccess: () => onChanged(),
   });
 
@@ -137,28 +147,53 @@ function ScanRootsSection({
       </div>
       {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
 
-      <div className="mt-4 flex items-center gap-2 border-t border-[var(--border)] pt-3">
-        <label htmlFor="scan-depth" className="text-xs font-medium text-[var(--fg)]">
-          最大扫描深度
-        </label>
-        <input
-          id="scan-depth"
-          type="number"
-          min={0}
-          max={64}
-          value={depth}
-          onChange={(e) => setDepth(e.target.value)}
-          onBlur={() => {
-            const n = Number(depth);
-            if (Number.isInteger(n) && n >= 0 && n <= 64 && n !== maxDepth) saveDepth.mutate(n);
-            else setDepth(String(maxDepth));
-          }}
-          className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
-        />
-        <span className="text-xs text-[var(--muted)]">层（防止扫穿大目录，如 home）。</span>
-        {saveDepth.isError && (
-          <span className="text-xs text-red-600">{shortErr(saveDepth.error)}</span>
-        )}
+      <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3">
+        <div className="flex items-center gap-2">
+          <label htmlFor="scan-depth" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
+            最大扫描深度
+          </label>
+          <input
+            id="scan-depth"
+            type="number"
+            min={0}
+            max={64}
+            value={depth}
+            onChange={(e) => setDepth(e.target.value)}
+            onBlur={() => {
+              const n = Number(depth);
+              if (Number.isInteger(n) && n >= 0 && n <= 64 && n !== maxDepth) saveDepth.mutate(n);
+              else setDepth(String(maxDepth));
+            }}
+            className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+          />
+          <span className="text-xs text-[var(--muted)]">层（防止扫穿大目录，如 home）。</span>
+          {saveDepth.isError && (
+            <span className="text-xs text-red-600">{shortErr(saveDepth.error)}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="scan-docs" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
+            每仓库最多文档
+          </label>
+          <input
+            id="scan-docs"
+            type="number"
+            min={1}
+            max={5000}
+            value={docs}
+            onChange={(e) => setDocs(e.target.value)}
+            onBlur={() => {
+              const n = Number(docs);
+              if (Number.isInteger(n) && n >= 1 && n <= 5000 && n !== maxDocs) saveDocs.mutate(n);
+              else setDocs(String(maxDocs));
+            }}
+            className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+          />
+          <span className="text-xs text-[var(--muted)]">篇（docs/ 下 markdown，超出按设计跳过，不算错误）。</span>
+          {saveDocs.isError && (
+            <span className="text-xs text-red-600">{shortErr(saveDocs.error)}</span>
+          )}
+        </div>
       </div>
     </Section>
   );

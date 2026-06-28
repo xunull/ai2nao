@@ -104,4 +104,17 @@ describe("settings routes", () => {
     expect((await patch("/api/settings", { scanMaxDepth: -1 })).status).toBe(400);
     expect((await patch("/api/settings", { scanMaxDepth: 2.5 })).status).toBe(400);
   });
+
+  it("GET exposes scanMaxDocs (default 100); PATCH sets it", async () => {
+    expect((await get()).scanMaxDocs).toBe(100);
+    const res = await patch("/api/settings", { scanMaxDocs: 250 });
+    expect(res.status).toBe(200);
+    expect((await res.json()).scanMaxDocs).toBe(250);
+    expect((await get()).scanMaxDocs).toBe(250);
+  });
+
+  it("PATCH rejects an out-of-range scanMaxDocs with 400", async () => {
+    expect((await patch("/api/settings", { scanMaxDocs: 0 })).status).toBe(400);
+    expect((await patch("/api/settings", { scanMaxDocs: 99999 })).status).toBe(400);
+  });
 });

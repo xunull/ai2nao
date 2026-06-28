@@ -19,7 +19,7 @@ import { loadRagEvalCases, runRagEval } from "./rag/eval.js";
 import { cleanupDeletedRagFileManifests } from "./rag/manifest.js";
 import { openRagDatabase } from "./rag/open.js";
 import { resolveScanRoots } from "./scan/roots.js";
-import { getScanMaxDepth } from "./appConfig/index.js";
+import { getScanMaxDepth, getScanMaxDocs } from "./appConfig/index.js";
 import { createVectorStore } from "./rag/vectorStore/factory.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
@@ -160,7 +160,10 @@ program
           roots = resolved.valid;
         }
       }
-      const result = runScan(db, roots, undefined, getScanMaxDepth(db));
+      const result = runScan(db, roots, undefined, {
+        maxDepth: getScanMaxDepth(db),
+        maxDocs: getScanMaxDocs(db),
+      });
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       } else {
