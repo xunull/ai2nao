@@ -14,6 +14,9 @@ import { syncEnabledProviders } from "../providers/sync.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
+import { runScan } from "../scan/runScan.js";
+import { resolveScanRoots } from "../scan/roots.js";
+import { getScanMaxDepth } from "../appConfig/index.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -246,6 +249,41 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           summary: result,
           errorSummary: result.errors[0] ?? null,
         };
+      },
+    },
+    {
+      // Repo scan by the configured default roots (Settings page). Default
+      // disabled (all tasks seed disabled). runScan is SYNCHRONOUS and reads
+      // dirs / .git / manifests / docs — heavy; a manual Run now over a large
+      // root tree blocks the serve process. Unconfigured -> `skipped` (the
+      // house convention for "nothing to do", not a fake success); all roots
+      // invalid -> `failed` (honest, never a silent 0-repo scan). Re-validation
+      // is shared with the CLI default path via resolveScanRoots.
+      key: "repos.scan",
+      label: "仓库扫描",
+      description:
+        "按设置的默认根目录扫描 git 仓库并索引 manifest（默认关，根目录在设置页配置）。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneDay,
+      sensitivity: "high",
+      run: (ctx) => {
+        const resolved = resolveScanRoots(ctx.db);
+        if (resolved.state === "unconfigured") {
+          return skipped("未配置默认扫描根（在设置页添加）");
+        }
+        if (resolved.valid.length === 0) {
+          return Promise.resolve({
+            status: "failed",
+            summary: { skipped: resolved.skipped },
+            errorSummary: "所有默认扫描根都无效/不存在",
+          });
+        }
+        const result = runScan(ctx.db, resolved.valid, undefined, getScanMaxDepth(ctx.db));
+        return Promise.resolve({
+          status: result.errors.length > 0 ? "partial" : "success",
+          summary: { ...result, skipped: resolved.skipped },
+          errorSummary: result.errors[0] ?? null,
+        });
       },
     },
     {

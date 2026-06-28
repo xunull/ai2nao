@@ -1,6 +1,11 @@
 import type { Hono } from "hono";
 import type Database from "better-sqlite3";
-import { getScanRoots, setScanRoots } from "../appConfig/index.js";
+import {
+  getScanRoots,
+  setScanRoots,
+  getScanMaxDepth,
+  setScanMaxDepth,
+} from "../appConfig/index.js";
 import {
   deleteGithubConfig,
   githubTokenStatus,
@@ -23,11 +28,16 @@ function githubDto(): { set: boolean; source: "env" | "file" | null } {
  * only `{ set, source }`. Uses PATCH (CORS allowMethods has no PUT).
  */
 export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
-  app.get("/api/settings", (c) => {
-    return c.json({ scanRoots: getScanRoots(db), github: githubDto() });
+  const settingsDto = () => ({
+    scanRoots: getScanRoots(db),
+    scanMaxDepth: getScanMaxDepth(db),
+    github: githubDto(),
   });
 
-  // PATCH /api/settings { scanRoots: string[] } — full-array replace; [] clears.
+  app.get("/api/settings", (c) => c.json(settingsDto()));
+
+  // PATCH /api/settings { scanRoots?: string[]; scanMaxDepth?: number } — partial.
+  // scanRoots is a full-array replace ([] clears); scanMaxDepth is the depth brake.
   app.patch("/api/settings", async (c) => {
     let body: unknown;
     try {
@@ -35,20 +45,24 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     } catch {
       return jsonErr(400, "invalid JSON body");
     }
-    const scanRoots = (body as { scanRoots?: unknown })?.scanRoots;
-    if (scanRoots === undefined) {
-      return c.json({ scanRoots: getScanRoots(db), github: githubDto() });
-    }
-    if (!Array.isArray(scanRoots)) {
-      return jsonErr(400, "scanRoots must be an array");
-    }
+    const { scanRoots, scanMaxDepth } = body as {
+      scanRoots?: unknown;
+      scanMaxDepth?: unknown;
+    };
     try {
-      // setScanRoots error messages echo the user's own paths (not server paths) — safe.
-      const stored = setScanRoots(db, scanRoots as string[]);
-      return c.json({ scanRoots: stored, github: githubDto() });
+      if (scanRoots !== undefined) {
+        if (!Array.isArray(scanRoots)) return jsonErr(400, "scanRoots must be an array");
+        // setScanRoots error messages echo the user's own paths (not server paths) — safe.
+        setScanRoots(db, scanRoots as string[]);
+      }
+      if (scanMaxDepth !== undefined) {
+        if (typeof scanMaxDepth !== "number") return jsonErr(400, "scanMaxDepth must be a number");
+        setScanMaxDepth(db, scanMaxDepth);
+      }
     } catch (e) {
-      return jsonErr(400, e instanceof Error ? e.message : "invalid scan roots");
+      return jsonErr(400, e instanceof Error ? e.message : "invalid settings");
     }
+    return c.json(settingsDto());
   });
 
   // PATCH /api/settings/secret/github { token } — write the 0600 token file.

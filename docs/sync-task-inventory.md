@@ -51,7 +51,8 @@ V1 已注册的任务：
 - `chrome.domains.rebuild`
 - `atuin.directories.rebuild`
 
-V1 暂未纳入 GitHub sync、RAG ingest/optimize/cleanup、repo scan 和 GitHub tag alias seed。
+V1 暂未纳入 GitHub sync、RAG ingest/optimize/cleanup 和 GitHub tag alias seed。
+（`repos.scan` 已落地为 scheduler 任务：按设置页默认根扫描 git 仓库，默认关闭。）
 
 ## package.json 中已有的 sync 类型脚本
 
@@ -86,7 +87,7 @@ V1 暂未纳入 GitHub sync、RAG ingest/optimize/cleanup、repo scan 和 GitHub
 
 | 建议任务键 | 当前入口 | Web/API | 实现位置 | 现有状态/运行记录 | 调度优先级 |
 |---|---|---|---|---|---|
-| `repo.scan` | `ai2nao scan --root <dir>` | 无 | `src/cli.ts` + `src/store/operations.ts` | `jobs` 表记录早期 scan job。 | 中。项目核心索引任务，但需要先明确 roots 配置。 |
+| `repos.scan` | `ai2nao scan` / scheduler `repos.scan`（默认关） | `app_config.scan.roots`（设置页） | `src/cli.ts` + `src/scan/roots.ts` + `src/scheduler/taskDefinitions.ts` | `jobs` 表记录每次 scan job；未配置=skipped、全失效=failed。 | 已实现。根目录在设置页配置，CLI 与定时任务共用 resolveScanRoots。 |
 | `downloads.scan` | `ai2nao downloads scan`、`downloads watch` | `POST /api/downloads/scan` | `src/downloads/scan.ts` | 无独立 run history；写 `download_files`。 | 高。可直接替代 `downloads:watch`。 |
 | `chrome.history.sync` | `ai2nao chrome-history sync/watch` | `POST /api/chrome-history/sync` | `src/chromeHistory/sync.ts` | `chrome_history_sync_state` 保存 profile/source 水位。 | 高。需要互斥、profile 参数和失败记录。 |
 | `chrome.downloads.sync` | 无独立 CLI；随 Chrome History sync 处理 | `POST /api/chrome-downloads/sync` | `src/chromeHistory/sync.ts` | 同 `chrome.history.sync`。 | 不建议作为独立后台任务；更适合作为 Chrome sync 的视图/API 别名。 |
@@ -130,13 +131,13 @@ V1 暂未纳入 GitHub sync、RAG ingest/optimize/cleanup、repo scan 和 GitHub
 - `rag.ingest`
 - `rag.optimize`
 - `rag.cleanup_tombstones`
-- `repo.scan`
+- `repos.scan`
 
 ## 已有状态与运行记录
 
 | 状态/记录 | 覆盖任务 | 当前用途 | 对统一 scheduler 的启发 |
 |---|---|---|---|
-| `jobs` | `repo.scan` | 记录早期 manifest scan 的 kind/status/finished/error。 | 可参考，但字段过轻，不足以覆盖全部任务。 |
+| `jobs` | `repos.scan` | 记录早期 manifest scan 的 kind/status/finished/error。 | 可参考，但字段过轻，不足以覆盖全部任务。 |
 | `local_inventory_sync_runs` | apps、brew、huggingface、lmstudio | 记录 source、started/finished、status、insert/update/missing/warnings/error/metadata。 | 最接近统一 task run history。 |
 | `local_inventory_sync_state` | 本地 inventory | 保存 inventory 状态键值。 | 可保留为 source-specific state。 |
 | `gh_sync_state` | GitHub sync | 保存 full/incremental 时间、耗时、错误、水位和 in-progress 状态。 | 适合继续做 GitHub source state，但 scheduler 仍需单独 run table。 |
@@ -169,7 +170,7 @@ V1 暂未纳入 GitHub sync、RAG ingest/optimize/cleanup、repo scan 和 GitHub
 4. `rag.ingest`
 5. `rag.cleanup_tombstones`
 6. `rag.optimize`
-7. `repo.scan`
+7. `repos.scan`
 
 ## 调度设计注意事项
 

@@ -91,4 +91,17 @@ describe("settings routes", () => {
     process.env.GITHUB_TOKEN = "ghp_fromenv";
     expect((await get()).github).toEqual({ set: true, source: "env" });
   });
+
+  it("GET exposes scanMaxDepth (default 8); PATCH sets it", async () => {
+    expect((await get()).scanMaxDepth).toBe(8);
+    const res = await patch("/api/settings", { scanMaxDepth: 4 });
+    expect(res.status).toBe(200);
+    expect((await res.json()).scanMaxDepth).toBe(4);
+    expect((await get()).scanMaxDepth).toBe(4);
+  });
+
+  it("PATCH rejects an out-of-range scanMaxDepth with 400", async () => {
+    expect((await patch("/api/settings", { scanMaxDepth: -1 })).status).toBe(400);
+    expect((await patch("/api/settings", { scanMaxDepth: 2.5 })).status).toBe(400);
+  });
 });

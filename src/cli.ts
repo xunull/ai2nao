@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { Command } from "commander";
 import { join, resolve } from "node:path";
@@ -18,7 +18,8 @@ import { ingestCorpus, type IngestFileProgress } from "./rag/ingest.js";
 import { loadRagEvalCases, runRagEval } from "./rag/eval.js";
 import { cleanupDeletedRagFileManifests } from "./rag/manifest.js";
 import { openRagDatabase } from "./rag/open.js";
-import { getScanRoots } from "./appConfig/index.js";
+import { resolveScanRoots } from "./scan/roots.js";
+import { getScanMaxDepth } from "./appConfig/index.js";
 import { createVectorStore } from "./rag/vectorStore/factory.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
@@ -135,37 +136,31 @@ program
     try {
       let roots: string[];
       if (opts.root?.length) {
+        // Explicit --root: unchanged behavior (runScan tolerates a missing root).
         roots = opts.root.map((r) => resolve(r));
       } else {
-        // No --root: fall back to configured default scan roots (Settings page).
-        // Re-validate at scan time — a stored dir can be deleted/swapped, and an
-        // invalid root makes discoverGitRepos return [] (silent "scanned 0 repos"
-        // false success). All-invalid -> error + non-zero exit, NOT a silent cwd scan.
-        const configured = getScanRoots(db);
-        if (configured.length > 0) {
-          const valid = configured.filter((p) => {
-            try {
-              return statSync(p).isDirectory();
-            } catch {
-              return false;
-            }
-          });
-          for (const p of configured) {
-            if (!valid.includes(p)) console.error(`warning: skipping missing scan root: ${p}`);
+        // No --root: use the configured default scan roots (Settings page),
+        // re-validated at scan time via the shared resolver (also used by the
+        // repos.scan task). Unconfigured -> cwd (interactive convenience);
+        // all configured roots invalid -> error + non-zero exit, NOT a silent scan.
+        const resolved = resolveScanRoots(db);
+        if (resolved.state === "unconfigured") {
+          roots = [process.cwd()];
+        } else {
+          for (const s of resolved.skipped) {
+            console.error(`warning: skipping ${s.reason} scan root: ${s.path}`);
           }
-          if (valid.length === 0) {
+          if (resolved.valid.length === 0) {
             console.error(
               "error: all configured scan roots are missing/invalid; fix them in Settings or pass --root"
             );
             process.exitCode = 1;
             return;
           }
-          roots = valid;
-        } else {
-          roots = [process.cwd()];
+          roots = resolved.valid;
         }
       }
-      const result = runScan(db, roots);
+      const result = runScan(db, roots, undefined, getScanMaxDepth(db));
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       } else {

@@ -22,7 +22,8 @@ export type ScanResult = {
 export function runScan(
   db: Database.Database,
   roots: string[],
-  manifestRels: readonly string[] = DEFAULT_PROJECT_CONTEXT.fixedManifestRels
+  manifestRels: readonly string[] = DEFAULT_PROJECT_CONTEXT.fixedManifestRels,
+  maxDepth?: number
 ): ScanResult {
   const errors: string[] = [];
   const jobId = startJob(db, "scan");
@@ -33,7 +34,7 @@ export function runScan(
     for (const root of roots) {
       let repos;
       try {
-        repos = discoverGitRepos(root);
+        repos = discoverGitRepos(root, { maxDepth });
       } catch (e) {
         errors.push(`root ${root}: ${String(e)}`);
         continue;

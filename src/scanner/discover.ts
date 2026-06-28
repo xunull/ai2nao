@@ -15,18 +15,25 @@ function shouldSkipDir(name: string, excludeNames: Set<string>): boolean {
 
 /**
  * Depth-first walk from `root`; yields each git repository root (directory containing `.git/`).
+ *
+ * `maxDepth` bounds how many levels BELOW the root we descend (root = depth 0):
+ * we always check the current dir for `.git`, but only recurse into children while
+ * `depth < maxDepth`. Undefined = unlimited (legacy). This is the safety brake for
+ * pointing a scan root at a huge tree (e.g. home dir) — without it the walk is
+ * unbounded and, since runScan is synchronous, can block the serve process.
  */
 export function discoverGitRepos(
   root: string,
-  options?: { excludeDirNames?: Set<string> }
+  options?: { excludeDirNames?: Set<string>; maxDepth?: number }
 ): DiscoveredRepo[] {
   const excludeNames = options?.excludeDirNames ?? DEFAULT_EXCLUDE_DIR_NAMES;
+  const maxDepth = options?.maxDepth ?? Infinity;
   const base = canonicalizePath(root);
   if (!base || !existsSync(base)) return [];
   const seen = new Set<string>();
   const out: DiscoveredRepo[] = [];
 
-  function walk(dir: string): void {
+  function walk(dir: string, depth: number): void {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
@@ -49,15 +56,16 @@ export function discoverGitRepos(
         return;
       }
     }
+    if (depth >= maxDepth) return; // brake: don't descend past the configured depth
     for (const ent of entries) {
       if (!ent.isDirectory()) continue;
       if (ent.name === ".git") continue;
       if (shouldSkipDir(ent.name, excludeNames)) continue;
-      walk(join(dir, ent.name));
+      walk(join(dir, ent.name), depth + 1);
     }
   }
 
-  walk(base);
+  walk(base, 0);
   return out;
 }
 

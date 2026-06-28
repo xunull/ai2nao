@@ -5,6 +5,7 @@ import { apiDelete, apiGet, apiPatch } from "../api";
 
 type SettingsRes = {
   scanRoots: string[];
+  scanMaxDepth: number;
   github: { set: boolean; source: "env" | "file" | null };
 };
 
@@ -34,7 +35,11 @@ export function Settings() {
 
       {q.data && (
         <>
-          <ScanRootsSection roots={q.data.scanRoots} onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })} />
+          <ScanRootsSection
+            roots={q.data.scanRoots}
+            maxDepth={q.data.scanMaxDepth}
+            onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })}
+          />
           <GithubTokenSection github={q.data.github} onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })} />
         </>
       )}
@@ -52,9 +57,18 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function ScanRootsSection({ roots, onChanged }: { roots: string[]; onChanged: () => void }) {
+function ScanRootsSection({
+  roots,
+  maxDepth,
+  onChanged,
+}: {
+  roots: string[];
+  maxDepth: number;
+  onChanged: () => void;
+}) {
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [depth, setDepth] = useState(String(maxDepth));
 
   const save = useMutation({
     mutationFn: (next: string[]) => apiPatch<SettingsRes>("/api/settings", { scanRoots: next }),
@@ -64,6 +78,11 @@ function ScanRootsSection({ roots, onChanged }: { roots: string[]; onChanged: ()
       onChanged();
     },
     onError: (e) => setErr(shortErr(e)),
+  });
+
+  const saveDepth = useMutation({
+    mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanMaxDepth: n }),
+    onSuccess: () => onChanged(),
   });
 
   function add() {
@@ -113,6 +132,30 @@ function ScanRootsSection({ roots, onChanged }: { roots: string[]; onChanged: ()
         </button>
       </div>
       {err && <p className="mt-2 text-xs text-red-700">{err}</p>}
+
+      <div className="mt-4 flex items-center gap-2 border-t border-neutral-100 pt-3">
+        <label htmlFor="scan-depth" className="text-xs text-[var(--muted)]">
+          最大扫描深度
+        </label>
+        <input
+          id="scan-depth"
+          type="number"
+          min={0}
+          max={64}
+          value={depth}
+          onChange={(e) => setDepth(e.target.value)}
+          onBlur={() => {
+            const n = Number(depth);
+            if (Number.isInteger(n) && n >= 0 && n <= 64 && n !== maxDepth) saveDepth.mutate(n);
+            else setDepth(String(maxDepth));
+          }}
+          className="h-8 w-16 rounded-lg border border-neutral-200 px-2 text-sm tabular-nums"
+        />
+        <span className="text-xs text-[var(--muted)]">层（防止扫穿大目录，如 home）。</span>
+        {saveDepth.isError && (
+          <span className="text-xs text-red-700">{shortErr(saveDepth.error)}</span>
+        )}
+      </div>
     </Section>
   );
 }
