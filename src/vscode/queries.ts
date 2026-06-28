@@ -108,6 +108,7 @@ export function listVscodeRecentProjects(db: Database.Database, opts: VscodeEntr
       .prepare(
         `SELECT id, path_canonical, origin_url
          FROM repos
+         WHERE missing_since IS NULL
          ORDER BY LENGTH(path_canonical) DESC, path_canonical ASC`
       )
       .all() as VscodeRepoSummary[];

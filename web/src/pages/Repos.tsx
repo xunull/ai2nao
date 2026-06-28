@@ -97,6 +97,7 @@ export function Repos() {
   const urlQ = searchParams.get("q") ?? "";
   const sortKey = searchParams.get("sort") ?? "";
   const sortDir = searchParams.get("dir") === "asc" ? "asc" : "desc";
+  const includeMissing = searchParams.get("includeMissing") === "1";
 
   // Search input is debounced before it touches the URL (and the query).
   const [qInput, setQInput] = useState(urlQ);
@@ -118,11 +119,12 @@ export function Repos() {
     queryFn: () => apiGet<Status>("/api/status"),
   });
   const list = useQuery({
-    queryKey: ["repos", page, urlQ, sortKey, sortDir],
+    queryKey: ["repos", page, urlQ, sortKey, sortDir, includeMissing],
     queryFn: () =>
       apiGet<RepoList>(
         `/api/repos?limit=${PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(urlQ)}` +
-          (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "")
+          (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "") +
+          (includeMissing ? "&includeMissing=1" : "")
       ),
     // Keep the current rows on screen while the next page/sort/search loads, so the
     // page does not flip to a full-page "加载中…" and flicker. Only the table swaps.
@@ -245,6 +247,21 @@ export function Repos() {
             </button>
           )}
         </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]">
+          <input
+            type="checkbox"
+            checked={includeMissing}
+            onChange={(e) => {
+              const sp = new URLSearchParams(searchParams);
+              if (e.target.checked) sp.set("includeMissing", "1");
+              else sp.delete("includeMissing");
+              sp.delete("page");
+              setSearchParams(sp, { replace: true });
+            }}
+            className="accent-[var(--accent)]"
+          />
+          含已删
+        </label>
       </div>
 
       {empty ? (

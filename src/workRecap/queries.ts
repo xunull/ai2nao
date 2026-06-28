@@ -154,7 +154,7 @@ export function countRecapRunsByWindow(
 /** Load all known `repos.path_canonical` for scanning. */
 export function listIndexedRepoPaths(db: Database.Database): string[] {
   const rows = db
-    .prepare(`SELECT path_canonical FROM repos ORDER BY first_seen_at ASC`)
+    .prepare(`SELECT path_canonical FROM repos WHERE missing_since IS NULL ORDER BY first_seen_at ASC`)
     .all() as Array<{ path_canonical: string }>;
   return rows.map((r) => r.path_canonical);
 }

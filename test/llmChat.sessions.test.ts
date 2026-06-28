@@ -78,7 +78,7 @@ describe("LLM chat session storage", () => {
     const db = freshDb();
     try {
       const version = (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version;
-      expect(version).toBe(36);
+      expect(version).toBe(37);
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('llm_chat_messages', 'llm_chat_sessions', 'bash_permission_rules') ORDER BY name")
         .all() as { name: string }[];

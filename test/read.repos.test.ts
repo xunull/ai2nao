@@ -74,4 +74,13 @@ describe("listRepos (server-side sort + search)", () => {
     const r = listRepos(db, { limit: 25, offset: 0, sort: "DROP TABLE repos", dir: "asc" });
     expect(r.total).toBe(3); // no injection, safe default order
   });
+
+  it("excludes missing repos by default, includes them with includeMissing", () => {
+    db.prepare("UPDATE repos SET missing_since = 't' WHERE id = 2").run(); // beta gone
+    const present = listRepos(db, { limit: 25, offset: 0 });
+    expect(present.total).toBe(2);
+    expect(present.rows.map((r) => r.id).sort()).toEqual([1, 3]);
+    const all = listRepos(db, { limit: 25, offset: 0, includeMissing: true });
+    expect(all.total).toBe(3);
+  });
 });

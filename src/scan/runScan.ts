@@ -10,10 +10,12 @@ import {
 } from "../scanner/discover.js";
 import {
   finishJob,
+  reconcileMissingRepos,
   replaceManifest,
   startJob,
   upsertRepo,
 } from "../store/operations.js";
+import { canonicalizePath } from "../path/canonical.js";
 
 export type ScanResult = {
   jobId: number;
@@ -71,6 +73,7 @@ async function doRunScan(
   const errors: string[] = [];
   let manifestsIndexed = 0;
   let cappedDocs = 0;
+  const seenRepoIds = new Set<number>();
   const jobId = startJob(db, "scan");
 
   try {
@@ -125,10 +128,10 @@ async function doRunScan(
 
           // Sync write — one transaction per repo (upsert + all manifests). DB errors
           // propagate (NOT caught) so disk-full / constraint / FTS failures abort.
-          db.transaction(() => {
-            const repoId = upsertRepo(db, repo.rootCanonical, repo.originUrl, jobId);
+          const repoId = db.transaction(() => {
+            const id = upsertRepo(db, repo.rootCanonical, repo.originUrl, jobId);
             for (const f of files) {
-              replaceManifest(db, repoId, {
+              replaceManifest(db, id, {
                 rel_path: f.rel,
                 mtime_ms: f.mtime_ms,
                 size_bytes: f.size_bytes,
@@ -136,16 +139,28 @@ async function doRunScan(
                 body: f.body,
               });
             }
+            return id;
           })();
 
           // Aggregate (sync, no await between -> atomic on the single JS thread).
+          seenRepoIds.add(repoId);
           manifestsIndexed += files.length;
           cappedDocs += markdown.skipped;
         })
       )
     );
 
-    finishJob(db, jobId, "ok", errors.length ? errors.sort().join("; ") : null);
+    // Reconcile (mark deleted repos missing) + finishJob in ONE transaction: a
+    // reconcile failure must abort the job, never leave "job ok + half-pruned".
+    const scannedRoots = roots
+      .map((r) => canonicalizePath(r))
+      .filter((p): p is string => p !== null);
+    const foundPaths = repos.map((r) => r.rootCanonical);
+    const nowIso = new Date().toISOString();
+    db.transaction(() => {
+      reconcileMissingRepos(db, { scannedRoots, seenRepoIds, foundPaths, nowIso });
+      finishJob(db, jobId, "ok", errors.length ? errors.sort().join("; ") : null);
+    })();
     return {
       jobId,
       reposFound: repos.length,

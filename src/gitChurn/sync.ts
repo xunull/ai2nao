@@ -41,7 +41,9 @@ export async function syncAllReposChurn(
   }
 
   const repos = (
-    db.prepare("SELECT path_canonical FROM repos").all() as Array<{ path_canonical: string }>
+    db.prepare("SELECT path_canonical FROM repos WHERE missing_since IS NULL").all() as Array<{
+      path_canonical: string;
+    }>
   ).map((r) => r.path_canonical);
 
   if (repos.length === 0) {

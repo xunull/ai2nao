@@ -54,7 +54,9 @@ export function buildProjectOutput(
   const tokens = mergeTokens(claude, codex);
 
   const repos = (
-    db.prepare("SELECT path_canonical FROM repos").all() as Array<{ path_canonical: string }>
+    db.prepare("SELECT path_canonical FROM repos WHERE missing_since IS NULL").all() as Array<{
+      path_canonical: string;
+    }>
   ).map((r) => r.path_canonical);
 
   const churnRows = db
@@ -68,8 +70,12 @@ export function buildProjectOutput(
        GROUP BY project_key`
     )
     .all(fromDay, toDay) as Array<{ project_key: string } & RepoChurn>;
+  // Soft-deleted repos keep their historical churn rows (not pruned), but they must
+  // not surface in analysis (e.g. as gitNoToken). Filter to active repo paths.
+  const activeRepos = new Set(repos);
   const churn = new Map<string, RepoChurn>();
   for (const r of churnRows) {
+    if (!activeRepos.has(r.project_key)) continue;
     churn.set(r.project_key, { added: r.added, deleted: r.deleted, commits: r.commits });
   }
 
@@ -81,7 +87,9 @@ export function buildProjectOutput(
           "SELECT repo_path FROM git_line_churn_state WHERE last_synced_sha IS NOT NULL"
         )
         .all() as Array<{ repo_path: string }>
-    ).map((r) => r.repo_path)
+    )
+      .map((r) => r.repo_path)
+      .filter((p) => activeRepos.has(p))
   );
 
   return projectOutputAnalysis({ tokens, repos, churn, scannedRepos });

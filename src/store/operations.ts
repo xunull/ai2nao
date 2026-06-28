@@ -36,8 +36,9 @@ export function upsertRepo(
     .prepare(`SELECT id FROM repos WHERE path_canonical = ?`)
     .get(pathCanonical) as { id: number } | undefined;
   if (existing) {
+    // Found on disk -> clear any missing_since (came back / still present).
     db.prepare(
-      `UPDATE repos SET origin_url = ?, last_scanned_at = ?, last_job_id = ? WHERE id = ?`
+      `UPDATE repos SET origin_url = ?, last_scanned_at = ?, last_job_id = ?, missing_since = NULL WHERE id = ?`
     ).run(originUrl, now, jobId, existing.id);
     return existing.id;
   }
@@ -48,6 +49,54 @@ export function upsertRepo(
     )
     .run(pathCanonical, originUrl, now, now, jobId);
   return Number(r.lastInsertRowid);
+}
+
+/**
+ * Mark repos that are under a scanned root but were NOT found this scan as
+ * `missing_since` (soft delete). Scoping is done in JS with literal `startsWith`
+ * (NOT SQL LIKE — a real path can contain `%`/`_` which LIKE treats as wildcards).
+ *
+ * Guards:
+ *  - `seenRepoIds`: repos found this scan are present (upsertRepo already cleared
+ *    their missing_since) — never marked.
+ *  - nested guard: a candidate inside a found repo's directory is skipped. The scan
+ *    stops at the outer `.git` so it never descends into a found repo; an inner repo
+ *    still exists on disk and must not be flagged.
+ *  - only sets missing_since when currently NULL (preserve the first-gone timestamp).
+ *
+ * Scope = exactly the roots scanned this run. Repos under OTHER roots are untouched
+ * (a deleted whole configured root is a known limitation — its repos reconcile only
+ * when a still-existing parent root is rescanned).
+ */
+export function reconcileMissingRepos(
+  db: Database.Database,
+  params: {
+    scannedRoots: string[]; // canonical roots scanned this run
+    seenRepoIds: Set<number>; // repo ids found this scan
+    foundPaths: string[]; // canonical paths found this scan (nested guard)
+    nowIso: string;
+  }
+): number {
+  const rows = db
+    .prepare(`SELECT id, path_canonical, missing_since FROM repos`)
+    .all() as { id: number; path_canonical: string; missing_since: string | null }[];
+  const mark = db.prepare(
+    `UPDATE repos SET missing_since = ? WHERE id = ? AND missing_since IS NULL`
+  );
+  let marked = 0;
+  for (const r of rows) {
+    if (params.seenRepoIds.has(r.id)) continue; // present this scan
+    if (r.missing_since) continue; // already marked
+    const inScope = params.scannedRoots.some(
+      (root) => r.path_canonical === root || r.path_canonical.startsWith(`${root}/`)
+    );
+    if (!inScope) continue;
+    const nested = params.foundPaths.some((fp) => r.path_canonical.startsWith(`${fp}/`));
+    if (nested) continue;
+    mark.run(params.nowIso, r.id);
+    marked += 1;
+  }
+  return marked;
 }
 
 export type ManifestRow = {
@@ -102,10 +151,19 @@ export function getStatusSummary(db: Database.Database): {
   lastJob: { id: number; kind: string; status: string; finished_at: string | null } | null;
 } {
   const repos = (
-    db.prepare(`SELECT COUNT(*) AS c FROM repos`).get() as { c: number }
+    db.prepare(`SELECT COUNT(*) AS c FROM repos WHERE missing_since IS NULL`).get() as {
+      c: number;
+    }
   ).c;
+  // Count only manifests of present repos — a missing repo's files are not "indexed".
   const manifests = (
-    db.prepare(`SELECT COUNT(*) AS c FROM manifest_files`).get() as { c: number }
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM manifest_files m
+         JOIN repos r ON r.id = m.repo_id
+         WHERE r.missing_since IS NULL`
+      )
+      .get() as { c: number }
   ).c;
   const lastJob = db
     .prepare(
@@ -138,7 +196,7 @@ export function searchManifests(
       FROM manifest_fts
       JOIN manifest_files m ON m.id = manifest_fts.rowid
       JOIN repos r ON r.id = m.repo_id
-      WHERE manifest_fts MATCH ?
+      WHERE manifest_fts MATCH ? AND r.missing_since IS NULL
       LIMIT ?
     `
     )

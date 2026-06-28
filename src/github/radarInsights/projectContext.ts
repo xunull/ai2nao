@@ -21,7 +21,11 @@ export type ProjectContextResult = {
 };
 
 export function listIndexedProjectSources(db: Database.Database): ProjectContextResult {
-  const repoCount = (db.prepare("SELECT COUNT(*) AS c FROM repos").get() as { c: number }).c;
+  const repoCount = (
+    db.prepare("SELECT COUNT(*) AS c FROM repos WHERE missing_since IS NULL").get() as {
+      c: number;
+    }
+  ).c;
   if (repoCount === 0) {
     return emptyResult({
       code: "no_indexed_projects",
@@ -36,8 +40,9 @@ export function listIndexedProjectSources(db: Database.Database): ProjectContext
               m.rel_path, m.size_bytes, m.sha256_hex, m.body
        FROM manifest_files m
        JOIN repos r ON r.id = m.repo_id
-       WHERE m.rel_path IN (${fixedRelPlaceholders()})
-          OR m.rel_path LIKE 'docs/%.md'
+       WHERE (m.rel_path IN (${fixedRelPlaceholders()})
+              OR m.rel_path LIKE 'docs/%.md')
+         AND r.missing_since IS NULL
        ORDER BY
          CASE
            WHEN m.rel_path = 'TODOS.md' THEN 0
@@ -107,9 +112,11 @@ function countProjectContextRows(db: Database.Database): number {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS c
-       FROM manifest_files
-       WHERE rel_path IN (${fixedRelPlaceholders()})
-          OR rel_path LIKE 'docs/%.md'`
+       FROM manifest_files m
+       JOIN repos r ON r.id = m.repo_id
+       WHERE (m.rel_path IN (${fixedRelPlaceholders()})
+              OR m.rel_path LIKE 'docs/%.md')
+         AND r.missing_since IS NULL`
     )
     .get(...DEFAULT_PROJECT_CONTEXT.fixedManifestRels) as { c: number };
   return row.c;

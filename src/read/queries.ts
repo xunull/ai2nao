@@ -43,6 +43,8 @@ export type ListReposOptions = {
   q?: string;
   sort?: string;
   dir?: SortDir;
+  /** Include soft-deleted (missing) repos. Default false: only present repos. */
+  includeMissing?: boolean;
 };
 
 export function listRepos(
@@ -51,6 +53,7 @@ export function listRepos(
 ): { rows: RepoRow[]; total: number } {
   const where: string[] = [];
   const params: unknown[] = [];
+  if (!opts.includeMissing) where.push("missing_since IS NULL");
   if (opts.q) {
     // Substring match on path + origin. The `q` value is bound, never interpolated.
     where.push("(path_canonical LIKE ? OR origin_url LIKE ?)");
@@ -103,6 +106,7 @@ export function listRepoMatches(db: Database.Database): RepoMatchRow[] {
       `
       SELECT id, path_canonical
       FROM repos
+      WHERE missing_since IS NULL
       ORDER BY LENGTH(path_canonical) DESC, path_canonical ASC
     `
     )

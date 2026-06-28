@@ -273,6 +273,7 @@ export function createApp(opts: ServeOptions): Hono {
         q: parsed.q,
         sort: parsed.sort,
         dir: parsed.dir,
+        includeMissing: parsed.includeMissing,
       });
       return c.json({
         repos: rows,

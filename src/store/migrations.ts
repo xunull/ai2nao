@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 36;
+const CURRENT_VERSION = 37;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -47,6 +47,7 @@ export function migrate(db: Database.Database): void {
     applyV34(db);
     applyV35(db);
     applyV36(db);
+    applyV37(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -89,6 +90,7 @@ export function migrate(db: Database.Database): void {
   if (v < 34) applyV34(db);
   if (v < 35) applyV35(db);
   if (v < 36) applyV36(db);
+  if (v < 37) applyV37(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1829,6 +1831,18 @@ function applyV36(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 36 WHERE id = 1;
+  `);
+}
+
+function applyV37(db: Database.Database): void {
+  // Soft-delete marker for repos no longer found on disk (scan reconcile).
+  // NULL = present; a timestamp = first scan that found it gone. Mirrors the
+  // missing_since pattern used by huggingface_models / mac_apps / brew_packages.
+  db.exec(`
+    ALTER TABLE repos ADD COLUMN missing_since TEXT;
+    CREATE INDEX IF NOT EXISTS idx_repos_missing_since ON repos(missing_since);
+
+    UPDATE meta_schema SET version = 37 WHERE id = 1;
   `);
 }
 
