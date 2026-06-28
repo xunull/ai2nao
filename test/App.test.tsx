@@ -449,7 +449,7 @@ describe("App routes", () => {
     expect(await screen.findByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
     expect(await screen.findByTestId("ai-chat-session-rail")).toBeInTheDocument();
     expect(await screen.findAllByText("新对话")).not.toHaveLength(0);
-    expect(container.querySelector('[class*="h-[calc(100vh-112px)]"]')).toBeInTheDocument();
+    expect(container.querySelector('[class*="h-[calc(100vh-56px)]"]')).toBeInTheDocument();
     expect(container.querySelector('[data-testid="ai-chat-thread-shell"]')).toBeInTheDocument();
   });
 });

@@ -799,7 +799,7 @@ export function AiChat() {
   const effectiveCodeRuntime = codeExecutionRuntime === "docker" && dockerRuntimeAvailable ? "docker" : "pyodide";
 
   return (
-    <div className="cursor-chat-root -mx-1 h-[calc(100vh-112px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
+    <div className="cursor-chat-root -mx-1 h-[calc(100vh-56px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
       <link rel="stylesheet" href="/vendor/copilotkit-v2.css" />
       <div className="grid h-full grid-cols-[300px_minmax(0,1fr)]">
         <aside className="flex h-full min-h-0 flex-col border-r border-neutral-200 bg-white">

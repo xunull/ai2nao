@@ -239,7 +239,7 @@ export function CherryStudioHistory() {
   const searchMode = q.trim().length > 0;
 
   return (
-    <div className="cursor-chat-root -mx-1 h-[calc(100vh-112px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
+    <div className="cursor-chat-root -mx-1 h-[calc(100vh-56px)] min-h-[720px] overflow-hidden rounded-xl border border-neutral-200 bg-[#f7f7f4]">
       <div className="grid h-full grid-cols-[350px_minmax(0,1fr)]">
         <aside className="flex h-full min-h-0 flex-col border-r border-neutral-200 bg-white">
           <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 text-xs text-neutral-500">

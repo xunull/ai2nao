@@ -45,6 +45,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { ScrollToTop } from "./ScrollToTop";
 
 type NavItem = {
   to: string;
@@ -228,6 +229,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState(initialSidebarCollapsed);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollRef = useRef<HTMLElement>(null);
   const frameClass = "mx-auto max-w-[1760px] px-8";
   const sidebarWidth = collapsed ? collapsedSidebarWidth : expandedSidebarWidth;
 
@@ -253,7 +255,7 @@ export function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)]">
+    <div className="h-screen overflow-hidden bg-[var(--bg)] text-[var(--fg)]">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-[var(--fg)] focus:px-3 focus:py-2 focus:text-sm focus:text-white"
@@ -363,11 +365,17 @@ export function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       <div
-        className="min-h-screen transition-[margin-left] duration-200 ease-out"
+        className="flex h-screen flex-col transition-[margin-left] duration-200 ease-out"
         style={{ marginLeft: sidebarWidth }}
       >
-        <main id="main-content" tabIndex={-1} className={`${frameClass} w-full py-5`}>
-          {children}
+        <ScrollToTop containerRef={scrollRef} />
+        <main
+          ref={scrollRef}
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
+          <div className={`${frameClass} w-full py-5`}>{children}</div>
         </main>
       </div>
     </div>
