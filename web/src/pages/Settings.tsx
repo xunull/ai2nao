@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Folder, Plus, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch } from "../api";
 
 type SettingsRes = {
@@ -50,7 +50,7 @@ export function Settings() {
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-[var(--border)] bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
+      <h2 className="text-sm font-semibold text-[var(--fg)]">{title}</h2>
       {hint && <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>}
       <div className="mt-3">{children}</div>
     </section>
@@ -94,20 +94,23 @@ function ScanRootsSection({
   return (
     <Section title="默认扫描根目录" hint="不带 --root 运行 scan 时使用。未设置则默认当前目录。">
       {roots.length === 0 ? (
-        <p className="text-sm text-[var(--muted)]">尚未设默认扫描根 · scan 默认用当前目录。</p>
+        <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-5 text-center text-sm text-[var(--muted)]">
+          尚未设默认扫描根 · scan 默认用当前目录
+        </p>
       ) : (
-        <ul className="space-y-1">
+        <ul className="overflow-hidden rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
           {roots.map((r) => (
-            <li key={r} className="flex items-center justify-between gap-3 rounded border border-neutral-100 px-3 py-1.5">
-              <span className="truncate font-mono text-xs text-neutral-700" title={r}>{r}</span>
+            <li key={r} className="group flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-[var(--bg)]">
+              <Folder aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--muted)]" />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--fg)]" title={r}>{r}</span>
               <button
                 type="button"
-                aria-label="删除根目录"
+                aria-label={`删除根目录 ${r}`}
                 disabled={save.isPending}
                 onClick={() => save.mutate(roots.filter((x) => x !== r))}
-                className="text-neutral-400 hover:text-red-600 disabled:opacity-50"
+                className="shrink-0 rounded-md p-1 text-[var(--muted)] transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </li>
           ))}
@@ -120,21 +123,22 @@ function ScanRootsSection({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="绝对路径，如 /Users/you/code"
-          className="h-9 flex-1 rounded-lg border border-neutral-200 px-3 font-mono text-xs"
+          className="h-9 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 font-mono text-xs text-[var(--fg)] outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
         />
         <button
           type="button"
           onClick={add}
           disabled={save.isPending || !draft.trim()}
-          className="h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium text-[var(--fg)] outline-none transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)] disabled:opacity-50"
         >
+          <Plus aria-hidden="true" className="h-4 w-4" />
           添加
         </button>
       </div>
-      {err && <p className="mt-2 text-xs text-red-700">{err}</p>}
+      {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
 
-      <div className="mt-4 flex items-center gap-2 border-t border-neutral-100 pt-3">
-        <label htmlFor="scan-depth" className="text-xs text-[var(--muted)]">
+      <div className="mt-4 flex items-center gap-2 border-t border-[var(--border)] pt-3">
+        <label htmlFor="scan-depth" className="text-xs font-medium text-[var(--fg)]">
           最大扫描深度
         </label>
         <input
@@ -149,11 +153,11 @@ function ScanRootsSection({
             if (Number.isInteger(n) && n >= 0 && n <= 64 && n !== maxDepth) saveDepth.mutate(n);
             else setDepth(String(maxDepth));
           }}
-          className="h-8 w-16 rounded-lg border border-neutral-200 px-2 text-sm tabular-nums"
+          className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
         />
         <span className="text-xs text-[var(--muted)]">层（防止扫穿大目录，如 home）。</span>
         {saveDepth.isError && (
-          <span className="text-xs text-red-700">{shortErr(saveDepth.error)}</span>
+          <span className="text-xs text-red-600">{shortErr(saveDepth.error)}</span>
         )}
       </div>
     </Section>
