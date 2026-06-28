@@ -1,4 +1,12 @@
 import type Database from "better-sqlite3";
+import { orderByClause, type SortDir, type SortCol } from "../serve/orderBy.js";
+
+/** Sortable columns for the local repos table (server-side sort allowlist). */
+export const REPO_SORT_ALLOWED: Record<string, SortCol> = {
+  path: { expr: "path_canonical COLLATE NOCASE", defaultDir: "asc" },
+  origin: { expr: "origin_url", defaultDir: "asc", nulls: "last" },
+  scanned: { expr: "COALESCE(last_scanned_at, first_seen_at)", defaultDir: "desc" },
+};
 
 export type RepoRow = {
   id: number;
@@ -29,27 +37,48 @@ export type RepoMatchRow = {
   path_canonical: string;
 };
 
+export type ListReposOptions = {
+  limit: number;
+  offset: number;
+  q?: string;
+  sort?: string;
+  dir?: SortDir;
+};
+
 export function listRepos(
   db: Database.Database,
-  page: number,
-  pageSize: number
+  opts: ListReposOptions
 ): { rows: RepoRow[]; total: number } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.q) {
+    // Substring match on path + origin. The `q` value is bound, never interpolated.
+    where.push("(path_canonical LIKE ? OR origin_url LIKE ?)");
+    params.push(`%${opts.q}%`, `%${opts.q}%`);
+  }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const orderBy = orderByClause({
+    sort: opts.sort,
+    dir: opts.dir,
+    allowed: REPO_SORT_ALLOWED,
+    defaultSortKey: "scanned",
+    defaultDir: "desc",
+    tiebreaker: "id DESC",
+  });
   const total = (
-    db.prepare(`SELECT COUNT(*) AS c FROM repos`).get() as { c: number }
+    db.prepare(`SELECT COUNT(*) AS c FROM repos ${clause}`).get(...params) as { c: number }
   ).c;
-  const safePage = Math.max(1, page);
-  const safeSize = Math.min(100, Math.max(1, pageSize));
-  const offset = (safePage - 1) * safeSize;
   const rows = db
     .prepare(
       `
       SELECT id, path_canonical, origin_url, first_seen_at, last_scanned_at, last_job_id
       FROM repos
-      ORDER BY COALESCE(last_scanned_at, first_seen_at) DESC, id DESC
+      ${clause}
+      ${orderBy}
       LIMIT ? OFFSET ?
     `
     )
-    .all(safeSize, offset) as RepoRow[];
+    .all(...params, opts.limit, opts.offset) as RepoRow[];
   return { rows, total };
 }
 

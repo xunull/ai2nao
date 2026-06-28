@@ -62,8 +62,9 @@ describe("Repos pagination", () => {
         if (url.includes("/api/status")) {
           return json({ repos: 60, manifests: 100, lastJob: null });
         }
-        if (url.includes("page=2")) {
-          await page2.promise; // hold page 2 open so we can inspect the transition
+        if (url.includes("offset=25")) {
+          // page 2 (offset = (2-1) * 25). Hold it open to inspect the transition.
+          await page2.promise;
           return json(repoPage(2));
         }
         return json(repoPage(1));
@@ -93,5 +94,63 @@ describe("Repos pagination", () => {
     await waitFor(() =>
       expect(screen.queryByText("https://example.com/page1")).toBeNull()
     );
+  });
+
+  it("search box drives a server-side q query and shows filtered rows", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        if (url.includes("/api/status")) {
+          return json({ repos: 60, manifests: 100, lastJob: null });
+        }
+        if (url.includes("q=alpha")) {
+          return json({
+            ...repoPage(1),
+            total: 1,
+            repos: [
+              {
+                id: 99,
+                path_canonical: "/code/alpha",
+                origin_url: "https://example.com/alpha",
+                last_scanned_at: "2026-01-01",
+              },
+            ],
+          });
+        }
+        return json(repoPage(1));
+      })
+    );
+
+    renderRepos();
+    await screen.findByText("https://example.com/page1");
+
+    await userEvent.type(screen.getByLabelText("搜索仓库"), "alpha");
+
+    await screen.findByText("https://example.com/alpha"); // filtered row from server
+    expect(calls.some((u) => u.includes("q=alpha"))).toBe(true); // search hit the server
+  });
+
+  it("clicking a column header requests server-side sort", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        if (url.includes("/api/status")) {
+          return json({ repos: 60, manifests: 100, lastJob: null });
+        }
+        return json(repoPage(1));
+      })
+    );
+
+    renderRepos();
+    await screen.findByText("https://example.com/page1");
+
+    await userEvent.click(screen.getByRole("button", { name: /路径/ }));
+
+    // Sorting is server-side (manualSorting) -> the request carries sort=path.
+    await waitFor(() => expect(calls.some((u) => u.includes("sort=path"))).toBe(true));
   });
 });

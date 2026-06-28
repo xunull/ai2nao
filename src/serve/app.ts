@@ -38,6 +38,7 @@ import {
   listRepos,
 } from "../read/queries.js";
 import { getStatusSummary, searchManifests } from "../store/operations.js";
+import { parseListQuery } from "./listQuery.js";
 import {
   expandPath,
   findWorkspaces,
@@ -260,14 +261,28 @@ export function createApp(opts: ServeOptions): Hono {
   });
 
   app.get("/api/repos", (c) => {
+    const parsed = parseListQuery((k) => c.req.query(k), {
+      defaultLimit: 25,
+      maxLimit: 100,
+    });
+    if ("error" in parsed) return jsonErr(400, parsed.error);
     try {
-      const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
-      const limit = Math.min(
-        100,
-        Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50)
-      );
-      const { rows, total } = listRepos(db, page, limit);
-      return c.json({ repos: rows, total, page, limit });
+      const { rows, total } = listRepos(db, {
+        limit: parsed.limit,
+        offset: parsed.offset,
+        q: parsed.q,
+        sort: parsed.sort,
+        dir: parsed.dir,
+      });
+      return c.json({
+        repos: rows,
+        total,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        q: parsed.q ?? "",
+        sort: parsed.sort ?? null,
+        dir: parsed.dir ?? null,
+      });
     } catch (e) {
       return jsonErr(500, String(e));
     }
