@@ -117,4 +117,17 @@ describe("settings routes", () => {
     expect((await patch("/api/settings", { scanMaxDocs: 0 })).status).toBe(400);
     expect((await patch("/api/settings", { scanMaxDocs: 99999 })).status).toBe(400);
   });
+
+  it("GET exposes scanConcurrency (default 16); PATCH sets it", async () => {
+    expect((await get()).scanConcurrency).toBe(16);
+    const res = await patch("/api/settings", { scanConcurrency: 8 });
+    expect(res.status).toBe(200);
+    expect((await res.json()).scanConcurrency).toBe(8);
+    expect((await get()).scanConcurrency).toBe(8);
+  });
+
+  it("PATCH rejects an out-of-range scanConcurrency with 400", async () => {
+    expect((await patch("/api/settings", { scanConcurrency: 0 })).status).toBe(400);
+    expect((await patch("/api/settings", { scanConcurrency: 100 })).status).toBe(400);
+  });
 });

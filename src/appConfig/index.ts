@@ -26,6 +26,11 @@ const KEY_SCAN_MAX_DOCS = "scan.maxDocsPerRepo";
 export const DEFAULT_SCAN_MAX_DOCS = 100;
 const MAX_SCAN_DOCS = 5000;
 
+const KEY_SCAN_CONCURRENCY = "scan.concurrency";
+/** Default parallel I/O concurrency for repo scanning. */
+export const DEFAULT_SCAN_CONCURRENCY = 16;
+const MAX_SCAN_CONCURRENCY = 64;
+
 /** Read + JSON.parse a config row; undefined when absent or unparseable. */
 function readRaw(db: Database.Database, key: string): unknown {
   const row = db.prepare("SELECT value FROM app_config WHERE key = ?").get(key) as
@@ -171,4 +176,32 @@ export function setScanMaxDocs(db: Database.Database, maxDocs: number): number {
   }
   writeRaw(db, KEY_SCAN_MAX_DOCS, maxDocs);
   return maxDocs;
+}
+
+/**
+ * Parallel I/O concurrency for repo scanning. Returns the configured value or
+ * {@link DEFAULT_SCAN_CONCURRENCY}; a missing / corrupt / out-of-range row
+ * resolves to the default (corruption-tolerant).
+ */
+export function getScanConcurrency(db: Database.Database): number {
+  const raw = readRaw(db, KEY_SCAN_CONCURRENCY);
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > MAX_SCAN_CONCURRENCY) {
+    if (raw !== undefined) console.warn("app_config: scan.concurrency out of range; using default");
+    return DEFAULT_SCAN_CONCURRENCY;
+  }
+  return raw;
+}
+
+/** Validate + store the scan concurrency. Throws (caller -> 400) on a non-integer or out-of-range value. */
+export function setScanConcurrency(db: Database.Database, concurrency: number): number {
+  if (
+    typeof concurrency !== "number" ||
+    !Number.isInteger(concurrency) ||
+    concurrency < 1 ||
+    concurrency > MAX_SCAN_CONCURRENCY
+  ) {
+    throw new Error(`scan concurrency must be an integer 1..${MAX_SCAN_CONCURRENCY}`);
+  }
+  writeRaw(db, KEY_SCAN_CONCURRENCY, concurrency);
+  return concurrency;
 }

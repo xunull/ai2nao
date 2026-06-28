@@ -46,7 +46,7 @@ describe("Hono read-only API", () => {
 
     const dbPath = join(base, "idx.db");
     const dbw = openDatabase(dbPath);
-    runScan(dbw, [base], ["package.json"]);
+    await runScan(dbw, [base], ["package.json"]);
     dbw.close();
 
     const db = openReadOnlyDatabase(dbPath);
@@ -213,7 +213,7 @@ describe("Hono read-only API", () => {
 
     const dbPath = join(base, "idx.db");
     const dbw = openDatabase(dbPath);
-    runScan(dbw, [base], ["package.json"]);
+    await runScan(dbw, [base], ["package.json"]);
     dbw.close();
 
     const atuinPath = join(base, "history.db");
@@ -292,7 +292,7 @@ describe("Hono read-only API", () => {
 
     const dbPath = join(base, "idx.db");
     const dbw = openDatabase(dbPath);
-    runScan(dbw, [base], ["package.json"]);
+    await runScan(dbw, [base], ["package.json"]);
     dbw.close();
 
     const atuinPath = join(base, "history.db");
@@ -427,7 +427,7 @@ describe("Hono read-only API", () => {
 
     const dbPath = join(base, "idx.db");
     const dbw = openDatabase(dbPath);
-    runScan(dbw, [base], ["package.json"]);
+    await runScan(dbw, [base], ["package.json"]);
     dbw.close();
 
     const db = openDatabase(dbPath);
@@ -631,7 +631,7 @@ describe("Hono read-only API", () => {
 
     const dbPath = join(base, "idx.db");
     const dbw = openDatabase(dbPath);
-    runScan(dbw, [base], ["package.json"]);
+    await runScan(dbw, [base], ["package.json"]);
     dbw.close();
 
     const db = openDatabase(dbPath);

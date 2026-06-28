@@ -16,7 +16,7 @@ import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
 import { runScan } from "../scan/runScan.js";
 import { resolveScanRoots } from "../scan/roots.js";
-import { getScanMaxDepth, getScanMaxDocs } from "../appConfig/index.js";
+import { getScanMaxDepth, getScanMaxDocs, getScanConcurrency } from "../appConfig/index.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
@@ -266,27 +266,28 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
       category: "local_inventory",
       defaultIntervalSeconds: oneDay,
       sensitivity: "high",
-      run: (ctx) => {
+      run: async (ctx) => {
         const resolved = resolveScanRoots(ctx.db);
         if (resolved.state === "unconfigured") {
           return skipped("未配置默认扫描根（在设置页添加）");
         }
         if (resolved.valid.length === 0) {
-          return Promise.resolve({
+          return {
             status: "failed",
             summary: { skipped: resolved.skipped },
             errorSummary: "所有默认扫描根都无效/不存在",
-          });
+          };
         }
-        const result = runScan(ctx.db, resolved.valid, undefined, {
+        const result = await runScan(ctx.db, resolved.valid, undefined, {
           maxDepth: getScanMaxDepth(ctx.db),
           maxDocs: getScanMaxDocs(ctx.db),
+          concurrency: getScanConcurrency(ctx.db),
         });
-        return Promise.resolve({
+        return {
           status: result.errors.length > 0 ? "partial" : "success",
           summary: { ...result, skipped: resolved.skipped },
           errorSummary: result.errors[0] ?? null,
-        });
+        };
       },
     },
     {

@@ -13,6 +13,9 @@ import {
   getScanMaxDocs,
   setScanMaxDocs,
   DEFAULT_SCAN_MAX_DOCS,
+  getScanConcurrency,
+  setScanConcurrency,
+  DEFAULT_SCAN_CONCURRENCY,
 } from "../src/appConfig/index.js";
 
 let base: string;
@@ -133,5 +136,28 @@ describe("getScanMaxDocs / setScanMaxDocs", () => {
   it("falls back to default on a corrupt / out-of-range stored value", () => {
     db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('scan.maxDocsPerRepo', '0', 't')").run();
     expect(getScanMaxDocs(db)).toBe(DEFAULT_SCAN_MAX_DOCS);
+  });
+});
+
+describe("getScanConcurrency / setScanConcurrency", () => {
+  it("defaults to DEFAULT_SCAN_CONCURRENCY (16) when unset", () => {
+    expect(getScanConcurrency(db)).toBe(DEFAULT_SCAN_CONCURRENCY);
+    expect(DEFAULT_SCAN_CONCURRENCY).toBe(16);
+  });
+
+  it("stores and reads back a valid concurrency", () => {
+    expect(setScanConcurrency(db, 8)).toBe(8);
+    expect(getScanConcurrency(db)).toBe(8);
+  });
+
+  it("rejects non-integers and out-of-range values (min 1, max 64)", () => {
+    expect(() => setScanConcurrency(db, 0)).toThrow();
+    expect(() => setScanConcurrency(db, 2.5)).toThrow();
+    expect(() => setScanConcurrency(db, 100)).toThrow();
+  });
+
+  it("falls back to default on a corrupt / out-of-range stored value", () => {
+    db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('scan.concurrency', '0', 't')").run();
+    expect(getScanConcurrency(db)).toBe(DEFAULT_SCAN_CONCURRENCY);
   });
 });

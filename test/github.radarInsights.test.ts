@@ -101,7 +101,7 @@ describe("github radar insights", () => {
 
   afterEach(() => db.close());
 
-  it("golden fixture connects starred repos to current work without raw excerpts", () => {
+  it("golden fixture connects starred repos to current work without raw excerpts", async () => {
     upsertStar(
       db,
       star(1, {
@@ -125,7 +125,7 @@ describe("github radar insights", () => {
       "2026-04-21T00:00:00Z"
     );
     rebuildAllRepoTags(db);
-    runScan(db, [freshWorkdir()]);
+    await runScan(db, [freshWorkdir()]);
 
     const result = refreshRadarInsights(db, {
       cwd: freshEmptyWorkdir(),
@@ -152,7 +152,7 @@ describe("github radar insights", () => {
     expect(payload).not.toContain(tmpdir());
   });
 
-  it("reads TODOS from indexed local repos instead of only the current project", () => {
+  it("reads TODOS from indexed local repos instead of only the current project", async () => {
     upsertStar(
       db,
       star(1, {
@@ -169,7 +169,7 @@ describe("github radar insights", () => {
     const indexedRepo = freshIndexedRepo(
       "Build an agent workflow evidence panel for RAG debugging across local projects.\n"
     );
-    runScan(db, [indexedRepo]);
+    await runScan(db, [indexedRepo]);
 
     const result = refreshRadarInsights(db, {
       cwd,
@@ -188,7 +188,7 @@ describe("github radar insights", () => {
     expect(JSON.stringify(clue.evidence)).not.toContain("Build an agent workflow evidence panel");
   });
 
-  it("warns when there are no indexed local projects", () => {
+  it("warns when there are no indexed local projects", async () => {
     upsertStar(db, star(1, { topics: ["agent", "rag"] }), "2026-04-20T00:00:00Z");
     rebuildAllRepoTags(db);
 
@@ -203,11 +203,11 @@ describe("github radar insights", () => {
     expect(body.meta.warnings.map((w) => w.code)).toContain("no_indexed_projects");
   });
 
-  it("changes the project context fingerprint when indexed docs change", () => {
+  it("changes the project context fingerprint when indexed docs change", async () => {
     upsertStar(db, star(1, { topics: ["agent", "rag"] }), "2026-04-20T00:00:00Z");
     rebuildAllRepoTags(db);
     const indexedRepo = freshIndexedRepo("Build an agent RAG workflow.\n");
-    runScan(db, [indexedRepo]);
+    await runScan(db, [indexedRepo]);
     refreshRadarInsights(db, {
       cwd: freshEmptyWorkdir(),
       now: () => new Date("2026-05-03T00:00:00Z"),
@@ -218,7 +218,7 @@ describe("github radar insights", () => {
       .get(before) as { source_fingerprint_json: string };
 
     writeFileSync(join(indexedRepo, "TODOS.md"), "Build an agent RAG workflow with evidence replay.\n");
-    runScan(db, [indexedRepo]);
+    await runScan(db, [indexedRepo]);
     refreshRadarInsights(db, {
       cwd: freshEmptyWorkdir(),
       now: () => new Date("2026-05-04T00:00:00Z"),
@@ -237,7 +237,7 @@ describe("github radar insights", () => {
     );
   });
 
-  it("returns empty when there are no stars", () => {
+  it("returns empty when there are no stars", async () => {
     const result = refreshRadarInsights(db, {
       cwd: freshWorkdir(),
       now: () => new Date("2026-05-03T00:00:00Z"),
@@ -247,10 +247,10 @@ describe("github radar insights", () => {
     expect(getRadarInsights(db).meta.status).toBe("empty");
   });
 
-  it("keeps the previous snapshot when a later refresh fails", () => {
+  it("keeps the previous snapshot when a later refresh fails", async () => {
     upsertStar(db, star(1, { topics: ["agent"] }), "2026-04-20T00:00:00Z");
     rebuildAllRepoTags(db);
-    runScan(db, [freshWorkdir()]);
+    await runScan(db, [freshWorkdir()]);
     const ok = refreshRadarInsights(db, {
       cwd: freshEmptyWorkdir(),
       now: () => new Date("2026-05-03T00:00:00Z"),
@@ -274,7 +274,7 @@ describe("github radar insights", () => {
     expect(failed.previousSnapshot?.generated_at).toBe(before);
   });
 
-  it("feedback suppresses the exact insight on the next refresh", () => {
+  it("feedback suppresses the exact insight on the next refresh", async () => {
     upsertStar(
       db,
       star(1, {
@@ -285,7 +285,7 @@ describe("github radar insights", () => {
     );
     rebuildAllRepoTags(db);
     const cwd = freshWorkdir();
-    runScan(db, [cwd]);
+    await runScan(db, [cwd]);
     refreshRadarInsights(db, {
       cwd,
       now: () => new Date("2026-05-03T00:00:00Z"),

@@ -7,7 +7,7 @@ import { generateDailySummary } from "../src/dailySummary/service.js";
 import { openDatabase } from "../src/store/open.js";
 import { runScan } from "../src/scan/runScan.js";
 
-function createIndexDb() {
+async function createIndexDb() {
   const base = join(tmpdir(), `ai2nao-contract-${Date.now()}-${Math.random()}`);
   const repo = join(base, "proj");
   mkdirSync(join(repo, ".git"), { recursive: true });
@@ -17,7 +17,7 @@ function createIndexDb() {
     "utf8"
   );
   const db = openDatabase(join(base, "idx.db"));
-  runScan(db, [base], ["package.json"]);
+  await runScan(db, [base], ["package.json"]);
   return { db, repo };
 }
 
@@ -36,7 +36,7 @@ function makeEntry(repo: string, command: string): AtuinEntry {
 
 describe("daily summary LLM contract", () => {
   it("degrades on empty LLM response", async () => {
-    const { db, repo } = createIndexDb();
+    const { db, repo } = await createIndexDb();
     try {
       const payload = await generateDailySummary({
         date: "2026-04-07",
@@ -70,7 +70,7 @@ describe("daily summary LLM contract", () => {
   });
 
   it("degrades on malformed LLM JSON", async () => {
-    const { db, repo } = createIndexDb();
+    const { db, repo } = await createIndexDb();
     try {
       const payload = await generateDailySummary({
         date: "2026-04-07",
@@ -105,7 +105,7 @@ describe("daily summary LLM contract", () => {
   });
 
   it("degrades on timeout", async () => {
-    const { db, repo } = createIndexDb();
+    const { db, repo } = await createIndexDb();
     try {
       const payload = await generateDailySummary({
         date: "2026-04-07",
@@ -136,7 +136,7 @@ describe("daily summary LLM contract", () => {
   });
 
   it("degrades when text conflicts with deterministic facts", async () => {
-    const { db, repo } = createIndexDb();
+    const { db, repo } = await createIndexDb();
     try {
       const payload = await generateDailySummary({
         date: "2026-04-07",

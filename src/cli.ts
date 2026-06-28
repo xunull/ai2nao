@@ -19,7 +19,7 @@ import { loadRagEvalCases, runRagEval } from "./rag/eval.js";
 import { cleanupDeletedRagFileManifests } from "./rag/manifest.js";
 import { openRagDatabase } from "./rag/open.js";
 import { resolveScanRoots } from "./scan/roots.js";
-import { getScanMaxDepth, getScanMaxDocs } from "./appConfig/index.js";
+import { getScanMaxDepth, getScanMaxDocs, getScanConcurrency } from "./appConfig/index.js";
 import { createVectorStore } from "./rag/vectorStore/factory.js";
 import { defaultDownloadRoots } from "./downloads/roots.js";
 import {
@@ -131,7 +131,7 @@ program
   )
   .option("--db <path>", "SQLite database path", defaultDbPath())
   .option("--json", "print machine-readable JSON", false)
-  .action((opts: { root: string[]; db: string; json: boolean }) => {
+  .action(async (opts: { root: string[]; db: string; json: boolean }) => {
     const db = openDatabase(opts.db);
     try {
       let roots: string[];
@@ -160,9 +160,10 @@ program
           roots = resolved.valid;
         }
       }
-      const result = runScan(db, roots, undefined, {
+      const result = await runScan(db, roots, undefined, {
         maxDepth: getScanMaxDepth(db),
         maxDocs: getScanMaxDocs(db),
+        concurrency: getScanConcurrency(db),
       });
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, ...result }, null, 2));
@@ -1896,4 +1897,7 @@ cursorHistoryCmd
     }
   });
 
-program.parse();
+program.parseAsync().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exitCode = 1;
+});

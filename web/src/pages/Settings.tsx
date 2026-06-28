@@ -7,6 +7,7 @@ type SettingsRes = {
   scanRoots: string[];
   scanMaxDepth: number;
   scanMaxDocs: number;
+  scanConcurrency: number;
   github: { set: boolean; source: "env" | "file" | null };
 };
 
@@ -40,6 +41,7 @@ export function Settings() {
             roots={q.data.scanRoots}
             maxDepth={q.data.scanMaxDepth}
             maxDocs={q.data.scanMaxDocs}
+            concurrency={q.data.scanConcurrency}
             onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })}
           />
           <GithubTokenSection github={q.data.github} onChanged={() => qc.invalidateQueries({ queryKey: ["settings"] })} />
@@ -63,17 +65,20 @@ function ScanRootsSection({
   roots,
   maxDepth,
   maxDocs,
+  concurrency,
   onChanged,
 }: {
   roots: string[];
   maxDepth: number;
   maxDocs: number;
+  concurrency: number;
   onChanged: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [depth, setDepth] = useState(String(maxDepth));
   const [docs, setDocs] = useState(String(maxDocs));
+  const [conc, setConc] = useState(String(concurrency));
 
   const save = useMutation({
     mutationFn: (next: string[]) => apiPatch<SettingsRes>("/api/settings", { scanRoots: next }),
@@ -92,6 +97,11 @@ function ScanRootsSection({
 
   const saveDocs = useMutation({
     mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanMaxDocs: n }),
+    onSuccess: () => onChanged(),
+  });
+
+  const saveConc = useMutation({
+    mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanConcurrency: n }),
     onSuccess: () => onChanged(),
   });
 
@@ -192,6 +202,29 @@ function ScanRootsSection({
           <span className="text-xs text-[var(--muted)]">篇（docs/ 下 markdown，超出按设计跳过，不算错误）。</span>
           {saveDocs.isError && (
             <span className="text-xs text-red-600">{shortErr(saveDocs.error)}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="scan-conc" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
+            扫描并发度
+          </label>
+          <input
+            id="scan-conc"
+            type="number"
+            min={1}
+            max={64}
+            value={conc}
+            onChange={(e) => setConc(e.target.value)}
+            onBlur={() => {
+              const n = Number(conc);
+              if (Number.isInteger(n) && n >= 1 && n <= 64 && n !== concurrency) saveConc.mutate(n);
+              else setConc(String(concurrency));
+            }}
+            className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+          />
+          <span className="text-xs text-[var(--muted)]">并行 I/O 上限（多根/目录/文件并行扫描）。</span>
+          {saveConc.isError && (
+            <span className="text-xs text-red-600">{shortErr(saveConc.error)}</span>
           )}
         </div>
       </div>

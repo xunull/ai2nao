@@ -7,6 +7,8 @@ import {
   setScanMaxDepth,
   getScanMaxDocs,
   setScanMaxDocs,
+  getScanConcurrency,
+  setScanConcurrency,
 } from "../appConfig/index.js";
 import {
   deleteGithubConfig,
@@ -34,6 +36,7 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     scanRoots: getScanRoots(db),
     scanMaxDepth: getScanMaxDepth(db),
     scanMaxDocs: getScanMaxDocs(db),
+    scanConcurrency: getScanConcurrency(db),
     github: githubDto(),
   });
 
@@ -48,10 +51,11 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     } catch {
       return jsonErr(400, "invalid JSON body");
     }
-    const { scanRoots, scanMaxDepth, scanMaxDocs } = body as {
+    const { scanRoots, scanMaxDepth, scanMaxDocs, scanConcurrency } = body as {
       scanRoots?: unknown;
       scanMaxDepth?: unknown;
       scanMaxDocs?: unknown;
+      scanConcurrency?: unknown;
     };
     try {
       if (scanRoots !== undefined) {
@@ -66,6 +70,10 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
       if (scanMaxDocs !== undefined) {
         if (typeof scanMaxDocs !== "number") return jsonErr(400, "scanMaxDocs must be a number");
         setScanMaxDocs(db, scanMaxDocs);
+      }
+      if (scanConcurrency !== undefined) {
+        if (typeof scanConcurrency !== "number") return jsonErr(400, "scanConcurrency must be a number");
+        setScanConcurrency(db, scanConcurrency);
       }
     } catch (e) {
       return jsonErr(400, e instanceof Error ? e.message : "invalid settings");
