@@ -60,7 +60,8 @@ type PageRes<T> = {
   warnings?: Array<{ code: string; message: string }>;
 };
 
-const PAGE_SIZE = 25;
+// Fallback per table before each measures how many rows fit its half of the viewport.
+const FALLBACK_PAGE_SIZE = 6;
 
 const projectCol = createColumnHelper<EditorProject>();
 const projectColumns = [
@@ -136,11 +137,16 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const [scope, setScope] = useState<"all" | "local" | "remote">("all");
   const [includeMissing, setIncludeMissing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
-  const { page, offset, setPage } = useTableQueryState(PAGE_SIZE);
+  const [projFit, setProjFit] = useState(0);
+  const [entryFit, setEntryFit] = useState(0);
+  // Two tables share one pager, so use the SMALLER fit — that way both fit their
+  // half of the viewport without a scrollbar and paginate in lockstep.
+  const pageSize = projFit && entryFit ? Math.min(projFit, entryFit) : FALLBACK_PAGE_SIZE;
+  const { page, offset, setPage } = useTableQueryState(pageSize);
 
   const common = new URLSearchParams({
     app: config.app,
-    limit: String(PAGE_SIZE),
+    limit: String(pageSize),
     offset: String(offset),
     scope,
     includeMissing: includeMissing ? "1" : "0",
@@ -149,8 +155,8 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const commonQuery = common.toString();
 
   const statusKey = [config.queryKeyPrefix, "status"];
-  const projectsKey = [config.queryKeyPrefix, "projects", submittedQ, scope, includeMissing, page];
-  const entriesKey = [config.queryKeyPrefix, "entries", submittedQ, scope, includeMissing, page];
+  const projectsKey = [config.queryKeyPrefix, "projects", submittedQ, scope, includeMissing, page, pageSize];
+  const entriesKey = [config.queryKeyPrefix, "entries", submittedQ, scope, includeMissing, page, pageSize];
 
   const statusQ = useQuery({
     queryKey: statusKey,
@@ -184,12 +190,13 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   }
 
   const total = entriesQ.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const displayPage = Math.min(Math.max(1, page), totalPages);
   const showPager = totalPages > 1;
 
   return (
     <Page
+      fill
       title={config.title}
       subtitle={config.description}
       actions={
@@ -264,9 +271,9 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
         </div>
       }
     >
-      <div className="space-y-6">
-        <section className="space-y-2">
-          <h2 className="text-base font-semibold">最近项目</h2>
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <section className="flex min-h-0 flex-1 flex-col gap-2">
+          <h2 className="shrink-0 text-base font-semibold">最近项目</h2>
           {projectsQ.isError ? (
             <p className="text-sm text-red-700">{String((projectsQ.error as Error).message)}</p>
           ) : projectsQ.isLoading ? (
@@ -277,7 +284,7 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
               data={projectsQ.data?.rows ?? []}
               total={projectsQ.data?.total ?? 0}
               page={page}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               sorting={[]}
               onSortingChange={() => {}}
               setPage={setPage}
@@ -285,12 +292,14 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
               title="最近项目"
               emptyText="没有匹配的项目"
               hidePager
+              fillHeight
+              onPageSizeChange={setProjFit}
             />
           )}
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-base font-semibold">原始条目</h2>
+        <section className="flex min-h-0 flex-1 flex-col gap-2">
+          <h2 className="shrink-0 text-base font-semibold">原始条目</h2>
           {entriesQ.isError ? (
             <p className="text-sm text-red-700">{String((entriesQ.error as Error).message)}</p>
           ) : entriesQ.isLoading ? (
@@ -301,7 +310,7 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
               data={entriesQ.data?.rows ?? []}
               total={entriesQ.data?.total ?? 0}
               page={page}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               sorting={[]}
               onSortingChange={() => {}}
               setPage={setPage}
@@ -309,11 +318,13 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
               title="原始条目"
               emptyText="没有匹配的条目"
               hidePager
+              fillHeight
+              onPageSizeChange={setEntryFit}
             />
           )}
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
           <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
           {showPager ? (
             <div className="flex items-center gap-2">

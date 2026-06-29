@@ -171,6 +171,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
       onPageSizeChange(rows);
     };
     recompute();
+    if (typeof ResizeObserver === "undefined") return; // jsdom / SSR: skip observer
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
