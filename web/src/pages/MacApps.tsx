@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { Page } from "../components/Page";
 
 type SyncRun = {
   id: number;
@@ -78,14 +79,10 @@ export function MacApps() {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Mac 应用</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            扫描本机 .app bundle，检查名称、版本、Bundle ID 和路径。
-          </p>
-        </div>
+    <Page
+      title="Mac 应用"
+      subtitle="扫描本机 .app bundle，检查名称、版本、Bundle ID 和路径。"
+      actions={
         <button
           type="button"
           onClick={() => syncM.mutate()}
@@ -94,49 +91,52 @@ export function MacApps() {
         >
           {syncM.isPending ? "同步中…" : "立即同步"}
         </button>
-      </header>
+      }
+      toolbar={
+        <div className="space-y-3 pb-3">
+          <StatusPanel
+            status={statusQ.data}
+            isLoading={statusQ.isLoading}
+            error={statusQ.error}
+          />
 
-      <StatusPanel
-        status={statusQ.data}
-        isLoading={statusQ.isLoading}
-        error={statusQ.error}
-      />
+          {syncM.isError ? (
+            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {String((syncM.error as Error).message)}
+            </div>
+          ) : null}
 
-      {syncM.isError ? (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {String((syncM.error as Error).message)}
+          <form
+            onSubmit={onSearch}
+            className="grid grid-cols-[minmax(16rem,1fr)_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
+          >
+            <label className="min-w-0 text-xs text-[var(--muted)]">
+              搜索
+              <input
+                className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
+                placeholder="名称、Bundle ID 或路径"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+            <label className="flex h-9 items-center gap-2 text-sm text-[var(--muted)]">
+              <input
+                type="checkbox"
+                checked={includeMissing}
+                onChange={(e) => {
+                  setOffset(0);
+                  setIncludeMissing(e.target.checked);
+                }}
+              />
+              显示已移除
+            </label>
+            <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
+              搜索
+            </button>
+          </form>
         </div>
-      ) : null}
-
-      <form
-        onSubmit={onSearch}
-        className="grid grid-cols-[minmax(16rem,1fr)_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
-      >
-        <label className="min-w-0 text-xs text-[var(--muted)]">
-          搜索
-          <input
-            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
-            placeholder="名称、Bundle ID 或路径"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-        <label className="flex h-9 items-center gap-2 text-sm text-[var(--muted)]">
-          <input
-            type="checkbox"
-            checked={includeMissing}
-            onChange={(e) => {
-              setOffset(0);
-              setIncludeMissing(e.target.checked);
-            }}
-          />
-          显示已移除
-        </label>
-        <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
-          搜索
-        </button>
-      </form>
-
+      }
+    >
       <InventoryList
         res={listQ.data}
         isLoading={listQ.isLoading}
@@ -144,7 +144,7 @@ export function MacApps() {
         offset={offset}
         setOffset={setOffset}
       />
-    </div>
+    </Page>
   );
 }
 
