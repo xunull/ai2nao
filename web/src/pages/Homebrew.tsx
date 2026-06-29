@@ -1,6 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createColumnHelper } from "@tanstack/react-table";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { DataTable, useTableQueryState } from "../components/DataTable";
 import { Page } from "../components/Page";
 
 type SyncRun = {
@@ -45,7 +47,83 @@ type BrewRes = {
   offset: number;
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
+
+function sourceLabel(pkg: BrewRow): string {
+  if (pkg.installed_on_request === 1) return "手动安装";
+  if (pkg.installed_as_dependency === 1) return "依赖";
+  return "未标记";
+}
+
+const col = createColumnHelper<BrewRow>();
+const columns = [
+  col.accessor("name", {
+    id: "name",
+    header: "包",
+    cell: (ctx) => (
+      <div className="min-w-0">
+        <div className="font-medium">{ctx.getValue()}</div>
+        {ctx.row.original.desc ? (
+          <div
+            className="mt-1 max-w-[36rem] truncate text-xs text-[var(--muted)]"
+            title={ctx.row.original.desc}
+          >
+            {ctx.row.original.desc}
+          </div>
+        ) : null}
+      </div>
+    ),
+  }),
+  col.accessor("kind", {
+    id: "kind",
+    header: "类型",
+    cell: (ctx) => (
+      <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs">
+        {ctx.getValue()}
+      </span>
+    ),
+  }),
+  col.accessor((r) => r.installed_version, {
+    id: "version",
+    header: "版本",
+    cell: (ctx) => (
+      <span className="whitespace-nowrap text-[var(--muted)]">
+        {ctx.getValue() ?? ctx.row.original.current_version ?? "无版本"}
+      </span>
+    ),
+  }),
+  col.accessor((r) => r.tap, {
+    id: "tap",
+    header: "Tap / 全名",
+    cell: (ctx) => (
+      <span
+        className="block max-w-[24rem] truncate text-[var(--muted)]"
+        title={ctx.row.original.full_name ?? ctx.row.original.name}
+      >
+        {ctx.getValue() ?? "无 tap"} · {ctx.row.original.full_name ?? ctx.row.original.name}
+      </span>
+    ),
+  }),
+  col.display({
+    id: "source",
+    header: "安装来源",
+    enableSorting: false,
+    cell: (ctx) => (
+      <span className="whitespace-nowrap text-[var(--muted)]">{sourceLabel(ctx.row.original)}</span>
+    ),
+  }),
+  col.display({
+    id: "status",
+    header: "状态",
+    enableSorting: false,
+    cell: (ctx) =>
+      ctx.row.original.missing_since ? (
+        <span className="whitespace-nowrap text-amber-700">已移除</span>
+      ) : (
+        <span className="whitespace-nowrap text-emerald-700">存在</span>
+      ),
+  }),
+];
 
 export function Homebrew() {
   const queryClient = useQueryClient();
@@ -53,20 +131,23 @@ export function Homebrew() {
   const [submittedQ, setSubmittedQ] = useState("");
   const [kind, setKind] = useState<BrewKind>("");
   const [includeMissing, setIncludeMissing] = useState(false);
-  const [offset, setOffset] = useState(0);
+  const { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange } =
+    useTableQueryState(PAGE_SIZE);
 
   const statusQ = useQuery({
     queryKey: ["brew-status"],
     queryFn: () => apiGet<BrewStatus>("/api/brew/status"),
   });
   const listQ = useQuery({
-    queryKey: ["brew-list", submittedQ, kind, includeMissing, offset],
+    queryKey: ["brew-list", submittedQ, kind, includeMissing, page, sortKey, sortDir],
     queryFn: () =>
       apiGet<BrewRes>(
         `/api/brew/packages?limit=${PAGE_SIZE}&offset=${offset}&includeMissing=${
           includeMissing ? "1" : "0"
-        }${kind ? `&kind=${kind}` : ""}${submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : ""}`
+        }${kind ? `&kind=${kind}` : ""}${submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : ""}` +
+          (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "")
       ),
+    placeholderData: keepPreviousData,
   });
   const syncM = useMutation({
     mutationFn: () => apiPost("/api/brew/sync", {}),
@@ -78,7 +159,7 @@ export function Homebrew() {
 
   function onSearch(e: FormEvent) {
     e.preventDefault();
-    setOffset(0);
+    setPage(1);
     setSubmittedQ(q.trim());
   }
 
@@ -110,55 +191,68 @@ export function Homebrew() {
             onSubmit={onSearch}
             className="grid grid-cols-[minmax(16rem,1fr)_160px_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
           >
-        <label className="min-w-0 text-xs text-[var(--muted)]">
-          搜索
-          <input
-            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
-            placeholder="名称、描述或 tap"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-[var(--muted)]">
-          类型
-          <select
-            className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
-            value={kind}
-            onChange={(e) => {
-              setOffset(0);
-              setKind(e.target.value as BrewKind);
-            }}
-          >
-            <option value="">全部</option>
-            <option value="formula">Formula</option>
-            <option value="cask">Cask</option>
-          </select>
-        </label>
-        <label className="flex h-9 items-center gap-2 text-sm text-[var(--muted)]">
-          <input
-            type="checkbox"
-            checked={includeMissing}
-            onChange={(e) => {
-              setOffset(0);
-              setIncludeMissing(e.target.checked);
-            }}
-          />
-          显示已移除
-        </label>
-        <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
-          搜索
-        </button>
+            <label className="min-w-0 text-xs text-[var(--muted)]">
+              搜索
+              <input
+                className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
+                placeholder="名称、描述或 tap"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+            <label className="text-xs text-[var(--muted)]">
+              类型
+              <select
+                className="mt-1 h-9 w-full rounded border border-[var(--border)] px-3 text-sm text-[var(--fg)]"
+                value={kind}
+                onChange={(e) => {
+                  setPage(1);
+                  setKind(e.target.value as BrewKind);
+                }}
+              >
+                <option value="">全部</option>
+                <option value="formula">Formula</option>
+                <option value="cask">Cask</option>
+              </select>
+            </label>
+            <label className="flex h-9 items-center gap-2 text-sm text-[var(--muted)]">
+              <input
+                type="checkbox"
+                checked={includeMissing}
+                onChange={(e) => {
+                  setPage(1);
+                  setIncludeMissing(e.target.checked);
+                }}
+              />
+              显示已移除
+            </label>
+            <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
+              搜索
+            </button>
           </form>
         </div>
       }
     >
-      <PackageList
-        res={listQ.data}
-        isLoading={listQ.isLoading}
-        error={listQ.error}
-        offset={offset}
-        setOffset={setOffset}
-      />
+      {listQ.isError ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {String((listQ.error as Error).message)}
+        </div>
+      ) : listQ.isLoading ? (
+        <p className="text-sm text-[var(--muted)]">加载列表…</p>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={listQ.data?.rows ?? []}
+          total={listQ.data?.total ?? 0}
+          page={page}
+          pageSize={PAGE_SIZE}
+          sorting={sorting}
+          onSortingChange={onSortingChange}
+          setPage={setPage}
+          isPlaceholderData={listQ.isPlaceholderData}
+          title="包清单"
+        />
+      )}
     </Page>
   );
 }
@@ -223,127 +317,6 @@ function RunSummary({ run }: { run: SyncRun | null }) {
       最近同步：{run.status} · 新增 {run.inserted} · 更新 {run.updated} · 标记移除{" "}
       {run.marked_missing} · warning {run.warnings_count}
       {run.error_summary ? <div className="mt-1 whitespace-pre-wrap">{run.error_summary}</div> : null}
-    </div>
-  );
-}
-
-function PackageList({
-  res,
-  isLoading,
-  error,
-  offset,
-  setOffset,
-}: {
-  res: BrewRes | undefined;
-  isLoading: boolean;
-  error: unknown;
-  offset: number;
-  setOffset: (n: number) => void;
-}) {
-  if (isLoading) return <p className="text-sm text-[var(--muted)]">加载列表…</p>;
-  if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
-  const rows = res?.rows ?? [];
-  return (
-    <div className="space-y-3">
-      <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
-          <h2 className="font-medium">包清单</h2>
-          <span className="text-[var(--muted)]">共 {res?.total ?? 0} 条</span>
-        </div>
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">包</th>
-              <th className="px-3 py-2 font-medium">类型</th>
-              <th className="px-3 py-2 font-medium">版本</th>
-              <th className="px-3 py-2 font-medium">Tap / 全名</th>
-              <th className="px-3 py-2 font-medium">安装来源</th>
-              <th className="px-3 py-2 font-medium">状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-[var(--muted)]" colSpan={6}>
-                  暂无记录。
-                </td>
-              </tr>
-            ) : (
-              rows.map((pkg) => (
-                <tr key={pkg.id} className="border-t border-[var(--border)]">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{pkg.name}</div>
-                    {pkg.desc ? (
-                      <div className="mt-1 max-w-[36rem] truncate text-xs text-[var(--muted)]" title={pkg.desc}>
-                        {pkg.desc}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-xs">
-                      {pkg.kind}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
-                    {pkg.installed_version ?? pkg.current_version ?? "无版本"}
-                  </td>
-                  <td className="max-w-[24rem] truncate px-3 py-2 text-[var(--muted)]" title={pkg.full_name ?? pkg.name}>
-                    {pkg.tap ?? "无 tap"} · {pkg.full_name ?? pkg.name}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-[var(--muted)]">
-                    {sourceLabel(pkg)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {pkg.missing_since ? (
-                      <span className="text-amber-700">已移除</span>
-                    ) : (
-                      <span className="text-emerald-700">存在</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-      <Pager total={res?.total ?? 0} offset={offset} setOffset={setOffset} />
-    </div>
-  );
-}
-
-function sourceLabel(pkg: BrewRow): string {
-  if (pkg.installed_on_request === 1) return "手动安装";
-  if (pkg.installed_as_dependency === 1) return "依赖";
-  return "未标记";
-}
-
-function Pager({
-  total,
-  offset,
-  setOffset,
-}: {
-  total: number;
-  offset: number;
-  setOffset: (n: number) => void;
-}) {
-  return (
-    <div className="flex gap-2">
-      <button
-        type="button"
-        className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
-        disabled={offset <= 0}
-        onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-      >
-        上一页
-      </button>
-      <button
-        type="button"
-        className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
-        disabled={offset + PAGE_SIZE >= total}
-        onClick={() => setOffset(offset + PAGE_SIZE)}
-      >
-        下一页
-      </button>
     </div>
   );
 }

@@ -1,6 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createColumnHelper } from "@tanstack/react-table";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { DataTable, useTableQueryState } from "../components/DataTable";
 import { Page } from "../components/Page";
 
 type EditorApp = "code" | "cursor";
@@ -58,7 +60,74 @@ type PageRes<T> = {
   warnings?: Array<{ code: string; message: string }>;
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
+
+const projectCol = createColumnHelper<EditorProject>();
+const projectColumns = [
+  projectCol.accessor("label", {
+    id: "label",
+    header: "项目",
+    enableSorting: false,
+    cell: (ctx) => <span className="font-medium">{ctx.getValue()}</span>,
+  }),
+  projectCol.display({
+    id: "source",
+    header: "来源",
+    enableSorting: false,
+    cell: (ctx) => (
+      <span className="text-[var(--muted)]">
+        {ctx.row.original.repo
+          ? "仓库"
+          : ctx.row.original.remoteType
+            ? `远程 ${ctx.row.original.remoteType}`
+            : ctx.row.original.kind}
+      </span>
+    ),
+  }),
+  projectCol.accessor("entryCount", { id: "entryCount", header: "条目", enableSorting: false }),
+  projectCol.display({
+    id: "path",
+    header: "路径",
+    enableSorting: false,
+    cell: (ctx) => (
+      <span className="break-all text-[var(--muted)]">
+        {ctx.row.original.path ?? ctx.row.original.remoteAuthorityHash ?? ctx.row.original.key}
+      </span>
+    ),
+  }),
+];
+
+const entryCol = createColumnHelper<EditorEntry>();
+const entryColumns = [
+  entryCol.accessor((r) => r.recent_index, {
+    id: "idx",
+    header: "#",
+    enableSorting: false,
+    cell: (ctx) => <span className="text-[var(--muted)]">{ctx.getValue() + 1}</span>,
+  }),
+  entryCol.display({
+    id: "type",
+    header: "类型",
+    enableSorting: false,
+    cell: (ctx) => <span>{ctx.row.original.remote_type ?? ctx.row.original.kind}</span>,
+  }),
+  entryCol.accessor((r) => r.label, {
+    id: "name",
+    header: "名称",
+    enableSorting: false,
+    cell: (ctx) => <span className="font-medium">{ctx.getValue() ?? "(未命名)"}</span>,
+  }),
+  entryCol.display({
+    id: "loc",
+    header: "位置",
+    enableSorting: false,
+    cell: (ctx) => (
+      <span className="break-all text-[var(--muted)]">
+        {ctx.row.original.path ?? ctx.row.original.uri_redacted}
+      </span>
+    ),
+  }),
+];
 
 export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const queryClient = useQueryClient();
@@ -66,8 +135,8 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const [submittedQ, setSubmittedQ] = useState("");
   const [scope, setScope] = useState<"all" | "local" | "remote">("all");
   const [includeMissing, setIncludeMissing] = useState(false);
-  const [offset, setOffset] = useState(0);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const { page, offset, setPage } = useTableQueryState(PAGE_SIZE);
 
   const common = new URLSearchParams({
     app: config.app,
@@ -80,8 +149,8 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const commonQuery = common.toString();
 
   const statusKey = [config.queryKeyPrefix, "status"];
-  const projectsKey = [config.queryKeyPrefix, "projects", submittedQ, scope, includeMissing, offset];
-  const entriesKey = [config.queryKeyPrefix, "entries", submittedQ, scope, includeMissing, offset];
+  const projectsKey = [config.queryKeyPrefix, "projects", submittedQ, scope, includeMissing, page];
+  const entriesKey = [config.queryKeyPrefix, "entries", submittedQ, scope, includeMissing, page];
 
   const statusQ = useQuery({
     queryKey: statusKey,
@@ -90,10 +159,12 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   const projectsQ = useQuery({
     queryKey: projectsKey,
     queryFn: () => apiGet<PageRes<EditorProject>>(`/api/vscode/recent-projects?${commonQuery}`),
+    placeholderData: keepPreviousData,
   });
   const entriesQ = useQuery({
     queryKey: entriesKey,
     queryFn: () => apiGet<PageRes<EditorEntry>>(`/api/vscode/recent?${commonQuery}`),
+    placeholderData: keepPreviousData,
   });
   const syncM = useMutation({
     mutationFn: () => apiPost("/api/vscode/sync", { app: config.app }),
@@ -108,9 +179,14 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
 
   function onSearch(e: FormEvent) {
     e.preventDefault();
-    setOffset(0);
+    setPage(1);
     setSubmittedQ(q.trim());
   }
+
+  const total = entriesQ.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const displayPage = Math.min(Math.max(1, page), totalPages);
+  const showPager = totalPages > 1;
 
   return (
     <Page
@@ -145,69 +221,121 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
             error={statusQ.error}
           />
           <form onSubmit={onSearch} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-          搜索范围
-          <input
-            className="min-h-11 min-w-[18rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
-            placeholder="项目、路径或远程类型"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-        <button className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm">
-          搜索
-        </button>
-        <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-          类型
-          <select
-            className="min-h-11 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--fg)]"
-            value={scope}
-            onChange={(e) => {
-              setOffset(0);
-              setScope(e.target.value as "all" | "local" | "remote");
-            }}
-          >
-            <option value="all">全部</option>
-            <option value="local">本地</option>
-            <option value="remote">远程</option>
-          </select>
-        </label>
-        <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]">
-          <input
-            type="checkbox"
-            className="size-4"
-            checked={includeMissing}
-            onChange={(e) => {
-              setOffset(0);
-              setIncludeMissing(e.target.checked);
-            }}
-          />
-          显示已消失
-        </label>
+            <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+              搜索范围
+              <input
+                className="min-h-11 min-w-[18rem] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--fg)]"
+                placeholder="项目、路径或远程类型"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+            <button className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm">
+              搜索
+            </button>
+            <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+              类型
+              <select
+                className="min-h-11 rounded border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--fg)]"
+                value={scope}
+                onChange={(e) => {
+                  setPage(1);
+                  setScope(e.target.value as "all" | "local" | "remote");
+                }}
+              >
+                <option value="all">全部</option>
+                <option value="local">本地</option>
+                <option value="remote">远程</option>
+              </select>
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]">
+              <input
+                type="checkbox"
+                className="size-4"
+                checked={includeMissing}
+                onChange={(e) => {
+                  setPage(1);
+                  setIncludeMissing(e.target.checked);
+                }}
+              />
+              显示已消失
+            </label>
           </form>
         </div>
       }
     >
       <div className="space-y-6">
-      <ProjectsTable res={projectsQ.data} isLoading={projectsQ.isLoading} error={projectsQ.error} />
-      <EntriesTable res={entriesQ.data} isLoading={entriesQ.isLoading} error={entriesQ.error} />
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold">最近项目</h2>
+          {projectsQ.isError ? (
+            <p className="text-sm text-red-700">{String((projectsQ.error as Error).message)}</p>
+          ) : projectsQ.isLoading ? (
+            <p className="text-sm text-[var(--muted)]">加载项目…</p>
+          ) : (
+            <DataTable
+              columns={projectColumns}
+              data={projectsQ.data?.rows ?? []}
+              total={projectsQ.data?.total ?? 0}
+              page={page}
+              pageSize={PAGE_SIZE}
+              sorting={[]}
+              onSortingChange={() => {}}
+              setPage={setPage}
+              isPlaceholderData={projectsQ.isPlaceholderData}
+              title="最近项目"
+              emptyText="没有匹配的项目"
+              hidePager
+            />
+          )}
+        </section>
 
-      <div className="flex gap-2">
-        <button
-          className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm disabled:opacity-50"
-          disabled={offset === 0}
-          onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-        >
-          上一页
-        </button>
-        <button
-          className="min-h-11 rounded border border-[var(--border)] px-4 py-2 text-sm disabled:opacity-50"
-          disabled={!entriesQ.data || offset + PAGE_SIZE >= entriesQ.data.total}
-          onClick={() => setOffset(offset + PAGE_SIZE)}
-        >
-          下一页
-        </button>
-      </div>
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold">原始条目</h2>
+          {entriesQ.isError ? (
+            <p className="text-sm text-red-700">{String((entriesQ.error as Error).message)}</p>
+          ) : entriesQ.isLoading ? (
+            <p className="text-sm text-[var(--muted)]">加载原始条目…</p>
+          ) : (
+            <DataTable
+              columns={entryColumns}
+              data={entriesQ.data?.rows ?? []}
+              total={entriesQ.data?.total ?? 0}
+              page={page}
+              pageSize={PAGE_SIZE}
+              sorting={[]}
+              onSortingChange={() => {}}
+              setPage={setPage}
+              isPlaceholderData={entriesQ.isPlaceholderData}
+              title="原始条目"
+              emptyText="没有匹配的条目"
+              hidePager
+            />
+          )}
+        </section>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
+          <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
+          {showPager ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                disabled={displayPage <= 1}
+                onClick={() => setPage(displayPage - 1)}
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                disabled={displayPage >= totalPages}
+                onClick={() => setPage(displayPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </Page>
   );
@@ -240,105 +368,5 @@ function StatusPanel({
         最近同步：{status.lastSeenAt ? new Date(status.lastSeenAt).toLocaleString() : "尚未同步"}
       </div>
     </div>
-  );
-}
-
-function ProjectsTable({
-  res,
-  isLoading,
-  error,
-}: {
-  res: PageRes<EditorProject> | undefined;
-  isLoading: boolean;
-  error: unknown;
-}) {
-  if (isLoading) return <p className="text-sm text-[var(--muted)]">加载项目…</p>;
-  if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
-  return (
-    <section className="space-y-2">
-      <h2 className="text-base font-semibold">最近项目</h2>
-      <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-left text-[var(--muted)]">
-            <tr>
-              <th className="px-3 py-2">项目</th>
-              <th className="px-3 py-2">来源</th>
-              <th className="px-3 py-2">条目</th>
-              <th className="px-3 py-2">路径</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(res?.rows ?? []).map((row) => (
-              <tr key={row.key} className="border-t border-[var(--border)]">
-                <td className="px-3 py-2 font-medium">{row.label}</td>
-                <td className="px-3 py-2 text-[var(--muted)]">
-                  {row.repo ? "仓库" : row.remoteType ? `远程 ${row.remoteType}` : row.kind}
-                </td>
-                <td className="px-3 py-2">{row.entryCount}</td>
-                <td className="px-3 py-2 text-[var(--muted)] break-all">
-                  {row.path ?? row.remoteAuthorityHash ?? row.key}
-                </td>
-              </tr>
-            ))}
-            {res?.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-[var(--muted)]" colSpan={4}>
-                  没有匹配的项目
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function EntriesTable({
-  res,
-  isLoading,
-  error,
-}: {
-  res: PageRes<EditorEntry> | undefined;
-  isLoading: boolean;
-  error: unknown;
-}) {
-  if (isLoading) return <p className="text-sm text-[var(--muted)]">加载原始条目…</p>;
-  if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
-  return (
-    <section className="space-y-2">
-      <h2 className="text-base font-semibold">原始条目</h2>
-      <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-left text-[var(--muted)]">
-            <tr>
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">类型</th>
-              <th className="px-3 py-2">名称</th>
-              <th className="px-3 py-2">位置</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(res?.rows ?? []).map((row) => (
-              <tr key={row.id} className="border-t border-[var(--border)]">
-                <td className="px-3 py-2 text-[var(--muted)]">{row.recent_index + 1}</td>
-                <td className="px-3 py-2">{row.remote_type ?? row.kind}</td>
-                <td className="px-3 py-2 font-medium">{row.label ?? "(未命名)"}</td>
-                <td className="px-3 py-2 text-[var(--muted)] break-all">
-                  {row.path ?? row.uri_redacted}
-                </td>
-              </tr>
-            ))}
-            {res?.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-[var(--muted)]" colSpan={4}>
-                  没有匹配的条目
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }

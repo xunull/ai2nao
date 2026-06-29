@@ -1,9 +1,18 @@
 import type Database from "better-sqlite3";
 import { getLatestInventorySyncRun } from "../../localInventory/syncRuns.js";
 import { getInventorySyncStateValue } from "../../localInventory/state.js";
+import { orderByClause, type SortCol } from "../../serve/orderBy.js";
 import type { ListOptions, PageResult } from "../types.js";
 import type { BrewPackageKind } from "./parse.js";
 import { findBrewExecutable } from "./executable.js";
+
+/** Server-side sort allowlist for the Homebrew table (keys match column ids in the web UI). */
+export const BREW_SORT_ALLOWED: Record<string, SortCol> = {
+  name: { expr: "name COLLATE NOCASE", defaultDir: "asc" },
+  kind: { expr: "kind", defaultDir: "asc" },
+  version: { expr: "installed_version COLLATE NOCASE", defaultDir: "asc", nulls: "last" },
+  tap: { expr: "tap COLLATE NOCASE", defaultDir: "asc", nulls: "last" },
+};
 
 export type BrewPackageRow = {
   id: number;
@@ -71,6 +80,15 @@ export function listBrewPackages(
     params.push(q, q, q, q);
   }
   const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const orderBy = orderByClause({
+    sort: opts.sort,
+    dir: opts.dir,
+    allowed: BREW_SORT_ALLOWED,
+    prefix: "missing_since IS NOT NULL",
+    defaultSortKey: "name",
+    defaultDir: "asc",
+    tiebreaker: "id ASC",
+  });
   const total = (
     db.prepare(`SELECT COUNT(*) AS n FROM brew_packages ${clause}`).get(...params) as {
       n: number;
@@ -83,7 +101,7 @@ export function listBrewPackages(
               outdated, last_seen_at, missing_since, updated_at
        FROM brew_packages
        ${clause}
-       ORDER BY missing_since IS NOT NULL, kind, name COLLATE NOCASE
+       ${orderBy}
        LIMIT ? OFFSET ?`
     )
     .all(...params, opts.limit, opts.offset) as BrewPackageRow[];

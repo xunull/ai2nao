@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CursorProjects } from "../web/src/pages/CursorProjects";
 import { Vscode } from "../web/src/pages/Vscode";
@@ -13,7 +14,7 @@ function renderPage(page = <Vscode />) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      {page}
+      <MemoryRouter>{page}</MemoryRouter>
     </QueryClientProvider>
   );
 }

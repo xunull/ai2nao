@@ -83,6 +83,11 @@ type DataTableProps<T> = {
   isPlaceholderData?: boolean;
   title: string;
   emptyText?: string;
+  /**
+   * Hide the built-in pager — for pages that drive several tables from one shared
+   * pager (e.g. the editor recent view renders two DataTables under one pager).
+   */
+  hidePager?: boolean;
 };
 
 /**
@@ -103,6 +108,7 @@ export function DataTable<T>({
   isPlaceholderData = false,
   title,
   emptyText = "暂无记录。",
+  hidePager = false,
 }: DataTableProps<T>) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const displayPage = Math.min(Math.max(1, page), totalPages);
@@ -192,6 +198,7 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
+      {hidePager ? null : (
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
         <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
         {showPager ? (
@@ -215,6 +222,7 @@ export function DataTable<T>({
           </div>
         ) : null}
       </div>
+      )}
     </div>
   );
 }
