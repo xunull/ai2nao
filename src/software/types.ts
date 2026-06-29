@@ -16,6 +16,9 @@ export type ListOptions = {
   includeMissing?: boolean;
   limit: number;
   offset: number;
+  /** Server-side sort column key (validated against a per-table allowlist). */
+  sort?: string;
+  dir?: "asc" | "desc";
 };
 
 export type PageResult<T> = {

@@ -1,6 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createColumnHelper } from "@tanstack/react-table";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { DataTable, useTableQueryState } from "../components/DataTable";
 import { Page } from "../components/Page";
 
 type SyncRun = {
@@ -42,27 +44,77 @@ type AppsRes = {
   offset: number;
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
+
+const col = createColumnHelper<AppRow>();
+const columns = [
+  col.accessor("name", {
+    id: "name",
+    header: "应用",
+    cell: (ctx) => (
+      <div className="min-w-0">
+        <div className="font-medium">{ctx.getValue()}</div>
+        <div className="text-xs text-[var(--muted)]">
+          {ctx.row.original.short_version ?? ctx.row.original.version ?? "无版本"}
+        </div>
+      </div>
+    ),
+  }),
+  col.accessor((r) => r.bundle_id, {
+    id: "bundle",
+    header: "Bundle ID",
+    cell: (ctx) => (
+      <span className="block max-w-[16rem] truncate text-[var(--muted)]">
+        {ctx.getValue() ?? "无 Bundle ID"}
+      </span>
+    ),
+  }),
+  col.accessor("path", {
+    id: "path",
+    header: "路径",
+    cell: (ctx) => (
+      <span
+        className="block max-w-[36rem] truncate font-mono text-xs text-[var(--muted)]"
+        title={ctx.getValue()}
+      >
+        {ctx.getValue()}
+      </span>
+    ),
+  }),
+  col.display({
+    id: "status",
+    header: "状态",
+    enableSorting: false,
+    cell: (ctx) =>
+      ctx.row.original.missing_since ? (
+        <span className="whitespace-nowrap text-amber-700">已移除</span>
+      ) : (
+        <span className="whitespace-nowrap text-emerald-700">存在</span>
+      ),
+  }),
+];
 
 export function MacApps() {
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
   const [submittedQ, setSubmittedQ] = useState("");
   const [includeMissing, setIncludeMissing] = useState(false);
-  const [offset, setOffset] = useState(0);
+  const { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange } =
+    useTableQueryState(PAGE_SIZE);
 
   const statusQ = useQuery({
     queryKey: ["apps-status"],
     queryFn: () => apiGet<AppsStatus>("/api/apps/status"),
   });
   const listQ = useQuery({
-    queryKey: ["apps-list", submittedQ, includeMissing, offset],
+    queryKey: ["apps-list", submittedQ, includeMissing, page, sortKey, sortDir],
     queryFn: () =>
       apiGet<AppsRes>(
-        `/api/apps?limit=${PAGE_SIZE}&offset=${offset}&includeMissing=${includeMissing ? "1" : "0"}${
-          submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : ""
-        }`
+        `/api/apps?limit=${PAGE_SIZE}&offset=${offset}&includeMissing=${includeMissing ? "1" : "0"}` +
+          (submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : "") +
+          (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "")
       ),
+    placeholderData: keepPreviousData,
   });
   const syncM = useMutation({
     mutationFn: () => apiPost("/api/apps/sync", {}),
@@ -74,7 +126,7 @@ export function MacApps() {
 
   function onSearch(e: FormEvent) {
     e.preventDefault();
-    setOffset(0);
+    setPage(1);
     setSubmittedQ(q.trim());
   }
 
@@ -124,7 +176,7 @@ export function MacApps() {
                 type="checkbox"
                 checked={includeMissing}
                 onChange={(e) => {
-                  setOffset(0);
+                  setPage(1);
                   setIncludeMissing(e.target.checked);
                 }}
               />
@@ -137,13 +189,26 @@ export function MacApps() {
         </div>
       }
     >
-      <InventoryList
-        res={listQ.data}
-        isLoading={listQ.isLoading}
-        error={listQ.error}
-        offset={offset}
-        setOffset={setOffset}
-      />
+      {listQ.isError ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {String((listQ.error as Error).message)}
+        </div>
+      ) : listQ.isLoading ? (
+        <p className="text-sm text-[var(--muted)]">加载列表…</p>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={listQ.data?.rows ?? []}
+          total={listQ.data?.total ?? 0}
+          page={page}
+          pageSize={PAGE_SIZE}
+          sorting={sorting}
+          onSortingChange={onSortingChange}
+          setPage={setPage}
+          isPlaceholderData={listQ.isPlaceholderData}
+          title="应用清单"
+        />
+      )}
     </Page>
   );
 }
@@ -204,109 +269,6 @@ function RunSummary({ run }: { run: SyncRun | null }) {
       最近同步：{run.status} · 新增 {run.inserted} · 更新 {run.updated} · 标记移除{" "}
       {run.marked_missing} · warning {run.warnings_count}
       {run.error_summary ? <div className="mt-1 whitespace-pre-wrap">{run.error_summary}</div> : null}
-    </div>
-  );
-}
-
-function InventoryList({
-  res,
-  isLoading,
-  error,
-  offset,
-  setOffset,
-}: {
-  res: AppsRes | undefined;
-  isLoading: boolean;
-  error: unknown;
-  offset: number;
-  setOffset: (n: number) => void;
-}) {
-  if (isLoading) return <p className="text-sm text-[var(--muted)]">加载列表…</p>;
-  if (error) return <p className="text-sm text-red-700">{String((error as Error).message)}</p>;
-  const rows = res?.rows ?? [];
-  return (
-    <div className="space-y-3">
-      <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
-          <h2 className="font-medium">应用清单</h2>
-          <span className="text-[var(--muted)]">共 {res?.total ?? 0} 条</span>
-        </div>
-        <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">应用</th>
-              <th className="px-3 py-2 font-medium">Bundle ID</th>
-              <th className="px-3 py-2 font-medium">路径</th>
-              <th className="px-3 py-2 font-medium">状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4 text-[var(--muted)]" colSpan={4}>
-                  暂无记录。
-                </td>
-              </tr>
-            ) : (
-              rows.map((app) => (
-                <tr key={app.id} className="border-t border-[var(--border)]">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{app.name}</div>
-                    <div className="text-xs text-[var(--muted)]">
-                      {app.short_version ?? app.version ?? "无版本"}
-                    </div>
-                  </td>
-                  <td className="max-w-[16rem] truncate px-3 py-2 text-[var(--muted)]">
-                    {app.bundle_id ?? "无 Bundle ID"}
-                  </td>
-                  <td className="max-w-[36rem] truncate px-3 py-2 font-mono text-xs text-[var(--muted)]" title={app.path}>
-                    {app.path}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {app.missing_since ? (
-                      <span className="text-amber-700">已移除</span>
-                    ) : (
-                      <span className="text-emerald-700">存在</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-      <Pager total={res?.total ?? 0} offset={offset} setOffset={setOffset} />
-    </div>
-  );
-}
-
-function Pager({
-  total,
-  offset,
-  setOffset,
-}: {
-  total: number;
-  offset: number;
-  setOffset: (n: number) => void;
-}) {
-  return (
-    <div className="flex gap-2">
-      <button
-        type="button"
-        className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
-        disabled={offset <= 0}
-        onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-      >
-        上一页
-      </button>
-      <button
-        type="button"
-        className="rounded border border-[var(--border)] px-3 py-1 text-sm disabled:opacity-50"
-        disabled={offset + PAGE_SIZE >= total}
-        onClick={() => setOffset(offset + PAGE_SIZE)}
-      >
-        下一页
-      </button>
     </div>
   );
 }

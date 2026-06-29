@@ -1,7 +1,16 @@
 import type Database from "better-sqlite3";
 import { getLatestInventorySyncRun } from "../../localInventory/syncRuns.js";
+import { orderByClause, type SortCol } from "../../serve/orderBy.js";
 import type { ListOptions, PageResult } from "../types.js";
 import { defaultMacAppRoots, isMacAppInventorySupported } from "./roots.js";
+
+/** Server-side sort allowlist for the Mac apps table (keys match column ids in the web UI). */
+export const MAC_APP_SORT_ALLOWED: Record<string, SortCol> = {
+  name: { expr: "name COLLATE NOCASE", defaultDir: "asc" },
+  bundle: { expr: "bundle_id COLLATE NOCASE", defaultDir: "asc", nulls: "last" },
+  path: { expr: "path COLLATE NOCASE", defaultDir: "asc" },
+  seen: { expr: "last_seen_at", defaultDir: "desc" },
+};
 
 export type MacAppRow = {
   id: number;
@@ -57,6 +66,17 @@ export function listMacApps(
     params.push(opts.root);
   }
   const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  // Present-before-removed stays a fixed leading partition; the user's column
+  // sorts within it. Default (no sort) reproduces the old name-then-path order.
+  const orderBy = orderByClause({
+    sort: opts.sort,
+    dir: opts.dir,
+    allowed: MAC_APP_SORT_ALLOWED,
+    prefix: "missing_since IS NOT NULL",
+    defaultSortKey: "name",
+    defaultDir: "asc",
+    tiebreaker: "id ASC",
+  });
   const total = (
     db.prepare(`SELECT COUNT(*) AS n FROM mac_apps ${clause}`).get(...params) as {
       n: number;
@@ -68,7 +88,7 @@ export function listMacApps(
               source_root, last_seen_at, missing_since, updated_at
        FROM mac_apps
        ${clause}
-       ORDER BY missing_since IS NOT NULL, name COLLATE NOCASE, path
+       ${orderBy}
        LIMIT ? OFFSET ?`
     )
     .all(...params, opts.limit, opts.offset) as MacAppRow[];
