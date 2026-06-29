@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { Page } from "../components/Page";
 
 type SyncRun = {
   id: number;
@@ -82,14 +83,10 @@ export function Homebrew() {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Homebrew</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            同步本机 formula 与 cask，检查版本、tap、安装来源和缺失状态。
-          </p>
-        </div>
+    <Page
+      title="Homebrew"
+      subtitle="同步本机 formula 与 cask，检查版本、tap、安装来源和缺失状态。"
+      actions={
         <button
           type="button"
           onClick={() => syncM.mutate()}
@@ -98,20 +95,21 @@ export function Homebrew() {
         >
           {syncM.isPending ? "同步中…" : "立即同步"}
         </button>
-      </header>
+      }
+      toolbar={
+        <div className="space-y-3 pb-3">
+          <StatusPanel status={statusQ.data} isLoading={statusQ.isLoading} error={statusQ.error} />
 
-      <StatusPanel status={statusQ.data} isLoading={statusQ.isLoading} error={statusQ.error} />
+          {syncM.isError ? (
+            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {String((syncM.error as Error).message)}
+            </div>
+          ) : null}
 
-      {syncM.isError ? (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {String((syncM.error as Error).message)}
-        </div>
-      ) : null}
-
-      <form
-        onSubmit={onSearch}
-        className="grid grid-cols-[minmax(16rem,1fr)_160px_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
-      >
+          <form
+            onSubmit={onSearch}
+            className="grid grid-cols-[minmax(16rem,1fr)_160px_auto_auto] items-end gap-3 rounded border border-[var(--border)] bg-white px-4 py-3"
+          >
         <label className="min-w-0 text-xs text-[var(--muted)]">
           搜索
           <input
@@ -150,8 +148,10 @@ export function Homebrew() {
         <button className="h-9 rounded border border-[var(--border)] px-4 text-sm">
           搜索
         </button>
-      </form>
-
+          </form>
+        </div>
+      }
+    >
       <PackageList
         res={listQ.data}
         isLoading={listQ.isLoading}
@@ -159,7 +159,7 @@ export function Homebrew() {
         offset={offset}
         setOffset={setOffset}
       />
-    </div>
+    </Page>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { Page } from "../components/Page";
 
 type EditorApp = "code" | "cursor";
 
@@ -112,20 +113,10 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
   }
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold">{config.title}</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">{config.description}</p>
-      </header>
-
-      <StatusPanel
-        label={config.statusLabel}
-        status={statusQ.data}
-        isLoading={statusQ.isLoading}
-        error={statusQ.error}
-      />
-
-      <div className="flex flex-wrap gap-3 items-center">
+    <Page
+      title={config.title}
+      subtitle={config.description}
+      actions={
         <button
           type="button"
           onClick={() => {
@@ -136,13 +127,24 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
         >
           {syncM.isPending ? config.syncingLabel : config.syncLabel}
         </button>
-        {syncM.isError ? (
-          <span className="text-sm text-red-700">{String((syncM.error as Error).message)}</span>
-        ) : null}
-        {syncNotice ? <span className="text-sm text-emerald-700">{syncNotice}</span> : null}
-      </div>
-
-      <form onSubmit={onSearch} className="flex flex-wrap items-end gap-3">
+      }
+      toolbar={
+        <div className="space-y-3 pb-3">
+          {syncM.isError || syncNotice ? (
+            <div className="text-sm">
+              {syncM.isError ? (
+                <span className="text-red-700">{String((syncM.error as Error).message)}</span>
+              ) : null}
+              {syncNotice ? <span className="text-emerald-700">{syncNotice}</span> : null}
+            </div>
+          ) : null}
+          <StatusPanel
+            label={config.statusLabel}
+            status={statusQ.data}
+            isLoading={statusQ.isLoading}
+            error={statusQ.error}
+          />
+          <form onSubmit={onSearch} className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
           搜索范围
           <input
@@ -182,8 +184,11 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
           />
           显示已消失
         </label>
-      </form>
-
+          </form>
+        </div>
+      }
+    >
+      <div className="space-y-6">
       <ProjectsTable res={projectsQ.data} isLoading={projectsQ.isLoading} error={projectsQ.error} />
       <EntriesTable res={entriesQ.data} isLoading={entriesQ.isLoading} error={entriesQ.error} />
 
@@ -203,7 +208,8 @@ export function EditorRecentPage({ config }: { config: EditorRecentConfig }) {
           下一页
         </button>
       </div>
-    </div>
+      </div>
+    </Page>
   );
 }
 
