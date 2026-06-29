@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 — 2026-06-29
+
+### Added
+
+- **App shell + shared `<Page>` page frame.** Move the scroll boundary off the window into an inner scroll container (`web/src/components/Layout.tsx`: `h-screen` flex column with `<main>` `overflow-y-auto`), add a `ScrollToTop` that resets the container on route change (keyed on pathname only, so `?offset=` pagination keeps its scroll position), and introduce a thin `<Page title subtitle actions toolbar>` component whose header — plus an optional `toolbar` strip — stays frozen (sticky) at the top while content scrolls beneath. The frozen block uses a single sticky container (no magic offset). Migrated pages so far: 定时任务, Mac 应用, VS Code / Cursor 项目 (shared `EditorRecentPage`), Homebrew, Token 排行 — each freezes its title plus status/metrics and search/filter controls. The remaining ~36 pages are tracked in `TODOS.md` for incremental migration.
+- **Single-column sidebar navigation.** Rewrite the two-column rail+panel nav into one Linear/Vercel-style collapsible sidebar.
+- **Scheduler `repos.scan` task + page redesign.** New scheduled repo-scan task driven by the settings-page default scan root, with a configurable `maxDepth` scan-depth brake and a configurable per-repo doc cap (default 100), both editable in Settings. The scheduler page is rebuilt: tasks grouped by category, a 任务 / 最近运行 tab split, real toggles, and a frozen top (metrics + tabs).
+- **Parallel repo scanning.** Rewrite the scanner with bounded async I/O (two `p-limit` limiters), serial per-repo writes, and a configurable concurrency setting.
+- **Repos prune (soft delete).** Deleted repos are soft-marked via `missing_since` (migration v37) instead of lingering as ghosts; all consumers (git churn, work recap, radar insights, vscode) filter to active repos, and the repos page hides missing entries behind a 「含已删」 toggle. Fixes the `git.line_churn.sync` `spawn git ENOENT` failures caused by deleted-repo paths.
+- **产出效率 page + token-vs-git analysis.** Project-level "token consumption vs git output" analysis (backend `git_line_churn` table + scheduler sync) surfaced on a sortable 产出效率 page (`@tanstack/react-table`).
+- **Settings page.** Default scan root configuration plus GitHub token consolidation.
+
+### Changed
+
+- **Repos table → `@tanstack/react-table`.** Replace the hand-rolled repos table with TanStack Table v8 plus server-side search and column sort (shared `orderBy` / `parseListQuery` conventions, injection-safe allowlist).
+- Server-side column sort on inventory pages (shared convention, HuggingFace models as canary).
+- Record the "页面垂直不超屏" design constraint in `CLAUDE.md` and `DESIGN.md`; track the remaining `<Page>` migrations in `TODOS.md`.
+- Restyle the Settings scan-root area to the warm token palette.
+
+### Fixed
+
+- **Repos pagination flicker.** Keep the previous page's data while the next page loads (`react-query` `keepPreviousData`), so only the table refreshes instead of the whole page (including the stat cards) flashing on every page change.
+- Scan doc-cap limiting no longer mis-reports a `partial` status / 「skipped N docs by scan limits」 when the per-repo doc cap truncates a repo's manifest list.
+
 ## 0.3.26 — 2026-06-26
 
 ### Added
