@@ -127,14 +127,25 @@ export function Scheduler() {
           刷新
         </button>
       }
+      toolbar={
+        <>
+          <div className="flex gap-3 pb-3">
+            <Metric label="已注册" value={String(tasks.length)} />
+            <Metric label="已启用" value={String(enabledCount)} />
+            <Metric label="运行中" value={String(runningCount)} />
+          </div>
+          <div className="flex gap-1">
+            <TabButton active={tab === "tasks"} onClick={() => setTab("tasks")}>
+              任务
+            </TabButton>
+            <TabButton active={tab === "runs"} onClick={() => setTab("runs")}>
+              最近运行
+            </TabButton>
+          </div>
+        </>
+      }
     >
       <div className="space-y-4">
-      <div className="flex gap-3">
-        <Metric label="已注册" value={String(tasks.length)} />
-        <Metric label="已启用" value={String(enabledCount)} />
-        <Metric label="运行中" value={String(runningCount)} />
-      </div>
-
       {tasksQ.error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {String((tasksQ.error as Error).message)}
@@ -145,15 +156,6 @@ export function Scheduler() {
           {String(((patchM.error ?? runM.error) as Error).message)}
         </div>
       ) : null}
-
-      <div className="flex gap-1 border-b border-[var(--border)]">
-        <TabButton active={tab === "tasks"} onClick={() => setTab("tasks")}>
-          任务
-        </TabButton>
-        <TabButton active={tab === "runs"} onClick={() => setTab("runs")}>
-          最近运行
-        </TabButton>
-      </div>
 
       {tab === "tasks" ? (
         tasksQ.isLoading ? (
