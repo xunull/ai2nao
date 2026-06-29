@@ -132,6 +132,7 @@ export function MacApps() {
 
   return (
     <Page
+      fill
       title="Mac 应用"
       subtitle="扫描本机 .app bundle，检查名称、版本、Bundle ID 和路径。"
       actions={
@@ -207,6 +208,7 @@ export function MacApps() {
           setPage={setPage}
           isPlaceholderData={listQ.isPlaceholderData}
           title="应用清单"
+          fillHeight
         />
       )}
     </Page>

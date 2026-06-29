@@ -104,6 +104,13 @@ type DataTableProps<T> = {
    * pager (e.g. the editor recent view renders two DataTables under one pager).
    */
   hidePager?: boolean;
+  /**
+   * Fill the parent's height: the table body scrolls internally (with a sticky
+   * header row) and the pager sits below the scroll area, always visible — so the
+   * page never grows past the viewport and you never scroll to reach the pager.
+   * Pair with `<Page fill>` (and a height-bounded parent).
+   */
+  fillHeight?: boolean;
 };
 
 /**
@@ -129,6 +136,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
     onSortingChange,
     setPage,
     hidePager = false,
+    fillHeight = false,
   } = props;
 
   const [localSorting, setLocalSorting] = useState<SortingState>(defaultSorting);
@@ -149,21 +157,22 @@ export function DataTable<T>(props: DataTableProps<T>) {
   const showPager = !clientSort && !hidePager && total > 0 && totalPages > 1;
 
   return (
-    <div className="space-y-3">
+    <div className={fillHeight ? "flex min-h-0 flex-1 flex-col gap-3" : "space-y-3"}>
       <div
         aria-busy={isPlaceholderData}
-        className={`overflow-x-auto rounded border border-[var(--border)] bg-white transition-opacity duration-150 ${
+        className={`rounded border border-[var(--border)] bg-white transition-opacity duration-150 ${
           isPlaceholderData ? "opacity-60" : "opacity-100"
-        }`}
+        } ${fillHeight ? "flex min-h-0 flex-1 flex-col" : ""}`}
       >
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
           <h2 className="font-medium">{title}</h2>
           <span className="text-[var(--muted)]">
             共 {total} 条{clientSort ? "" : ` · 每页 ${pageSize} 条`}
           </span>
         </div>
+        <div className={fillHeight ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"}>
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-left">
+          <thead className={`${fillHeight ? "sticky top-0 z-10 " : ""}bg-neutral-50 text-left`}>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
@@ -235,9 +244,10 @@ export function DataTable<T>(props: DataTableProps<T>) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
       {hidePager || clientSort ? null : (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
           <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
           {showPager && setPage ? (
             <div className="flex items-center gap-2">

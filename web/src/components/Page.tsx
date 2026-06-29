@@ -13,6 +13,14 @@ type PageProps = {
    * block's bottom border).
    */
   toolbar?: ReactNode;
+  /**
+   * Fill the viewport instead of growing the page: title + toolbar pin to the
+   * top, `children` take the remaining height, and an inner-scrolling child (a
+   * `<DataTable fillHeight>`) scrolls its body internally so the whole page
+   * never exceeds the browser height. Requires Layout's frame wrapper to be a
+   * height-bounded flex column (it is). Default false → page grows + scrolls.
+   */
+  fill?: boolean;
   children: ReactNode;
 };
 
@@ -29,9 +37,9 @@ type PageProps = {
  * `sticky top-0` must offset it so it sticks below this frozen block instead of
  * being hidden behind it.
  */
-export function Page({ title, subtitle, actions, toolbar, children }: PageProps) {
+export function Page({ title, subtitle, actions, toolbar, fill = false, children }: PageProps) {
   return (
-    <div>
+    <div className={fill ? "flex h-[calc(100vh-2.5rem)] flex-col" : undefined}>
       <div className="sticky top-0 z-20 -mx-8 -mt-5 border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur">
         <header className="flex items-end justify-between gap-3 px-8 py-3">
           <div>
@@ -44,7 +52,7 @@ export function Page({ title, subtitle, actions, toolbar, children }: PageProps)
         </header>
         {toolbar ? <div className="px-8">{toolbar}</div> : null}
       </div>
-      <div className="pt-5">{children}</div>
+      <div className={fill ? "flex min-h-0 flex-1 flex-col pt-5" : "pt-5"}>{children}</div>
     </div>
   );
 }
