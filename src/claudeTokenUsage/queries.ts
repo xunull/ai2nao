@@ -3,6 +3,7 @@ import type { ProjectSessionTime } from "../claudeCodeHistory/projectLastActive.
 import {
   CLAUDE_TOKEN_USAGE_RULE_VERSION,
   type ClaudeProjectTokenUsage,
+  type ClaudeTokenStatus,
   type ClaudeTokenUsageRow,
   type ClaudeTokenUsageStateRow,
   type ClaudeTokenUsageStatus,
@@ -226,6 +227,54 @@ export function listClaudeProjectTokenUsage(
       return [row.projectKey, { ...row, coverage }];
     })
   );
+}
+
+export type ClaudeDashboardSessionRow = {
+  sessionId: string;
+  projectId: string;
+  projectKey: string;
+  projectPath: string;
+  identityConfidence: "high" | "low";
+  title: string | null;
+  preview: string | null;
+  createdAt: string | null;
+  lastUpdatedAt: string;
+  messageCount: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  tokenStatus: ClaudeTokenStatus;
+};
+
+/**
+ * Per-session rows for the work-dashboard Claude list, straight from the index —
+ * no transcript parsing. Identity (project_key/path/confidence) is the value
+ * stored at sync time, so the dashboard reuses it verbatim with no
+ * re-normalization drift. `from` prunes by last_updated_at; newest first.
+ */
+export function listClaudeDashboardSessions(
+  db: Database.Database,
+  args: { from?: Date | null } = {}
+): ClaudeDashboardSessionRow[] {
+  const clauses = ["missing_since IS NULL"];
+  const params: unknown[] = [];
+  if (args.from) {
+    clauses.push("last_updated_at >= ?");
+    params.push(args.from.toISOString());
+  }
+  return db
+    .prepare(
+      `SELECT session_id AS sessionId, project_id AS projectId,
+              project_key AS projectKey, project_path AS projectPath,
+              identity_confidence AS identityConfidence,
+              title, preview, created_at AS createdAt,
+              last_updated_at AS lastUpdatedAt, message_count AS messageCount,
+              input_tokens AS inputTokens, output_tokens AS outputTokens,
+              token_status AS tokenStatus
+       FROM claude_session_token_usage
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY last_updated_at DESC`
+    )
+    .all(...params) as ClaudeDashboardSessionRow[];
 }
 
 /**

@@ -66,6 +66,51 @@ function collectors(overrides: Partial<DashboardCollectors> = {}): DashboardColl
 }
 
 describe("workDashboard aggregate", () => {
+  it("reads Claude token usage from the index without parsing transcripts", async () => {
+    const root = process.cwd();
+    const claudeSummary = summary("c1", "claude-code", root, "2026-06-06T00:00:00.000Z");
+    const key = normalizeDashboardProjectPath("claude-code", claudeSummary).key;
+    let claudeDetailCalls = 0;
+    const dashboard = await buildWorkDashboard(
+      { rangeDays: 30, sources: ["claude-code"] },
+      collectors({
+        listClaude: async () => ({
+          diagnostics: [],
+          sessions: [{ source: "claude-code", summary: claudeSummary }],
+        }),
+        listCodex: async () => ({ diagnostics: [], sessions: [] }),
+        loadClaudeDetail: async () => {
+          claudeDetailCalls++;
+          return null;
+        },
+        listClaudeProjectTokenUsage: async (_args) =>
+          new Map([
+            [
+              key,
+              {
+                projectKey: key,
+                projectPath: root,
+                inputTokens: 700,
+                outputTokens: 300,
+                totalTokens: 1000,
+                totalSessions: 3,
+                coveredSessions: 3,
+                errorSessions: 0,
+                coverage: "full" as const,
+              },
+            ],
+          ]),
+      }),
+      new Date("2026-06-20T00:00:00.000Z")
+    );
+    // Indexed Claude usage → the request path never reads a transcript.
+    expect(claudeDetailCalls).toBe(0);
+    const project = dashboard.projects.find((p) => p.key === key);
+    expect(project?.tokenUsage.totalTokens).toBe(1000);
+    expect(project?.tokenUsage.totalSessions).toBe(3);
+    expect(project?.tokenUsage.coverage).toBe("full");
+  });
+
   it("merges Claude and Codex sessions by canonical project path and sorts by latest activity", async () => {
     const dashboard = await buildWorkDashboard(
       { rangeDays: 30 },

@@ -12,8 +12,10 @@ import {
 import type Database from "better-sqlite3";
 import {
   getClaudeTokenUsageStatus,
+  listClaudeDashboardSessions,
   listClaudeProjectTokenUsage,
 } from "../claudeTokenUsage/queries.js";
+import type { ClaudeProjectTokenUsage } from "../claudeTokenUsage/types.js";
 import {
   getCodexTokenUsageStatus,
   listCodexProjectTokenUsage,
@@ -219,6 +221,13 @@ export function normalizeDashboardProjectPath(
   summary: ChatSessionSummary,
   decodedWorkspacePath?: string | null
 ): { key: string; path: string; confidence: "high" | "low" } {
+  // Index-backed Claude sessions carry the identity computed at sync time —
+  // reuse it verbatim so the dashboard never re-normalizes (and never drifts
+  // from the project_key the token index aggregates under).
+  const indexed = summary.metadata?.indexed as
+    | { key: string; path: string; confidence: "high" | "low" }
+    | undefined;
+  if (indexed) return indexed;
   const codex = summary.metadata?.codex as { cwd?: unknown } | undefined;
   return normalizeWorkProjectIdentity({
     source,
@@ -277,6 +286,36 @@ function dashboardSessionFromSummary(
     detailHref: detailHref(item.source, item.summary),
     raw: item.summary,
   };
+}
+
+async function collectIndexedClaude(
+  db: Database.Database
+): Promise<{ sessions: DashboardCollectorSession[]; diagnostics: DashboardDiagnostic[] }> {
+  const rows = listClaudeDashboardSessions(db, {});
+  const sessions: DashboardCollectorSession[] = rows.map((r) => ({
+    source: "claude-code",
+    summary: {
+      id: r.sessionId,
+      index: 0,
+      title: r.title,
+      createdAt: r.createdAt ? new Date(r.createdAt) : new Date(r.lastUpdatedAt),
+      lastUpdatedAt: new Date(r.lastUpdatedAt),
+      messageCount: r.messageCount ?? 0,
+      workspaceId: r.projectId,
+      workspacePath: r.projectPath,
+      preview: r.preview ?? "",
+      source: "claude-code",
+      metadata: {
+        indexed: {
+          key: r.projectKey,
+          path: r.projectPath,
+          confidence: r.identityConfidence,
+        },
+      },
+    },
+    decodedWorkspacePath: r.projectPath,
+  }));
+  return { sessions, diagnostics: [] };
 }
 
 async function collectDefaultClaude(limits: {
@@ -396,7 +435,9 @@ async function collectDefaultCodex(limits: {
 
 export function defaultDashboardCollectors(db?: Database.Database): DashboardCollectors {
   return {
-    listClaude: collectDefaultClaude,
+    // When a DB is available, read the Claude session list from the token
+    // index (no transcript parsing); fall back to file parsing without a DB.
+    listClaude: db ? () => collectIndexedClaude(db) : collectDefaultClaude,
     listCodex: collectDefaultCodex,
     loadClaudeDetail: async (projectId, sessionId) =>
       (await loadClaudeSessionDetail(resolveClaudeProjectsRoot(), projectId, sessionId))?.session ?? null,
@@ -426,19 +467,23 @@ async function applyTokenUsage(
   collectors: DashboardCollectors,
   diagnostics: DashboardDiagnostic[],
   scanLimit: number,
-  indexedCodexUsage?: CodexProjectTokenUsage
+  indexedCodexUsage?: CodexProjectTokenUsage,
+  indexedClaudeUsage?: ClaudeProjectTokenUsage
 ): Promise<void> {
   const hasIndexedCodex = Boolean(indexedCodexUsage);
+  const hasIndexedClaude = Boolean(indexedClaudeUsage);
+  // Only file-scan sessions whose SOURCE has no index. Indexed sources are
+  // summed from the DB instead of re-reading transcripts (when both sources are
+  // indexed, `toScan` is empty → zero transcript reads in the request path).
   const toScan = project.recentSessions
-    .filter((session) => !hasIndexedCodex || session.source !== "codex")
+    .filter((session) =>
+      session.source === "codex" ? !hasIndexedCodex : !hasIndexedClaude
+    )
     .slice(0, scanLimit);
+
   let inputTokens = 0;
   let outputTokens = 0;
   let coveredSessions = 0;
-  let totalSessions = hasIndexedCodex
-    ? indexedCodexUsage?.totalSessions ?? 0
-    : 0;
-  let scannedSessions = 0;
 
   for (const session of toScan) {
     let detail: ChatSession | null = null;
@@ -460,21 +505,36 @@ async function applyTokenUsage(
     coveredSessions++;
     inputTokens += usage.inputTokens;
     outputTokens += usage.outputTokens;
-    totalSessions++;
-    scannedSessions++;
   }
 
-  if (indexedCodexUsage) {
-    inputTokens += indexedCodexUsage.inputTokens;
-    outputTokens += indexedCodexUsage.outputTokens;
-    coveredSessions += indexedCodexUsage.coveredSessions;
+  let anyIndexPartial = false;
+  for (const idx of [indexedClaudeUsage, indexedCodexUsage]) {
+    if (!idx) continue;
+    inputTokens += idx.inputTokens;
+    outputTokens += idx.outputTokens;
+    coveredSessions += idx.coveredSessions;
+    if (idx.coverage === "partial") anyIndexPartial = true;
   }
 
-  if (!hasIndexedCodex) {
-    totalSessions = project.sessionCount;
-    scannedSessions = toScan.length;
-  }
-  const truncated = !hasIndexedCodex && project.sessionCount > scanLimit;
+  // Per-source session totals: an indexed source contributes its indexed count;
+  // a scanned source contributes that source's session count on this project.
+  const claudeTotal = hasIndexedClaude
+    ? indexedClaudeUsage!.totalSessions
+    : project.sourceCounts["claude-code"];
+  const codexTotal = hasIndexedCodex
+    ? indexedCodexUsage!.totalSessions
+    : project.sourceCounts.codex;
+  const totalSessions = claudeTotal + codexTotal;
+
+  // A non-indexed source is truncated when it has more sessions than we scanned.
+  const truncated =
+    (!hasIndexedClaude && project.sourceCounts["claude-code"] > scanLimit) ||
+    (!hasIndexedCodex && project.sourceCounts.codex > scanLimit);
+
+  const indexedScanned =
+    (hasIndexedClaude ? indexedClaudeUsage!.totalSessions : 0) +
+    (hasIndexedCodex ? indexedCodexUsage!.totalSessions : 0);
+
   project.tokenUsage = {
     inputTokens,
     outputTokens,
@@ -482,14 +542,14 @@ async function applyTokenUsage(
     coverage:
       coveredSessions === 0
         ? "unknown"
-        : indexedCodexUsage?.coverage === "partial"
+        : anyIndexPartial
           ? "partial"
           : coveredSessions === totalSessions && !truncated
-          ? "full"
-          : "partial",
+            ? "full"
+            : "partial",
     coveredSessions,
     totalSessions,
-    scannedSessions: hasIndexedCodex ? totalSessions : scannedSessions,
+    scannedSessions: indexedScanned + toScan.length,
     scanLimit,
     truncated,
   };
@@ -526,6 +586,7 @@ function totalTokenUsage(projects: DashboardProject[], scanLimit: number) {
 }
 
 type IndexedCodexUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listCodexProjectTokenUsage"]>>>;
+type IndexedClaudeUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listClaudeProjectTokenUsage"]>>>;
 
 export async function buildWorkDashboard(
   partialOptions: Partial<WorkDashboardOptions> = {},
@@ -619,6 +680,34 @@ export async function buildWorkDashboard(
       });
     }
   }
+  let indexedClaudeByProject: IndexedClaudeUsage | undefined;
+  if (options.sources.includes("claude-code") && deps.listClaudeProjectTokenUsage) {
+    try {
+      const status = deps.getClaudeTokenUsageStatus
+        ? await deps.getClaudeTokenUsageStatus()
+        : null;
+      if (status && !status.fresh) {
+        diagnostics.push({
+          source: "claude-code",
+          severity: "warning",
+          kind: "claude-token-index-stale",
+          message: `Claude token index is stale: ${status.staleReasons.join(", ")}`,
+          count: status.state?.indexed_session_count,
+        });
+      }
+      indexedClaudeByProject = await deps.listClaudeProjectTokenUsage({
+        projectKeys: projects.map((project) => project.key),
+        from: range.from,
+      });
+    } catch (e) {
+      diagnostics.push({
+        source: "claude-code",
+        severity: "warning",
+        kind: "claude-token-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
   for (const project of projects) {
     project.recentSessions = project.recentSessions
       .sort((a, b) => b.lastUpdatedAt.getTime() - a.lastUpdatedAt.getTime())
@@ -629,7 +718,8 @@ export async function buildWorkDashboard(
       deps,
       diagnostics,
       options.tokenSessionsPerProject,
-      indexedCodexByProject?.get(project.key)
+      indexedCodexByProject?.get(project.key),
+      indexedClaudeByProject?.get(project.key)
     );
     project.recentSessions = project.recentSessions.slice(0, options.sessionsPerProject);
   }
