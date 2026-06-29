@@ -32,6 +32,8 @@ function tokenRow(over: Partial<ClaudeTokenUsageRow>): ClaudeTokenUsageRow {
     missing_since: null,
     source_seen_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
+    preview: null,
+    message_count: null,
     ...over,
   };
 }

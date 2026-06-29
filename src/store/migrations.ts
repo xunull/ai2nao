@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 37;
+const CURRENT_VERSION = 38;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -48,6 +48,7 @@ export function migrate(db: Database.Database): void {
     applyV35(db);
     applyV36(db);
     applyV37(db);
+    applyV38(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -91,6 +92,7 @@ export function migrate(db: Database.Database): void {
   if (v < 35) applyV35(db);
   if (v < 36) applyV36(db);
   if (v < 37) applyV37(db);
+  if (v < 38) applyV38(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -101,6 +103,19 @@ export function migrate(db: Database.Database): void {
       `Database schema newer than this binary (version ${vAfter}); upgrade ai2nao`
     );
   }
+}
+
+function applyV38(db: Database.Database): void {
+  // Dashboard summary fields on the Claude token index, so the work-dashboard
+  // request path can read session list/preview from this table instead of
+  // parsing transcripts. CLAUDE_TOKEN_USAGE_RULE_VERSION bumped to 6 so the
+  // next work.tokens.refresh tick backfills these for existing rows.
+  db.exec(`
+    ALTER TABLE claude_session_token_usage ADD COLUMN preview TEXT;
+    ALTER TABLE claude_session_token_usage ADD COLUMN message_count INTEGER;
+
+    UPDATE meta_schema SET version = 38 WHERE id = 1;
+  `);
 }
 
 /** Standalone FTS5 (no content=): we maintain rowid = manifest_files.id in application code. */

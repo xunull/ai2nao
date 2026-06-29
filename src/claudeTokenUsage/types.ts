@@ -20,7 +20,7 @@
  *   v5: captures the session's dominant model (most output tokens) to power the
  *       USD cost view (Opus vs Sonnet differ ~5x). 2026-06-19.
  */
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 5;
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 6;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 
@@ -51,6 +51,10 @@ export type ClaudeTokenUsageRow = {
   missing_since: string | null;
   source_seen_at: string;
   updated_at: string;
+  /** First user message snippet for the dashboard session list. */
+  preview: string | null;
+  /** Parsed JSONL record count (≈ message count) for the dashboard. */
+  message_count: number | null;
 };
 
 export type ClaudeTokenUsageStateRow = {

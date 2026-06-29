@@ -69,13 +69,15 @@ export function upsertClaudeTokenUsageRow(
       cwd, project_key, project_path, identity_confidence, title,
       created_at, last_updated_at, input_tokens, output_tokens,
       total_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-      model, token_status, parse_error, missing_since, source_seen_at, updated_at
+      model, token_status, parse_error, missing_since, source_seen_at, updated_at,
+      preview, message_count
     ) VALUES (
       @session_id, @project_id, @file_path, @file_mtime_ms, @file_size_bytes,
       @cwd, @project_key, @project_path, @identity_confidence, @title,
       @created_at, @last_updated_at, @input_tokens, @output_tokens,
       @total_tokens, @cache_read_input_tokens, @cache_creation_input_tokens,
-      @model, @token_status, @parse_error, @missing_since, @source_seen_at, @updated_at
+      @model, @token_status, @parse_error, @missing_since, @source_seen_at, @updated_at,
+      @preview, @message_count
     )
     ON CONFLICT(session_id) DO UPDATE SET
       project_id = excluded.project_id,
@@ -99,7 +101,9 @@ export function upsertClaudeTokenUsageRow(
       parse_error = excluded.parse_error,
       missing_since = excluded.missing_since,
       source_seen_at = excluded.source_seen_at,
-      updated_at = excluded.updated_at`
+      updated_at = excluded.updated_at,
+      preview = excluded.preview,
+      message_count = excluded.message_count`
   ).run(row);
 }
 

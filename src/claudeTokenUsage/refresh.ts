@@ -66,6 +66,8 @@ function fallbackFacts(parse: ParseJsonlResult, fileMtimeMs: number): {
   title: string;
   createdAt: Date;
   lastUpdatedAt: Date;
+  preview: string;
+  messageCount: number;
 } {
   let cwd = "";
   let firstUser = "";
@@ -98,6 +100,8 @@ function fallbackFacts(parse: ParseJsonlResult, fileMtimeMs: number): {
     title: firstUser || "(无用户消息)",
     createdAt: minDate ?? fallbackDate,
     lastUpdatedAt: maxDate ?? fallbackDate,
+    preview: firstUser.slice(0, 280),
+    messageCount: parse.okLines.length,
   };
 }
 
@@ -115,6 +119,8 @@ function rowFromUsage(args: {
         title: "",
         createdAt: new Date(args.source.mtimeMs),
         lastUpdatedAt: new Date(args.source.mtimeMs),
+        preview: "",
+        messageCount: 0,
       };
   const projectPath = args.source.decodedWorkspacePath || facts.cwd || args.source.fallbackProjectPath;
   const identity = normalizeWorkProjectIdentity({
@@ -147,6 +153,8 @@ function rowFromUsage(args: {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
+    preview: facts.preview || null,
+    message_count: facts.messageCount,
     cache_read_input_tokens: cacheReadInputTokens,
     cache_creation_input_tokens: cacheCreationInputTokens,
     model,
