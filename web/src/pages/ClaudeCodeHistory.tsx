@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { MessageSquare } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { MyMessagesSheet } from "../components/MyMessagesSheet";
 import { formatFileTimeMs } from "../util/formatDisplay";
 import { formatRelative } from "../lib/time";
 
@@ -72,6 +74,11 @@ export function ClaudeCodeHistory() {
   const projectsRoot = searchParams.get("projectsRoot") ?? "";
   const projectFromUrl = searchParams.get("project") ?? "";
   const [projectsRootDraft, setProjectsRootDraft] = useState(projectsRoot);
+  // 「只看我说的」抽屉:单 session 范围,带 projectsRoot 维拉详情接口。
+  const [openSession, setOpenSession] = useState<{
+    sessionId: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
     setProjectsRootDraft(projectsRoot);
@@ -286,10 +293,10 @@ export function ClaudeCodeHistory() {
           )}
           <ul className="mt-3 max-h-[28rem] space-y-2 overflow-auto">
             {sessions.data?.sessions.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="relative">
                 <Link
                   to={sessionLink(s)}
-                  className="block rounded-xl border border-neutral-200/80 bg-white px-4 py-3 shadow-sm transition hover:border-blue-200 hover:bg-slate-50/80"
+                  className="block rounded-xl border border-neutral-200/80 bg-white px-4 py-3 pr-12 shadow-sm transition hover:border-blue-200 hover:bg-slate-50/80"
                 >
                   <div className="font-medium text-neutral-900">
                     {s.title?.trim() || s.id.slice(0, 8) + "…"}
@@ -305,11 +312,37 @@ export function ClaudeCodeHistory() {
                     </span>
                   </div>
                 </Link>
+                {/* 按钮是 Link 的兄弟节点(不嵌进 anchor):只看我说的。 */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenSession({
+                      sessionId: s.id,
+                      title: s.title?.trim() || s.id.slice(0, 8) + "…",
+                    })
+                  }
+                  title="只看我发的消息"
+                  aria-label="只看我发的消息"
+                  className="absolute right-2.5 top-2.5 rounded-lg border border-neutral-200 bg-white p-1.5 text-neutral-500 shadow-sm transition hover:border-blue-200 hover:bg-slate-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </button>
               </li>
             ))}
           </ul>
         </section>
       </div>
+
+      <MyMessagesSheet
+        open={openSession !== null}
+        onOpenChange={(o) => {
+          if (!o) setOpenSession(null);
+        }}
+        projectId={projectFromUrl}
+        projectsRoot={projectsRoot}
+        sessionId={openSession?.sessionId ?? ""}
+        title={openSession?.title ?? ""}
+      />
     </div>
   );
 }

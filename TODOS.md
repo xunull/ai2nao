@@ -1025,3 +1025,28 @@ Depends on / blocked by:
 **Effort estimate:** L（human ~2-3天 / CC ~2-3h,分多批）
 
 **Priority:** P3（增量,不阻塞;按页面重要度逐批做）
+
+---
+
+## 35. claude-code-history 跨 session「提问流 / 消息搜索」
+
+**What:** 把一个项目下所有 session 里用户发过的消息汇成一条按时间的流(提问日记),并支持全文搜索「我之前问过什么」。区别于已设计的单 session 抽屉(只看一个会话)。
+
+**Why:** 单 session「只看我说的」抽屉只解决"打开某个会话查看"。跨会话回看 / 搜索自己历史提问是另一个真需求 —— 翻自己几个月来在某项目里都问过什么、搜一个关键词定位到当时哪个会话。office-hours 的 D1-B 方案,被识别为独立方向后缓办。
+
+**Pros:**
+- 把 claude 对话的消息正文真正变成可检索资产(目前消息只在打开详情时实时解析,不入库、不可搜)。
+- 一次入库后,工作台/产出统计等也能复用消息级数据。
+
+**Cons:**
+- 必须建 `claude_messages` 表 + `claude_messages_fts`(FTS5),改 `refreshClaudeTokenUsage` 在解析 JSONL 时逐条入库,首次要重扫 ~374MB transcript(self-heal full reparse,类似 token usage 的 RULE_VERSION 机制)。
+- 入库逻辑要复用 `cleanUserMessage` 的剥注入,否则索引里全是 system-reminder/命令输出噪音(见抽屉特性 Finding 2)。
+- 存储与查询都变重。
+
+**Context:** 来自 office-hours(2026-06-29,`~/.gstack/projects/xunull-ai2nao/20260629-design-claude-history-my-messages-drawer.md` 的 premise challenge 与 NOT-in-scope)。当时明确「显示 ≠ 搜索」,本次只做轻量的单 session 抽屉。该抽屉的 `cleanUserMessage` 纯函数是本 TODO 的前置复用件。
+
+**Depends on / blocked by:** 单 session 抽屉特性(产出可复用的 `cleanUserMessage`);需要先定 FTS5 schema 与重扫/自愈策略(可参考 `claude_session_token_usage` 的 RULE_VERSION 自愈)。
+
+**Effort estimate:** L（human ~2-3天 / CC ~2-3h,含建表/迁移/重扫/搜索 UI)
+
+**Priority:** P3（独立大特性,不阻塞抽屉)
