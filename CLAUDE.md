@@ -7,6 +7,7 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 ## Project UI Constraints
 
 - 本项目只在 PC 桌面端使用，完全不考虑移动端访问的可能性。页面布局、信息密度、交互尺寸和响应式策略只需要面向 PC 展示效果优化。
+- 页面设计禁止垂直上限滚动太多 严谨竖着排布很多超过屏幕
 
 ## Project Architecture Iron Laws
 
