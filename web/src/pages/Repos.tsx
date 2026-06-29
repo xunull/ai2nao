@@ -1,15 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Search } from "lucide-react";
+import { createColumnHelper } from "@tanstack/react-table";
+import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { DataTable, useTableQueryState } from "../components/DataTable";
 import { shortPath } from "../util/path";
 
 const PAGE_SIZE = 25;
@@ -41,12 +36,6 @@ type RepoList = {
   sort: string | null;
   dir: string | null;
 };
-
-function parsePage(raw: string | null): number {
-  const n = parseInt(raw ?? "1", 10);
-  if (Number.isNaN(n) || n < 1) return 1;
-  return n;
-}
 
 /** Debounce a fast-changing value (search input) before it drives the query/URL. */
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -93,11 +82,10 @@ const columns = [
 
 export function Repos() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const page = parsePage(searchParams.get("page"));
   const urlQ = searchParams.get("q") ?? "";
-  const sortKey = searchParams.get("sort") ?? "";
-  const sortDir = searchParams.get("dir") === "asc" ? "asc" : "desc";
   const includeMissing = searchParams.get("includeMissing") === "1";
+  const { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange } =
+    useTableQueryState(PAGE_SIZE);
 
   // Search input is debounced before it touches the URL (and the query).
   const [qInput, setQInput] = useState(urlQ);
@@ -111,9 +99,6 @@ export function Repos() {
     setSearchParams(sp, { replace: true });
   }, [debouncedQ]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sorting: SortingState = sortKey ? [{ id: sortKey, desc: sortDir === "desc" }] : [];
-  const offset = (page - 1) * PAGE_SIZE;
-
   const status = useQuery({
     queryKey: ["status"],
     queryFn: () => apiGet<Status>("/api/status"),
@@ -126,47 +111,11 @@ export function Repos() {
           (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "") +
           (includeMissing ? "&includeMissing=1" : "")
       ),
-    // Keep the current rows on screen while the next page/sort/search loads, so the
-    // page does not flip to a full-page "加载中…" and flicker. Only the table swaps.
     placeholderData: keepPreviousData,
   });
 
   const totalPages = list.data ? Math.max(1, Math.ceil(list.data.total / PAGE_SIZE)) : 1;
   const displayPage = Math.min(Math.max(1, page), totalPages);
-
-  function setPage(p: number) {
-    const next = Math.max(1, Math.min(p, totalPages));
-    const sp = new URLSearchParams(searchParams);
-    if (next <= 1) sp.delete("page");
-    else sp.set("page", String(next));
-    setSearchParams(sp, { replace: true });
-  }
-
-  function onSortingChange(updater: SortingState | ((old: SortingState) => SortingState)) {
-    const next = typeof updater === "function" ? updater(sorting) : updater;
-    const s = next[0];
-    const sp = new URLSearchParams(searchParams);
-    if (s) {
-      sp.set("sort", s.id);
-      sp.set("dir", s.desc ? "desc" : "asc");
-    } else {
-      sp.delete("sort");
-      sp.delete("dir");
-    }
-    sp.delete("page"); // re-sort returns to page 1
-    setSearchParams(sp, { replace: true });
-  }
-
-  const table = useReactTable({
-    data: list.data?.repos ?? [],
-    columns,
-    state: { sorting },
-    onSortingChange,
-    manualSorting: true,
-    manualPagination: true,
-    pageCount: totalPages,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   if (status.isLoading || list.isLoading) {
     return <p className="text-[var(--muted)]">加载中…</p>;
@@ -190,7 +139,6 @@ export function Repos() {
   const l = list.data!;
   const searching = urlQ.trim().length > 0;
   const empty = l.total === 0;
-  const showPager = !empty && totalPages > 1;
 
   return (
     <div className="space-y-4">
@@ -282,85 +230,18 @@ export function Repos() {
           )}
         </div>
       ) : (
-        <>
-          <div
-            aria-busy={list.isPlaceholderData}
-            className={`overflow-x-auto rounded border border-[var(--border)] bg-white transition-opacity duration-150 ${
-              list.isPlaceholderData ? "opacity-60" : "opacity-100"
-            }`}
-          >
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
-              <h2 className="font-medium">仓库清单</h2>
-              <span className="text-[var(--muted)]">
-                共 {l.total} 条 · 每页 {PAGE_SIZE} 条
-              </span>
-            </div>
-            <table className="min-w-full text-sm">
-              <thead className="bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => {
-                      const sorted = header.column.getIsSorted();
-                      return (
-                        <th key={header.id} className="px-3 py-2 font-medium">
-                          <button
-                            type="button"
-                            onClick={header.column.getToggleSortingHandler()}
-                            className="group inline-flex items-center gap-1 text-[var(--fg)] hover:text-[var(--accent)]"
-                          >
-                            {flexRender(header.column.columnDef.header, header.getContext())}
-                            {sorted === "asc" ? (
-                              <ArrowUp className="h-3.5 w-3.5 text-[var(--accent)]" />
-                            ) : sorted === "desc" ? (
-                              <ArrowDown className="h-3.5 w-3.5 text-[var(--accent)]" />
-                            ) : (
-                              <ChevronsUpDown className="h-3.5 w-3.5 text-[var(--muted)] opacity-0 group-hover:opacity-60" />
-                            )}
-                          </button>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-t border-[var(--border)]">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 py-2 align-top">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
-            <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : "单页结果"}</span>
-            {showPager ? (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
-                  disabled={displayPage <= 1}
-                  onClick={() => setPage(displayPage - 1)}
-                >
-                  上一页
-                </button>
-                <button
-                  type="button"
-                  className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
-                  disabled={displayPage >= totalPages}
-                  onClick={() => setPage(displayPage + 1)}
-                >
-                  下一页
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </>
+        <DataTable
+          columns={columns}
+          data={l.repos}
+          total={l.total}
+          page={page}
+          pageSize={PAGE_SIZE}
+          sorting={sorting}
+          onSortingChange={onSortingChange}
+          setPage={setPage}
+          isPlaceholderData={list.isPlaceholderData}
+          title="仓库清单"
+        />
       )}
     </div>
   );

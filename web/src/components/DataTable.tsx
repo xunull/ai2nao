@@ -1,11 +1,13 @@
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 export type TableQueryState = {
@@ -66,23 +68,37 @@ export function useTableQueryState(pageSize: number): TableQueryState {
   return { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange };
 }
 
+/** Per-column display hints read off `ColumnDef.meta` (avoids module augmentation). */
+export type DataTableColumnMeta = { align?: "right"; headerTitle?: string };
+function colMeta(def: { meta?: unknown }): DataTableColumnMeta {
+  return (def.meta as DataTableColumnMeta | undefined) ?? {};
+}
+
 type DataTableProps<T> = {
   columns: ColumnDef<T, any>[];
   data: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-  sorting: SortingState;
-  onSortingChange: TableQueryState["onSortingChange"];
-  setPage: (p: number) => void;
+  title: string;
+  emptyText?: string;
   /**
    * react-query's `isPlaceholderData`: dims the table while the next page/sort
    * loads instead of unmounting it, so the page height never collapses and the
    * scroll position (and the pager) stay put.
    */
   isPlaceholderData?: boolean;
-  title: string;
-  emptyText?: string;
+  /**
+   * Sort in the browser over all rows (no server pagination) instead of the
+   * default server-driven sort + pagination. Use for endpoints that return the
+   * full result set at once (e.g. the project-output table).
+   */
+  clientSort?: boolean;
+  defaultSorting?: SortingState;
+  // Server mode (clientSort = false, the default):
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  sorting?: SortingState;
+  onSortingChange?: TableQueryState["onSortingChange"];
+  setPage?: (p: number) => void;
   /**
    * Hide the built-in pager — for pages that drive several tables from one shared
    * pager (e.g. the editor recent view renders two DataTables under one pager).
@@ -91,38 +107,46 @@ type DataTableProps<T> = {
 };
 
 /**
- * Shared server-driven table for the inventory/list pages: sortable headers,
- * URL-backed pagination, no scroll-jump on page change. Columns opt out of
- * sorting with `enableSorting: false`. Pair with {@link useTableQueryState} and a
- * react-query call using `placeholderData: keepPreviousData`.
+ * Shared table for every list/inventory page: sortable headers, optional
+ * URL-backed pagination, no scroll-jump on page change. The single table
+ * primitive in this app — do not hand-roll `<table>` markup for a new page.
+ * Columns opt out of sorting with `enableSorting: false` and align right / get a
+ * header tooltip via `meta: { align: "right", headerTitle: "…" }`.
  */
-export function DataTable<T>({
-  columns,
-  data,
-  total,
-  page,
-  pageSize,
-  sorting,
-  onSortingChange,
-  setPage,
-  isPlaceholderData = false,
-  title,
-  emptyText = "暂无记录。",
-  hidePager = false,
-}: DataTableProps<T>) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const displayPage = Math.min(Math.max(1, page), totalPages);
-  const showPager = total > 0 && totalPages > 1;
+export function DataTable<T>(props: DataTableProps<T>) {
+  const {
+    columns,
+    data,
+    title,
+    emptyText = "暂无记录。",
+    isPlaceholderData = false,
+    clientSort = false,
+    defaultSorting = [],
+    total = data.length,
+    page = 1,
+    pageSize = data.length || 1,
+    sorting: serverSorting = [],
+    onSortingChange,
+    setPage,
+    hidePager = false,
+  } = props;
+
+  const [localSorting, setLocalSorting] = useState<SortingState>(defaultSorting);
+  const sorting = clientSort ? localSorting : serverSorting;
+
   const table = useReactTable({
     data,
     columns,
     state: { sorting },
-    onSortingChange,
-    manualSorting: true,
-    manualPagination: true,
-    pageCount: totalPages,
+    onSortingChange: clientSort ? setLocalSorting : (onSortingChange ?? (() => {})),
+    manualSorting: !clientSort,
     getCoreRowModel: getCoreRowModel(),
+    ...(clientSort ? { getSortedRowModel: getSortedRowModel() } : { manualPagination: true }),
   });
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const displayPage = Math.min(Math.max(1, page), totalPages);
+  const showPager = !clientSort && !hidePager && total > 0 && totalPages > 1;
 
   return (
     <div className="space-y-3">
@@ -135,7 +159,7 @@ export function DataTable<T>({
         <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm">
           <h2 className="font-medium">{title}</h2>
           <span className="text-[var(--muted)]">
-            共 {total} 条 · 每页 {pageSize} 条
+            共 {total} 条{clientSort ? "" : ` · 每页 ${pageSize} 条`}
           </span>
         </div>
         <table className="min-w-full text-sm">
@@ -143,24 +167,30 @@ export function DataTable<T>({
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
+                  const meta = colMeta(header.column.columnDef);
+                  const alignRight = meta.align === "right";
                   const label = flexRender(
                     header.column.columnDef.header,
                     header.getContext()
                   );
+                  const thClass = `px-3 py-2 font-medium ${alignRight ? "text-right" : ""}`;
+                  if (header.isPlaceholder) return <th key={header.id} className={thClass} />;
                   if (!header.column.getCanSort()) {
                     return (
-                      <th key={header.id} className="px-3 py-2 font-medium">
+                      <th key={header.id} className={thClass} title={meta.headerTitle}>
                         {label}
                       </th>
                     );
                   }
                   const sorted = header.column.getIsSorted();
                   return (
-                    <th key={header.id} className="px-3 py-2 font-medium">
+                    <th key={header.id} className={thClass} title={meta.headerTitle}>
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
-                        className="group inline-flex items-center gap-1 text-[var(--fg)] hover:text-[var(--accent)]"
+                        className={`group inline-flex items-center gap-1 text-[var(--fg)] hover:text-[var(--accent)] ${
+                          alignRight ? "flex-row-reverse" : ""
+                        }`}
                       >
                         {label}
                         {sorted === "asc" ? (
@@ -187,41 +217,49 @@ export function DataTable<T>({
             ) : (
               table.getRowModel().rows.map((row) => (
                 <tr key={row.id} className="border-t border-[var(--border)]">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2 align-top">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const alignRight = colMeta(cell.column.columnDef).align === "right";
+                    return (
+                      <td
+                        key={cell.id}
+                        className={`px-3 py-2 align-top ${
+                          alignRight ? "text-right tabular-nums" : ""
+                        }`}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
-      {hidePager ? null : (
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
-        <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
-        {showPager ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
-              disabled={displayPage <= 1}
-              onClick={() => setPage(displayPage - 1)}
-            >
-              上一页
-            </button>
-            <button
-              type="button"
-              className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
-              disabled={displayPage >= totalPages}
-              onClick={() => setPage(displayPage + 1)}
-            >
-              下一页
-            </button>
-          </div>
-        ) : null}
-      </div>
+      {hidePager || clientSort ? null : (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted)]">
+          <span>{showPager ? `第 ${displayPage} / ${totalPages} 页` : `共 ${total} 条`}</span>
+          {showPager && setPage ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                disabled={displayPage <= 1}
+                onClick={() => setPage(displayPage - 1)}
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-[var(--fg)] hover:bg-neutral-50 disabled:opacity-40"
+                disabled={displayPage >= totalPages}
+                onClick={() => setPage(displayPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );

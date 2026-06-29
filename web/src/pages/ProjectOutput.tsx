@@ -1,16 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type SortingState,
-} from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown, RefreshCw } from "lucide-react";
+import { createColumnHelper } from "@tanstack/react-table";
+import { RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { DataTable } from "../components/DataTable";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatTokenCount } from "../util/formatDisplay";
 
@@ -53,11 +47,6 @@ function fmtRatio(v: number | null): string {
   return v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1);
 }
 
-/** Per-column header tooltips (avoids ColumnMeta module augmentation). */
-const headerTitles: Record<string, string> = {
-  tokensPerLine: "粗略效率，不是价值：删代码/重构/硬 debug 会让它偏高",
-};
-
 const col = createColumnHelper<Row>();
 
 const columns = [
@@ -80,29 +69,35 @@ const columns = [
   }),
   col.accessor("tokens", {
     header: "Token",
+    meta: { align: "right" },
     cell: (ctx) => formatTokenCount(ctx.getValue()),
   }),
   col.accessor("added", {
     header: "新增行",
+    meta: { align: "right" },
     cell: (ctx) => <span className="text-emerald-700">+{ctx.getValue().toLocaleString()}</span>,
   }),
   col.accessor("net", {
     header: "净变动",
+    meta: { align: "right" },
     cell: (ctx) => ctx.getValue().toLocaleString(),
   }),
   col.accessor("commits", {
     header: "提交",
+    meta: { align: "right" },
     cell: (ctx) => ctx.getValue(),
   }),
   col.accessor((r) => r.tokensPerLine ?? undefined, {
     id: "tokensPerLine",
     header: "Token / 行",
+    meta: { align: "right", headerTitle: "粗略效率，不是价值：删代码/重构/硬 debug 会让它偏高" },
     // null/undefined ratios always sink, regardless of asc/desc.
     sortUndefined: "last",
     cell: (ctx) => <span className="font-medium">{fmtRatio(ctx.row.original.tokensPerLine)}</span>,
   }),
   col.display({
     id: "actions",
+    meta: { align: "right" },
     cell: (ctx) => <ProjectOpenActions path={ctx.row.original.repo} />,
   }),
 ];
@@ -111,7 +106,6 @@ export function ProjectOutput() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const window = searchParams.get("window") ?? "1w";
-  const [sorting, setSorting] = useState<SortingState>([{ id: "tokensPerLine", desc: true }]);
 
   const query = useQuery({
     queryKey: ["project-output", window],
@@ -119,15 +113,6 @@ export function ProjectOutput() {
   });
 
   const data = useMemo(() => query.data?.rows ?? [], [query.data]);
-
-  const table = useReactTable({
-    data,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   function setWindow(value: string) {
     const next = new URLSearchParams(searchParams);
@@ -203,68 +188,15 @@ export function ProjectOutput() {
       )}
 
       {query.data && data.length > 0 && (
-        <section className="mt-6 overflow-hidden rounded-lg border border-neutral-200">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-xs text-[var(--muted)]">
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => {
-                    const sortable = header.column.getCanSort();
-                    const sorted = header.column.getIsSorted();
-                    const isRepo = header.column.id === "repo";
-                    const title = headerTitles[header.column.id];
-                    return (
-                      <th
-                        key={header.id}
-                        className={`px-4 py-2 font-medium ${isRepo ? "text-left" : "text-right"}`}
-                        title={title}
-                      >
-                        {header.isPlaceholder ? null : sortable ? (
-                          <button
-                            type="button"
-                            onClick={header.column.getToggleSortingHandler()}
-                            className={`inline-flex items-center gap-1 tabular-nums hover:text-neutral-900 ${
-                              isRepo ? "" : "flex-row-reverse"
-                            } ${sorted ? "text-neutral-900" : ""}`}
-                          >
-                            {flexRender(header.column.columnDef.header, header.getContext())}
-                            {sorted === "asc" ? (
-                              <ArrowUp className="h-3 w-3" aria-hidden="true" />
-                            ) : sorted === "desc" ? (
-                              <ArrowDown className="h-3 w-3" aria-hidden="true" />
-                            ) : (
-                              <ChevronsUpDown className="h-3 w-3 opacity-40" aria-hidden="true" />
-                            )}
-                          </button>
-                        ) : (
-                          flexRender(header.column.columnDef.header, header.getContext())
-                        )}
-                      </th>
-                    );
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-t border-neutral-100">
-                  {row.getVisibleCells().map((cell) => {
-                    const isRepo = cell.column.id === "repo";
-                    const isActions = cell.column.id === "actions";
-                    return (
-                      <td
-                        key={cell.id}
-                        className={`px-4 py-2 ${isRepo ? "" : isActions ? "text-right" : "text-right tabular-nums"}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <div className="mt-6">
+          <DataTable
+            columns={columns}
+            data={data}
+            title="产出明细"
+            clientSort
+            defaultSorting={[{ id: "tokensPerLine", desc: true }]}
+          />
+        </div>
       )}
 
       {query.data && unmatchedCount > 0 && (
