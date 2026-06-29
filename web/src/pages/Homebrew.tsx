@@ -165,6 +165,7 @@ export function Homebrew() {
 
   return (
     <Page
+      fill
       title="Homebrew"
       subtitle="同步本机 formula 与 cask，检查版本、tap、安装来源和缺失状态。"
       actions={
@@ -251,6 +252,7 @@ export function Homebrew() {
           setPage={setPage}
           isPlaceholderData={listQ.isPlaceholderData}
           title="包清单"
+          fillHeight
         />
       )}
     </Page>
