@@ -44,7 +44,8 @@ type AppsRes = {
   offset: number;
 };
 
-const PAGE_SIZE = 25;
+// Fallback before the table measures how many rows fit the viewport (see fillHeight).
+const FALLBACK_PAGE_SIZE = 12;
 
 const col = createColumnHelper<AppRow>();
 const columns = [
@@ -99,18 +100,20 @@ export function MacApps() {
   const [q, setQ] = useState("");
   const [submittedQ, setSubmittedQ] = useState("");
   const [includeMissing, setIncludeMissing] = useState(false);
+  const [autoRows, setAutoRows] = useState(0);
+  const pageSize = autoRows || FALLBACK_PAGE_SIZE;
   const { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange } =
-    useTableQueryState(PAGE_SIZE);
+    useTableQueryState(pageSize);
 
   const statusQ = useQuery({
     queryKey: ["apps-status"],
     queryFn: () => apiGet<AppsStatus>("/api/apps/status"),
   });
   const listQ = useQuery({
-    queryKey: ["apps-list", submittedQ, includeMissing, page, sortKey, sortDir],
+    queryKey: ["apps-list", submittedQ, includeMissing, page, pageSize, sortKey, sortDir],
     queryFn: () =>
       apiGet<AppsRes>(
-        `/api/apps?limit=${PAGE_SIZE}&offset=${offset}&includeMissing=${includeMissing ? "1" : "0"}` +
+        `/api/apps?limit=${pageSize}&offset=${offset}&includeMissing=${includeMissing ? "1" : "0"}` +
           (submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : "") +
           (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "")
       ),
@@ -202,13 +205,14 @@ export function MacApps() {
           data={listQ.data?.rows ?? []}
           total={listQ.data?.total ?? 0}
           page={page}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           sorting={sorting}
           onSortingChange={onSortingChange}
           setPage={setPage}
           isPlaceholderData={listQ.isPlaceholderData}
           title="应用清单"
           fillHeight
+          onPageSizeChange={setAutoRows}
         />
       )}
     </Page>

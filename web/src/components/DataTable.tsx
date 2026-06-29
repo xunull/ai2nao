@@ -7,7 +7,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 export type TableQueryState = {
@@ -105,12 +105,18 @@ type DataTableProps<T> = {
    */
   hidePager?: boolean;
   /**
-   * Fill the parent's height: the table body scrolls internally (with a sticky
-   * header row) and the pager sits below the scroll area, always visible — so the
-   * page never grows past the viewport and you never scroll to reach the pager.
-   * Pair with `<Page fill>` (and a height-bounded parent).
+   * Fill the parent's height: the table shows exactly the rows that fit the
+   * available height — NO internal scrollbar; overflow goes to pagination. The
+   * pager sits below, always visible. Pair with `<Page fill>` (height-bounded
+   * parent) and `onPageSizeChange` so the page fetches exactly the rows that fit.
    */
   fillHeight?: boolean;
+  /**
+   * In `fillHeight` mode: called with how many rows fit the current height, so the
+   * page can use it as the page size (re-fires on window resize). Lets the table
+   * avoid a scrollbar entirely — rows-per-page adapts to the viewport.
+   */
+  onPageSizeChange?: (rows: number) => void;
 };
 
 /**
@@ -137,10 +143,38 @@ export function DataTable<T>(props: DataTableProps<T>) {
     setPage,
     hidePager = false,
     fillHeight = false,
+    onPageSizeChange,
   } = props;
 
   const [localSorting, setLocalSorting] = useState<SortingState>(defaultSorting);
   const sorting = clientSort ? localSorting : serverSorting;
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // Fit page size to the available height: measure how many rows fit and report it
+  // up, so the page fetches exactly that many. No table scrollbar — pagination
+  // covers the overflow. Re-fires on window resize.
+  useLayoutEffect(() => {
+    if (!fillHeight || !onPageSizeChange) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const theadH = el.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+      // Use the TALLEST rendered row — rows vary (1-line vs a wrapped 2-3 line name),
+      // so measuring the first row alone overestimates and clips the last row. Max
+      // row height guarantees every row fits → no clip, no scrollbar.
+      let rowH = 0;
+      el.querySelectorAll("tbody tr").forEach((r) => {
+        rowH = Math.max(rowH, (r as HTMLElement).getBoundingClientRect().height);
+      });
+      if (rowH <= 0) return;
+      const rows = Math.max(1, Math.floor((el.clientHeight - theadH) / rowH));
+      onPageSizeChange(rows);
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fillHeight, onPageSizeChange, data]);
 
   const table = useReactTable({
     data,
@@ -170,7 +204,10 @@ export function DataTable<T>(props: DataTableProps<T>) {
             共 {total} 条{clientSort ? "" : ` · 每页 ${pageSize} 条`}
           </span>
         </div>
-        <div className={fillHeight ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"}>
+        <div
+          ref={bodyRef}
+          className={fillHeight ? "min-h-0 flex-1 overflow-x-auto overflow-y-hidden" : "overflow-x-auto"}
+        >
         <table className="min-w-full text-sm">
           <thead className={`${fillHeight ? "sticky top-0 z-10 " : ""}bg-neutral-50 text-left`}>
             {table.getHeaderGroups().map((hg) => (

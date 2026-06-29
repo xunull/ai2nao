@@ -47,7 +47,8 @@ type BrewRes = {
   offset: number;
 };
 
-const PAGE_SIZE = 25;
+// Fallback before the table measures how many rows fit the viewport (see fillHeight).
+const FALLBACK_PAGE_SIZE = 12;
 
 function sourceLabel(pkg: BrewRow): string {
   if (pkg.installed_on_request === 1) return "手动安装";
@@ -131,18 +132,20 @@ export function Homebrew() {
   const [submittedQ, setSubmittedQ] = useState("");
   const [kind, setKind] = useState<BrewKind>("");
   const [includeMissing, setIncludeMissing] = useState(false);
+  const [autoRows, setAutoRows] = useState(0);
+  const pageSize = autoRows || FALLBACK_PAGE_SIZE;
   const { page, offset, sortKey, sortDir, sorting, setPage, onSortingChange } =
-    useTableQueryState(PAGE_SIZE);
+    useTableQueryState(pageSize);
 
   const statusQ = useQuery({
     queryKey: ["brew-status"],
     queryFn: () => apiGet<BrewStatus>("/api/brew/status"),
   });
   const listQ = useQuery({
-    queryKey: ["brew-list", submittedQ, kind, includeMissing, page, sortKey, sortDir],
+    queryKey: ["brew-list", submittedQ, kind, includeMissing, page, pageSize, sortKey, sortDir],
     queryFn: () =>
       apiGet<BrewRes>(
-        `/api/brew/packages?limit=${PAGE_SIZE}&offset=${offset}&includeMissing=${
+        `/api/brew/packages?limit=${pageSize}&offset=${offset}&includeMissing=${
           includeMissing ? "1" : "0"
         }${kind ? `&kind=${kind}` : ""}${submittedQ ? `&q=${encodeURIComponent(submittedQ)}` : ""}` +
           (sortKey ? `&sort=${sortKey}&dir=${sortDir}` : "")
@@ -246,13 +249,14 @@ export function Homebrew() {
           data={listQ.data?.rows ?? []}
           total={listQ.data?.total ?? 0}
           page={page}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           sorting={sorting}
           onSortingChange={onSortingChange}
           setPage={setPage}
           isPlaceholderData={listQ.isPlaceholderData}
           title="包清单"
           fillHeight
+          onPageSizeChange={setAutoRows}
         />
       )}
     </Page>
