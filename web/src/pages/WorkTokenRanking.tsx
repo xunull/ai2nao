@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { Page } from "../components/Page";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatActiveDuration, formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
 
@@ -91,16 +92,10 @@ export function WorkTokenRanking() {
   }
 
   return (
-    <div className="min-h-[70vh]">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--fg)]">
-            Token 排行
-          </h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            按项目汇总 Claude Code 与 Codex 能统计到的真实 token。
-          </p>
-        </div>
+    <Page
+      title="Token 排行"
+      subtitle="按项目汇总 Claude Code 与 Codex 能统计到的真实 token。"
+      actions={
         <div className="text-right text-xs text-[var(--muted)]">
           <div>本机只读 · 不估算 token</div>
           {ranking.data && (
@@ -109,9 +104,9 @@ export function WorkTokenRanking() {
             </div>
           )}
         </div>
-      </header>
-
-      <section className="mt-5 grid grid-cols-[180px_180px_auto_minmax(0,1fr)] items-end gap-3 border-y border-[var(--border)] py-3">
+      }
+      toolbar={
+        <section className="grid grid-cols-[180px_180px_auto_minmax(0,1fr)] items-end gap-3 border-t border-[var(--border)] py-3">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">时间范围</span>
           <select
@@ -147,8 +142,9 @@ export function WorkTokenRanking() {
         <div className="text-right text-sm text-[var(--muted)]">
           {ranking.data ? `${ranking.data.projects.length} 个项目` : ""}
         </div>
-      </section>
-
+        </section>
+      }
+    >
       {ranking.isError && (
         <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           {(ranking.error as Error).message}
@@ -219,6 +215,6 @@ export function WorkTokenRanking() {
           ))}
         </section>
       )}
-    </div>
+    </Page>
   );
 }
