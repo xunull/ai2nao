@@ -125,4 +125,51 @@ describe("Codex history pages", () => {
     expect(screen.getByText(/失败工具事件/)).toBeInTheDocument();
     expect(screen.getByText(/exec_command_end/)).toBeInTheDocument();
   });
+
+  // 回归(2026-06-30 /investigate):详情页的 sticky <header> 曾包着标题 <h1>。
+  // 标题用未清洗的首条消息,长标题会把固定头撑到 ≥ 滚动容器高度,sticky 头从此
+  // 永久铺满视口、把下面所有消息压到视口外,用户"只看到一个标题"。修复把标题卡片
+  // 移出固定头,只留小工具条 sticky。这里钉住结构不变量:固定头不得再含 <h1>。
+  it("标题不在 sticky 固定头里(长标题不会撑爆固定头吞掉视口、盖住消息)", async () => {
+    const longTitle = "超长注入标题".repeat(200);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/api/codex-history/sessions/s1")) {
+          return new Response(JSON.stringify({
+            ok: true,
+            warnings: [],
+            session: {
+              id: "s1",
+              title: longTitle,
+              createdAt: "2026-04-26T00:00:00.000Z",
+              lastUpdatedAt: "2026-04-26T00:00:00.000Z",
+              messageCount: 1,
+              workspaceId: "/work/app",
+              workspacePath: "/work/app",
+              source: "codex",
+              metadata: { codex: { cwd: "/work/app", archived: false } },
+              messages: [
+                { id: "u1", role: "user", content: "我的提问", timestamp: "2026-04-26T00:00:00.000Z" },
+              ],
+            },
+          }));
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+
+    const { container } = renderRoutes(["/codex-history/s/s1"]);
+
+    const h1 = await screen.findByRole("heading", { level: 1 });
+    const header = container.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(header!.className).toContain("sticky");
+    // 关键:固定头不含标题，所以它高度恒定、永远吞不掉视口。
+    expect(header!.contains(h1)).toBe(false);
+    // 标题与消息都仍在页面上（只是标题不在固定头里）。
+    expect(h1).toHaveTextContent("超长注入标题");
+    expect(screen.getByText("我的提问")).toBeInTheDocument();
+  });
 });

@@ -126,52 +126,51 @@ export function CodexHistorySession() {
 
   return (
     <div className="cursor-chat-root">
-      <header className="sticky top-0 z-10 -mx-1 border-b border-neutral-200/80 bg-[var(--bg)]/90 px-1 pb-4 pt-1 backdrop-blur-md sm:-mx-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link className={backLinkClass} to={listHref}>← Codex 对话列表</Link>
-          <button type="button" className={btnGhost} onClick={() => refreshSession()}>
-            刷新此会话
-          </button>
-        </div>
-        <div className="mt-4 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
-          <div className="flex flex-wrap items-start gap-3">
-            <h1 className="min-w-0 flex-1 text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl">
-              {s.title?.trim() || "无标题会话"}
-            </h1>
-            {codex?.degraded && (
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-950">
-                degraded · {codex.degradationReason}
-              </span>
-            )}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
-            <span>{s.messageCount} 条消息</span>
-            <span className="text-neutral-300">·</span>
-            <span>更新 {formatFileTimeMs(new Date(s.lastUpdatedAt).getTime())}</span>
-            {codex?.gitBranch && <span>· {codex.gitBranch}</span>}
-            {codex?.model && <span>· {codex.model}</span>}
-            {s.source && <span>· {s.source}</span>}
-          </div>
-          {metrics && (
-            <div className="mt-4 grid gap-2 text-sm sm:grid-cols-4">
-              <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">工具调用</div><div className="font-semibold">{metrics.toolCallCount}</div></div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">命令</div><div className="font-semibold">{metrics.commandCount}</div></div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">失败命令</div><div className="font-semibold text-red-700">{metrics.failedCommandCount}</div></div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">涉及文件</div><div className="font-semibold">{metrics.fileCount}</div></div>
-            </div>
-          )}
-          {warnings.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-900">
-              {warnings.map((w) => <li key={w}>{w}</li>)}
-            </ul>
-          )}
-          {s.workspacePath && (
-            <p className="mt-3 break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-600">
-              {s.workspacePath}
-            </p>
-          )}
-        </div>
+      <header className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-3 border-b border-neutral-200/80 bg-[var(--bg)]/90 px-1 py-2.5 backdrop-blur-md sm:-mx-0">
+        <Link className={backLinkClass} to={listHref}>← Codex 对话列表</Link>
+        <button type="button" className={btnGhost} onClick={() => refreshSession()}>
+          刷新此会话
+        </button>
       </header>
+
+      <div className="mt-6 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
+        <div className="flex flex-wrap items-start gap-3">
+          <h1 className="min-w-0 flex-1 text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl">
+            {s.title?.trim() || "无标题会话"}
+          </h1>
+          {codex?.degraded && (
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-950">
+              degraded · {codex.degradationReason}
+            </span>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
+          <span>{s.messageCount} 条消息</span>
+          <span className="text-neutral-300">·</span>
+          <span>更新 {formatFileTimeMs(new Date(s.lastUpdatedAt).getTime())}</span>
+          {codex?.gitBranch && <span>· {codex.gitBranch}</span>}
+          {codex?.model && <span>· {codex.model}</span>}
+          {s.source && <span>· {s.source}</span>}
+        </div>
+        {metrics && (
+          <div className="mt-4 grid gap-2 text-sm sm:grid-cols-4">
+            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">工具调用</div><div className="font-semibold">{metrics.toolCallCount}</div></div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">命令</div><div className="font-semibold">{metrics.commandCount}</div></div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">失败命令</div><div className="font-semibold text-red-700">{metrics.failedCommandCount}</div></div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-neutral-500">涉及文件</div><div className="font-semibold">{metrics.fileCount}</div></div>
+          </div>
+        )}
+        {warnings.length > 0 && (
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-900">
+            {warnings.map((w) => <li key={w}>{w}</li>)}
+          </ul>
+        )}
+        {s.workspacePath && (
+          <p className="mt-3 break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-600">
+            {s.workspacePath}
+          </p>
+        )}
+      </div>
 
       <div className="mx-auto mt-8 max-w-3xl space-y-5 pb-16">
         {s.messages.length === 0 && (

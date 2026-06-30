@@ -102,34 +102,35 @@ export function CursorHistorySession() {
 
   return (
     <div className="cursor-chat-root">
-      <header className="sticky top-0 z-10 -mx-1 border-b border-neutral-200/80 bg-[var(--bg)]/90 px-1 pb-4 pt-1 backdrop-blur-md sm:-mx-0">
+      <header className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-3 border-b border-neutral-200/80 bg-[var(--bg)]/90 px-1 py-2.5 backdrop-blur-md sm:-mx-0">
         <Link className={backLinkClass} to={backTo}>
           ← Cursor 对话列表
         </Link>
-        <div className="mt-4 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
-          <h1 className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl">
-            {s.title?.trim() || "无标题会话"}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
-            <span>{s.messageCount} 条消息</span>
-            <span className="text-neutral-300">·</span>
-            <span>更新 {formatFileTimeMs(new Date(s.lastUpdatedAt).getTime())}</span>
-            {s.source && (
-              <>
-                <span className="text-neutral-300">·</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                  {s.source}
-                </span>
-              </>
-            )}
-          </div>
-          {s.workspacePath && (
-            <p className="mt-3 break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-600">
-              {s.workspacePath}
-            </p>
+      </header>
+
+      <div className="mt-6 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900 sm:text-2xl">
+          {s.title?.trim() || "无标题会话"}
+        </h1>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
+          <span>{s.messageCount} 条消息</span>
+          <span className="text-neutral-300">·</span>
+          <span>更新 {formatFileTimeMs(new Date(s.lastUpdatedAt).getTime())}</span>
+          {s.source && (
+            <>
+              <span className="text-neutral-300">·</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                {s.source}
+              </span>
+            </>
           )}
         </div>
-      </header>
+        {s.workspacePath && (
+          <p className="mt-3 break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-600">
+            {s.workspacePath}
+          </p>
+        )}
+      </div>
 
       <div className="mx-auto mt-8 max-w-3xl space-y-5 pb-16">
         {s.messages.length === 0 && (
