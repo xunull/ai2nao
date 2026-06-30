@@ -94,8 +94,12 @@ describe("codexHistory", () => {
       degradationReason: "transcript-missing",
     });
 
-    const archived = await listCodexSessionSummaries(root, { archived: true });
-    expect(archived.sessions.map((s) => s.id)).toEqual([
+    // D4(archived=include):archived:true = 「包含已归档」→ 已归档 + 未归档全显,
+    // 不再是「只显已归档」。
+    const all = await listCodexSessionSummaries(root, { archived: true });
+    expect(all.sessions.map((s) => s.id).sort()).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
       "cccccccc-cccc-cccc-cccc-cccccccccccc",
     ]);
   });

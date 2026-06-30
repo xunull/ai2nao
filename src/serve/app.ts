@@ -66,6 +66,7 @@ import { projectSessionTimes } from "../claudeTokenUsage/queries.js";
 import { createMcpHandler } from "../mcp/server.js";
 import {
   codexStateDbPath,
+  listCodexProjects,
   listCodexSessionSummaries,
   loadCodexSessionDetail,
   resolveCodexRoot,
@@ -707,6 +708,18 @@ export function createApp(opts: ServeOptions): Hono {
         stateDbPath: codexStateDbPath(root),
         envCodexHome: Boolean(process.env.CODEX_HOME),
       });
+    } catch (e) {
+      return codexHistoryErr(e);
+    }
+  });
+
+  app.get("/api/codex-history/projects", async (c) => {
+    try {
+      // D1:项目列表只受 archived 影响;branch/model 是 session 级细化,不在此。
+      const result = await listCodexProjects(c.req.query("codexRoot"), {
+        archived: boolQuery(c.req.query("archived")) ?? false,
+      });
+      return c.json(result);
     } catch (e) {
       return codexHistoryErr(e);
     }

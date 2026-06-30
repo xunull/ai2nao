@@ -34,56 +34,66 @@ describe("Codex history pages", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders fallback diagnostics, degraded badge, and archived toggle", async () => {
+  function stubTwoPane() {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith("/api/codex-history/status")) {
         return new Response(JSON.stringify({
-          platform: "darwin",
-          codexRoot: "/tmp/codex",
-          sessionsRoot: "/tmp/codex/sessions",
-          stateDbPath: "/tmp/codex/state_5.sqlite",
+          platform: "darwin", codexRoot: "/tmp/codex",
+          sessionsRoot: "/tmp/codex/sessions", stateDbPath: "/tmp/codex/state_5.sqlite",
           envCodexHome: false,
+        }));
+      }
+      if (url.startsWith("/api/codex-history/projects")) {
+        return new Response(JSON.stringify({
+          ok: true, source: "fallback",
+          diagnostics: [{ kind: "state-db-unavailable", message: "missing", path: "/tmp/codex/state_5.sqlite" }],
+          projects: [{ id: "/work/app", path: "/work/app", name: "app", sessionCount: 1, lastActiveAt: "2026-04-26T00:00:00.000Z" }],
         }));
       }
       if (url.startsWith("/api/codex-history/sessions")) {
         return new Response(JSON.stringify({
-          ok: true,
-          source: "fallback",
-          codexRoot: "/tmp/codex",
-          sessionsRoot: "/tmp/codex/sessions",
-          stateDbPath: "/tmp/codex/state_5.sqlite",
-          diagnostics: [{ kind: "state-db-unavailable", message: "missing", path: "/tmp/codex/state_5.sqlite" }],
-          scannedCount: 1,
-          truncated: false,
+          ok: true, source: "fallback", diagnostics: [], scannedCount: 1, truncated: false,
           sessions: [{
-            id: "s1",
-            index: 1,
-            title: "Codex thread",
-            createdAt: "2026-04-26T00:00:00.000Z",
-            lastUpdatedAt: "2026-04-26T00:00:00.000Z",
-            messageCount: 0,
-            workspaceId: "/work/app",
-            workspacePath: "/work/app",
-            preview: "preview",
+            id: "s1", index: 1, title: "Codex thread",
+            createdAt: "2026-04-26T00:00:00.000Z", lastUpdatedAt: "2026-04-26T00:00:00.000Z",
+            messageCount: 0, workspaceId: "/work/app", workspacePath: "/work/app", preview: "preview",
             source: "codex",
-            metadata: { codex: { cwd: "/work/app", archived: false, degraded: true, degradationReason: "transcript-missing", metrics: { toolCallCount: 0, commandCount: 0, failedCommandCount: 0, fileCount: 0 } } },
+            metadata: { codex: { cwd: "/work/app", archived: false, degraded: true, degradationReason: "transcript-missing" } },
           }],
         }));
       }
       throw new Error(`Unhandled fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
 
+  it("左栏列项目、选中后右栏出会话(双栏 + degraded + 诊断)", async () => {
+    const fetchMock = stubTwoPane();
+    const user = userEvent.setup();
     renderRoutes();
 
-    expect(await screen.findByText("Codex thread")).toBeInTheDocument();
+    // 左栏:项目 + 诊断;右栏:未选时提示。
+    expect(await screen.findByText("app")).toBeInTheDocument();
     expect(screen.getByText("state-db-unavailable")).toBeInTheDocument();
-    expect(screen.getByText(/degraded · transcript-missing/)).toBeInTheDocument();
-    expect(screen.getByText(/仅显示未归档线程/)).toBeInTheDocument();
+    expect(screen.getByText(/请先在左侧选择一个项目/)).toBeInTheDocument();
+    // 选中前不应请求 sessions(enabled: cwd!=="")。
+    expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/codex-history/sessions"))).toBe(false);
+    // D1:projects 请求不带 branch。
+    const projCall = fetchMock.mock.calls.find(([u]) => String(u).startsWith("/api/codex-history/projects"));
+    expect(String(projCall?.[0])).not.toMatch(/gitBranch/);
 
-    await userEvent.click(screen.getByRole("button", { name: "包含已归档" }));
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("archived=true"))).toBe(true);
+    // 点项目 → 右栏拉该项目 session。
+    await user.click(screen.getByText("/work/app"));
+    expect(await screen.findByText("Codex thread")).toBeInTheDocument();
+    expect(screen.getByText(/degraded · transcript-missing/)).toBeInTheDocument();
+    const sessCall = fetchMock.mock.calls.find(([u]) => String(u).startsWith("/api/codex-history/sessions"));
+    expect(String(sessCall?.[0])).toContain("cwd=");
+
+    // 含已归档 → 两栏都带 archived=true。
+    await user.click(screen.getByRole("button", { name: "包含已归档" }));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/codex-history/projects") && String(u).includes("archived=true"))).toBe(true);
   });
 
   it("renders summary metrics and highlights failed tool rows", async () => {

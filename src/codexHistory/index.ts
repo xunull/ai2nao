@@ -9,9 +9,12 @@ export {
   loadCodexSessionDetail,
   codexSessionSummaryToJson,
 } from "./load.js";
+export { listCodexProjects } from "./projects.js";
 export type {
   CodexListFilters,
   CodexListResult,
+  CodexProjectSummary,
+  CodexProjectsResult,
   CodexSessionMetadata,
   CodexSessionMetrics,
   BuiltCodexSession,
