@@ -9,6 +9,11 @@ order: 50
 > 子目录，导致 ai2nao 读到过期的旧库，最近几天的 Codex token 用量"消失"。
 >
 > 排查时间：2026-06-18（/investigate）。修复：`src/codexHistory/paths.ts`。
+>
+> **⚠️ 后续更新（2026-06-30）：本文的"新路径优先"方案已被取代。** Codex 又把活跃
+> 库从 `~/.codex/sqlite/` 切回了顶层老路径，"优先新路径"反而读到冻结的旧快照。现行
+> 方案改为"两库都在时按写入新鲜度选最新者"。完整路径横跳时间线见
+> [`codex-state-db-path-timeline.md`](codex-state-db-path-timeline.md)。
 
 ---
 
