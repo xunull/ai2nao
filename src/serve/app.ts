@@ -73,6 +73,14 @@ import {
 } from "../codexHistory/index.js";
 import { isCodexHistoryError } from "../codexHistory/errors.js";
 import {
+  listOpencodeProjects,
+  listOpencodeSessionSummaries,
+  loadOpencodeSessionDetail,
+  opencodeDbPath,
+  resolveOpencodeDataDir,
+} from "../opencodeHistory/index.js";
+import { isOpencodeHistoryError } from "../opencodeHistory/errors.js";
+import {
   getCherryStudioStatus,
   listCherryStudioSessions,
   loadCherryStudioSession,
@@ -174,6 +182,11 @@ function codexHistoryErr(e: unknown) {
     const status = e.kind === "transcript-too-large" ? 413 : 500;
     return jsonErr(status, e.message);
   }
+  return jsonErr(500, String(e));
+}
+
+function opencodeHistoryErr(e: unknown) {
+  if (isOpencodeHistoryError(e)) return jsonErr(500, e.message);
   return jsonErr(500, String(e));
 }
 
@@ -763,6 +776,67 @@ export function createApp(opts: ServeOptions): Hono {
       });
     } catch (e) {
       return codexHistoryErr(e);
+    }
+  });
+
+  app.get("/api/opencode-history/status", (c) => {
+    try {
+      const dataDir = resolveOpencodeDataDir(c.req.query("opencodeRoot"));
+      return c.json({
+        platform: process.platform,
+        opencodeRoot: dataDir,
+        dbPath: opencodeDbPath(dataDir),
+        envOpencodeDataDir: Boolean(process.env.OPENCODE_DATA_DIR),
+      });
+    } catch (e) {
+      return opencodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/opencode-history/projects", async (c) => {
+    try {
+      // 项目列表只受 archived 影响（agent/model 是 session 级细化，不在此）。
+      const result = await listOpencodeProjects(c.req.query("opencodeRoot"), {
+        archived: boolQuery(c.req.query("archived")) ?? false,
+      });
+      return c.json(result);
+    } catch (e) {
+      return opencodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/opencode-history/sessions", async (c) => {
+    try {
+      const result = await listOpencodeSessionSummaries(c.req.query("opencodeRoot"), {
+        projectId: c.req.query("projectId"),
+        agent: c.req.query("agent"),
+        model: c.req.query("model"),
+        archived: boolQuery(c.req.query("archived")) ?? false,
+        limit: intQuery(c.req.query("limit"), 200),
+      });
+      return c.json({
+        ...result,
+        sessions: result.sessions.map(sessionSummaryToJson),
+      });
+    } catch (e) {
+      return opencodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/opencode-history/sessions/:sessionId", async (c) => {
+    try {
+      const sessionId = decodeURIComponent(c.req.param("sessionId"));
+      const detail = await loadOpencodeSessionDetail(c.req.query("opencodeRoot"), sessionId);
+      if (!detail) return jsonErr(404, "session not found");
+      const idx = Math.max(0, parseInt(c.req.query("index") ?? "0", 10) || 0);
+      detail.session.index = idx;
+      return c.json({
+        ok: true,
+        session: sessionToJson(detail.session),
+        warnings: detail.warnings,
+      });
+    } catch (e) {
+      return opencodeHistoryErr(e);
     }
   });
 

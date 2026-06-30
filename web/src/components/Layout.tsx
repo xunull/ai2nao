@@ -39,6 +39,7 @@ import {
   Shield,
   ShieldCheck,
   Sparkles,
+  SquareTerminal,
   Tags,
   Terminal,
   Wrench,
@@ -122,6 +123,7 @@ const navGroups: NavGroup[] = [
       { to: "/cursor-history", label: "Cursor 对话", icon: BotMessageSquare, matchChildren: true },
       { to: "/claude-code-history", label: "Claude", icon: Bot, matchChildren: true },
       { to: "/codex-history", label: "Codex", icon: Command, matchChildren: true },
+      { to: "/opencode-history", label: "opencode", icon: SquareTerminal, matchChildren: true },
     ],
   },
   {

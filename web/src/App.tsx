@@ -44,6 +44,12 @@ const CodexHistory = lazy(() =>
 const CodexHistorySession = lazy(() =>
   import("./pages/CodexHistorySession").then((m) => ({ default: m.CodexHistorySession }))
 );
+const OpencodeHistory = lazy(() =>
+  import("./pages/OpencodeHistory").then((m) => ({ default: m.OpencodeHistory }))
+);
+const OpencodeHistorySession = lazy(() =>
+  import("./pages/OpencodeHistorySession").then((m) => ({ default: m.OpencodeHistorySession }))
+);
 const CursorHistory = lazy(() =>
   import("./pages/CursorHistory").then((m) => ({ default: m.CursorHistory }))
 );
@@ -163,6 +169,8 @@ export function App() {
           />
           <Route path="/codex-history" element={<CodexHistory />} />
           <Route path="/codex-history/s/:sessionId" element={<CodexHistorySession />} />
+          <Route path="/opencode-history" element={<OpencodeHistory />} />
+          <Route path="/opencode-history/s/:sessionId" element={<OpencodeHistorySession />} />
           <Route path="/ai-chat" element={<AiChat />} />
           <Route path="/bash-permissions" element={<BashPermissions />} />
           <Route path="/bash-sandbox" element={<BashSandboxSettings />} />
