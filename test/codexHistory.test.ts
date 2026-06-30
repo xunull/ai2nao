@@ -263,6 +263,42 @@ describe("codexHistory", () => {
     });
   });
 
+  it("给 user 消息打 codexSource:event_msg=真人,response_item=注入/双份(纯加标签,「只看我说的」据此过滤)", async () => {
+    const { root, sessions } = makeRoot();
+    const id = "77777777-7777-7777-7777-777777777777";
+    const goodPath = join(sessions, `rollout-2026-04-26T00-00-00-${id}.jsonl`);
+    writeFileSync(
+      goodPath,
+      [
+        JSON.stringify({ type: "session_meta", timestamp: "2026-04-26T00:00:00.000Z", payload: { cwd: "/work/app" } }),
+        // AGENTS.md 注入:只在 response_item,无对应 event_msg。
+        JSON.stringify({ type: "response_item", timestamp: "2026-04-26T00:00:01.000Z", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "# AGENTS.md instructions for /work/app" }] } }),
+        // 真人一轮被记两遍:response_item 份 + event_msg 份。
+        JSON.stringify({ type: "response_item", timestamp: "2026-04-26T00:00:02.000Z", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "帮我准备 mysql 知识点" }] } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:02.500Z", payload: { type: "user_message", message: "帮我准备 mysql 知识点" } }),
+        JSON.stringify({ type: "event_msg", timestamp: "2026-04-26T00:00:03.000Z", payload: { type: "agent_message", message: "好的" } }),
+      ].join("\n"),
+      "utf8"
+    );
+    createStateDb(root, [{ id, rolloutPath: goodPath }]);
+
+    const detail = await loadCodexSessionDetail(root, id);
+    const users = (detail?.session.messages ?? []).filter((m) => m.role === "user");
+    // 三条 user:AGENTS(response_item)+ 真人 response_item 份 + 真人 event_msg 份。
+    expect(users.map((m) => m.metadata?.codexSource).sort()).toEqual([
+      "event_msg",
+      "response_item",
+      "response_item",
+    ]);
+
+    // 抽屉过滤逻辑:role:user && codexSource==='event_msg' → 只剩干净的真人那一条。
+    const mine = users.filter((m) => m.metadata?.codexSource === "event_msg");
+    expect(mine).toHaveLength(1);
+    expect(mine[0].content).toBe("帮我准备 mysql 知识点");
+    // AGENTS.md 不在 event_msg 源里。
+    expect(mine.some((m) => m.content.includes("AGENTS.md"))).toBe(false);
+  });
+
   it("falls back to bounded JSONL scan when SQLite is unavailable", async () => {
     const { root, sessions } = makeRoot();
     const id = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";

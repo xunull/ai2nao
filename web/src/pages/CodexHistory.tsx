@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { MessageSquare } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
+import { CodexMyMessagesSheet } from "../components/CodexMyMessagesSheet";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 type Diagnostic = {
@@ -101,6 +103,10 @@ export function CodexHistory() {
   const [draftRoot, setDraftRoot] = useState(codexRoot);
   const [draftBranch, setDraftBranch] = useState(gitBranch);
   const [draftModel, setDraftModel] = useState(model);
+  const [openSession, setOpenSession] = useState<{
+    sessionId: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => setDraftRoot(codexRoot), [codexRoot]);
   useEffect(() => setDraftBranch(gitBranch), [gitBranch]);
@@ -324,10 +330,10 @@ export function CodexHistory() {
               sessions.data?.sessions.map((s) => {
                 const codex = s.metadata?.codex;
                 return (
-                  <li key={s.id}>
+                  <li key={s.id} className="relative">
                     <Link
                       to={sessionLink(s)}
-                      className="block rounded-xl border border-neutral-200/80 bg-white px-4 py-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                      className="block rounded-xl border border-neutral-200/80 bg-white px-4 py-4 pr-12 shadow-sm transition hover:border-blue-200 hover:shadow-md"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">
@@ -353,12 +359,37 @@ export function CodexHistory() {
                         {codex?.model && <span>· {codex.model}</span>}
                       </div>
                     </Link>
+                    {/* 按钮是 Link 的兄弟节点(不嵌进 anchor):只看我说的。 */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenSession({
+                          sessionId: s.id,
+                          title: s.title?.trim() || "无标题会话",
+                        })
+                      }
+                      title="只看我发的消息"
+                      aria-label="只看我发的消息"
+                      className="absolute right-2.5 top-2.5 rounded-lg border border-neutral-200 bg-white p-1.5 text-neutral-500 shadow-sm transition hover:border-blue-200 hover:bg-slate-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                    </button>
                   </li>
                 );
               })}
           </ul>
         </div>
       </div>
+
+      <CodexMyMessagesSheet
+        open={openSession !== null}
+        onOpenChange={(o) => {
+          if (!o) setOpenSession(null);
+        }}
+        sessionId={openSession?.sessionId ?? ""}
+        codexRoot={codexRoot}
+        title={openSession?.title ?? ""}
+      />
     </div>
   );
 }

@@ -378,6 +378,7 @@ export function buildCodexSession(options: {
           content: body,
           timestamp: ts,
           codeBlocks: extractCodeBlocks(body),
+          metadata: { codexSource: "event_msg" },
         });
         continue;
       }
@@ -448,6 +449,7 @@ export function buildCodexSession(options: {
           timestamp: ts,
           codeBlocks: extractCodeBlocks(body),
           model,
+          metadata: { codexSource: "response_item" },
         });
         continue;
       }

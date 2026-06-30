@@ -101,6 +101,12 @@ export interface Message {
     codexToolEvent?: boolean;
     /** True when a Codex command or tool event failed */
     codexFailed?: boolean;
+    /**
+     * 该 Codex 消息来自 rollout 的哪种记录:`event_msg`(event_msg/user_message,
+     * 真人输入的干净信号)或 `response_item`(response_item/message,含 AGENTS.md 注入
+     * 且与 event_msg 重复)。「只看我说的」抽屉据此只取 event_msg 源。仅打标,不改渲染。
+     */
+    codexSource?: "event_msg" | "response_item";
     /** Cherry Studio Markdown export role heading used to infer user/assistant. */
     cherryRoleHeading?: string;
     /** Parsed Cherry Studio `session_messages.metadata`, when valid JSON. */

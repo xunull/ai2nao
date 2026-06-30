@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -94,6 +94,64 @@ describe("Codex history pages", () => {
     // 含已归档 → 两栏都带 archived=true。
     await user.click(screen.getByRole("button", { name: "包含已归档" }));
     expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/codex-history/projects") && String(u).includes("archived=true"))).toBe(true);
+  });
+
+  it("「只看我说的」抽屉:只渲染 event_msg 源真人手打(丢 AGENTS/双份/assistant/exec 样板)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        // 详情(/sessions/s1)必须在列表(/sessions)之前匹配。
+        if (url.includes("/api/codex-history/sessions/s1")) {
+          return new Response(JSON.stringify({
+            ok: true,
+            session: {
+              messages: [
+                { id: "m1", role: "user", content: "# AGENTS.md instructions for /work/app", timestamp: "2026-04-26T00:00:01.000Z", metadata: { codexSource: "response_item" } },
+                { id: "m2", role: "user", content: "帮我准备 mysql 知识点", timestamp: "2026-04-26T00:00:02.000Z", metadata: { codexSource: "response_item" } },
+                { id: "m3", role: "user", content: "帮我准备 mysql 知识点", timestamp: "2026-04-26T00:00:02.500Z", metadata: { codexSource: "event_msg" } },
+                { id: "m4", role: "assistant", content: "好的我来", timestamp: "2026-04-26T00:00:03.000Z", metadata: { codexSource: "event_msg" } },
+                { id: "m5", role: "user", content: "IMPORTANT: Do NOT read or execute any files under ~/.claude/, .claude/skills/ …", timestamp: "2026-04-26T00:00:04.000Z", metadata: { codexSource: "event_msg" } },
+              ],
+            },
+          }));
+        }
+        if (url.startsWith("/api/codex-history/projects")) {
+          return new Response(JSON.stringify({
+            ok: true, source: "sqlite", diagnostics: [],
+            projects: [{ id: "/work/app", path: "/work/app", name: "app", sessionCount: 1, lastActiveAt: "2026-04-26T00:00:00.000Z" }],
+          }));
+        }
+        if (url.startsWith("/api/codex-history/sessions")) {
+          return new Response(JSON.stringify({
+            ok: true, source: "sqlite", diagnostics: [], scannedCount: 1, truncated: false,
+            sessions: [{ id: "s1", index: 1, title: "面试准备", createdAt: "2026-04-26T00:00:00.000Z", lastUpdatedAt: "2026-04-26T00:00:00.000Z", messageCount: 0, workspaceId: "/work/app", workspacePath: "/work/app", preview: "p", source: "codex", metadata: { codex: { cwd: "/work/app", archived: false } } }],
+          }));
+        }
+        if (url.startsWith("/api/codex-history/status")) {
+          return new Response(JSON.stringify({ platform: "darwin", codexRoot: "/tmp/codex", sessionsRoot: "/tmp/codex/sessions", stateDbPath: "/tmp/codex/state_5.sqlite", envCodexHome: false }));
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      })
+    );
+    const user = userEvent.setup();
+    renderRoutes();
+
+    // 选项目 → 右栏出 session。
+    await user.click(await screen.findByText("/work/app"));
+    const trigger = await screen.findByRole("button", { name: "只看我发的消息" });
+    // 按钮不嵌在 session 行的 Link 里。
+    const link = screen.getByRole("link", { name: /面试准备/ });
+    expect(link).not.toContainElement(trigger);
+
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    // 只剩 event_msg 源、非 exec 样板的那一条;双份折成 1。
+    expect(within(dialog).getByText("你发了 1 条")).toBeInTheDocument();
+    expect(within(dialog).getByText("帮我准备 mysql 知识点")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/AGENTS\.md/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/好的我来/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/IMPORTANT: Do NOT read/)).not.toBeInTheDocument();
   });
 
   it("renders summary metrics and highlights failed tool rows", async () => {
