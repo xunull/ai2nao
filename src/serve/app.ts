@@ -65,6 +65,7 @@ import {
 import { projectSessionTimes } from "../claudeTokenUsage/queries.js";
 import { createMcpHandler } from "../mcp/server.js";
 import {
+  codexStateDbPath,
   listCodexSessionSummaries,
   loadCodexSessionDetail,
   resolveCodexRoot,
@@ -703,7 +704,7 @@ export function createApp(opts: ServeOptions): Hono {
         platform: process.platform,
         codexRoot: root,
         sessionsRoot: join(root, "sessions"),
-        stateDbPath: join(root, "state_5.sqlite"),
+        stateDbPath: codexStateDbPath(root),
         envCodexHome: Boolean(process.env.CODEX_HOME),
       });
     } catch (e) {
