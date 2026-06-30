@@ -245,8 +245,9 @@ export function CodexHistory() {
       )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        {/* 左栏:项目 */}
-        <div>
+        {/* 左栏:项目。min-w-0:grid 子项默认 min-width:auto 会被长路径(font-mono
+            不可换行)顶破列宽、truncate 失效 → 整页横向滚动条。归 0 才能让 truncate 裁切。 */}
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-neutral-700">项目</h2>
           {projects.isLoading && <p className="mt-2 text-sm text-neutral-500">加载中...</p>}
           {projects.isError && (
@@ -289,8 +290,8 @@ export function CodexHistory() {
           </ul>
         </div>
 
-        {/* 右栏:选中项目的 session */}
-        <div>
+        {/* 右栏:选中项目的 session。同样 min-w-0,防止长标题撑破列。 */}
+        <div className="min-w-0">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-neutral-700">会话</h2>
             {cwd && sessions.data && (
