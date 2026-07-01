@@ -2,6 +2,7 @@ export {
   listOpencodeProjects,
   listOpencodeSessionSummaries,
   loadOpencodeSessionDetail,
+  loadOpencodeMyMessages,
 } from "./load.js";
 export {
   defaultOpencodeDataDir,

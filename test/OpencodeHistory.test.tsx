@@ -27,6 +27,10 @@ function stub() {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      // /my-messages 必须在 /sessions 列表之前匹配。
+      if (url.includes("/my-messages")) {
+        return new Response(JSON.stringify({ ok: true, messages: [{ id: "m1", timestamp: "2026-05-01T00:00:00.000Z", text: "帮我加个功能" }] }));
+      }
       if (url.includes("/api/opencode-history/status")) {
         return new Response(JSON.stringify({ platform: "darwin", opencodeRoot: "/x/opencode", dbPath: "/x/opencode/opencode.db", envOpencodeDataDir: false }));
       }
@@ -72,5 +76,21 @@ describe("OpencodeHistory 双栏", () => {
     const card = sessionLink.closest("li")!;
     expect(within(card).getByText(/MiniMax-M3/)).toBeInTheDocument();
     expect(within(card).getByText(/token/)).toBeInTheDocument();
+  });
+
+  it("「我的输入」按钮开抽屉、渲染清洗后消息、不嵌在 Link 内", async () => {
+    stub();
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByText("app"));
+    const trigger = await screen.findByRole("button", { name: "我的输入(已过滤注入)" });
+    // 按钮是 Link 兄弟,不嵌在 anchor 里。
+    const link = screen.getByRole("link", { name: /加个功能/ });
+    expect(link).not.toContainElement(trigger);
+
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("帮我加个功能")).toBeInTheDocument();
+    expect(within(dialog).getByText(/已过滤注入/)).toBeInTheDocument();
   });
 });

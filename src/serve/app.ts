@@ -76,6 +76,7 @@ import {
   listOpencodeProjects,
   listOpencodeSessionSummaries,
   loadOpencodeSessionDetail,
+  loadOpencodeMyMessages,
   opencodeDbPath,
   resolveOpencodeDataDir,
 } from "../opencodeHistory/index.js";
@@ -835,6 +836,17 @@ export function createApp(opts: ServeOptions): Hono {
         session: sessionToJson(detail.session),
         warnings: detail.warnings,
       });
+    } catch (e) {
+      return opencodeHistoryErr(e);
+    }
+  });
+
+  app.get("/api/opencode-history/sessions/:sessionId/my-messages", async (c) => {
+    try {
+      const sessionId = decodeURIComponent(c.req.param("sessionId"));
+      const messages = await loadOpencodeMyMessages(c.req.query("opencodeRoot"), sessionId);
+      if (messages === null) return jsonErr(404, "session not found");
+      return c.json({ ok: true, messages });
     } catch (e) {
       return opencodeHistoryErr(e);
     }

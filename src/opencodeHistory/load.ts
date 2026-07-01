@@ -2,6 +2,11 @@ import { existsSync } from "node:fs";
 import { sessionSummaryToJson } from "../cursorHistory/json.js";
 import type { ChatSessionSummary } from "../cursorHistory/types.js";
 import { diagnosticFromError, type OpencodeDiagnostic } from "./errors.js";
+import {
+  cleanOpencodeUserMessageParts,
+  parsePartData,
+  type ParsedPart,
+} from "./myMessages.js";
 import { buildOpencodeSession } from "./normalize.js";
 import { opencodeDbPath, resolveOpencodeDataDir } from "./paths.js";
 import {
@@ -135,4 +140,54 @@ export async function loadOpencodeSessionDetail(
 
 export function opencodeSessionSummaryToJson(s: ChatSessionSummary) {
   return sessionSummaryToJson(s);
+}
+
+export type OpencodeMyMessage = { id: string; timestamp: string; text: string };
+
+/**
+ * 「我的输入(已过滤注入)」—— projection over 同一 loader。复用 loadSessionMessagesAndParts
+ * (同只读快照,part.data 带 metadata/synthetic),对每条 user message 跑清洗,非空才产出。
+ * 找不到 session → null;库不存在 → null。
+ */
+export async function loadOpencodeMyMessages(
+  rawDataDir: string | undefined,
+  sessionId: string
+): Promise<OpencodeMyMessage[] | null> {
+  const dataDir = resolveOpencodeDataDir(rawDataDir);
+  const dbPath = opencodeDbPath(dataDir);
+  if (!existsSync(dbPath)) return null;
+
+  let db;
+  try {
+    db = openOpencodeDb(dbPath);
+    const row = getSessionRowFromDb(db, dbPath, sessionId);
+    if (!row) return null;
+    const { messages, parts } = loadSessionMessagesAndParts(db, dbPath, sessionId);
+
+    const byMsg = new Map<string, ParsedPart[]>();
+    for (const p of parts) {
+      const arr = byMsg.get(p.messageId);
+      if (arr) arr.push(parsePartData(p.data));
+      else byMsg.set(p.messageId, [parsePartData(p.data)]);
+    }
+
+    const out: OpencodeMyMessage[] = [];
+    for (const m of messages) {
+      let role: string | undefined;
+      let createdMs = m.timeCreated;
+      try {
+        const d = JSON.parse(m.data) as { role?: string; time?: { created?: number } };
+        role = d.role;
+        if (typeof d.time?.created === "number" && d.time.created > 0) createdMs = d.time.created;
+      } catch {
+        // 坏 JSON：跳过 role 判定 → 非 user，忽略。
+      }
+      if (role !== "user") continue;
+      const text = cleanOpencodeUserMessageParts(byMsg.get(m.id) ?? []);
+      if (text) out.push({ id: m.id, timestamp: new Date(createdMs).toISOString(), text });
+    }
+    return out;
+  } finally {
+    db?.close();
+  }
 }
