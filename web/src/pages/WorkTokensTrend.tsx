@@ -434,10 +434,10 @@ function ClaudeOutputComposition({ totals }: { totals: Totals }) {
         <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输出构成</h2>
         <span className="text-xs text-[var(--fg-muted)]">无细分</span>
       </div>
-      {/* single-segment bar — visual parity with Codex 输出构成 */}
+      {/* single-segment bar — Claude brand color (#d97757), NOT Codex blue. */}
       <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
         <div
-          style={{ width: "100%", background: "#2563eb" }}
+          style={{ width: "100%", background: "#d97757" }}
           title={`输出 ${formatTokenCount(output)}`}
         />
       </div>
@@ -448,7 +448,7 @@ function ClaudeOutputComposition({ totals }: { totals: Totals }) {
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block h-2.5 w-2.5 rounded-sm"
-                  style={{ background: "#2563eb" }}
+                  style={{ background: "#d97757" }}
                 />
                 正常输出
                 <span className="text-xs text-[var(--fg-muted)]">
