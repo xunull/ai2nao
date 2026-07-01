@@ -1050,3 +1050,21 @@ Depends on / blocked by:
 **Effort estimate:** L（human ~2-3天 / CC ~2-3h,含建表/迁移/重扫/搜索 UI)
 
 **Priority:** P3（独立大特性,不阻塞抽屉)
+
+---
+
+## 趋势页「不算缓存」应同时扣 cache_creation（口径 bug）
+
+**What:** tokens-trend 的「计入缓存命中」开关 OFF 时,只从 claude 减 `cache_read`,没减 `cache_creation`(写入 cache)。
+
+**Why:** 实测 07-01 的 off 柱合计 164M,其中 cache_creation 147.6M ≈ **90%**。长会话每次 5 分钟缓存 TTL 过期后把同一份上下文反复重写 → cache_creation 是重复机械量,不是"真实新增"。开关标签「不算缓存」名不副实,数字仍虚高。而代码自己的输入构成卡已定义 `真实新增 = input − cache_read − cache_creation`,开关漏减 creation,自相矛盾。
+
+**Pros:** OFF 变成真正的"真实新增+输出"(今天 164M→16.4M);与输入构成卡口径自洽。
+**Cons:** 改变开关语义,标签要从「计入缓存命中」改「计入缓存」;需同步 `deriveTotals`(web/src/pages/WorkTokensTrend.tsx:645)+ `chartData` map(:753)两处 + 回归测试。
+
+**Context:** 2026-07-01 investigate + plan-eng-review(claude 按天归属修复)中浮现,列为归属修复的 NOT-in-scope。归属 bug 与口径 bug 是两件事,分开做更干净。归属修复文档:`~/.gstack/projects/xunull-ai2nao/20260701-main-design-claude-daily-bucketing.md`。
+
+**Depends on / blocked by:** 建议在 claude 按天归属修复(per-day event 表)落地后再做,因为 event 表也带 cache_creation 列,口径改动要在 per-bucket 上一致生效。
+
+**Effort estimate:** S（human ~1h / CC ~15min,两处扣减 + 标签 + 回归测试)
+**Priority:** P2（用户已明确报告"数字明显不对",体验优先)

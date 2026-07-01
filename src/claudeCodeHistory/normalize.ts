@@ -60,25 +60,38 @@ function mapTokenUsage(u: unknown): TokenUsage | undefined {
 }
 
 
-export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
-  // Claude Code writes ONE assistant JSONL line per content block, plus extra
-  // lines as the response streams — and every one of those lines repeats the
-  // SAME `message.usage` (the streaming lines only grow `output_tokens`). A
-  // single API request (one `message.id`) is billed once, so summing usage
-  // per line double-counts: corpus-wide ≈2x overall, dominated by cache_read
-  // replay (one turn with 16 tool_use blocks → its cache_read counted 16x).
-  //
-  // Dedupe by `message.id`, taking the MAX of each field: input / cache_* are
-  // fixed for a request, `output_tokens` grows while the response streams so
-  // its max is the final billed value. Lines without a `message.id` can't be
-  // deduped, so each gets a synthetic key and is counted once.
-  type Acc = {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheCreation: number;
-  };
-  const byMessageId = new Map<string, Acc>();
+/** One deduped assistant request (keyed by message.id), MAX per field. */
+type ClaudeUsageAcc = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  /** First non-null message timestamp for this request (all its streaming
+   *  lines share ~one time). null → caller supplies a fallback (never
+   *  last_updated). */
+  eventAt: string | null;
+};
+
+/**
+ * Dedupe assistant token usage by `message.id`, MAX per field — the single
+ * source of truth for BOTH the session total ({@link extractClaudeSessionUsage})
+ * and the per-message-day event rows ({@link extractClaudeTokenEvents}). Both
+ * MUST come from this one map so they never disagree and the golden invariant
+ * `SUM(events) == session total` holds by construction.
+ *
+ * Claude Code writes ONE assistant JSONL line per content block, plus extra
+ * lines as the response streams — and every one repeats the SAME `message.usage`
+ * (streaming lines only grow `output_tokens`). A single API request (one
+ * `message.id`) is billed once, so summing per line double-counts ≈2x
+ * (dominated by cache_read replay: one turn with 16 tool_use blocks counts its
+ * cache_read 16x). input / cache_* are fixed for a request; `output_tokens`
+ * grows while streaming so its max is the final billed value. Lines without a
+ * `message.id` can't be deduped, so each gets a synthetic key, counted once.
+ */
+function dedupeClaudeUsageByMessage(
+  parse: ParseJsonlResult
+): Map<string, ClaudeUsageAcc> {
+  const byMessageId = new Map<string, ClaudeUsageAcc>();
   let synthetic = 0;
   for (const { record } of parse.okLines) {
     if (!isAssistantShape(record)) continue;
@@ -87,6 +100,7 @@ export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage
     if (!tokenUsage) continue;
     const key =
       typeof msg.id === "string" && msg.id ? msg.id : `__noid_${synthetic++}`;
+    const tsRaw = typeof record.timestamp === "string" ? record.timestamp : null;
     const prev = byMessageId.get(key);
     byMessageId.set(key, {
       input: Math.max(prev?.input ?? 0, tokenUsage.inputTokens),
@@ -96,8 +110,15 @@ export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage
         prev?.cacheCreation ?? 0,
         tokenUsage.cacheCreationInputTokens ?? 0
       ),
+      // Keep the first non-null timestamp; never overwrite a real time with null.
+      eventAt: prev?.eventAt ?? tsRaw,
     });
   }
+  return byMessageId;
+}
+
+export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage | undefined {
+  const byMessageId = dedupeClaudeUsageByMessage(parse);
   if (byMessageId.size === 0) return undefined;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -115,6 +136,44 @@ export function extractClaudeSessionUsage(parse: ParseJsonlResult): SessionUsage
     totalCacheReadInputTokens,
     totalCacheCreationInputTokens,
   };
+}
+
+/** One per-message-day token row for `claude_token_usage_event`. */
+export type ClaudeTokenEvent = {
+  message_id: string;
+  /** message timestamp; when the message lacked one, the caller's fallback
+   *  (created_at, NEVER last_updated — that would revive the day-dump bug). */
+  event_at: string;
+  /** FUSED (fresh + cache_read + cache_creation), same as the session column. */
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+};
+
+/**
+ * Per-message deduped token events for the day-attributed trend. Same dedup
+ * source as the session total, so `SUM(events, per field) == session total`.
+ * A message with no timestamp falls back to `fallbackIso` (the session's
+ * created_at) — a past, bounded day; the caller MUST NOT pass last_updated_at.
+ */
+export function extractClaudeTokenEvents(
+  parse: ParseJsonlResult,
+  opts: { fallbackIso: string }
+): ClaudeTokenEvent[] {
+  const byMessageId = dedupeClaudeUsageByMessage(parse);
+  const events: ClaudeTokenEvent[] = [];
+  for (const [messageId, acc] of byMessageId) {
+    events.push({
+      message_id: messageId,
+      event_at: acc.eventAt ?? opts.fallbackIso,
+      input_tokens: acc.input,
+      output_tokens: acc.output,
+      cache_read_input_tokens: acc.cacheRead,
+      cache_creation_input_tokens: acc.cacheCreation,
+    });
+  }
+  return events;
 }
 
 /**

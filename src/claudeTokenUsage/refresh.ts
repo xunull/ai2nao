@@ -9,6 +9,8 @@ import { parseJsonlText, type ParseJsonlResult } from "../claudeCodeHistory/pars
 import {
   extractClaudeDominantModel,
   extractClaudeSessionUsage,
+  extractClaudeTokenEvents,
+  type ClaudeTokenEvent,
 } from "../claudeCodeHistory/normalize.js";
 import { normalizeWorkProjectIdentity } from "../workProjects/identity.js";
 import {
@@ -16,7 +18,7 @@ import {
   getClaudeTokenUsageState,
   markClaudeTokenUsageRowSeen,
   markUnseenClaudeTokenRowsMissing,
-  upsertClaudeTokenUsageRow,
+  persistClaudeTokenUsage,
   upsertClaudeTokenUsageState,
 } from "./queries.js";
 import {
@@ -110,7 +112,7 @@ function rowFromUsage(args: {
   parse: ParseJsonlResult | null;
   error: string | null;
   nowIso: string;
-}): ClaudeTokenUsageRow {
+}): { row: ClaudeTokenUsageRow; events: ClaudeTokenEvent[] } {
   const usage = args.parse ? extractClaudeSessionUsage(args.parse) : undefined;
   const facts = args.parse
     ? fallbackFacts(args.parse, args.source.mtimeMs)
@@ -122,6 +124,14 @@ function rowFromUsage(args: {
         preview: "",
         messageCount: 0,
       };
+  // Per-message-day events. Fallback for a message with no timestamp is the
+  // session's created_at (a bounded past day) — NEVER last_updated_at, which
+  // would re-dump the lifetime onto the last-touch day (the bug we're fixing).
+  // On a parse error there are no events (the error row carries token_status
+  // 'error' and contributes nothing to token sums anyway).
+  const events = args.parse
+    ? extractClaudeTokenEvents(args.parse, { fallbackIso: facts.createdAt.toISOString() })
+    : [];
   const projectPath = args.source.decodedWorkspacePath || facts.cwd || args.source.fallbackProjectPath;
   const identity = normalizeWorkProjectIdentity({
     source: "claude-code",
@@ -137,7 +147,7 @@ function rowFromUsage(args: {
   const cacheCreationInputTokens = usage?.totalCacheCreationInputTokens ?? 0;
   const model = args.parse ? extractClaudeDominantModel(args.parse) : null;
   const tokenStatus = args.error ? "error" : usage ? "full" : "unknown";
-  return {
+  const row: ClaudeTokenUsageRow = {
     session_id: args.source.id,
     project_id: args.source.projectId,
     file_path: args.source.filePath,
@@ -164,6 +174,7 @@ function rowFromUsage(args: {
     source_seen_at: args.nowIso,
     updated_at: args.nowIso,
   };
+  return { row, events };
 }
 
 async function sourceSessions(projectsRoot: string): Promise<SourceSession[]> {
@@ -243,13 +254,13 @@ export async function refreshClaudeTokenUsage(
 
       const text = await readFile(source.filePath, "utf8");
       const parse = parseJsonlText(text);
-      const row = rowFromUsage({
+      const { row, events } = rowFromUsage({
         source: { ...source, mtimeMs: st.mtimeMs, sizeBytes: st.size },
         parse,
         error: parse.errors.length > 0 ? `${parse.errors.length} JSONL line(s) failed to parse` : null,
         nowIso: refreshedAt,
       });
-      upsertClaudeTokenUsageRow(db, row);
+      persistClaudeTokenUsage(db, row, events);
       indexedSessionCount++;
       if (row.token_status === "full") tokenKnownSessionCount++;
       else if (row.token_status === "error") errorSessionCount++;
@@ -257,13 +268,13 @@ export async function refreshClaudeTokenUsage(
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       errors.push(`${source.id}: ${message}`);
-      const row = rowFromUsage({
+      const { row, events } = rowFromUsage({
         source,
         parse: null,
         error: message,
         nowIso: refreshedAt,
       });
-      upsertClaudeTokenUsageRow(db, row);
+      persistClaudeTokenUsage(db, row, events);
       indexedSessionCount++;
       errorSessionCount++;
     }
@@ -273,7 +284,14 @@ export async function refreshClaudeTokenUsage(
   const duration = durationMs(started);
   const status = errors.length === 0 ? "success" : indexedSessionCount > 0 ? "partial" : "failed";
   upsertClaudeTokenUsageState(db, {
-    rule_version: CLAUDE_TOKEN_USAGE_RULE_VERSION,
+    // Only advance the rule_version on a real rebuild. A total failure (nothing
+    // indexed) must keep the old version so the next tick re-forces the full
+    // reparse that backfills claude_token_usage_event — otherwise a one-off
+    // failure would permanently skip the day-timeline backfill.
+    rule_version:
+      status === "failed"
+        ? storedState?.rule_version ?? CLAUDE_TOKEN_USAGE_RULE_VERSION
+        : CLAUDE_TOKEN_USAGE_RULE_VERSION,
     last_rebuilt_at: status === "failed" ? null : refreshedAt,
     last_error: errors[0] ?? null,
     source_session_count: sessions.length,

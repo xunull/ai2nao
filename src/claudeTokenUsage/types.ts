@@ -19,8 +19,14 @@
  *       Investigation 2026-06-18.
  *   v5: captures the session's dominant model (most output tokens) to power the
  *       USD cost view (Opus vs Sonnet differ ~5x). 2026-06-19.
+ *   v6: persists preview + message_count for the dashboard session list. 2026-06-29.
+ *   v7: populates the per-message-day timeline (claude_token_usage_event) so the
+ *       trend buckets tokens by consumption day, not session last_updated_at.
+ *       A resumed session no longer dumps its whole lifetime onto its last-touch
+ *       day. Backfilled here via the self-heal full reparse. Investigation
+ *       2026-07-01.
  */
-export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 6;
+export const CLAUDE_TOKEN_USAGE_RULE_VERSION = 7;
 
 export type ClaudeTokenStatus = "full" | "unknown" | "error";
 

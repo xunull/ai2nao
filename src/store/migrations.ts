@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 38;
+const CURRENT_VERSION = 39;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -49,6 +49,7 @@ export function migrate(db: Database.Database): void {
     applyV36(db);
     applyV37(db);
     applyV38(db);
+    applyV39(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -93,6 +94,7 @@ export function migrate(db: Database.Database): void {
   if (v < 36) applyV36(db);
   if (v < 37) applyV37(db);
   if (v < 38) applyV38(db);
+  if (v < 39) applyV39(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1878,5 +1880,52 @@ function applyV33(db: Database.Database): void {
       ON model_prices(model_id);
 
     UPDATE meta_schema SET version = 33 WHERE id = 1;
+  `);
+}
+
+/**
+ * v39 — Claude per-event token timeline (`claude_token_usage_event`).
+ *
+ * Same day-attribution bug that v30 fixed for Codex, now for Claude. Claude
+ * `claude_session_token_usage` stores ONE row per session bucketed by
+ * `last_updated_at`, carrying the session's FULL cumulative lifetime total. The
+ * "Claude sessions are short-lived" assumption is false: Claude Code resumes /
+ * continues one conversation across days, so a session created 6/09 and touched
+ * 7/01 dumps its entire 22-day, 2B-token total onto 7/01 (verified: 7/01 had 15
+ * sessions, only 1 created that day). The trend then shows today spiking and
+ * prior days understated.
+ *
+ * Fix (mirror of v30): record each deduped assistant message's usage against its
+ * own `event_at` (message timestamp). The trend reads Claude token sums from
+ * this table bucketed by `event_at`, so tokens land on the day consumed. Session
+ * counts / coverage stay on the per-session table. Columns mirror
+ * `claude_session_token_usage` exactly (`input_tokens` is FUSED = fresh +
+ * cache_read + cache_creation) so a per-bucket SUM reproduces the session-table
+ * semantics — asserted by a golden invariant test.
+ *
+ * `message_id` is the dedup key (same as extractClaudeSessionUsage); UNIQUE
+ * (session_id, message_id) makes the per-session delete-then-insert idempotent
+ * and aids debugging. Rows are (re)written per session during refresh, gated by
+ * CLAUDE_TOKEN_USAGE_RULE_VERSION (bumped 6->7) so existing installs backfill on
+ * the next tick via the self-heal full reparse. Investigation 2026-07-01.
+ */
+function applyV39(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS claude_token_usage_event (
+      session_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      event_at TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, message_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_claude_token_event_session
+      ON claude_token_usage_event(session_id);
+    CREATE INDEX IF NOT EXISTS idx_claude_token_event_at
+      ON claude_token_usage_event(event_at, session_id);
+
+    UPDATE meta_schema SET version = 39 WHERE id = 1;
   `);
 }

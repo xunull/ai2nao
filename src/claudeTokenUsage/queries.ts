@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { ProjectSessionTime } from "../claudeCodeHistory/projectLastActive.js";
+import type { ClaudeTokenEvent } from "../claudeCodeHistory/normalize.js";
 import {
   CLAUDE_TOKEN_USAGE_RULE_VERSION,
   type ClaudeProjectTokenUsage,
@@ -106,6 +107,46 @@ export function upsertClaudeTokenUsageRow(
       preview = excluded.preview,
       message_count = excluded.message_count`
   ).run(row);
+}
+
+/**
+ * Replace a session's per-message-day token events (delete-then-insert), mirror
+ * of replaceCodexTokenUsageEvents. Idempotent: PRIMARY KEY (session_id,
+ * message_id) means a re-parse of the same session overwrites cleanly instead
+ * of accumulating. Called inside {@link persistClaudeTokenUsage}'s transaction
+ * so it stays atomic with the session-row upsert.
+ */
+export function replaceClaudeTokenUsageEvents(
+  db: Database.Database,
+  sessionId: string,
+  events: ClaudeTokenEvent[]
+): void {
+  db.prepare("DELETE FROM claude_token_usage_event WHERE session_id = ?").run(sessionId);
+  const ins = db.prepare(
+    `INSERT INTO claude_token_usage_event
+       (session_id, message_id, event_at, input_tokens, output_tokens,
+        cache_read_input_tokens, cache_creation_input_tokens)
+     VALUES (@session_id, @message_id, @event_at, @input_tokens, @output_tokens,
+        @cache_read_input_tokens, @cache_creation_input_tokens)`
+  );
+  for (const e of events) ins.run({ session_id: sessionId, ...e });
+}
+
+/**
+ * Atomic per-session persist: the token-usage row and its per-message-day
+ * events commit together (or not at all). Prevents the "full token row but the
+ * events got deleted while the insert failed → trend silently under-counts"
+ * failure mode: a mid-way throw rolls back both.
+ */
+export function persistClaudeTokenUsage(
+  db: Database.Database,
+  row: ClaudeTokenUsageRow,
+  events: ClaudeTokenEvent[]
+): void {
+  db.transaction(() => {
+    upsertClaudeTokenUsageRow(db, row);
+    replaceClaudeTokenUsageEvents(db, row.session_id, events);
+  })();
 }
 
 export function markClaudeTokenUsageRowSeen(

@@ -48,6 +48,15 @@ function seedClaude(
     updated,
     updated
   );
+  // Claude cost now reads token components from the per-message-day timeline
+  // (joined to the session row for the model). Mirror this single-day session as
+  // one event at `updated`.
+  db.prepare(
+    `INSERT INTO claude_token_usage_event
+       (session_id, message_id, event_at, input_tokens, output_tokens,
+        cache_read_input_tokens, cache_creation_input_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, `${id}-m`, updated, io.input, io.output, io.cacheRead, io.cacheCreation);
 }
 
 function seedCodexEvent(

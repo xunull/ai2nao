@@ -46,15 +46,16 @@ export function queryCostComponentsByBucket(
     source === "claude"
       ? `
         SELECT
-          ${bucketExpr(granularity)} AS bucket_key,
-          COALESCE(model, '') AS model,
-          COALESCE(SUM(input_tokens - cache_read_input_tokens - cache_creation_input_tokens), 0) AS fresh,
-          COALESCE(SUM(cache_read_input_tokens), 0) AS cache_hit,
-          COALESCE(SUM(cache_creation_input_tokens), 0) AS cache_creation,
-          COALESCE(SUM(output_tokens), 0) AS output
-        FROM claude_session_token_usage
-        WHERE last_updated_at >= ? AND last_updated_at < ?
-          AND missing_since IS NULL AND token_status = 'full'
+          ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+          COALESCE(s.model, '') AS model,
+          COALESCE(SUM(e.input_tokens - e.cache_read_input_tokens - e.cache_creation_input_tokens), 0) AS fresh,
+          COALESCE(SUM(e.cache_read_input_tokens), 0) AS cache_hit,
+          COALESCE(SUM(e.cache_creation_input_tokens), 0) AS cache_creation,
+          COALESCE(SUM(e.output_tokens), 0) AS output
+        FROM claude_token_usage_event e
+        JOIN claude_session_token_usage s ON s.session_id = e.session_id
+        WHERE e.event_at >= ? AND e.event_at < ?
+          AND s.missing_since IS NULL AND s.token_status = 'full'
         GROUP BY bucket_key, model
       `
       : `
@@ -170,6 +171,9 @@ export function queryBucketsBySource(
 ): RawBucketRow[] {
   if (source === "codex") {
     return queryCodexBuckets(db, from, to, granularity);
+  }
+  if (source === "claude") {
+    return queryClaudeBuckets(db, from, to, granularity);
   }
   return querySessionTableBuckets(db, source, from, to, granularity);
 }
@@ -325,6 +329,112 @@ function queryCodexBuckets(
         cache_creation_input_tokens: 0,
         reasoning_output_tokens: t.reasoning_output_tokens,
         codex_cached_input_tokens: t.cached_input_tokens,
+        session_count: 0,
+        full_count: 0,
+        unknown_count: 0,
+        error_count: 0,
+      });
+    }
+  }
+  return [...byKey.values()].sort((a, b) =>
+    a.bucket_key < b.bucket_key ? -1 : a.bucket_key > b.bucket_key ? 1 : 0
+  );
+}
+
+type ClaudeTokenSumRow = {
+  bucket_key: string;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+};
+
+/**
+ * Claude token sums bucketed by `event_at` (the per-message-day timeline),
+ * joined to the per-session table so the same `token_status='full'` +
+ * `missing_since IS NULL` filters apply. Mirror of queryCodexTokenSumsByBucket.
+ * `input_tokens` is FUSED (fresh + cache_read + cache_creation) — same as the
+ * session column — so `total = input + output` matches `total_tokens` and a
+ * per-bucket SUM reproduces the session-table semantics. cache_read/creation
+ * are carried through (subsets of input) to power the cache toggle + breakdown.
+ */
+function queryClaudeTokenSumsByBucket(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): ClaudeTokenSumRow[] {
+  const sql = `
+    SELECT
+      ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+      COALESCE(SUM(e.input_tokens + e.output_tokens), 0) AS total_tokens,
+      COALESCE(SUM(e.input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(e.output_tokens), 0) AS output_tokens,
+      COALESCE(SUM(e.cache_read_input_tokens), 0) AS cache_read_input_tokens,
+      COALESCE(SUM(e.cache_creation_input_tokens), 0) AS cache_creation_input_tokens
+    FROM claude_token_usage_event e
+    JOIN claude_session_token_usage s ON s.session_id = e.session_id
+    WHERE e.event_at >= ?
+      AND e.event_at < ?
+      AND s.missing_since IS NULL
+      AND s.token_status = 'full'
+    GROUP BY bucket_key
+    ORDER BY bucket_key ASC
+  `;
+  return db
+    .prepare(sql)
+    .all(from.toISOString(), to.toISOString()) as ClaudeTokenSumRow[];
+}
+
+/**
+ * Claude bucket rows: token sums from the per-message-day timeline (bucketed by
+ * the day each token was consumed), session counts / coverage from the
+ * per-session table (bucketed by `last_updated_at`, unchanged). Mirror of
+ * queryCodexBuckets. A bucket can therefore have tokens with `session_count = 0`
+ * (a resumed session consumed tokens that day but was last *touched* on a later
+ * day) — honest, same as Codex. This replaces the old per-session-table Claude
+ * bucketing that dumped a resumed session's whole lifetime onto its last-touch
+ * day (investigation 2026-07-01).
+ */
+function queryClaudeBuckets(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): RawBucketRow[] {
+  const byKey = new Map<string, RawBucketRow>();
+  // Counts / coverage from the session table; zero the token fields — replaced
+  // by the event-timeline sums below.
+  for (const c of querySessionTableBuckets(db, "claude", from, to, granularity)) {
+    byKey.set(c.bucket_key, {
+      ...c,
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    });
+  }
+  // Token sums from the per-message-day timeline.
+  for (const t of queryClaudeTokenSumsByBucket(db, from, to, granularity)) {
+    const existing = byKey.get(t.bucket_key);
+    if (existing) {
+      existing.total_tokens = t.total_tokens;
+      existing.input_tokens = t.input_tokens;
+      existing.output_tokens = t.output_tokens;
+      existing.cache_read_input_tokens = t.cache_read_input_tokens;
+      existing.cache_creation_input_tokens = t.cache_creation_input_tokens;
+    } else {
+      byKey.set(t.bucket_key, {
+        bucket_key: t.bucket_key,
+        total_tokens: t.total_tokens,
+        input_tokens: t.input_tokens,
+        output_tokens: t.output_tokens,
+        cache_read_input_tokens: t.cache_read_input_tokens,
+        cache_creation_input_tokens: t.cache_creation_input_tokens,
+        reasoning_output_tokens: 0,
+        codex_cached_input_tokens: 0,
         session_count: 0,
         full_count: 0,
         unknown_count: 0,

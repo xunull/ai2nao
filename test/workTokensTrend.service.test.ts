@@ -53,6 +53,15 @@ function seedClaude(
     updated,
     updated
   );
+  // Claude trend token sums come from the per-message-day timeline. Mirror this
+  // single-day session as one event at `updated` (event_at == last_updated → same
+  // day bucket). The JOIN re-applies token_status='full' + missing_since filters.
+  db.prepare(
+    `INSERT INTO claude_token_usage_event
+       (session_id, message_id, event_at, input_tokens, output_tokens,
+        cache_read_input_tokens, cache_creation_input_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, `${id}-m`, updated, input, output, cacheRead, cacheCreation);
 }
 
 function seedCodex(
