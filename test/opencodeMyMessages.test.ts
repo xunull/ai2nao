@@ -99,6 +99,21 @@ describe("cleanOpencodeUserMessageParts —— message 级", () => {
     ];
     expect(cleanOpencodeUserMessageParts(parts)).toBe("");
   });
+
+  it("OMO 背景任务注入(OMO_INTERNAL_INITIATOR)整条丢", () => {
+    const omo = "<system-reminder>\n[ALL BACKGROUND TASKS COMPLETE]\n…\n</system-reminder>\n<!-- OMO_INTERNAL_INITIATOR -->";
+    expect(cleanOpencodeUserMessageParts([textPart(omo)])).toBe("");
+    // 与真人消息混在一条 message 时,只丢注入 part。
+    expect(cleanOpencodeUserMessageParts([textPart(omo), textPart("真人问题")])).toBe("真人问题");
+  });
+
+  it("完整 <system-reminder>…</system-reminder> 块(无 OMO 标记)也丢", () => {
+    expect(cleanOpencodeUserMessageParts([textPart("<system-reminder>Note: something</system-reminder>")])).toBe("");
+  });
+
+  it("真人只是提到 <system-reminder>(无闭合)→ 保留(prefer-preserve)", () => {
+    expect(cleanOpencodeUserMessageParts([textPart("这个 <system-reminder> 标签是干嘛的?")])).toBe("这个 <system-reminder> 标签是干嘛的?");
+  });
 });
 
 describe("detectSlashCommand —— 锚定 + prefer-preserve（codex 加固）", () => {

@@ -35,6 +35,20 @@ export function isStructuralInjection(pd: ParsedPart): boolean {
   return false;
 }
 
+/**
+ * oh-my-opencode 背景任务 / 系统提醒注入:整段是 `<system-reminder>…OMO_INTERNAL_INITIATOR…>`
+ * 这类机器通知,冒充 user 轮但**无 synthetic 标记**(实测占 user text part ~71%,1266 条)。
+ * 靠内容标记整条丢:
+ * - 含 `OMO_INTERNAL_INITIATOR`(oh-my-opencode 内部标记,真人绝不会打)→ 丢。
+ * - 完整 `<system-reminder>…</system-reminder>` 块(需开+闭标签,prefer-preserve:引用片段不误伤)→ 丢。
+ */
+function isOmoInjection(text: string): boolean {
+  if (text.includes("OMO_INTERNAL_INITIATOR")) return true;
+  const t = text.trimStart();
+  if (t.startsWith("<system-reminder>") && text.includes("</system-reminder>")) return true;
+  return false;
+}
+
 /** 一个 `---` 分段的首个非空行是否命中已知前导锚。 */
 function isPreambleSegment(seg: string): boolean {
   const firstLine = seg.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
@@ -84,6 +98,7 @@ export function cleanOpencodeUserMessageParts(parts: ParsedPart[]): string {
     if (pd.type !== "text") continue;
     if (isStructuralInjection(pd)) continue;
     const raw = typeof pd.text === "string" ? pd.text : "";
+    if (isOmoInjection(raw)) continue;
     const cleaned = stripModePreamble(raw).trim();
     if (cleaned) texts.push(cleaned);
   }
