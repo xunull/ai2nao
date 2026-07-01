@@ -9,7 +9,7 @@ import {
   formatTokenCoverage,
 } from "../util/formatDisplay";
 
-type DashboardSource = "claude-code" | "codex";
+type DashboardSource = "claude-code" | "codex" | "opencode";
 type TokenCoverage = "full" | "partial" | "unknown";
 
 type TokenUsage = {
@@ -82,9 +82,10 @@ const rangeOptions = [
 ];
 
 const sourceOptions = [
-  { value: "claude-code,codex", label: "Claude + Codex" },
+  { value: "claude-code,codex,opencode", label: "Claude + Codex + opencode" },
   { value: "claude-code", label: "仅 Claude" },
   { value: "codex", label: "仅 Codex" },
+  { value: "opencode", label: "仅 opencode" },
 ];
 
 function qs(params: Record<string, string | undefined>): string {
@@ -97,7 +98,9 @@ function qs(params: Record<string, string | undefined>): string {
 }
 
 function sourceLabel(source: DashboardSource): string {
-  return source === "claude-code" ? "Claude" : "Codex";
+  if (source === "claude-code") return "Claude";
+  if (source === "codex") return "Codex";
+  return "opencode";
 }
 
 function coverageClass(coverage: TokenCoverage): string {
@@ -157,7 +160,7 @@ export function WorkDashboard() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const rangeDays = searchParams.get("rangeDays") ?? "30";
-  const sources = searchParams.get("sources") ?? "claude-code,codex";
+  const sources = searchParams.get("sources") ?? "claude-code,codex,opencode";
   const [projectQuery, setProjectQuery] = useState("");
   const apiSuffix = useMemo(() => qs({ rangeDays, sources }), [rangeDays, sources]);
 
@@ -324,6 +327,9 @@ export function WorkDashboard() {
                         )}
                         {project.sourceCounts.codex > 0 && (
                           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">Codex</span>
+                        )}
+                        {project.sourceCounts.opencode > 0 && (
+                          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">opencode</span>
                         )}
                         <span className={`rounded-full border px-2 py-0.5 text-[11px] ${coverageClass(project.tokenUsage.coverage)}`}>
                           {formatTokenCoverage(project.tokenUsage.coverage)}

@@ -8,7 +8,7 @@ import { Page } from "../components/Page";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatActiveDuration, formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
 
-type DashboardSource = "claude-code" | "codex";
+type DashboardSource = "claude-code" | "codex" | "opencode";
 
 type TokenRankingProject = {
   key: string;
@@ -45,9 +45,10 @@ const rangeOptions = [
 ];
 
 const sourceOptions = [
-  { value: "claude-code,codex", label: "Claude + Codex" },
+  { value: "claude-code,codex,opencode", label: "Claude + Codex + opencode" },
   { value: "codex", label: "Codex" },
   { value: "claude-code", label: "Claude" },
+  { value: "opencode", label: "opencode" },
 ];
 
 function qs(params: Record<string, string | undefined>): string {
@@ -68,7 +69,7 @@ export function WorkTokenRanking() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const rangeMonths = searchParams.get("rangeMonths") ?? "6";
-  const sources = searchParams.get("sources") ?? "claude-code,codex";
+  const sources = searchParams.get("sources") ?? "claude-code,codex,opencode";
   const apiSuffix = useMemo(
     () => qs({ rangeMonths, sources }),
     [rangeMonths, sources]
@@ -157,7 +158,12 @@ export function WorkTokenRanking() {
           <ul className="mt-2 space-y-1">
             {ranking.data.diagnostics.map((diagnostic, idx) => (
               <li key={`${diagnostic.source}-${diagnostic.kind}-${idx}`}>
-                {diagnostic.source === "claude-code" ? "Claude" : "Codex"} · {diagnostic.message}
+                {diagnostic.source === "claude-code"
+                  ? "Claude"
+                  : diagnostic.source === "codex"
+                    ? "Codex"
+                    : "opencode"}{" "}
+                · {diagnostic.message}
               </li>
             ))}
           </ul>

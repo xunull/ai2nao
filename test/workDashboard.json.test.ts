@@ -22,7 +22,7 @@ describe("workDashboard json", () => {
       totals: {
         projectCount: 1,
         sessionCount: 1,
-        sourceCounts: { "claude-code": 0, codex: 1 },
+        sourceCounts: { "claude-code": 0, codex: 1, opencode: 0 },
         tokenUsage: {
           inputTokens: 1,
           outputTokens: 2,
@@ -42,7 +42,7 @@ describe("workDashboard json", () => {
         identityConfidence: "high",
         lastUpdatedAt: new Date("2026-06-06T00:00:00.000Z"),
         sessionCount: 1,
-        sourceCounts: { "claude-code": 0, codex: 1 },
+        sourceCounts: { "claude-code": 0, codex: 1, opencode: 0 },
         tokenUsage: {
           inputTokens: 1,
           outputTokens: 2,

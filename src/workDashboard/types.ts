@@ -1,9 +1,19 @@
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import type { ClaudeProjectTokenUsage, ClaudeTokenUsageStatus } from "../claudeTokenUsage/types.js";
 import type { CodexProjectTokenUsage, CodexTokenUsageStatus } from "../codexTokenUsage/types.js";
+import type {
+  OpencodeProjectTokenUsage,
+  OpencodeTokenUsageStatus,
+} from "../opencodeTokenUsage/types.js";
 import type { WorkProjectDurationUsage } from "../workDuration/types.js";
 
-export type DashboardSource = "claude-code" | "codex";
+export const DASHBOARD_SOURCES = ["claude-code", "codex", "opencode"] as const;
+
+export type DashboardSource = (typeof DASHBOARD_SOURCES)[number];
+
+export function isDashboardSource(value: unknown): value is DashboardSource {
+  return (DASHBOARD_SOURCES as readonly string[]).includes(value as string);
+}
 
 export type DashboardTokenCoverage = "full" | "partial" | "unknown";
 
@@ -157,8 +167,20 @@ export type DashboardCollectors = {
     projectKeys: string[];
     from: Date | null;
   }) => Promise<Map<string, ClaudeProjectTokenUsage>>;
+  // opencode: token comes straight from the opencode.db `session` columns, so it
+  // is always "indexed" (never file-scanned). No loadOpencodeDetail — session
+  // detail is a separate round.
+  listOpencode?: () => Promise<{
+    sessions: DashboardCollectorSession[];
+    diagnostics: DashboardDiagnostic[];
+  }>;
+  listOpencodeProjectTokenUsage?: (args: {
+    projectKeys: string[];
+    from: Date | null;
+  }) => Promise<Map<string, OpencodeProjectTokenUsage>>;
   getCodexTokenUsageStatus?: () => Promise<CodexTokenUsageStatus>;
   getClaudeTokenUsageStatus?: () => Promise<ClaudeTokenUsageStatus>;
+  getOpencodeTokenUsageStatus?: () => Promise<OpencodeTokenUsageStatus>;
   listWorkProjectDurationUsage?: (args: {
     projectKeys: string[];
     from: Date | null;

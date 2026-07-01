@@ -15,16 +15,22 @@ import {
   listClaudeDashboardSessions,
   listClaudeProjectTokenUsage,
 } from "../claudeTokenUsage/queries.js";
-import type { ClaudeProjectTokenUsage } from "../claudeTokenUsage/types.js";
 import {
   getCodexTokenUsageStatus,
   listCodexProjectTokenUsage,
 } from "../codexTokenUsage/queries.js";
+import { listOpencodeSessionSummaries } from "../opencodeHistory/index.js";
+import {
+  getOpencodeTokenUsageStatus,
+  listOpencodeProjectTokenUsage,
+} from "../opencodeTokenUsage/queries.js";
 import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
+import type { WorkDurationSource } from "../workDuration/types.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import {
   normalizeWorkProjectIdentity,
 } from "../workProjects/identity.js";
+import { DASHBOARD_SOURCES, isDashboardSource } from "./types.js";
 import type {
   DashboardCollectorSession,
   DashboardCollectors,
@@ -39,11 +45,10 @@ import type {
   WorkDashboardOptions,
   WorkDashboardResponse,
 } from "./types.js";
-import type { CodexProjectTokenUsage } from "../codexTokenUsage/types.js";
 
 export const DEFAULT_WORK_DASHBOARD_OPTIONS: WorkDashboardOptions = {
   rangeDays: 30,
-  sources: ["claude-code", "codex"],
+  sources: ["claude-code", "codex", "opencode"],
   limitProjects: 80,
   sessionsPerProject: 5,
   tokenSessionsPerProject: 5,
@@ -66,7 +71,7 @@ const MAX_LIMITS = {
 
 export const DEFAULT_WORK_TOKEN_RANKING_OPTIONS: WorkTokenRankingOptions = {
   rangeMonths: 6,
-  sources: ["claude-code", "codex"],
+  sources: ["claude-code", "codex", "opencode"],
   limit: 100,
   claudeProjectLimit: 300,
   claudeSessionsPerProject: 100,
@@ -83,10 +88,7 @@ export function normalizeDashboardOptions(
   partial: Partial<WorkDashboardOptions> = {}
 ): WorkDashboardOptions {
   const defaults = DEFAULT_WORK_DASHBOARD_OPTIONS;
-  const sources = (partial.sources ?? defaults.sources).filter(
-    (source): source is DashboardSource =>
-      source === "claude-code" || source === "codex"
-  );
+  const sources = (partial.sources ?? defaults.sources).filter(isDashboardSource);
   return {
     rangeDays: partial.rangeDays ?? defaults.rangeDays,
     sources: sources.length > 0 ? [...new Set(sources)] : defaults.sources,
@@ -142,10 +144,7 @@ export function normalizeTokenRankingOptions(
   partial: Partial<WorkTokenRankingOptions> = {}
 ): WorkTokenRankingOptions {
   const defaults = DEFAULT_WORK_TOKEN_RANKING_OPTIONS;
-  const sources = (partial.sources ?? defaults.sources).filter(
-    (source): source is DashboardSource =>
-      source === "claude-code" || source === "codex"
-  );
+  const sources = (partial.sources ?? defaults.sources).filter(isDashboardSource);
   const rangeMonths = partial.rangeMonths ?? defaults.rangeMonths;
   return {
     rangeMonths: [1, 3, 6, 12, "all"].includes(rangeMonths)
@@ -213,7 +212,9 @@ function usageFromSession(session: ChatSession | null | undefined) {
 }
 
 function sourceCounts(): Record<DashboardSource, number> {
-  return { "claude-code": 0, codex: 0 };
+  return Object.fromEntries(
+    DASHBOARD_SOURCES.map((source) => [source, 0])
+  ) as Record<DashboardSource, number>;
 }
 
 export function normalizeDashboardProjectPath(
@@ -254,12 +255,21 @@ function metadataString(summary: ChatSessionSummary, key: "model" | "gitBranch")
   return typeof value === "string" ? value : undefined;
 }
 
+const DETAIL_HREF_BUILDERS: Record<
+  DashboardSource,
+  (summary: ChatSessionSummary) => string
+> = {
+  "claude-code": (summary) => {
+    const p = new URLSearchParams();
+    p.set("projectId", summary.workspaceId);
+    return `/claude-code-history/s/${encodeURIComponent(summary.id)}?${p.toString()}`;
+  },
+  codex: (summary) => `/codex-history/s/${encodeURIComponent(summary.id)}`,
+  opencode: (summary) => `/opencode-history/s/${encodeURIComponent(summary.id)}`,
+};
+
 function detailHref(source: DashboardSource, summary: ChatSessionSummary): string {
-  const id = encodeURIComponent(summary.id);
-  if (source === "codex") return `/codex-history/s/${id}`;
-  const p = new URLSearchParams();
-  p.set("projectId", summary.workspaceId);
-  return `/claude-code-history/s/${id}?${p.toString()}`;
+  return DETAIL_HREF_BUILDERS[source](summary);
 }
 
 function dashboardSessionFromSummary(
@@ -433,6 +443,50 @@ async function collectDefaultCodex(limits: {
   }
 }
 
+async function collectDefaultOpencode(): Promise<{
+  sessions: DashboardCollectorSession[];
+  diagnostics: DashboardDiagnostic[];
+}> {
+  try {
+    // opencode list is a single SQLite read (bounded by stateDb's own LIMIT);
+    // exclude archived to match the token query's `time_archived IS NULL`.
+    const result = await listOpencodeSessionSummaries(undefined, { archived: false });
+    // A missing opencode.db means the user doesn't use opencode — a normal state
+    // for most users of a default source, not a warning. Drop it (surface only
+    // real problems like schema incompatibility).
+    const diagnostics: DashboardDiagnostic[] = result.diagnostics
+      .filter((d) => d.kind !== "db-not-found")
+      .map((d) => ({
+        source: "opencode",
+        severity: "warning",
+        kind: d.kind,
+        message: d.message,
+        path: d.path,
+        count: d.count,
+      }));
+    return {
+      // summary.workspacePath is the session directory → same canonical key the
+      // token query aggregates under, so opencode merges with claude/codex.
+      sessions: result.sessions.map((summary) => ({
+        source: "opencode",
+        summary: { ...summary, source: "opencode" },
+        decodedWorkspacePath: summary.workspacePath,
+      })),
+      diagnostics,
+    };
+  } catch (e) {
+    return {
+      sessions: [],
+      diagnostics: [{
+        source: "opencode",
+        severity: "error",
+        kind: "source-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      }],
+    };
+  }
+}
+
 export function defaultDashboardCollectors(db?: Database.Database): DashboardCollectors {
   return {
     // When a DB is available, read the Claude session list from the token
@@ -455,30 +509,76 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     getClaudeTokenUsageStatus: db
       ? async () => getClaudeTokenUsageStatus(db)
       : undefined,
+    // opencode token/status query its own opencode.db (not the index db), so
+    // these are wired regardless of `db`.
+    listOpencode: collectDefaultOpencode,
+    listOpencodeProjectTokenUsage: async ({ projectKeys, from }) =>
+      listOpencodeProjectTokenUsage(undefined, { projectKeys, from }),
+    getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(undefined),
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
-          listWorkProjectDurationUsage(db, { projectKeys, from, sources })
+          // Duration is a separate round with its own claude|codex union — drop
+          // opencode at the boundary rather than passing it an unknown source.
+          listWorkProjectDurationUsage(db, {
+            projectKeys,
+            from,
+            sources: sources.filter(
+              (source): source is WorkDurationSource =>
+                source === "claude-code" || source === "codex"
+            ),
+          })
       : undefined,
   };
 }
+
+/**
+ * The common shape every per-source indexed token map exposes (Claude/Codex/…
+ * all structurally satisfy this). Kept read-only so a narrower source map
+ * (e.g. `Map<string, ClaudeProjectTokenUsage>`) stays covariantly assignable.
+ */
+type IndexedProjectUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  coveredSessions: number;
+  totalSessions: number;
+  coverage: "full" | "partial" | "unknown";
+};
+
+type IndexedUsageBySource = Partial<
+  Record<DashboardSource, ReadonlyMap<string, IndexedProjectUsage> | undefined>
+>;
+
+// Per-source transcript loader. Only sources whose sessions must be file-scanned
+// need an entry; indexed-only sources are absent (they never reach the scan loop).
+const SESSION_DETAIL_LOADERS: Partial<
+  Record<
+    DashboardSource,
+    (
+      collectors: DashboardCollectors,
+      session: DashboardSession
+    ) => Promise<ChatSession | null>
+  >
+> = {
+  "claude-code": (collectors, session) =>
+    collectors.loadClaudeDetail(session.raw.workspaceId, session.id),
+  codex: (collectors, session) => collectors.loadCodexDetail(session.id),
+};
 
 async function applyTokenUsage(
   project: DashboardProject,
   collectors: DashboardCollectors,
   diagnostics: DashboardDiagnostic[],
   scanLimit: number,
-  indexedCodexUsage?: CodexProjectTokenUsage,
-  indexedClaudeUsage?: ClaudeProjectTokenUsage
+  indexedBySource: IndexedUsageBySource
 ): Promise<void> {
-  const hasIndexedCodex = Boolean(indexedCodexUsage);
-  const hasIndexedClaude = Boolean(indexedClaudeUsage);
+  const indexedForProject = (source: DashboardSource): IndexedProjectUsage | undefined =>
+    indexedBySource[source]?.get(project.key);
   // Only file-scan sessions whose SOURCE has no index. Indexed sources are
-  // summed from the DB instead of re-reading transcripts (when both sources are
-  // indexed, `toScan` is empty → zero transcript reads in the request path).
+  // summed from the DB instead of re-reading transcripts (when every present
+  // source is indexed, `toScan` is empty → zero transcript reads).
   const toScan = project.recentSessions
-    .filter((session) =>
-      session.source === "codex" ? !hasIndexedCodex : !hasIndexedClaude
-    )
+    .filter((session) => !indexedForProject(session.source))
     .slice(0, scanLimit);
 
   let inputTokens = 0;
@@ -488,9 +588,8 @@ async function applyTokenUsage(
   for (const session of toScan) {
     let detail: ChatSession | null = null;
     try {
-      detail = session.source === "claude-code"
-        ? await collectors.loadClaudeDetail(session.raw.workspaceId, session.id)
-        : await collectors.loadCodexDetail(session.id);
+      const loader = SESSION_DETAIL_LOADERS[session.source];
+      detail = loader ? await loader(collectors, session) : null;
     } catch (e) {
       diagnostics.push({
         source: session.source,
@@ -507,33 +606,28 @@ async function applyTokenUsage(
     outputTokens += usage.outputTokens;
   }
 
+  // Fold every source: an indexed source contributes its DB sums + indexed
+  // session count; a non-indexed source contributes that source's session count
+  // on this project and flags truncation when it exceeds the scan budget.
   let anyIndexPartial = false;
-  for (const idx of [indexedClaudeUsage, indexedCodexUsage]) {
-    if (!idx) continue;
-    inputTokens += idx.inputTokens;
-    outputTokens += idx.outputTokens;
-    coveredSessions += idx.coveredSessions;
-    if (idx.coverage === "partial") anyIndexPartial = true;
+  let totalSessions = 0;
+  let indexedScanned = 0;
+  let truncated = false;
+  for (const source of DASHBOARD_SOURCES) {
+    const idx = indexedForProject(source);
+    if (idx) {
+      inputTokens += idx.inputTokens;
+      outputTokens += idx.outputTokens;
+      coveredSessions += idx.coveredSessions;
+      if (idx.coverage === "partial") anyIndexPartial = true;
+      totalSessions += idx.totalSessions;
+      indexedScanned += idx.totalSessions;
+    } else {
+      const count = project.sourceCounts[source];
+      totalSessions += count;
+      if (count > scanLimit) truncated = true;
+    }
   }
-
-  // Per-source session totals: an indexed source contributes its indexed count;
-  // a scanned source contributes that source's session count on this project.
-  const claudeTotal = hasIndexedClaude
-    ? indexedClaudeUsage!.totalSessions
-    : project.sourceCounts["claude-code"];
-  const codexTotal = hasIndexedCodex
-    ? indexedCodexUsage!.totalSessions
-    : project.sourceCounts.codex;
-  const totalSessions = claudeTotal + codexTotal;
-
-  // A non-indexed source is truncated when it has more sessions than we scanned.
-  const truncated =
-    (!hasIndexedClaude && project.sourceCounts["claude-code"] > scanLimit) ||
-    (!hasIndexedCodex && project.sourceCounts.codex > scanLimit);
-
-  const indexedScanned =
-    (hasIndexedClaude ? indexedClaudeUsage!.totalSessions : 0) +
-    (hasIndexedCodex ? indexedCodexUsage!.totalSessions : 0);
 
   project.tokenUsage = {
     inputTokens,
@@ -555,7 +649,9 @@ async function applyTokenUsage(
   };
   if (truncated) {
     diagnostics.push({
-      source: project.sourceCounts["claude-code"] > 0 ? "claude-code" : "codex",
+      source:
+        DASHBOARD_SOURCES.find((source) => project.sourceCounts[source] > 0) ??
+        DASHBOARD_SOURCES[0],
       severity: "warning",
       kind: "token-scan-truncated",
       message: `Token detail scan limited to ${scanLimit} sessions for project ${project.label}`,
@@ -587,6 +683,7 @@ function totalTokenUsage(projects: DashboardProject[], scanLimit: number) {
 
 type IndexedCodexUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listCodexProjectTokenUsage"]>>>;
 type IndexedClaudeUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listClaudeProjectTokenUsage"]>>>;
+type IndexedOpencodeUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listOpencodeProjectTokenUsage"]>>>;
 
 export async function buildWorkDashboard(
   partialOptions: Partial<WorkDashboardOptions> = {},
@@ -611,6 +708,11 @@ export async function buildWorkDashboard(
       sessionLimit: options.codexSessionLimit,
       fallbackFiles: options.codexFallbackFiles,
     });
+    collected.push(...res.sessions);
+    diagnostics.push(...res.diagnostics);
+  }
+  if (options.sources.includes("opencode") && deps.listOpencode) {
+    const res = await deps.listOpencode();
     collected.push(...res.sessions);
     diagnostics.push(...res.diagnostics);
   }
@@ -708,6 +810,38 @@ export async function buildWorkDashboard(
       });
     }
   }
+  let indexedOpencodeByProject: IndexedOpencodeUsage | undefined;
+  if (options.sources.includes("opencode") && deps.listOpencodeProjectTokenUsage) {
+    try {
+      const status = deps.getOpencodeTokenUsageStatus
+        ? await deps.getOpencodeTokenUsageStatus()
+        : null;
+      if (status && !status.fresh) {
+        diagnostics.push({
+          source: "opencode",
+          severity: "warning",
+          kind: "opencode-token-index-stale",
+          message: `opencode token data is stale: ${status.staleReasons.join(", ")}`,
+        });
+      }
+      indexedOpencodeByProject = await deps.listOpencodeProjectTokenUsage({
+        projectKeys: projects.map((project) => project.key),
+        from: range.from,
+      });
+    } catch (e) {
+      diagnostics.push({
+        source: "opencode",
+        severity: "warning",
+        kind: "opencode-token-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  const indexedUsageBySource: IndexedUsageBySource = {
+    "claude-code": indexedClaudeByProject,
+    codex: indexedCodexByProject,
+    opencode: indexedOpencodeByProject,
+  };
   for (const project of projects) {
     project.recentSessions = project.recentSessions
       .sort((a, b) => b.lastUpdatedAt.getTime() - a.lastUpdatedAt.getTime())
@@ -718,16 +852,16 @@ export async function buildWorkDashboard(
       deps,
       diagnostics,
       options.tokenSessionsPerProject,
-      indexedCodexByProject?.get(project.key),
-      indexedClaudeByProject?.get(project.key)
+      indexedUsageBySource
     );
     project.recentSessions = project.recentSessions.slice(0, options.sessionsPerProject);
   }
 
   const totalsSourceCounts = sourceCounts();
   for (const project of projects) {
-    totalsSourceCounts["claude-code"] += project.sourceCounts["claude-code"];
-    totalsSourceCounts.codex += project.sourceCounts.codex;
+    for (const source of DASHBOARD_SOURCES) {
+      totalsSourceCounts[source] += project.sourceCounts[source];
+    }
   }
 
   return {
@@ -864,6 +998,49 @@ export async function buildWorkTokenRanking(
       severity: "warning",
       kind: "claude-token-index-unavailable",
       message: "Claude token index is not configured",
+    });
+  }
+
+  if (options.sources.includes("opencode") && deps.listOpencodeProjectTokenUsage) {
+    try {
+      const status = deps.getOpencodeTokenUsageStatus
+        ? await deps.getOpencodeTokenUsageStatus()
+        : null;
+      if (status && !status.fresh) {
+        diagnostics.push({
+          source: "opencode",
+          severity: "warning",
+          kind: "opencode-token-index-stale",
+          message: `opencode token data is stale: ${status.staleReasons.join(", ")}`,
+        });
+      }
+      const opencodeUsage = await deps.listOpencodeProjectTokenUsage({
+        projectKeys: [],
+        from: range.from,
+      });
+      for (const usage of opencodeUsage.values()) {
+        addRankingTokens(
+          projectsByKey,
+          usage.projectKey,
+          usage.projectPath,
+          usage.totalTokens,
+          range.to
+        );
+      }
+    } catch (e) {
+      diagnostics.push({
+        source: "opencode",
+        severity: "warning",
+        kind: "opencode-token-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  } else if (options.sources.includes("opencode")) {
+    diagnostics.push({
+      source: "opencode",
+      severity: "warning",
+      kind: "opencode-token-index-unavailable",
+      message: "opencode token index is not configured",
     });
   }
 

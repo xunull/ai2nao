@@ -118,7 +118,7 @@ describe("workDashboard aggregate", () => {
       new Date("2026-06-07T00:00:00.000Z")
     );
     expect(dashboard.projects).toHaveLength(1);
-    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 1, codex: 1 });
+    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 1, codex: 1, opencode: 0 });
     expect(dashboard.projects[0].recentSessions.map((s) => s.id)).toEqual(["x1", "c1"]);
     expect(dashboard.projects[0].tokenUsage).toMatchObject({
       inputTokens: 120,
@@ -128,13 +128,69 @@ describe("workDashboard aggregate", () => {
     });
   });
 
+  it("folds indexed opencode token usage into the same project as claude and codex", async () => {
+    const root = process.cwd();
+    const opencodeSummary: ChatSessionSummary = {
+      id: "o1",
+      index: 0,
+      title: "opencode o1",
+      createdAt: new Date("2026-06-06T00:10:00.000Z"),
+      lastUpdatedAt: new Date("2026-06-06T00:10:00.000Z"),
+      messageCount: 0,
+      workspaceId: "opencode-proj-1",
+      workspacePath: root,
+      preview: "",
+      source: "opencode",
+    };
+    const dashboard = await buildWorkDashboard(
+      { rangeDays: 30 },
+      collectors({
+        listOpencode: async () => ({
+          diagnostics: [],
+          sessions: [
+            { source: "opencode", summary: opencodeSummary, decodedWorkspacePath: root },
+          ],
+        }),
+        listOpencodeProjectTokenUsage: async () =>
+          new Map([
+            [root, {
+              projectKey: root,
+              projectPath: root,
+              inputTokens: 400,
+              outputTokens: 100,
+              totalTokens: 500,
+              coveredSessions: 1,
+              totalSessions: 1,
+              errorSessions: 0,
+              coverage: "full" as const,
+            }],
+          ]),
+        getOpencodeTokenUsageStatus: async () => ({ fresh: true, staleReasons: [] }),
+      }),
+      new Date("2026-06-07T00:00:00.000Z")
+    );
+    // canonicalizePath(directory) === canonicalizePath(workspacePath) → one project.
+    expect(dashboard.projects).toHaveLength(1);
+    const project = dashboard.projects[0];
+    expect(project.sourceCounts).toEqual({ "claude-code": 1, codex: 1, opencode: 1 });
+    // opencode is always indexed (never file-scanned), so its detail is not loaded;
+    // scanned claude(100/50)+codex(20/10) plus indexed opencode(400/100).
+    expect(project.tokenUsage.inputTokens).toBe(520);
+    expect(project.tokenUsage.outputTokens).toBe(160);
+    expect(project.tokenUsage.totalTokens).toBe(680);
+    expect(project.tokenUsage.coveredSessions).toBe(3);
+    expect(project.tokenUsage.coverage).toBe("full");
+    expect(dashboard.totals.sourceCounts.opencode).toBe(1);
+    expect(dashboard.totals.tokenUsage.totalTokens).toBe(680);
+  });
+
   it("filters to the requested source and date range", async () => {
     const dashboard = await buildWorkDashboard(
       { rangeDays: 7, sources: ["codex"] },
       collectors(),
       new Date("2026-06-07T00:00:00.000Z")
     );
-    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 0, codex: 1 });
+    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 0, codex: 1, opencode: 0 });
     expect(dashboard.totals.sessionCount).toBe(1);
   });
 

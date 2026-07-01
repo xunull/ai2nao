@@ -76,7 +76,7 @@ describe("WorkDashboard", () => {
 
     await screen.findByText("dashboard 首页设计");
     await userEvent.selectOptions(screen.getByDisplayValue("最近 30 天"), "90");
-    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex"), "codex");
+    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex + opencode"), "codex");
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("rangeDays=90"))).toBe(true);

@@ -10,6 +10,7 @@ import {
   normalizeTokenRankingOptions,
 } from "./aggregate.js";
 import { dashboardResponseToJson, tokenRankingResponseToJson } from "./json.js";
+import { DASHBOARD_SOURCES, isDashboardSource } from "./types.js";
 import type { DashboardSource, WorkDashboardOptions, WorkTokenRankingOptions } from "./types.js";
 
 function jsonErr(status: number, message: string) {
@@ -50,8 +51,8 @@ function parseSources(raw: string | undefined): DashboardSource[] | undefined {
   const values = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const out: DashboardSource[] = [];
   for (const value of values) {
-    if (value !== "claude-code" && value !== "codex") {
-      throw new Error("sources must contain only claude-code,codex");
+    if (!isDashboardSource(value)) {
+      throw new Error(`sources must contain only ${DASHBOARD_SOURCES.join(",")}`);
     }
     out.push(value);
   }

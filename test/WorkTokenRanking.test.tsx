@@ -46,7 +46,7 @@ describe("WorkTokenRanking", () => {
 
     expect(await screen.findByRole("heading", { name: "Token 排行" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("最近 6 个月")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Claude + Codex")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Claude + Codex + opencode")).toBeInTheDocument();
     expect(await screen.findByText("ai2nao")).toBeInTheDocument();
     expect(screen.getByText("2 个项目")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe("WorkTokenRanking", () => {
     expect(screen.getAllByRole("button", { name: "用 Warp 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 iTerm2 打开项目" })).toHaveLength(2);
     expect(screen.queryByText("部分 token")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/work-dashboard/token-projects?rangeMonths=6&sources=claude-code%2Ccodex");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/work-dashboard/token-projects?rangeMonths=6&sources=claude-code%2Ccodex%2Copencode");
   });
 
   it("opens a ranked project with the selected opener", async () => {
@@ -99,7 +99,7 @@ describe("WorkTokenRanking", () => {
 
     await screen.findByText("ai2nao");
     await userEvent.selectOptions(screen.getByDisplayValue("最近 6 个月"), "all");
-    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex"), "codex");
+    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex + opencode"), "codex");
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("rangeMonths=all"))).toBe(true);
