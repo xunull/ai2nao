@@ -118,6 +118,38 @@ describe("opencode history API", () => {
     });
   });
 
+  it("GET /my-messages 斜杠命令展开 → 带 slashCommand;普通消息不带该字段", async () => {
+    const dir = join(tmpdir(), `ai2nao-opencode-slash-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    const db = new Database(join(dir, "opencode.db"));
+    db.exec(`
+      CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL, name TEXT, time_created INTEGER, time_updated INTEGER);
+      CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL, time_created INTEGER, time_updated INTEGER, time_archived INTEGER);
+      CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER, data TEXT NOT NULL);
+      CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL, time_created INTEGER, data TEXT NOT NULL);
+    `);
+    db.prepare("INSERT INTO project VALUES (?,?,?,?,?)").run("p1", "/work/app", "app", T0, T0 + 9000);
+    db.prepare("INSERT INTO session (id,project_id,directory,title,time_created,time_updated,time_archived) VALUES (?,?,?,?,?,?,?)").run("s1", "p1", "/work/app", "t", T0, T0 + 9000, null);
+    const msg = db.prepare("INSERT INTO message (id,session_id,time_created,data) VALUES (?,?,?,?)");
+    const part = db.prepare("INSERT INTO part (id,message_id,session_id,time_created,data) VALUES (?,?,?,?,?)");
+    // m1: 斜杠命令展开(mode 前导 + <auto-slash-command>)。m2: 普通真人。
+    msg.run("m1", "s1", T0 + 100, JSON.stringify({ role: "user", time: { created: T0 + 100 } }));
+    part.run("pt1", "m1", "s1", T0 + 100, JSON.stringify({ type: "text", text: "[search-mode]\nx\n---\n<auto-slash-command>\n# /graphify Command\n\n**Description**: 大模板正文…" }));
+    msg.run("m2", "s1", T0 + 200, JSON.stringify({ role: "user", time: { created: T0 + 200 } }));
+    part.run("pt2", "m2", "s1", T0 + 200, JSON.stringify({ type: "text", text: "帮我改个 bug" }));
+    db.close();
+
+    await withApp(async (app) => {
+      const res = await app.request(`http://x/api/opencode-history/sessions/s1/my-messages?opencodeRoot=${encodeURIComponent(dir)}`);
+      const j = (await res.json()) as { messages: { text: string; slashCommand?: { name: string } }[] };
+      const bySlash = j.messages.map((m) => m.slashCommand?.name ?? null);
+      expect(bySlash).toContain("graphify"); // m1 折叠标记
+      // 普通消息(m2)不带 slashCommand 键(additive,非 null)。
+      const plain = j.messages.find((m) => m.text === "帮我改个 bug")!;
+      expect("slashCommand" in plain).toBe(false);
+    });
+  });
+
   it("GET /my-messages 找不到 session → 404", async () => {
     const dir = makeOpencodeDir();
     await withApp(async (app) => {

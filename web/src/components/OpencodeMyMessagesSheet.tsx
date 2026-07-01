@@ -4,7 +4,13 @@ import { formatFileTimeMs } from "../util/formatDisplay";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { Sheet } from "./Sheet";
 
-type MyMessage = { id: string; timestamp: string; text: string };
+type MyMessage = {
+  id: string;
+  timestamp: string;
+  text: string;
+  /** 命中 oh-my-opencode 斜杠命令展开;有则默认折叠成命令名 + 可展开。 */
+  slashCommand?: { name: string };
+};
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -92,7 +98,19 @@ export function OpencodeMyMessagesSheet({
                       </>
                     )}
                   </div>
-                  <MessageMarkdown text={m.text} />
+                  {m.slashCommand ? (
+                    <details className="rounded-lg border border-neutral-200 bg-neutral-50/70 px-3 py-2">
+                      <summary className="cursor-pointer select-none text-sm text-neutral-700">
+                        命令 <span className="font-mono font-medium text-neutral-900">/{m.slashCommand.name}</span>
+                        <span className="ml-2 text-xs text-neutral-400">（斜杠命令展开，点击看全文）</span>
+                      </summary>
+                      <div className="mt-2">
+                        <MessageMarkdown text={m.text} />
+                      </div>
+                    </details>
+                  ) : (
+                    <MessageMarkdown text={m.text} />
+                  )}
                 </li>
               );
             })}

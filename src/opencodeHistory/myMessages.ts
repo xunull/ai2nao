@@ -97,3 +97,22 @@ export function parsePartData(data: string): ParsedPart {
     return {};
   }
 }
+
+/**
+ * oh-my-opencode 斜杠命令展开:`/graphify` 展成 ~2000 字模板,清洗后的正文**开头**是
+ * `<auto-slash-command>` 标记 + `# /<name> Command` 头。抽屉据此折叠。
+ *
+ * 保守 + prefer-preserve(承 mode 剥的原则,codex 加固):
+ * - 只在文本**开头**锚定(`^`),mid-text 的 marker 不算(用户可能引用它)。
+ * - 有 marker 但提取不到合法命令名头 → 返回 null(不折叠,当普通文本,不藏内容)。
+ * - 命令名放宽到 `[A-Za-z0-9._:-]`(容 `foo-bar`/`foo:bar`/`ns.cmd`)。
+ * - marker 与 header 间容 CRLF / 空行(`\s*`),但 marker 必须在 char 0(不容任意前缀空白)。
+ * - 版本漂移(标记/头格式变)→ 失配 → null → 普通显示,不崩。
+ */
+const SLASH_COMMAND_RE =
+  /^<auto-slash-command>\s*#\s*\/([A-Za-z0-9][A-Za-z0-9._:-]*)\s+Command/;
+
+export function detectSlashCommand(cleanedText: string): { name: string } | null {
+  const m = SLASH_COMMAND_RE.exec(cleanedText);
+  return m ? { name: m[1] } : null;
+}

@@ -29,7 +29,10 @@ function stub() {
       const url = String(input);
       // /my-messages 必须在 /sessions 列表之前匹配。
       if (url.includes("/my-messages")) {
-        return new Response(JSON.stringify({ ok: true, messages: [{ id: "m1", timestamp: "2026-05-01T00:00:00.000Z", text: "帮我加个功能" }] }));
+        return new Response(JSON.stringify({ ok: true, messages: [
+          { id: "m1", timestamp: "2026-05-01T00:00:00.000Z", text: "帮我加个功能" },
+          { id: "m2", timestamp: "2026-05-01T00:01:00.000Z", text: "<auto-slash-command>\n# /graphify Command\n模板正文", slashCommand: { name: "graphify" } },
+        ] }));
       }
       if (url.includes("/api/opencode-history/status")) {
         return new Response(JSON.stringify({ platform: "darwin", opencodeRoot: "/x/opencode", dbPath: "/x/opencode/opencode.db", envOpencodeDataDir: false }));
@@ -92,5 +95,9 @@ describe("OpencodeHistory 双栏", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("帮我加个功能")).toBeInTheDocument();
     expect(within(dialog).getByText(/已过滤注入/)).toBeInTheDocument();
+    // 斜杠命令展开折叠成命令名(details/summary)。
+    const details = within(dialog).getByText("/graphify").closest("details");
+    expect(details).toBeTruthy();
+    expect(within(dialog).getByText("/graphify")).toBeInTheDocument();
   });
 });

@@ -4,6 +4,7 @@ import type { ChatSessionSummary } from "../cursorHistory/types.js";
 import { diagnosticFromError, type OpencodeDiagnostic } from "./errors.js";
 import {
   cleanOpencodeUserMessageParts,
+  detectSlashCommand,
   parsePartData,
   type ParsedPart,
 } from "./myMessages.js";
@@ -142,7 +143,13 @@ export function opencodeSessionSummaryToJson(s: ChatSessionSummary) {
   return sessionSummaryToJson(s);
 }
 
-export type OpencodeMyMessage = { id: string; timestamp: string; text: string };
+export type OpencodeMyMessage = {
+  id: string;
+  timestamp: string;
+  text: string;
+  /** 命中 oh-my-opencode 斜杠命令展开时的命令名（前端据此折叠）；普通消息无此字段。 */
+  slashCommand?: { name: string };
+};
 
 /**
  * 「我的输入(已过滤注入)」—— projection over 同一 loader。复用 loadSessionMessagesAndParts
@@ -184,7 +191,14 @@ export async function loadOpencodeMyMessages(
       }
       if (role !== "user") continue;
       const text = cleanOpencodeUserMessageParts(byMsg.get(m.id) ?? []);
-      if (text) out.push({ id: m.id, timestamp: new Date(createdMs).toISOString(), text });
+      if (!text) continue;
+      const slash = detectSlashCommand(text);
+      out.push({
+        id: m.id,
+        timestamp: new Date(createdMs).toISOString(),
+        text,
+        ...(slash ? { slashCommand: slash } : {}),
+      });
     }
     return out;
   } finally {

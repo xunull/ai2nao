@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cleanOpencodeUserMessageParts,
+  detectSlashCommand,
   isStructuralInjection,
   stripModePreamble,
   type ParsedPart,
@@ -97,5 +98,36 @@ describe("cleanOpencodeUserMessageParts —— message 级", () => {
       textPart("[search-mode]\ny\n---\nMANDATORY delegate_task z"),
     ];
     expect(cleanOpencodeUserMessageParts(parts)).toBe("");
+  });
+});
+
+describe("detectSlashCommand —— 锚定 + prefer-preserve（codex 加固）", () => {
+  it("marker + 合法 header → 提取命令名", () => {
+    expect(detectSlashCommand("<auto-slash-command>\n# /graphify Command\n\n**Description**: …")).toEqual({ name: "graphify" });
+  });
+
+  it("命令名含 - / : / . → 支持", () => {
+    expect(detectSlashCommand("<auto-slash-command>\n# /foo-bar Command\n…")).toEqual({ name: "foo-bar" });
+    expect(detectSlashCommand("<auto-slash-command>\n# /foo:bar Command\n…")).toEqual({ name: "foo:bar" });
+    expect(detectSlashCommand("<auto-slash-command>\n# /ns.cmd Command\n…")).toEqual({ name: "ns.cmd" });
+  });
+
+  it("marker 后 CRLF / 空行 → 仍提取", () => {
+    expect(detectSlashCommand("<auto-slash-command>\r\n# /graphify Command")).toEqual({ name: "graphify" });
+    expect(detectSlashCommand("<auto-slash-command>\n\n# /graphify Command")).toEqual({ name: "graphify" });
+  });
+
+  it("marker 但无合法 header → null（不折叠,当普通文本）", () => {
+    expect(detectSlashCommand("<auto-slash-command>\n随便写点什么,不是命令头")).toBeNull();
+    expect(detectSlashCommand("<auto-slash-command>\n# 不是命令 Command")).toBeNull();
+  });
+
+  it("marker 在正文中段(非开头)→ null", () => {
+    expect(detectSlashCommand("我引用一下 <auto-slash-command>\n# /graphify Command")).toBeNull();
+  });
+
+  it("普通消息 → null", () => {
+    expect(detectSlashCommand("帮我改个 bug")).toBeNull();
+    expect(detectSlashCommand("")).toBeNull();
   });
 });
