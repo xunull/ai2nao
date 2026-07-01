@@ -419,6 +419,58 @@ function CodexInputComposition({ totals }: { totals: Totals }) {
 }
 
 /**
+ * Claude 输出构成 —— Claude 的 output_tokens 是单一未细分值：不像 Codex 输出能拆
+ * reasoning，也不像 input 侧有 cache 拆分。这里只呈现输出合计 + 标注「无细分」，与
+ * Codex 输出构成对称，消除「Claude 没有输出」的错觉（输出值本就在 2×3 矩阵里）。
+ * Hidden when there is no Claude output in the window.
+ */
+function ClaudeOutputComposition({ totals }: { totals: Totals }) {
+  const output = totals.claudeOutputTokens;
+  if (output <= 0) return null;
+
+  return (
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输出构成</h2>
+        <span className="text-xs text-[var(--fg-muted)]">无细分</span>
+      </div>
+      {/* single-segment bar — visual parity with Codex 输出构成 */}
+      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
+        <div
+          style={{ width: "100%", background: "#2563eb" }}
+          title={`输出 ${formatTokenCount(output)}`}
+        />
+      </div>
+      <table className="w-full text-sm tabular-nums">
+        <tbody>
+          <tr className="text-[var(--fg)]">
+            <td className="py-1 text-left">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-sm"
+                  style={{ background: "#2563eb" }}
+                />
+                正常输出
+                <span className="text-xs text-[var(--fg-muted)]">
+                  Claude 输出无推理 / 缓存细分，即模型可见产出
+                </span>
+              </span>
+            </td>
+            <td className="py-1 text-right">{formatTokenCount(output)}</td>
+            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
+          </tr>
+          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
+            <td className="py-1 text-left">输出合计</td>
+            <td className="py-1 text-right">{formatTokenCount(output)}</td>
+            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/**
  * Codex 输出构成 —— mirror of ClaudeInputComposition, on the output side.
  * Codex's output_tokens already includes reasoning (thinking) tokens, so we
  * split the total output into 推理 (reasoning) + 正常输出 (visible output =
@@ -901,6 +953,8 @@ export function WorkTokensTrend() {
           <ClaudeInputComposition totals={trend.data.totals} />
 
           <CodexInputComposition totals={trend.data.totals} />
+
+          <ClaudeOutputComposition totals={trend.data.totals} />
 
           <CodexOutputComposition totals={trend.data.totals} />
 

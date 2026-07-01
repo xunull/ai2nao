@@ -246,9 +246,34 @@ describe("WorkTokensTrend page", () => {
     );
     // reasoning rate = reasoning / output = 140 / 200 = 70.0%
     expect(screen.getByText(/推理占比 70\.0%/)).toBeInTheDocument();
-    expect(screen.getByText("正常输出")).toBeInTheDocument();
-    expect(screen.getByText("推理")).toBeInTheDocument();
-    expect(screen.getByText("输出合计")).toBeInTheDocument();
+    // Scope to the Codex card — Claude 输出构成 shares 正常输出/输出合计 labels.
+    const codexCard = screen.getByText("Codex 输出构成").closest("section") as HTMLElement;
+    expect(within(codexCard).getByText("正常输出")).toBeInTheDocument();
+    expect(within(codexCard).getByText("推理")).toBeInTheDocument();
+    expect(within(codexCard).getByText("输出合计")).toBeInTheDocument();
+  });
+
+  it("renders Claude 输出构成 (single-value, no sub-split) so claude output isn't perceived as absent", async () => {
+    installFetchMock(async () => jsonResponse(WINDOW_OK));
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Claude 输出构成")).toBeInTheDocument()
+    );
+    const claudeCard = screen.getByText("Claude 输出构成").closest("section") as HTMLElement;
+    // claude 输出无细分 → 单值卡,标注「无细分」,不做 reasoning 拆分。
+    expect(within(claudeCard).getByText("无细分")).toBeInTheDocument();
+    expect(within(claudeCard).getByText(/无推理 \/ 缓存细分/)).toBeInTheDocument();
+    expect(within(claudeCard).getByText("输出合计")).toBeInTheDocument();
+    expect(within(claudeCard).queryByText("推理")).toBeNull();
+  });
+
+  it("hides Claude 输出构成 when there are no Claude output tokens", async () => {
+    installFetchMock(async () =>
+      jsonResponse({ ...WINDOW_OK, totals: { ...WINDOW_OK.totals, claudeOutputTokens: 0 } })
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Claude 输入构成")).toBeInTheDocument());
+    expect(screen.queryByText("Claude 输出构成")).toBeNull();
   });
 
   it("hides Codex 输出构成 when there are no Codex output tokens", async () => {
