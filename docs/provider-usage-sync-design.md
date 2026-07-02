@@ -10,6 +10,12 @@ order: 80
 > 做一个**可扩展的 provider 插件**机制:每个 AI 平台（MiniMax、未来其它）= 一个实现
 > 统一接口的模块,从它的 API 拉用量,**在管理页可开关**;关掉就不同步、不展示。
 > MiniMax 是第一个插件。
+>
+> ⚠ **前提已更新（2026-07-02）：本设计 §1 的核心假设「MiniMax 没有每天/每月历史 API」已被证伪。**
+> 实测发现 `/account/amount` 就是漏掉的历史用量接口（按小时、带 input/output/cache/model），
+> 见 [MiniMax Token 记账（远程账单 API）与接入口径](minimax-token-accounting.md)。据此，§1/§5/§7
+> 的「快照-only、不攒历史、不进 token-trend」需重议——可升级为「快照 + 逐小时历史」。下方正文
+> 仍是 06-19 的原始设计，未改。
 
 ---
 
