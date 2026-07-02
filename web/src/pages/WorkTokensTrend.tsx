@@ -35,10 +35,15 @@ type Bucket = {
   bucketEnd: string;
   claudeTokens: number;
   codexTokens: number;
+  /** MiniMax total (input+output) this bucket — remote billing history, T+1 lagged. */
+  minimaxTokens: number;
   /** Claude cache_read in this bucket — subtracted when the cache toggle is off. */
   claudeCacheReadInputTokens: number;
   /** Codex cached_input in this bucket — subtracted when the cache toggle is off. */
   codexCachedInputTokens: number;
+  /** MiniMax cache (read+create) — BOTH subtracted when the cache toggle is off. */
+  minimaxCacheReadInputTokens: number;
+  minimaxCacheCreationInputTokens: number;
   /** Estimated USD cost of priced tokens in this bucket (unknown models excluded). */
   claudeCostUsd: number;
   codexCostUsd: number;
@@ -56,14 +61,19 @@ type Totals = {
   totalTokens: number;
   claudeTokens: number;
   codexTokens: number;
+  minimaxTokens: number;
   claudeInputTokens: number;
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  minimaxInputTokens: number;
+  minimaxOutputTokens: number;
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
   codexReasoningOutputTokens: number;
   codexCachedInputTokens: number;
+  minimaxCacheReadInputTokens: number;
+  minimaxCacheCreationInputTokens: number;
   totalCostUsd: number;
   claudeCostUsd: number;
   codexCostUsd: number;
@@ -148,6 +158,9 @@ type ChartRow = Bucket & {
   // rather than a separate hatched series.
   claudeFullTokens: number;
   codexFullTokens: number;
+  minimaxFullTokens: number;
+  /** MiniMax cost is deferred (subscription bills 0) → always 0 in cost mode. */
+  minimaxCostUsd: number;
 };
 
 function StatCard({
@@ -556,6 +569,7 @@ function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps)
   const row = payload[0].payload;
   const claude = costMode ? row.claudeCostUsd : row.claudeFullTokens;
   const codex = costMode ? row.codexCostUsd : row.codexFullTokens;
+  const minimax = costMode ? row.minimaxCostUsd : row.minimaxFullTokens;
   const fmt = costMode ? formatUsd : formatTokenCount;
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-xs shadow-sm">
@@ -565,9 +579,15 @@ function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps)
         <span className="text-right text-[var(--fg)]">{fmt(claude)}</span>
         <span className="text-[var(--fg-muted)]">Codex:</span>
         <span className="text-right text-[var(--fg)]">{fmt(codex)}</span>
+        {!costMode && (
+          <>
+            <span className="text-[var(--fg-muted)]">MiniMax:</span>
+            <span className="text-right text-[var(--fg)]">{fmt(minimax)}</span>
+          </>
+        )}
         <span className="text-[var(--fg-muted)]">合计:</span>
         <span className="text-right font-semibold text-[var(--fg)]">
-          {fmt(claude + codex)}
+          {fmt(claude + codex + minimax)}
         </span>
       </div>
       {(row.claudeUnknownSessionCount + row.codexUnknownSessionCount + row.claudeErrorSessionCount + row.codexErrorSessionCount) > 0 && (
@@ -644,17 +664,24 @@ function deriveTotals(totals: Totals, includeCache: boolean): Totals {
   if (includeCache) return totals;
   const claudeCut = totals.claudeCacheReadInputTokens;
   const codexCut = totals.codexCachedInputTokens;
+  // MiniMax: subtract BOTH cache kinds (read + create) — the clean caliber.
+  const minimaxCut =
+    totals.minimaxCacheReadInputTokens + totals.minimaxCacheCreationInputTokens;
   const claudeTokens = Math.max(0, totals.claudeTokens - claudeCut);
   const codexTokens = Math.max(0, totals.codexTokens - codexCut);
+  const minimaxTokens = Math.max(0, totals.minimaxTokens - minimaxCut);
   const claudeInputTokens = Math.max(0, totals.claudeInputTokens - claudeCut);
   const codexInputTokens = Math.max(0, totals.codexInputTokens - codexCut);
-  const totalTokens = claudeTokens + codexTokens;
+  const minimaxInputTokens = Math.max(0, totals.minimaxInputTokens - minimaxCut);
+  const totalTokens = claudeTokens + codexTokens + minimaxTokens;
   return {
     ...totals,
     claudeTokens,
     codexTokens,
+    minimaxTokens,
     claudeInputTokens,
     codexInputTokens,
+    minimaxInputTokens,
     totalTokens,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
@@ -756,6 +783,16 @@ export function WorkTokensTrend() {
       codexFullTokens: includeCache
         ? b.codexTokens
         : Math.max(0, b.codexTokens - b.codexCachedInputTokens),
+      // MiniMax "exclude cache" subtracts BOTH cache kinds (read + create).
+      minimaxFullTokens: includeCache
+        ? b.minimaxTokens
+        : Math.max(
+            0,
+            b.minimaxTokens -
+              b.minimaxCacheReadInputTokens -
+              b.minimaxCacheCreationInputTokens
+          ),
+      minimaxCostUsd: 0,
     }));
   }, [trend.data, includeCache]);
 
@@ -974,6 +1011,11 @@ export function WorkTokensTrend() {
                   <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#2563eb" }} />
                   Codex
                 </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#7c3aed" }} />
+                  MiniMax
+                  <span className="text-[10px] text-[var(--fg-muted)]">(账单 T+1)</span>
+                </span>
               </div>
             </div>
             <div style={{ width: "100%", height: 280 }}>
@@ -991,6 +1033,8 @@ export function WorkTokensTrend() {
                   <Tooltip content={<CustomTooltip costMode={showCost} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                   <Bar dataKey={showCost ? "claudeCostUsd" : "claudeFullTokens"} stackId="tokens" fill="#d97757" radius={0} />
                   <Bar dataKey={showCost ? "codexCostUsd" : "codexFullTokens"} stackId="tokens" fill="#2563eb" radius={0} />
+                  {/* MiniMax: remote billing history. No cost yet (subscription) → 0 in cost mode. */}
+                  <Bar dataKey={showCost ? "minimaxCostUsd" : "minimaxFullTokens"} stackId="tokens" fill="#7c3aed" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

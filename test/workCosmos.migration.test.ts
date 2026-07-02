@@ -21,7 +21,7 @@ describe("schema v27 — work_cosmos_* tables", () => {
       "SELECT version FROM meta_schema WHERE id = 1"
     ).get() as { version: number }).version;
     // fresh DB migrates to the latest version; v27 created the cosmos tables
-    expect(version).toBe(39);
+    expect(version).toBe(41);
 
     const tables = db
       .prepare(
@@ -35,6 +35,19 @@ describe("schema v27 — work_cosmos_* tables", () => {
       "work_cosmos_points",
       "work_cosmos_state",
     ]);
+  });
+
+  // Regression (2026-07-02): the MiniMax history opt-in column was originally
+  // folded into applyV40; a dev DB that reached v40 before the column was added
+  // never got it (the `if (v < 40)` guard skips a re-run), so PATCH
+  // /api/providers failed with "no column named history_enabled". Splitting it
+  // into v41 makes the ALTER forward-only. Assert a fully-migrated DB has it.
+  it("provider_config gains history_enabled after full migration (v41)", () => {
+    const db = fresh();
+    const cols = db
+      .prepare("PRAGMA table_info(provider_config)")
+      .all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("history_enabled");
   });
 
   it("rejects unknown source value", () => {

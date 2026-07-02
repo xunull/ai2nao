@@ -11,6 +11,8 @@ import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
 import { syncModelPrices } from "../cost/modelsDevSync.js";
 import { syncEnabledProviders } from "../providers/sync.js";
+import { getProviderConfig } from "../providers/store.js";
+import { refreshMinimaxTokenUsage } from "../minimaxTokenUsage/refresh.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
@@ -350,6 +352,45 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: result.status,
           summary: result,
           errorSummary: failed?.error ?? null,
+        };
+      },
+    },
+    {
+      // MiniMax billing-HISTORY sync (per-hour token usage from the undocumented
+      // /account/amount endpoint). SEPARATE opt-in from the quota snapshot above:
+      // only runs when the MiniMax provider has `history_enabled` set on the
+      // /providers page. Each run re-pulls a rolling window and idempotently
+      // upserts (late T+1~T+2 hours backfill); the scheduler lease serializes
+      // runs so a manual + scheduled run can't clobber each other.
+      key: "minimax.tokens.sync",
+      label: "MiniMax 用量历史同步",
+      description:
+        "从 MiniMax 账单接口同步逐小时 token 历史,供 Token 趋势页展示(需在 /providers 页开启历史)。",
+      category: "model_cache",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const cfg = getProviderConfig(ctx.db, "minimax");
+        if (!cfg?.history_enabled) {
+          return {
+            status: "skipped",
+            summary: { reason: "history not enabled" },
+            errorSummary: null,
+          };
+        }
+        const apiKey = cfg.api_key?.trim();
+        if (!apiKey) {
+          return {
+            status: "failed",
+            summary: { reason: "no api key" },
+            errorSummary: "未配置 API key",
+          };
+        }
+        const r = await refreshMinimaxTokenUsage(ctx.db, { apiKey });
+        return {
+          status: r.status,
+          summary: r,
+          errorSummary: r.error ?? null,
         };
       },
     },

@@ -2,6 +2,10 @@ import type Database from "better-sqlite3";
 import { computeCost, PRICE_SNAPSHOT_DATE } from "../cost/pricing.js";
 import { latestSyncedAt, loadPriceMap } from "../cost/priceStore.js";
 import { bucketExpr } from "./bucket.js";
+import {
+  MINIMAX_METHOD_CACHE_READ,
+  MINIMAX_METHOD_CACHE_CREATE,
+} from "../minimaxTokenUsage/types.js";
 import type {
   BucketGranularity,
   MonthRange,
@@ -11,6 +15,14 @@ import type {
 } from "./types.js";
 
 type Source = "claude" | "codex";
+
+/**
+ * Trend-read sources. `minimax` is a remote billing-history source with NO
+ * per-session table (event-only), so it's a superset of `Source` used ONLY at
+ * the trend-read entry point — the session-table (`TABLE`) and cost paths stay
+ * on the narrow `Source`.
+ */
+export type TrendSource = Source | "minimax";
 
 const TABLE: Record<Source, string> = {
   claude: "claude_session_token_usage",
@@ -164,11 +176,14 @@ type RawBucketRow = {
  */
 export function queryBucketsBySource(
   db: Database.Database,
-  source: Source,
+  source: TrendSource,
   from: Date,
   to: Date,
   granularity: BucketGranularity
 ): RawBucketRow[] {
+  if (source === "minimax") {
+    return queryMinimaxBuckets(db, from, to, granularity);
+  }
   if (source === "codex") {
     return queryCodexBuckets(db, from, to, granularity);
   }
@@ -176,6 +191,52 @@ export function queryBucketsBySource(
     return queryClaudeBuckets(db, from, to, granularity);
   }
   return querySessionTableBuckets(db, source, from, to, granularity);
+}
+
+/**
+ * MiniMax bucket rows from the per-hour billing-history event table. No session
+ * table exists (remote billing, not local sessions), so session counts are 0 —
+ * a bucket carries tokens with `session_count = 0`, same shape as a codex
+ * event-only bucket. `input_tokens` is FUSED (all methods' input = fresh +
+ * cache-read + cache-create, mirroring claude's fused input). The two cache
+ * kinds are classified BY METHOD into the shared cache columns so the "exclude
+ * cache" toggle can subtract BOTH (unlike claude which only carries one). See
+ * `docs/minimax-token-accounting.md`.
+ */
+function queryMinimaxBuckets(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  granularity: BucketGranularity
+): RawBucketRow[] {
+  const sql = `
+    SELECT
+      ${bucketExpr(granularity, "event_at")} AS bucket_key,
+      COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+      COALESCE(SUM(CASE WHEN method = ? THEN input_tokens ELSE 0 END), 0) AS cache_read_input_tokens,
+      COALESCE(SUM(CASE WHEN method = ? THEN input_tokens ELSE 0 END), 0) AS cache_creation_input_tokens,
+      0 AS reasoning_output_tokens,
+      0 AS codex_cached_input_tokens,
+      0 AS session_count,
+      0 AS full_count,
+      0 AS unknown_count,
+      0 AS error_count
+    FROM minimax_token_usage_event
+    WHERE event_at >= ?
+      AND event_at < ?
+    GROUP BY bucket_key
+    ORDER BY bucket_key ASC
+  `;
+  return db
+    .prepare(sql)
+    .all(
+      MINIMAX_METHOD_CACHE_READ,
+      MINIMAX_METHOD_CACHE_CREATE,
+      from.toISOString(),
+      to.toISOString()
+    ) as RawBucketRow[];
 }
 
 /**
@@ -455,26 +516,35 @@ function queryClaudeBuckets(
 export function mergeAndZeroFill(
   bucketKeys: { key: string; start: Date; end: Date }[],
   claudeRows: RawBucketRow[],
-  codexRows: RawBucketRow[]
+  codexRows: RawBucketRow[],
+  minimaxRows: RawBucketRow[] = []
 ): WorkTokensTrendBucket[] {
   const claudeMap = new Map(claudeRows.map((r) => [r.bucket_key, r]));
   const codexMap = new Map(codexRows.map((r) => [r.bucket_key, r]));
+  const minimaxMap = new Map(minimaxRows.map((r) => [r.bucket_key, r]));
   return bucketKeys.map((b) => {
     const c = claudeMap.get(b.key);
     const x = codexMap.get(b.key);
+    const mm = minimaxMap.get(b.key);
     return {
       bucketStart: b.start.toISOString(),
       bucketEnd: b.end.toISOString(),
       claudeTokens: c?.total_tokens ?? 0,
       codexTokens: x?.total_tokens ?? 0,
+      minimaxTokens: mm?.total_tokens ?? 0,
       claudeInputTokens: c?.input_tokens ?? 0,
       claudeOutputTokens: c?.output_tokens ?? 0,
       codexInputTokens: x?.input_tokens ?? 0,
       codexOutputTokens: x?.output_tokens ?? 0,
+      minimaxInputTokens: mm?.input_tokens ?? 0,
+      minimaxOutputTokens: mm?.output_tokens ?? 0,
       claudeCacheReadInputTokens: c?.cache_read_input_tokens ?? 0,
       claudeCacheCreationInputTokens: c?.cache_creation_input_tokens ?? 0,
       codexReasoningOutputTokens: x?.reasoning_output_tokens ?? 0,
       codexCachedInputTokens: x?.codex_cached_input_tokens ?? 0,
+      // MiniMax: both cache kinds classified by method (exclude-cache subtracts both).
+      minimaxCacheReadInputTokens: mm?.cache_read_input_tokens ?? 0,
+      minimaxCacheCreationInputTokens: mm?.cache_creation_input_tokens ?? 0,
       // Cost is patched in by the service after pricing (separate path).
       claudeCostUsd: 0,
       codexCostUsd: 0,
@@ -507,14 +577,19 @@ export function computeTotals(
 ): WorkTokensTrendTotals {
   let claudeTokens = 0;
   let codexTokens = 0;
+  let minimaxTokens = 0;
   let claudeInputTokens = 0;
   let claudeOutputTokens = 0;
   let codexInputTokens = 0;
   let codexOutputTokens = 0;
+  let minimaxInputTokens = 0;
+  let minimaxOutputTokens = 0;
   let claudeCacheReadInputTokens = 0;
   let claudeCacheCreationInputTokens = 0;
   let codexReasoningOutputTokens = 0;
   let codexCachedInputTokens = 0;
+  let minimaxCacheReadInputTokens = 0;
+  let minimaxCacheCreationInputTokens = 0;
   let claudeCostUsd = 0;
   let codexCostUsd = 0;
   let coveredSessionCount = 0;
@@ -523,14 +598,21 @@ export function computeTotals(
   for (const b of buckets) {
     claudeTokens += b.claudeTokens;
     codexTokens += b.codexTokens;
+    // minimax fields are guarded (`?? 0`): a bucket produced before minimax
+    // existed (or a partial test fixture) must not NaN-poison the totals.
+    minimaxTokens += b.minimaxTokens ?? 0;
     claudeInputTokens += b.claudeInputTokens;
     claudeOutputTokens += b.claudeOutputTokens;
     codexInputTokens += b.codexInputTokens;
     codexOutputTokens += b.codexOutputTokens;
+    minimaxInputTokens += b.minimaxInputTokens ?? 0;
+    minimaxOutputTokens += b.minimaxOutputTokens ?? 0;
     claudeCacheReadInputTokens += b.claudeCacheReadInputTokens;
     claudeCacheCreationInputTokens += b.claudeCacheCreationInputTokens;
     codexReasoningOutputTokens += b.codexReasoningOutputTokens;
     codexCachedInputTokens += b.codexCachedInputTokens;
+    minimaxCacheReadInputTokens += b.minimaxCacheReadInputTokens ?? 0;
+    minimaxCacheCreationInputTokens += b.minimaxCacheCreationInputTokens ?? 0;
     claudeCostUsd += b.claudeCostUsd;
     codexCostUsd += b.codexCostUsd;
     coveredSessionCount +=
@@ -540,7 +622,7 @@ export function computeTotals(
     errorSessionCount +=
       b.claudeErrorSessionCount + b.codexErrorSessionCount;
   }
-  const totalTokens = claudeTokens + codexTokens;
+  const totalTokens = claudeTokens + codexTokens + minimaxTokens;
   const totalSessionCount =
     coveredSessionCount + unknownSessionCount + errorSessionCount;
 
@@ -559,14 +641,19 @@ export function computeTotals(
     totalTokens,
     claudeTokens,
     codexTokens,
+    minimaxTokens,
     claudeInputTokens,
     claudeOutputTokens,
     codexInputTokens,
     codexOutputTokens,
+    minimaxInputTokens,
+    minimaxOutputTokens,
     claudeCacheReadInputTokens,
     claudeCacheCreationInputTokens,
     codexReasoningOutputTokens,
     codexCachedInputTokens,
+    minimaxCacheReadInputTokens,
+    minimaxCacheCreationInputTokens,
     totalCostUsd: claudeCostUsd + codexCostUsd,
     claudeCostUsd,
     codexCostUsd,
@@ -576,6 +663,7 @@ export function computeTotals(
     priceSnapshotDate: PRICE_SNAPSHOT_DATE,
     claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
     codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
+    minimaxShare: totalTokens === 0 ? 0 : minimaxTokens / totalTokens,
     coverage,
     coveredSessionCount,
     unknownSessionCount,
@@ -600,23 +688,27 @@ export function computePreviousWindowTotal(
   total: number;
   claudeCacheReadInputTokens: number;
   codexCachedInputTokens: number;
+  minimaxCacheTokens: number;
 } {
   const span = to.getTime() - from.getTime();
   const prevFrom = new Date(from.getTime() - span);
   const prevTo = new Date(from.getTime());
 
-  // Claude from its per-session table (bucketed by last_updated_at); Codex from
-  // the per-event timeline (bucketed by event_at) so the comparison window
-  // matches how the bars distribute resumed-session tokens by consumption day.
+  // Claude from its per-session table (bucketed by last_updated_at); Codex and
+  // MiniMax from their per-event timelines (bucketed by event_at) so the
+  // comparison window matches how the bars distribute tokens by consumption
+  // time. MiniMax "cache" = both cache-read + cache-create (classified by method).
   const sql = `
     SELECT
       COALESCE(SUM(total_tokens), 0) AS total,
       COALESCE(SUM(claude_cache_read), 0) AS claude_cache_read,
-      COALESCE(SUM(codex_cached), 0) AS codex_cached
+      COALESCE(SUM(codex_cached), 0) AS codex_cached,
+      COALESCE(SUM(minimax_cache), 0) AS minimax_cache
     FROM (
       SELECT total_tokens,
              cache_read_input_tokens AS claude_cache_read,
-             0 AS codex_cached
+             0 AS codex_cached,
+             0 AS minimax_cache
         FROM claude_session_token_usage
        WHERE last_updated_at >= ?
          AND last_updated_at < ?
@@ -625,26 +717,48 @@ export function computePreviousWindowTotal(
       UNION ALL
       SELECT (e.input_tokens + e.output_tokens) AS total_tokens,
              0 AS claude_cache_read,
-             e.cached_input_tokens AS codex_cached
+             e.cached_input_tokens AS codex_cached,
+             0 AS minimax_cache
         FROM codex_token_usage_event e
         JOIN codex_session_token_usage s ON s.session_id = e.session_id
        WHERE e.event_at >= ?
          AND e.event_at < ?
          AND s.missing_since IS NULL
          AND s.token_status = 'full'
+      UNION ALL
+      SELECT (input_tokens + output_tokens) AS total_tokens,
+             0 AS claude_cache_read,
+             0 AS codex_cached,
+             CASE WHEN method IN (?, ?) THEN input_tokens ELSE 0 END AS minimax_cache
+        FROM minimax_token_usage_event
+       WHERE event_at >= ?
+         AND event_at < ?
     )
   `;
   const fromIso = prevFrom.toISOString();
   const toIso = prevTo.toISOString();
-  const row = db.prepare(sql).get(fromIso, toIso, fromIso, toIso) as {
+  const row = db
+    .prepare(sql)
+    .get(
+      fromIso,
+      toIso,
+      fromIso,
+      toIso,
+      MINIMAX_METHOD_CACHE_READ,
+      MINIMAX_METHOD_CACHE_CREATE,
+      fromIso,
+      toIso
+    ) as {
     total: number;
     claude_cache_read: number;
     codex_cached: number;
+    minimax_cache: number;
   };
   return {
     total: row.total,
     claudeCacheReadInputTokens: row.claude_cache_read,
     codexCachedInputTokens: row.codex_cached,
+    minimaxCacheTokens: row.minimax_cache,
   };
 }
 
@@ -669,6 +783,9 @@ export function computeMonthRange(
       SELECT strftime('%Y-%m', last_updated_at, 'localtime') AS local_month
         FROM codex_session_token_usage
        WHERE missing_since IS NULL
+      UNION ALL
+      SELECT strftime('%Y-%m', event_at, 'localtime') AS local_month
+        FROM minimax_token_usage_event
     )
   `;
   const row = db.prepare(sql).get() as {

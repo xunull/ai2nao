@@ -1068,3 +1068,21 @@ Depends on / blocked by:
 
 **Effort estimate:** S（human ~1h / CC ~15min,两处扣减 + 标签 + 回归测试)
 **Priority:** P2（用户已明确报告"数字明显不对",体验优先)
+
+---
+
+## MiniMax 成本（pay-as-you-go）定价接入
+
+**What:** 给 MiniMax 用量接入成本估算（按模型 / cache-read / cache-create / 输入输出分别定价），让成本模式下 MiniMax 柱有真实金额。
+
+**Why:** 当前账号是 coding_plan 订阅制,`/account/amount` 每条 `consume_cash=0`,所以成本模式下 MiniMax 恒为 0/unpriced。若未来改用 pay-as-you-go,就需要真实成本。现在做是无用功。
+
+**Pros:** pay-as-you-go 场景下成本图完整。
+**Cons:** MiniMax 定价来源未文档化(账单接口本身可能是金额页,`consume_cash_after_voucher` 可能才是真实扣费);模型 × cache 类型的单价表要另查。
+
+**Context:** 2026-07-02 plan-eng-review(MiniMax 作为第 4 个趋势 source)的 codex 外部声音 #10 提出。本轮已决定:MiniMax 成本走现有 unpriced 路径,但**在 `minimax_token_usage_event` 存下 `consume_cash` / `consume_cash_after_voucher`** 字段供日后接定价,不丢数据。验证与口径见 `docs/minimax-token-accounting.md`。
+
+**Depends on / blocked by:** MiniMax 历史 source(B)主体落地后;需先确认 pay-as-you-go 账单里 `consume_cash` 是否为真实金额(subscription 下恒 0,无法验证)。
+
+**Effort estimate:** S（human ~1-2h / CC ~20min,定价表 + cost 路径 minimax 分支 + 测试)
+**Priority:** P3（订阅制下恒 0,非阻塞;字段已存,日后接不丢数据)

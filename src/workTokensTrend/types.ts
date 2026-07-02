@@ -86,6 +86,13 @@ export type WorkTokensTrendBucket = {
   claudeTokens: number;
   codexTokens: number;
   /**
+   * MiniMax total (input+output) for this bucket, from the remote per-hour
+   * billing-history event table. No session table → no minimax session counts.
+   * `minimaxInputTokens` is FUSED (fresh + cache-read + cache-create), mirroring
+   * claude. T+1~T+2 lag: the trailing 1-2 buckets are typically still settling.
+   */
+  minimaxTokens: number;
+  /**
    * Input / output split per source (token_status='full' only). For Claude,
    * `*InputTokens` is the FUSED value (input + cache_creation + cache_read) —
    * cache breakdown is a separate future change. Invariant per bucket:
@@ -96,6 +103,9 @@ export type WorkTokensTrendBucket = {
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  /** MiniMax input (FUSED) / output split. minimaxInput + minimaxOutput == minimaxTokens. */
+  minimaxInputTokens: number;
+  minimaxOutputTokens: number;
   /**
    * Claude-only prompt-cache split (subset of claudeInputTokens). Cache 命中
    * (read) is what gets replayed; cache 写入 (creation) is first-time cache
@@ -104,6 +114,13 @@ export type WorkTokensTrendBucket = {
    */
   claudeCacheReadInputTokens: number;
   claudeCacheCreationInputTokens: number;
+  /**
+   * MiniMax prompt-cache split (subset of minimaxInputTokens), classified by
+   * billing `method`: cache-read (命中) + cache-create (写入). "exclude cache"
+   * subtracts BOTH. 真实新增 = minimaxInputTokens - read - creation.
+   */
+  minimaxCacheReadInputTokens: number;
+  minimaxCacheCreationInputTokens: number;
   /** Codex-only reasoning (thinking) output (subset of codexOutputTokens).
    *  正常输出 = codexOutputTokens - this. Claude has no reasoning concept. */
   codexReasoningOutputTokens: number;
@@ -133,6 +150,8 @@ export type WorkTokensTrendTotals = {
   totalTokens: number;
   claudeTokens: number;
   codexTokens: number;
+  /** MiniMax total (input+output) from the remote billing-history event table. */
+  minimaxTokens: number;
   /**
    * Input / output split (token_status='full' only). Powers the 2×3 breakdown
    * matrix. Invariant: claudeInput + claudeOutput + codexInput + codexOutput
@@ -144,6 +163,9 @@ export type WorkTokensTrendTotals = {
   claudeOutputTokens: number;
   codexInputTokens: number;
   codexOutputTokens: number;
+  /** MiniMax input (FUSED) / output totals. */
+  minimaxInputTokens: number;
+  minimaxOutputTokens: number;
   /**
    * Claude-only prompt-cache split (subset of claudeInputTokens). Powers the
    * "Claude 输入构成" breakdown:
@@ -166,6 +188,13 @@ export type WorkTokensTrendTotals = {
    */
   codexCachedInputTokens: number;
   /**
+   * MiniMax prompt-cache split (subset of minimaxInputTokens), classified by
+   * method: cache-read + cache-create. Powers the "exclude cache" toggle (which
+   * subtracts BOTH). 真实新增 = minimaxInputTokens - read - creation.
+   */
+  minimaxCacheReadInputTokens: number;
+  minimaxCacheCreationInputTokens: number;
+  /**
    * Estimated USD cost — "equivalent API cost", NOT a subscription bill. Priced
    * per session by its model from a static snapshot (PRICE_SNAPSHOT_DATE).
    * Tokens whose model has no price entry are EXCLUDED from cost and counted in
@@ -181,6 +210,7 @@ export type WorkTokensTrendTotals = {
   priceSnapshotDate: string;
   claudeShare: number; // 0..1
   codexShare: number; // 0..1
+  minimaxShare: number; // 0..1
   coverage: WorkTokensTrendCoverage;
   coveredSessionCount: number; // token_status='full'
   unknownSessionCount: number; // token_status='unknown' (F2)
@@ -233,6 +263,12 @@ export type WorkTokensTrendResponse =
        * consistently for Codex too. Always a number (0 when none).
        */
       previousWindowCodexCachedInputTokens: number;
+      /**
+       * MiniMax cache (cache-read + cache-create) summed over the SAME previous
+       * window, so the "exclude cache" toggle recomputes 环比 consistently for
+       * MiniMax too (which subtracts both cache kinds). Always a number.
+       */
+      previousWindowMinimaxCacheTokens: number;
       /** (current - prev) / prev; null only when prev === 0. */
       deltaRatio: number | null;
       monthRange: MonthRange;

@@ -5,6 +5,8 @@ import type { ProviderSnapshotItem } from "./types.js";
 export type ProviderConfigRow = {
   provider: string;
   enabled: number;
+  /** Separate opt-in for remote billing-history scraping (MiniMax /account/amount). */
+  history_enabled: number;
   api_key: string | null;
   last_sync_at: string | null;
   last_status: string | null;
@@ -27,6 +29,8 @@ export type ProviderView = {
   id: string;
   label: string;
   enabled: boolean;
+  /** Whether remote billing-history scraping is opted-in (separate from `enabled`). */
+  historyEnabled: boolean;
   hasKey: boolean;
   lastSyncAt: string | null;
   lastStatus: string | null;
@@ -69,22 +73,35 @@ export function getProviderConfig(
 export function setProviderConfig(
   db: Database.Database,
   provider: string,
-  patch: { enabled?: boolean; apiKey?: string | undefined },
+  patch: { enabled?: boolean; historyEnabled?: boolean; apiKey?: string | undefined },
   nowIso: string
 ): void {
   const existing = getProviderConfig(db, provider);
   const enabled =
     patch.enabled == null ? (existing?.enabled ?? 0) : patch.enabled ? 1 : 0;
+  const historyEnabled =
+    patch.historyEnabled == null
+      ? (existing?.history_enabled ?? 0)
+      : patch.historyEnabled
+        ? 1
+        : 0;
   const apiKey =
     patch.apiKey === undefined ? (existing?.api_key ?? null) : patch.apiKey || null;
   db.prepare(
-    `INSERT INTO provider_config (provider, enabled, api_key, updated_at)
-     VALUES (@provider, @enabled, @api_key, @updated_at)
+    `INSERT INTO provider_config (provider, enabled, history_enabled, api_key, updated_at)
+     VALUES (@provider, @enabled, @history_enabled, @api_key, @updated_at)
      ON CONFLICT(provider) DO UPDATE SET
        enabled = excluded.enabled,
+       history_enabled = excluded.history_enabled,
        api_key = excluded.api_key,
        updated_at = excluded.updated_at`
-  ).run({ provider, enabled, api_key: apiKey, updated_at: nowIso });
+  ).run({
+    provider,
+    enabled,
+    history_enabled: historyEnabled,
+    api_key: apiKey,
+    updated_at: nowIso,
+  });
 }
 
 export function recordSyncResult(
@@ -154,6 +171,7 @@ export function listProviders(db: Database.Database): ProviderView[] {
       id: s.id,
       label: s.label,
       enabled: !!cfg?.enabled,
+      historyEnabled: !!cfg?.history_enabled,
       hasKey: !!cfg?.api_key,
       lastSyncAt: cfg?.last_sync_at ?? null,
       lastStatus: cfg?.last_status ?? null,

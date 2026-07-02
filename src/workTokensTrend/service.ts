@@ -121,6 +121,7 @@ function generateWindow(
     previousWindowTotal,
     previousWindowClaudeCacheReadInputTokens: prev.claudeCacheReadInputTokens,
     previousWindowCodexCachedInputTokens: prev.codexCachedInputTokens,
+    previousWindowMinimaxCacheTokens: prev.minimaxCacheTokens,
     deltaRatio,
     monthRange: safeMonthRange(db, now, buckets.diagnostics),
     diagnostics: buckets.diagnostics,
@@ -161,6 +162,9 @@ function enumerateAndAggregate(
 
   const claudeRows = safeQuery(db, "claude", from, to, granularity, diagnostics);
   const codexRows = safeQuery(db, "codex", from, to, granularity, diagnostics);
+  // MiniMax is a remote billing-history source; isolated like the others so a
+  // failed/absent endpoint never 500s the local sources' trend.
+  const minimaxRows = safeQuery(db, "minimax", from, to, granularity, diagnostics);
 
   // Key conversion: SQL bucketExpr emits local-time string keys; we already
   // matched the format in `bucket.fmtLocal()` via `iterateBuckets().key`, so
@@ -169,7 +173,8 @@ function enumerateAndAggregate(
   const data = mergeAndZeroFill(
     bucketKeys.map((b) => ({ key: b.key, start: b.start, end: b.end })),
     claudeRows,
-    codexRows
+    codexRows,
+    minimaxRows
   );
 
   // USD cost: priced separately (per bucket+model via the static snapshot), then
@@ -209,7 +214,7 @@ function enumerateAndAggregate(
 
 function safeQuery(
   db: Database.Database,
-  source: "claude" | "codex",
+  source: "claude" | "codex" | "minimax",
   from: Date,
   to: Date,
   granularity: ReturnType<typeof windowToGranularity> | "day",
@@ -237,6 +242,7 @@ function safePreviousWindowTotal(
   total: number;
   claudeCacheReadInputTokens: number;
   codexCachedInputTokens: number;
+  minimaxCacheTokens: number;
 } {
   try {
     return computePreviousWindowTotal(db, from, to);
@@ -247,7 +253,12 @@ function safePreviousWindowTotal(
       kind: "previous_window_query_failed",
       message: `previous window total query failed: ${msg}`,
     });
-    return { total: 0, claudeCacheReadInputTokens: 0, codexCachedInputTokens: 0 };
+    return {
+      total: 0,
+      claudeCacheReadInputTokens: 0,
+      codexCachedInputTokens: 0,
+      minimaxCacheTokens: 0,
+    };
   }
 }
 

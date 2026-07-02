@@ -94,6 +94,25 @@ describe("store — API key is never exposed", () => {
     setProviderConfig(db, "minimax", { apiKey: "" }, "2026-06-19T00:00:00Z");
     expect(listProviders(db).find((p) => p.id === "minimax")!.hasKey).toBe(false);
   });
+
+  it("historyEnabled defaults off and toggles independently of enabled", () => {
+    const db = freshDb();
+    ensureProviderConfigs(db, "2026-06-19T00:00:00Z");
+    const mm0 = listProviders(db).find((p) => p.id === "minimax")!;
+    expect(mm0.historyEnabled).toBe(false);
+    // Enabling the snapshot must NOT enable history scraping.
+    setProviderConfig(db, "minimax", { enabled: true }, "2026-06-19T00:00:00Z");
+    expect(
+      listProviders(db).find((p) => p.id === "minimax")!.historyEnabled
+    ).toBe(false);
+    // Opt into history separately; enabling it must not disturb `enabled`/key.
+    setProviderConfig(db, "minimax", { apiKey: "k" }, "2026-06-19T00:00:00Z");
+    setProviderConfig(db, "minimax", { historyEnabled: true }, "2026-06-19T00:00:00Z");
+    const mm1 = listProviders(db).find((p) => p.id === "minimax")!;
+    expect(mm1.historyEnabled).toBe(true);
+    expect(mm1.enabled).toBe(true);
+    expect(mm1.hasKey).toBe(true);
+  });
 });
 
 describe("syncProvider / syncEnabledProviders", () => {

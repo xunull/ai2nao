@@ -15,6 +15,7 @@ type ProviderView = {
   id: string;
   label: string;
   enabled: boolean;
+  historyEnabled: boolean;
   hasKey: boolean;
   lastSyncAt: string | null;
   lastStatus: string | null;
@@ -49,7 +50,7 @@ function ProviderCard({ p }: { p: ProviderView }) {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["providers"] });
 
   const patch = useMutation({
-    mutationFn: (body: { enabled?: boolean; apiKey?: string }) =>
+    mutationFn: (body: { enabled?: boolean; historyEnabled?: boolean; apiKey?: string }) =>
       apiPatch<ListResponse>(`/api/providers/${p.id}`, body),
     onSuccess: () => {
       setKeyInput("");
@@ -79,6 +80,25 @@ function ProviderCard({ p }: { p: ProviderView }) {
           />
         </label>
       </div>
+
+      {p.id === "minimax" && (
+        <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-xs text-[var(--fg-muted)]">
+          <input
+            type="checkbox"
+            checked={p.historyEnabled}
+            disabled={patch.isPending}
+            onChange={(e) => patch.mutate({ historyEnabled: e.target.checked })}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-[var(--fg)]">同步用量历史到 Token 趋势页</span>
+            <span className="ml-1">
+              （每小时拉取 MiniMax 未公开的账单接口
+              <code>/account/amount</code>，逐小时 token 历史；账单 T+1~T+2 结算，最近一两天可能不全）
+            </span>
+          </span>
+        </label>
+      )}
 
       <div className="mb-3 flex items-center gap-2">
         <input

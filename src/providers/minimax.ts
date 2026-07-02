@@ -6,9 +6,15 @@ import type {
 } from "./types.js";
 
 /**
- * MiniMax usage source. MiniMax has NO per-day/month usage API — only
- * `GET /v1/token_plan/remains`, which returns a CURRENT snapshot of remaining
- * quota per model group, for a 5-hour rolling window and a weekly window.
+ * MiniMax remaining-quota SNAPSHOT source. This provider covers only the
+ * `GET /v1/token_plan/remains` snapshot (current remaining quota per model
+ * group, 5-hour rolling + weekly window).
+ *
+ * NOTE: MiniMax DOES expose per-hour usage HISTORY via the undocumented
+ * `GET /account/amount` endpoint — but that's a different capability handled by
+ * a separate source (`src/minimaxTokenUsage/`, which feeds the Token 趋势页),
+ * opt-in via the provider's `history_enabled` flag. See
+ * `docs/minimax-token-accounting.md`. This snapshot module stays snapshot-only.
  *
  * Real response (verified 2026-06-19):
  *   { model_remains: [ {

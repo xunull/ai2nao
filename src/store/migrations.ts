@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 39;
+const CURRENT_VERSION = 41;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -50,6 +50,8 @@ export function migrate(db: Database.Database): void {
     applyV37(db);
     applyV38(db);
     applyV39(db);
+    applyV40(db);
+    applyV41(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -95,6 +97,8 @@ export function migrate(db: Database.Database): void {
   if (v < 37) applyV37(db);
   if (v < 38) applyV38(db);
   if (v < 39) applyV39(db);
+  if (v < 40) applyV40(db);
+  if (v < 41) applyV41(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1928,4 +1932,67 @@ function applyV39(db: Database.Database): void {
 
     UPDATE meta_schema SET version = 39 WHERE id = 1;
   `);
+}
+
+/**
+ * v40: MiniMax per-hour billing-history events.
+ *
+ * MiniMax's undocumented `GET /account/amount` returns charge_records
+ * pre-aggregated per (hour × method × model). Unlike claude/codex (parsed from
+ * LOCAL JSONL), this is pulled from a REMOTE billing endpoint, lags T+1~T+2, and
+ * is opt-in per provider. One row per (event_at, method, model, api_token_name):
+ *
+ *   method ∈ { cache-read(Text API), cache-create(Text API),
+ *              chatcompletion-v2(Text API), <future/unknown> }
+ *   input_tokens  = consume_input_token  (for cache-* methods this IS the cache)
+ *   output_tokens = consume_output_token (only chatcompletion has output)
+ *
+ * The trend query classifies cache vs fresh BY METHOD, so no per-row cache
+ * columns here — `method` is the classifier. `consume_cash` is kept raw for a
+ * future pay-as-you-go cost path (subscription plans bill 0). `raw_json` keeps
+ * the verbatim record because the endpoint is undocumented and may drift.
+ *
+ * PK columns are NOT NULL with '' defaults so a missing/renamed dimension never
+ * NULLs the key and silently drops the upsert.
+ */
+function applyV40(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS minimax_token_usage_event (
+      event_at TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      api_token_name TEXT NOT NULL DEFAULT '',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      consume_cash TEXT,
+      raw_json TEXT,
+      PRIMARY KEY (event_at, method, model, api_token_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_minimax_token_event_at
+      ON minimax_token_usage_event(event_at);
+
+    UPDATE meta_schema SET version = 40 WHERE id = 1;
+  `);
+}
+
+/**
+ * v41: `provider_config.history_enabled` — a SEPARATE opt-in from the
+ * remaining-quota snapshot. Enabling a provider must not silently start hitting
+ * the undocumented MiniMax /account/amount billing endpoint; history scraping is
+ * its own toggle. Default off.
+ *
+ * Kept as its OWN version (not folded into v40) so it's forward-only: any DB
+ * already at v40 — e.g. a dev DB that applied v40 before this column existed —
+ * still gets the column here. The pragma check makes the ALTER idempotent.
+ */
+function applyV41(db: Database.Database): void {
+  const cols = db
+    .prepare("PRAGMA table_info(provider_config)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "history_enabled")) {
+    db.exec(
+      "ALTER TABLE provider_config ADD COLUMN history_enabled INTEGER NOT NULL DEFAULT 0;"
+    );
+  }
+  db.exec("UPDATE meta_schema SET version = 41 WHERE id = 1;");
 }

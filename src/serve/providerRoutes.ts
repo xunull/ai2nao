@@ -27,13 +27,14 @@ export function registerProviderRoutes(app: Hono, db: Database.Database): void {
     }
     const body = (await c.req.json().catch(() => ({}))) as {
       enabled?: boolean;
+      historyEnabled?: boolean;
       apiKey?: string;
     };
     try {
       setProviderConfig(
         db,
         id,
-        { enabled: body.enabled, apiKey: body.apiKey },
+        { enabled: body.enabled, historyEnabled: body.historyEnabled, apiKey: body.apiKey },
         new Date().toISOString()
       );
       // Return the masked list (never the key).
