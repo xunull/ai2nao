@@ -109,6 +109,7 @@ type Timeline = {
 type AnalyticsResp = { ok: true; allTimeTotals: AllTimeTotal[]; timeline: Timeline };
 
 const WINDOWS = [
+  { value: "today", label: "今天" },
   { value: "1d", label: "1天" },
   { value: "3d", label: "3天" },
   { value: "1w", label: "1周" },
@@ -169,9 +170,9 @@ function AnalyticsStrip() {
               key={w.value}
               type="button"
               onClick={() => setWindowKey(w.value)}
-              className={`rounded px-1.5 py-0.5 ${
+              className={`rounded px-2 py-0.5 ${
                 windowKey === w.value
-                  ? "bg-[var(--fg)] text-[var(--surface)]"
+                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
                   : "text-[var(--fg-muted)] hover:bg-[var(--surface-2)]"
               }`}
             >
@@ -236,7 +237,9 @@ export function AgentMessages() {
   const hits = q.data?.hits ?? [];
 
   return (
-    <main className="mx-auto max-w-[900px] px-8 py-6">
+    <main className="mx-auto max-w-[1280px] px-8 py-6">
+      {/* 分区自适应(见 docs/max-width-responsive-content-column.md):外壳放宽用满桌面横向,
+          图表吃满宽度;搜索框+结果套窄 measure 列(左对齐)保文本可读。 */}
       <header className="mb-5">
         <h1 className="text-xl font-semibold text-[var(--fg)]">对话搜索</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
@@ -247,6 +250,8 @@ export function AgentMessages() {
 
       <AnalyticsStrip />
 
+      {/* 搜索框 + 结果:窄 measure 列(左对齐,与标题左边缘齐);图表在上方吃满外壳宽度。 */}
+      <div className="max-w-[820px]">
       <form
         className="mb-4 flex items-center gap-2"
         onSubmit={(e) => {
@@ -327,6 +332,7 @@ export function AgentMessages() {
           <code className="mx-1">agent_user_messages.opencode.sync</code>）。
         </div>
       )}
+      </div>
     </main>
   );
 }

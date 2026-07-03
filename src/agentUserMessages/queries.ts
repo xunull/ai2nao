@@ -203,8 +203,11 @@ export type UserMessageTimelineBucket = {
   total: number;
 };
 
+/** 时间线窗口:标准滚动窗口,或「今天」(今天 0 点→现在、小时粒度,裁掉最早消息前的空整点)。 */
+export type TimelineWindow = WindowKey | "today";
+
 export type UserMessageTimeline = {
-  window: WindowKey;
+  window: TimelineWindow;
   granularity: BucketGranularity;
   range: { from: string; to: string };
   buckets: UserMessageTimelineBucket[];
@@ -226,13 +229,17 @@ export type UserMessageTimeline = {
  */
 export function userMessageTimeline(
   db: Database.Database,
-  opts: { window: WindowKey; source?: AgentUserMessageSource; now?: Date }
+  opts: { window: TimelineWindow; source?: AgentUserMessageSource; now?: Date }
 ): UserMessageTimeline {
   const now = opts.now ?? new Date();
-  const granularity = windowToGranularity(opts.window);
-  const raw = windowToRange(opts.window, now);
-  const from = anchorBucketStart(raw.from, granularity); // D3
-  const to = raw.to;
+  // 「今天」:今天 0 点 → 现在、小时粒度;其余为标准滚动窗口(anchor 向下含完整首桶,D3)。
+  const granularity: BucketGranularity =
+    opts.window === "today" ? "hour" : windowToGranularity(opts.window);
+  const to = now;
+  const from =
+    opts.window === "today"
+      ? anchorBucketStart(now, "day") // 今天 00:00(本地)
+      : anchorBucketStart(windowToRange(opts.window, now).from, granularity);
   const buckets = iterateBuckets(from, to, granularity);
 
   const filters = ["is_human = 1", "event_at_utc >= @from", "event_at_utc < @to"];
@@ -279,6 +286,16 @@ export function userMessageTimeline(
     };
   });
 
+  // 「今天」优化:裁掉最早消息之前的空整点(6 点才有消息就从 6 点起;整点桶天然对齐)。
+  // 空桶已计入 windowTotal(=0),裁剪只影响显示,不改总数/环比/末桶。
+  let displayBuckets = outBuckets;
+  if (opts.window === "today") {
+    const firstNonEmpty = outBuckets.findIndex((b) => b.total > 0);
+    if (firstNonEmpty > 0) displayBuckets = outBuckets.slice(firstNonEmpty);
+    else if (firstNonEmpty === -1 && outBuckets.length > 0)
+      displayBuckets = outBuckets.slice(-1); // 今天还没消息 → 只留当前整点,避免空图
+  }
+
   // 环比(D6):effective 范围的上一等长窗口。
   const prev = previousWindowRange(from, to);
   const prevFilters = ["is_human = 1", "event_at_utc >= @pf", "event_at_utc < @pt"];
@@ -302,7 +319,7 @@ export function userMessageTimeline(
       ? null
       : (windowTotal - previousWindowTotal) / previousWindowTotal;
 
-  const last = outBuckets[outBuckets.length - 1];
+  const last = displayBuckets[displayBuckets.length - 1];
   const lastBucketPartial =
     last != null && new Date(last.bucketEnd).getTime() > to.getTime();
 
@@ -310,7 +327,7 @@ export function userMessageTimeline(
     window: opts.window,
     granularity,
     range: { from: from.toISOString(), to: to.toISOString() },
-    buckets: outBuckets,
+    buckets: displayBuckets,
     windowTotal,
     previousWindowTotal,
     deltaRatio,

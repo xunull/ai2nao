@@ -5,8 +5,9 @@ import {
   searchUserMessages,
   userMessageAnalytics,
   userMessageTimeline,
+  type TimelineWindow,
 } from "./queries.js";
-import { isWindowKey, type WindowKey } from "../timeWindow/types.js";
+import { isWindowKey } from "../timeWindow/types.js";
 import type { AgentUserMessageSource } from "./types.js";
 
 function jsonErr(status: number, message: string) {
@@ -62,10 +63,15 @@ export function registerAgentUserMessagesRoutes(
     if (sourceRaw && !SOURCES.has(sourceRaw as AgentUserMessageSource)) {
       return jsonErr(400, `invalid source parameter: ${JSON.stringify(sourceRaw)}`);
     }
-    if (windowRaw && !isWindowKey(windowRaw)) {
+    if (windowRaw && windowRaw !== "today" && !isWindowKey(windowRaw)) {
       return jsonErr(400, `invalid window parameter: ${JSON.stringify(windowRaw)}`);
     }
-    const window: WindowKey = windowRaw && isWindowKey(windowRaw) ? windowRaw : "1w";
+    const window: TimelineWindow =
+      windowRaw === "today"
+        ? "today"
+        : windowRaw && isWindowKey(windowRaw)
+          ? windowRaw
+          : "1w";
     try {
       const source = sourceRaw as AgentUserMessageSource | undefined;
       // D5:allTimeTotals(全表,顶部「累计」条)与 timeline(当前窗口图)分开。

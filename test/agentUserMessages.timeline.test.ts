@@ -137,4 +137,29 @@ describe("userMessageTimeline — 窗口 + 自适应粒度 + zero-fill", () => {
     expect(t.granularity).toBe("hour");
     expect(t.windowTotal).toBe(1);
   });
+
+  it("今天:小时粒度 + 裁掉最早消息前的空整点(6 点才有消息就从 6 点起)", () => {
+    const db = freshDb();
+    seed(db, [
+      row("claude", "2026-07-07T22:00:00Z"), // 北京 07-08 06:00
+      row("codex", "2026-07-08T00:00:00Z"), // 北京 07-08 08:00
+    ]);
+    const t = userMessageTimeline(db, { window: "today", now: NOW });
+    expect(t.granularity).toBe("hour");
+    expect(t.windowTotal).toBe(2);
+    // 首桶 = 06:00(裁掉今天 00:00–05:00 的空整点),整点起
+    expect(t.buckets[0].bucketStart).toBe("2026-07-07T22:00:00.000Z"); // 07-08 06:00 +08
+    expect(t.buckets[0].total).toBe(1);
+    for (let i = 1; i < t.buckets.length; i++) {
+      expect(t.buckets[i].bucketStart).toBe(t.buckets[i - 1].bucketEnd);
+    }
+  });
+
+  it("今天:全天无消息 → 只留当前整点,不出空图", () => {
+    const db = freshDb();
+    seed(db, [row("claude", "2026-07-06T02:00:00Z")]); // 两天前
+    const t = userMessageTimeline(db, { window: "today", now: NOW });
+    expect(t.windowTotal).toBe(0);
+    expect(t.buckets.length).toBe(1);
+  });
 });
