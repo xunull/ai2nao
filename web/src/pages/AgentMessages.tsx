@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import {
+  Bar,
+  BarChart,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { apiGet } from "../api";
 
 type Hit = {
@@ -78,57 +87,131 @@ function RawPanel({ id }: { id: number }) {
   );
 }
 
-type AnalyticsResp = {
-  ok: true;
-  totals: { source: string; count: number; charSum: number }[];
-  byDay: { day: string; count: number }[];
+type AllTimeTotal = { source: string; count: number; charSum: number };
+type TimelineBucket = {
+  bucketStart: string;
+  bucketEnd: string;
+  claude: number;
+  codex: number;
+  opencode: number;
+  total: number;
+};
+type Timeline = {
+  window: string;
+  granularity: "hour" | "3hour" | "day" | "week";
+  range: { from: string; to: string };
+  buckets: TimelineBucket[];
+  windowTotal: number;
+  previousWindowTotal: number;
+  deltaRatio: number | null;
+  lastBucketPartial: boolean;
+};
+type AnalyticsResp = { ok: true; allTimeTotals: AllTimeTotal[]; timeline: Timeline };
+
+const WINDOWS = [
+  { value: "1d", label: "1天" },
+  { value: "3d", label: "3天" },
+  { value: "1w", label: "1周" },
+  { value: "2w", label: "2周" },
+  { value: "1m", label: "1月" },
+  { value: "3m", label: "3月" },
+  { value: "6m", label: "6月" },
+] as const;
+
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  claude: { label: "Claude", color: "#d97757" },
+  codex: { label: "Codex", color: "#2563eb" },
+  opencode: { label: "OpenCode", color: "#7c3aed" },
 };
 
-const SOURCE_LABEL: Record<string, string> = {
-  opencode: "OpenCode",
-  claude: "Claude",
-  codex: "Codex",
-};
+const pad2 = (n: number) => String(n).padStart(2, "0");
+/** x 轴标签按粒度自适应:小时→HH:00,天/周→MM-DD。 */
+function bucketLabel(iso: string, g: Timeline["granularity"]): string {
+  const d = new Date(iso);
+  if (g === "hour" || g === "3hour") return `${pad2(d.getHours())}:00`;
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
 
-/** 紧凑统计条:跨源计数 + 近 30 天输入量迷你柱(不竖向铺开)。 */
+/** 输入统计:累计(all-time)+ 可调窗口趋势图(recharts,自适应粒度 + 环比)。 */
 function AnalyticsStrip() {
+  const [windowKey, setWindowKey] = useState<string>("1w");
   const q = useQuery<AnalyticsResp>({
-    queryKey: ["aum-analytics"],
-    queryFn: () => apiGet<AnalyticsResp>("/api/agent-user-messages/analytics"),
+    queryKey: ["aum-analytics", windowKey],
+    queryFn: () =>
+      apiGet<AnalyticsResp>(`/api/agent-user-messages/analytics?window=${windowKey}`),
   });
   if (!q.data) return null;
-  const { totals, byDay } = q.data;
-  const grand = totals.reduce((a, t) => a + t.count, 0);
+  const { allTimeTotals, timeline } = q.data;
+  const grand = allTimeTotals.reduce((a, t) => a + t.count, 0);
   if (grand === 0) return null;
-  const recent = byDay.slice(-30);
-  const max = Math.max(1, ...recent.map((d) => d.count));
+
+  const data = timeline.buckets.map((b) => ({
+    label: bucketLabel(b.bucketStart, timeline.granularity),
+    claude: b.claude,
+    codex: b.codex,
+    opencode: b.opencode,
+  }));
+  const delta = timeline.deltaRatio;
 
   return (
     <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--fg-muted)]">
-        <span className="font-medium text-[var(--fg)]">我的输入 · 共 {grand} 条</span>
-        {totals.map((t) => (
+      {/* 累计(all-time)+ 窗口选择器(D5:累计与窗口分开标) */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--fg-muted)]">
+        <span className="font-medium text-[var(--fg)]">累计 {grand} 条</span>
+        {allTimeTotals.map((t) => (
           <span key={t.source}>
-            {SOURCE_LABEL[t.source] ?? t.source} {t.count} 条 · {t.charSum} 字
+            {SOURCE_META[t.source]?.label ?? t.source} {t.count}
           </span>
         ))}
+        <span className="ml-auto flex items-center gap-0.5">
+          {WINDOWS.map((w) => (
+            <button
+              key={w.value}
+              type="button"
+              onClick={() => setWindowKey(w.value)}
+              className={`rounded px-1.5 py-0.5 ${
+                windowKey === w.value
+                  ? "bg-[var(--fg)] text-[var(--surface)]"
+                  : "text-[var(--fg-muted)] hover:bg-[var(--surface-2)]"
+              }`}
+            >
+              {w.label}
+            </button>
+          ))}
+        </span>
       </div>
-      {recent.length > 0 && (
-        <>
-          <div className="mt-2 flex h-12 items-end gap-0.5">
-            {recent.map((d) => (
-              <div
-                key={d.day}
-                title={`${d.day}: ${d.count} 条`}
-                className="min-h-[2px] flex-1 rounded-sm bg-emerald-300"
-                style={{ height: `${(d.count / max) * 100}%` }}
-              />
-            ))}
-          </div>
-          <div className="mt-1 text-[10px] text-[var(--fg-muted)]">
-            近 {recent.length} 天每日输入量(峰值 {max} 条/天)
-          </div>
-        </>
+
+      {/* 本窗口总数 + 环比 */}
+      <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
+        <span>本窗口 {timeline.windowTotal} 条</span>
+        {delta != null && (
+          <span className={delta >= 0 ? "text-emerald-600" : "text-rose-600"}>
+            {delta >= 0 ? "↑" : "↓"} {Math.abs(delta * 100).toFixed(0)}% 环比
+          </span>
+        )}
+      </div>
+
+      <div style={{ width: "100%", height: 180 }}>
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} width={32} />
+            <Tooltip
+              contentStyle={{ fontSize: 12 }}
+              formatter={(value, name) => [value, SOURCE_META[String(name)]?.label ?? String(name)]}
+            />
+            <Legend
+              formatter={(name: string) => SOURCE_META[name]?.label ?? name}
+              wrapperStyle={{ fontSize: 10 }}
+            />
+            <Bar dataKey="opencode" stackId="s" fill={SOURCE_META.opencode.color} />
+            <Bar dataKey="claude" stackId="s" fill={SOURCE_META.claude.color} />
+            <Bar dataKey="codex" stackId="s" fill={SOURCE_META.codex.color} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {timeline.lastBucketPartial && (
+        <div className="text-[10px] text-[var(--fg-muted)]">最后一柱截至现在(未满桶)</div>
       )}
     </section>
   );

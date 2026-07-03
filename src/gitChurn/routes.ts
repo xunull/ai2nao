@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type Database from "better-sqlite3";
-import { windowToRange } from "../workTokensTrend/bucket.js";
-import { isWindowKey } from "../workTokensTrend/types.js";
+import { windowToRange } from "../timeWindow/bucket.js";
+import { isWindowKey } from "../timeWindow/types.js";
 import { buildProjectOutput } from "./queries.js";
 
 function jsonErr(status: number, message: string) {

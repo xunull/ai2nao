@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 42;
+const CURRENT_VERSION = 43;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -53,6 +53,7 @@ export function migrate(db: Database.Database): void {
     applyV40(db);
     applyV41(db);
     applyV42(db);
+    applyV43(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -101,6 +102,7 @@ export function migrate(db: Database.Database): void {
   if (v < 40) applyV40(db);
   if (v < 41) applyV41(db);
   if (v < 42) applyV42(db);
+  if (v < 43) applyV43(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2060,5 +2062,19 @@ function applyV42(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 42 WHERE id = 1;
+  `);
+}
+
+/**
+ * v43: agent_user_messages 的 windowed 分析(时间线图)查询 =「is_human 过滤 + event_at_utc
+ * 范围 + GROUP BY 分桶」,常不带 source filter。v42 的 (source, event_at_utc) 索引 source 打头,
+ * 这类查询用不上、会扫表。补覆盖索引 (is_human, event_at_utc, source):is_human 等值 +
+ * event_at_utc 范围 seek + source 覆盖分组。设计:docs/agent-messages-analytics-timeline-design.md D7。
+ */
+function applyV43(db: Database.Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_aum_human_event
+      ON agent_user_messages(is_human, event_at_utc, source);
+    UPDATE meta_schema SET version = 43 WHERE id = 1;
   `);
 }

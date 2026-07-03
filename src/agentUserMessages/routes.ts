@@ -4,7 +4,9 @@ import {
   getUserMessageRaw,
   searchUserMessages,
   userMessageAnalytics,
+  userMessageTimeline,
 } from "./queries.js";
+import { isWindowKey, type WindowKey } from "../timeWindow/types.js";
 import type { AgentUserMessageSource } from "./types.js";
 
 function jsonErr(status: number, message: string) {
@@ -56,18 +58,20 @@ export function registerAgentUserMessagesRoutes(
 
   app.get("/api/agent-user-messages/analytics", (c) => {
     const sourceRaw = c.req.query("source")?.trim();
-    const from = c.req.query("from")?.trim() || undefined;
-    const to = c.req.query("to")?.trim() || undefined;
+    const windowRaw = c.req.query("window")?.trim();
     if (sourceRaw && !SOURCES.has(sourceRaw as AgentUserMessageSource)) {
       return jsonErr(400, `invalid source parameter: ${JSON.stringify(sourceRaw)}`);
     }
+    if (windowRaw && !isWindowKey(windowRaw)) {
+      return jsonErr(400, `invalid window parameter: ${JSON.stringify(windowRaw)}`);
+    }
+    const window: WindowKey = windowRaw && isWindowKey(windowRaw) ? windowRaw : "1w";
     try {
-      const analytics = userMessageAnalytics(db, {
-        source: sourceRaw as AgentUserMessageSource | undefined,
-        from,
-        to,
-      });
-      return c.json({ ok: true, ...analytics });
+      const source = sourceRaw as AgentUserMessageSource | undefined;
+      // D5:allTimeTotals(全表,顶部「累计」条)与 timeline(当前窗口图)分开。
+      const allTimeTotals = userMessageAnalytics(db, { source }).totals;
+      const timeline = userMessageTimeline(db, { window, source });
+      return c.json({ ok: true, allTimeTotals, timeline });
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
     }

@@ -14,70 +14,27 @@
  * - source-level diagnostics：一方失败不拖死另一方
  */
 
-export const WINDOW_KEYS = ["1d", "3d", "1w", "2w", "1m", "3m", "6m"] as const;
-export type WindowKey = (typeof WINDOW_KEYS)[number];
-
-export type BucketGranularity = "hour" | "3hour" | "day" | "week";
-
-/**
- * Window → bucket granularity mapping (唯一真相). 设计文档 P4。
- *   1d  → hour    (24 桶)
- *   3d  → 3hour   (24 桶)
- *   1w  → day     ( 7 桶)
- *   2w  → day     (14 桶)
- *   1m  → day     (28-31 桶)
- *   3m  → week    (~13 桶)
- *   6m  → week    (~26 桶)
- *   month → day   (28-31 桶)
- */
-export function windowToGranularity(window: WindowKey): BucketGranularity {
-  switch (window) {
-    case "1d":
-      return "hour";
-    case "3d":
-      return "3hour";
-    case "1w":
-    case "2w":
-    case "1m":
-      return "day";
-    case "3m":
-    case "6m":
-      return "week";
-  }
-}
-
-export function windowToDays(window: WindowKey): number {
-  switch (window) {
-    case "1d":
-      return 1;
-    case "3d":
-      return 3;
-    case "1w":
-      return 7;
-    case "2w":
-      return 14;
-    case "1m":
-      return 30;
-    case "3m":
-      return 90;
-    case "6m":
-      return 180;
-  }
-}
-
-export function isWindowKey(raw: unknown): raw is WindowKey {
-  return (
-    typeof raw === "string" &&
-    (WINDOW_KEYS as readonly string[]).includes(raw)
-  );
-}
-
-/** YYYY-MM (e.g. "2026-06"). */
-export type MonthKey = string;
-
-export function isMonthKey(raw: unknown): raw is MonthKey {
-  return typeof raw === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw);
-}
+// 窗口/月原语已抽到中立模块 src/timeWindow/(2026-07-03);import 供本文件 DTO 使用 + re-export。
+import {
+  WINDOW_KEYS,
+  windowToGranularity,
+  windowToDays,
+  isWindowKey,
+  isMonthKey,
+  MONTH_PICKER_MAX_DEPTH,
+  type WindowKey,
+  type BucketGranularity,
+  type MonthKey,
+} from "../timeWindow/types.js";
+export {
+  WINDOW_KEYS,
+  windowToGranularity,
+  windowToDays,
+  isWindowKey,
+  isMonthKey,
+  MONTH_PICKER_MAX_DEPTH,
+};
+export type { WindowKey, BucketGranularity, MonthKey };
 
 /** Per-bucket DTO. Each bucket is half-open `[bucketStart, bucketEnd)`. */
 export type WorkTokensTrendBucket = {
@@ -286,6 +243,3 @@ export type WorkTokensTrendResponse =
       monthRange: MonthRange;
       diagnostics: WorkTokensTrendDiagnostic[];
     };
-
-/** Maximum month-picker depth (24 months back). */
-export const MONTH_PICKER_MAX_DEPTH = 24;

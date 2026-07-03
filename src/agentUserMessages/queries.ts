@@ -15,6 +15,18 @@ import {
   CODEX_CLEANER_VERSION,
   recleanCodexFromPayload,
 } from "../codexHistory/myMessages.js";
+import {
+  anchorBucketStart,
+  bucketExpr,
+  iterateBuckets,
+  previousWindowRange,
+  windowToRange,
+} from "../timeWindow/bucket.js";
+import {
+  windowToGranularity,
+  type BucketGranularity,
+  type WindowKey,
+} from "../timeWindow/types.js";
 import { syncFtsRow } from "./store.js";
 import type {
   AgentUserMessageRaw,
@@ -180,6 +192,130 @@ export function userMessageAnalytics(
     .all(params) as UserMessageAnalytics["byDay"];
 
   return { totals, byDay };
+}
+
+export type UserMessageTimelineBucket = {
+  bucketStart: string; // ISO 下界(含)
+  bucketEnd: string; // ISO 上界(不含)
+  claude: number;
+  codex: number;
+  opencode: number;
+  total: number;
+};
+
+export type UserMessageTimeline = {
+  window: WindowKey;
+  granularity: BucketGranularity;
+  range: { from: string; to: string };
+  buckets: UserMessageTimelineBucket[];
+  windowTotal: number;
+  /** 上一等长窗口的 is_human 总数(环比,D6)。 */
+  previousWindowTotal: number;
+  /** (window - prev)/prev;prev===0 时 null。 */
+  deltaRatio: number | null;
+  /** 末桶 in-progress(bucketEnd > to)→ 前端 tooltip 标「截至现在」(D4)。 */
+  lastBucketPartial: boolean;
+};
+
+/**
+ * 窗口化时间线(复用 src/timeWindow 的窗口核)。设计 D3/D4/D6:
+ * - anchor 向下:from = anchorBucketStart(windowToRange.from) → 首桶完整、zero-fill 零丢弃。
+ * - zero-fill:iterateBuckets 枚举全桶,按 key(=bucketExpr SQL 输出)合并三源 count。
+ * - 环比:previousWindowRange(from,to) 内 is_human 计数(全程 effective 范围,一致等长)。
+ * - 末桶 partial:最后一桶 end > to(in-progress)→ lastBucketPartial=true。
+ */
+export function userMessageTimeline(
+  db: Database.Database,
+  opts: { window: WindowKey; source?: AgentUserMessageSource; now?: Date }
+): UserMessageTimeline {
+  const now = opts.now ?? new Date();
+  const granularity = windowToGranularity(opts.window);
+  const raw = windowToRange(opts.window, now);
+  const from = anchorBucketStart(raw.from, granularity); // D3
+  const to = raw.to;
+  const buckets = iterateBuckets(from, to, granularity);
+
+  const filters = ["is_human = 1", "event_at_utc >= @from", "event_at_utc < @to"];
+  const params: Record<string, unknown> = {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+  if (opts.source) {
+    filters.push("source = @source");
+    params.source = opts.source;
+  }
+  const rows = db
+    .prepare(
+      `SELECT ${bucketExpr(granularity, "event_at_utc")} AS k, source, COUNT(*) AS n
+       FROM agent_user_messages WHERE ${filters.join(" AND ")}
+       GROUP BY k, source`
+    )
+    .all(params) as { k: string; source: string; n: number }[];
+
+  const byKey = new Map<
+    string,
+    { claude: number; codex: number; opencode: number }
+  >();
+  for (const r of rows) {
+    const e = byKey.get(r.k) ?? { claude: 0, codex: 0, opencode: 0 };
+    if (r.source === "claude") e.claude += r.n;
+    else if (r.source === "codex") e.codex += r.n;
+    else if (r.source === "opencode") e.opencode += r.n;
+    byKey.set(r.k, e);
+  }
+
+  let windowTotal = 0;
+  const outBuckets: UserMessageTimelineBucket[] = buckets.map((b) => {
+    const e = byKey.get(b.key) ?? { claude: 0, codex: 0, opencode: 0 };
+    const total = e.claude + e.codex + e.opencode;
+    windowTotal += total;
+    return {
+      bucketStart: b.start.toISOString(),
+      bucketEnd: b.end.toISOString(),
+      claude: e.claude,
+      codex: e.codex,
+      opencode: e.opencode,
+      total,
+    };
+  });
+
+  // 环比(D6):effective 范围的上一等长窗口。
+  const prev = previousWindowRange(from, to);
+  const prevFilters = ["is_human = 1", "event_at_utc >= @pf", "event_at_utc < @pt"];
+  const prevParams: Record<string, unknown> = {
+    pf: prev.from.toISOString(),
+    pt: prev.to.toISOString(),
+  };
+  if (opts.source) {
+    prevFilters.push("source = @source");
+    prevParams.source = opts.source;
+  }
+  const previousWindowTotal = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM agent_user_messages WHERE ${prevFilters.join(" AND ")}`
+      )
+      .get(prevParams) as { n: number }
+  ).n;
+  const deltaRatio =
+    previousWindowTotal === 0
+      ? null
+      : (windowTotal - previousWindowTotal) / previousWindowTotal;
+
+  const last = outBuckets[outBuckets.length - 1];
+  const lastBucketPartial =
+    last != null && new Date(last.bucketEnd).getTime() > to.getTime();
+
+  return {
+    window: opts.window,
+    granularity,
+    range: { from: from.toISOString(), to: to.toISOString() },
+    buckets: outBuckets,
+    windowTotal,
+    previousWindowTotal,
+    deltaRatio,
+    lastBucketPartial,
+  };
 }
 
 export function getUserMessageRaw(
