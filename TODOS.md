@@ -1086,3 +1086,34 @@ Depends on / blocked by:
 
 **Effort estimate:** S（human ~1-2h / CC ~20min,定价表 + cost 路径 minimax 分支 + 测试)
 **Priority:** P3（订阅制下恒 0,非阻塞;字段已存,日后接不丢数据)
+
+---
+
+## Agent 用户消息统一库（agent_user_messages）
+
+**What:** 把 claude/codex/opencode 三大 agent 会话里**用户自己发的消息**抽出来汇进 index.db 一张表（source + 时间 + raw/cleaned/is_human + raw_payload），建 FTS5 全文索引，支持跨 agent 搜索 + 输入分析。
+
+**Why:** 三大 agent 现在都是读时、互不相通；要「搜我两周前问过的那句」+「我最常问什么/每天输入量」必须物化 + FTS。Cursor 已有镜像先例。
+
+**Context:** 2026-07-03 office-hours（含 codex 冷读）已锁全部架构，落地路径 = 方案 A（OpenCode 先行纵向切片）。完整设计见 `docs/agent-user-messages-design.md`。
+
+**头号未决:** 中文分词器 —— 现有 FTS 用 `unicode61`+按空格切词，中文词级/子串搜基本失效；建议 `trigram`，落地前先拿真实中文查询手测拍板（见设计文档 §7 + Assignment）。
+
+**状态(2026-07-03):** ✅ **v1(opencode)+ v1.1(claude/codex + analytics)已实现并真实数据验证**（opencode 1050 / claude 21078 / codex 2281 行入库可搜;980 测试绿、web 出包）。清洗器统一到后端(option C)。剩:v2 语义搜索(可选)、周期性 id 对账 sweep(下方 P3)。
+
+**Effort estimate:** M（v1 opencode 纵向切片：human ~2-3 天 / CC ~2-3 轮会话）
+**Priority:** P2（新能力，非阻塞；先验最脏的 opencode 源）
+
+---
+
+## Agent 用户消息:周期性全 id 对账 sweep(源删除检测)
+
+**What:** 独立低频调度任务,比对源(opencode 等)的 message id 集合 vs `agent_user_messages` 库里的 id,检测真实删除(opencode 里删了 session),供「源已删」信号或清理。
+
+**Why:** v1 去掉了 `missing_since` —— 增量 watermark 只扫 `time_created >= 水位`,被删的老消息在水位之下、永不再进扫描范围,删除检测形同虚设(eng review 2026-07-03 外部声音#3)。档案本身仍在(从不删),只是无删除感知。
+
+**Pros:** 补上删除感知;只比 id、不读数据,便宜。
+**Cons:** 多一个任务;周期性对 3.46GB 源做 id 全扫(id-only 仍是扫);有真实需求前偏投机。
+**Context:** agent_user_messages v1(opencode 切片)落地后再考虑。设计见 `docs/agent-user-messages-design.md` D7/§10。
+**Depends on:** v1 agent_user_messages 落地。
+**Effort:** S(human ~1-2h / CC ~20min) **Priority:** P3(archive 本就不删,非阻塞)
