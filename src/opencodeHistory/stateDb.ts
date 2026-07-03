@@ -280,3 +280,29 @@ export function loadSessionMessagesAndParts(
     throw new OpencodeHistoryError("schema-incompatible", msg, dbPath);
   }
 }
+
+/**
+ * ingest 用:枚举**全部** session(id + time_updated),无 limit,按 time_updated 升序
+ * 以便按水位单调推进。列表页 `listSessionRowsFromDb` 带 limit(≤1000),故另开一条。
+ */
+export function listAllSessionsForIngest(
+  db: Database.Database,
+  dbPath: string
+): { id: string; timeUpdatedMs: number }[] {
+  assertSchema(db, dbPath);
+  let rows: Record<string, unknown>[];
+  try {
+    rows = db
+      .prepare(
+        `SELECT id, time_updated AS t FROM session ORDER BY time_updated ASC, id ASC`
+      )
+      .all() as Record<string, unknown>[];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new OpencodeHistoryError("schema-incompatible", msg, dbPath);
+  }
+  return rows.map((r) => ({
+    id: String(r.id ?? ""),
+    timeUpdatedMs: Number(r.t ?? 0),
+  }));
+}

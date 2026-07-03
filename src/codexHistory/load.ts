@@ -18,6 +18,10 @@ import {
   type CodexDiagnostic,
 } from "./errors.js";
 import { buildCodexSession } from "./normalize.js";
+import {
+  cleanCodexUserMessage,
+  extractCodexUserMessages,
+} from "./myMessages.js";
 import { codexSessionsRoot, codexStateDbPath, resolveCodexRoot } from "./paths.js";
 import {
   getThreadFromStateDb,
@@ -308,4 +312,28 @@ export async function loadCodexSessionDetail(
 
 export function codexSessionSummaryToJson(s: ChatSessionSummary) {
   return sessionSummaryToJson(s);
+}
+
+export type CodexMyMessage = { id: string; timestamp: string; text: string };
+
+/**
+ * 「只看我说的」后端权威版(option C:清洗归后端,抽屉只显示)。复用详情加载 +
+ * 共享 `extractCodexUserMessages`(含 event_msg 双重门,与 ingest 同源),返回清洗后
+ * 非空的用户消息 + 清洗后的标题。找不到 session → null。
+ */
+export async function loadCodexMyMessages(
+  rawCodexRoot: string | undefined,
+  sessionId: string
+): Promise<{ messages: CodexMyMessage[]; cleanTitle: string } | null> {
+  const built = await loadCodexSessionDetail(rawCodexRoot, sessionId);
+  if (!built) return null;
+  const messages = extractCodexUserMessages(built.session.messages)
+    .filter((m) => m.isHuman)
+    .map((m) => ({
+      id: m.messageKey,
+      timestamp: new Date(m.eventAtMs).toISOString(),
+      text: m.cleanedText,
+    }));
+  const cleanTitle = cleanCodexUserMessage(built.summary.title ?? "");
+  return { messages, cleanTitle };
 }

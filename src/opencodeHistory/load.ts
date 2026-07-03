@@ -3,10 +3,9 @@ import { sessionSummaryToJson } from "../cursorHistory/json.js";
 import type { ChatSessionSummary } from "../cursorHistory/types.js";
 import { diagnosticFromError, type OpencodeDiagnostic } from "./errors.js";
 import {
-  cleanOpencodeUserMessageParts,
   detectSlashCommand,
-  parsePartData,
-  type ParsedPart,
+  extractOpencodeUserMessage,
+  groupRawPartsByMessage,
 } from "./myMessages.js";
 import { buildOpencodeSession } from "./normalize.js";
 import { opencodeDbPath, resolveOpencodeDataDir } from "./paths.js";
@@ -170,33 +169,18 @@ export async function loadOpencodeMyMessages(
     const row = getSessionRowFromDb(db, dbPath, sessionId);
     if (!row) return null;
     const { messages, parts } = loadSessionMessagesAndParts(db, dbPath, sessionId);
-
-    const byMsg = new Map<string, ParsedPart[]>();
-    for (const p of parts) {
-      const arr = byMsg.get(p.messageId);
-      if (arr) arr.push(parsePartData(p.data));
-      else byMsg.set(p.messageId, [parsePartData(p.data)]);
-    }
+    const byMsg = groupRawPartsByMessage(parts);
 
     const out: OpencodeMyMessage[] = [];
     for (const m of messages) {
-      let role: string | undefined;
-      let createdMs = m.timeCreated;
-      try {
-        const d = JSON.parse(m.data) as { role?: string; time?: { created?: number } };
-        role = d.role;
-        if (typeof d.time?.created === "number" && d.time.created > 0) createdMs = d.time.created;
-      } catch {
-        // 坏 JSON：跳过 role 判定 → 非 user，忽略。
-      }
-      if (role !== "user") continue;
-      const text = cleanOpencodeUserMessageParts(byMsg.get(m.id) ?? []);
-      if (!text) continue;
-      const slash = detectSlashCommand(text);
+      // 共享 extractor 内含 role 门 + 清洗 + 时间解析(与 ingest 同一口径)。
+      const ex = extractOpencodeUserMessage(m, byMsg.get(m.id) ?? []);
+      if (!ex || !ex.cleanedText) continue;
+      const slash = detectSlashCommand(ex.cleanedText);
       out.push({
         id: m.id,
-        timestamp: new Date(createdMs).toISOString(),
-        text,
+        timestamp: new Date(ex.eventAtMs).toISOString(),
+        text: ex.cleanedText,
         ...(slash ? { slashCommand: slash } : {}),
       });
     }

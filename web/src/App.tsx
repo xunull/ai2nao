@@ -123,6 +123,9 @@ const Cosmos = lazy(() =>
 const Providers = lazy(() =>
   import("./pages/Providers").then((m) => ({ default: m.Providers }))
 );
+const AgentMessages = lazy(() =>
+  import("./pages/AgentMessages").then((m) => ({ default: m.AgentMessages }))
+);
 
 export function App() {
   return (
@@ -138,6 +141,7 @@ export function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/dashboard/cosmos" element={<Cosmos />} />
           <Route path="/providers" element={<Providers />} />
+          <Route path="/agent-messages" element={<AgentMessages />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/repos/:id/file" element={<FileView />} />

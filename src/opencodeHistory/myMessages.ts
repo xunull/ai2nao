@@ -12,6 +12,8 @@
  *  3. 斜杠命令展开(`/agents`→大模板)无标记、看着像真人 → 本轮残留,靠抽屉诚实文案兜底。
  */
 
+import type { OpencodeRawMessage, OpencodeRawPart } from "./stateDb.js";
+
 export type ParsedPart = {
   type?: string;
   text?: string;
@@ -130,4 +132,106 @@ const SLASH_COMMAND_RE =
 export function detectSlashCommand(cleanedText: string): { name: string } | null {
   const m = SLASH_COMMAND_RE.exec(cleanedText);
   return m ? { name: m[1] } : null;
+}
+
+/**
+ * 清洗口径版本。**改动任何清洗规则(isStructuralInjection / isOmoInjection /
+ * stripModePreamble / cleanOpencodeUserMessageParts)必须 bump**,触发 agent_user_messages
+ * 的 cleaner_version 回填(从 raw_payload_json 从头重算)。有 pin 测试逼出有意识的版本升。
+ */
+export const CLEANER_VERSION = 1;
+/** 解析口径版本:改 part→text 组装 / role 判定 / 时间解析时 bump。 */
+export const PARSER_VERSION = 1;
+
+export type ExtractedOpencodeUserMessage = {
+  messageId: string;
+  /** 语义时间:优先 data.time.created,回落 message.time_created 列(ms)。 */
+  eventAtMs: number;
+  /** 逐字拼接的 text part(不做注入过滤,raw 留底轨)。 */
+  rawText: string;
+  /** 完整原始 part.data JSON 数组的 JSON(D6:无 per-part 上限,供 cleaner 升级后重清洗)。 */
+  rawPayloadJson: string;
+  /** 注入清洗后的「我的输入」。 */
+  cleanedText: string;
+  /** cleanedText 非空 => true。 */
+  isHuman: boolean;
+};
+
+/** 按 messageId 归组原始 part(保留原始 data,供 extractor 内部解析)。 */
+export function groupRawPartsByMessage(
+  parts: OpencodeRawPart[]
+): Map<string, OpencodeRawPart[]> {
+  const byMsg = new Map<string, OpencodeRawPart[]>();
+  for (const p of parts) {
+    const arr = byMsg.get(p.messageId);
+    if (arr) arr.push(p);
+    else byMsg.set(p.messageId, [p]);
+  }
+  return byMsg;
+}
+
+/**
+ * 单一真相(D5):从**原始** message + 它的原始 parts 抽「用户消息」。抽屉与 ingest 共用。
+ * - **role==='user' 门在此**(两个调用点不再各自判、不再重复)。非 user → null。
+ * - 产 4 轨:raw_text / raw_payload_json(完整结构,可重清洗) / cleaned_text / is_human。
+ * - 纯注入的 user 消息也返回(cleanedText='' / isHuman=false),由调用方决定留底(ingest)
+ *   还是省略(抽屉)。
+ */
+export function extractOpencodeUserMessage(
+  message: OpencodeRawMessage,
+  rawParts: OpencodeRawPart[]
+): ExtractedOpencodeUserMessage | null {
+  let role: string | undefined;
+  let eventAtMs = message.timeCreated;
+  try {
+    const d = JSON.parse(message.data) as {
+      role?: string;
+      time?: { created?: number };
+    };
+    role = d.role;
+    if (typeof d.time?.created === "number" && d.time.created > 0) {
+      eventAtMs = d.time.created;
+    }
+  } catch {
+    // 坏 JSON:role 未知 → 非 user,省略。
+  }
+  if (role !== "user") return null;
+
+  const parsed = rawParts.map((p) => parsePartData(p.data));
+  const rawText = parsed
+    .filter((pd) => pd.type === "text" && typeof pd.text === "string")
+    .map((pd) => pd.text as string)
+    .join("\n\n");
+  const rawPayloadJson = JSON.stringify(rawParts.map((p) => p.data));
+  const cleanedText = cleanOpencodeUserMessageParts(parsed);
+  return {
+    messageId: message.id,
+    eventAtMs,
+    rawText,
+    rawPayloadJson,
+    cleanedText,
+    isHuman: cleanedText.trim().length > 0,
+  };
+}
+
+/**
+ * 从 raw_payload_json 重算 cleaned/is_human(D10 cleaner_version 回填用)。
+ * payload = extractOpencodeUserMessage 存的「原始 part.data 数组」,故重清洗输入与
+ * 首次入库完全一致 → 往返可复现(T8 round-trip 测试)。坏 payload → 空清洗,不崩。
+ */
+export function recleanOpencodeFromPayload(rawPayloadJson: string): {
+  cleanedText: string;
+  isHuman: boolean;
+} {
+  let dataStrings: string[] = [];
+  try {
+    const arr = JSON.parse(rawPayloadJson) as unknown;
+    if (Array.isArray(arr)) dataStrings = arr.map((x) => String(x));
+  } catch {
+    // 坏 payload → 空清洗(留底行仍在,只是重算为空)
+  }
+  const cleanedText = cleanOpencodeUserMessageParts(
+    dataStrings.map((d) => parsePartData(d))
+  );
+  return { cleanedText, isHuman: cleanedText.trim().length > 0 };
 }

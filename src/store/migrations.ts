@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 41;
+const CURRENT_VERSION = 42;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -52,6 +52,7 @@ export function migrate(db: Database.Database): void {
     applyV39(db);
     applyV40(db);
     applyV41(db);
+    applyV42(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -99,6 +100,7 @@ export function migrate(db: Database.Database): void {
   if (v < 39) applyV39(db);
   if (v < 40) applyV40(db);
   if (v < 41) applyV41(db);
+  if (v < 42) applyV42(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -1995,4 +1997,68 @@ function applyV41(db: Database.Database): void {
     );
   }
   db.exec("UPDATE meta_schema SET version = 41 WHERE id = 1;");
+}
+
+/**
+ * v42: agent 用户消息统一库 —— 把 claude/codex/opencode 会话里「用户自己发的消息」
+ * 抽出来汇进一张可搜可统计的表(v1 只 opencode)。设计:docs/agent-user-messages-design.md。
+ *
+ * 三轨口径(D2/D5/D6):raw_text(逐字) + raw_payload_json(完整原始 part,用于 cleaner
+ * 升级后重清洗,无 per-part 上限) + cleaned_text(清洗后) + is_human。cleaner_version /
+ * parser_version 支持「改口径 → 从 payload 重算历史行」自愈(仿 token-usage 的 rule_version)。
+ *
+ * FTS = 独立 fts5 + trigram(D3/D4):中文子串搜;2 字词(<3 码点)由 app 层 LIKE 兜底
+ * (T0 实测 opencode 真实数据:trigram 对 2 字中文命中 0、LIKE 兜住)。独立 fts5 手动同步
+ * + AFTER DELETE 触发器(匹配 manifest_fts);cleaner_version 回填走逐行 DELETE+INSERT,
+ * 不用 'rebuild'(D10:rebuild 只重 tokenize 影子副本、捡不到更新后的 cleaned_text)。
+ *
+ * 只存 event_at_utc(D8):不物化 local_day,分桶留查询时 bucketExpr(与全 app 一致)。
+ * 孤儿留底 = 从不删(D7):不设 missing_since,增量 watermark 看不到水位之下的删除。
+ */
+function applyV42(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_user_messages (
+      id                 INTEGER PRIMARY KEY,
+      source             TEXT NOT NULL CHECK (source IN ('claude','codex','opencode')),
+      source_session_id  TEXT NOT NULL,
+      source_message_key TEXT NOT NULL,
+      project            TEXT,
+      event_at_utc       TEXT NOT NULL,
+      raw_text           TEXT NOT NULL,
+      raw_payload_json   TEXT NOT NULL,
+      cleaned_text       TEXT NOT NULL,
+      is_human           INTEGER NOT NULL,
+      char_len           INTEGER NOT NULL,
+      cleaner_version    INTEGER NOT NULL,
+      parser_version     INTEGER NOT NULL,
+      source_path        TEXT,
+      source_seen_at     TEXT NOT NULL,
+      ingested_at        TEXT NOT NULL,
+      updated_at         TEXT NOT NULL,
+      UNIQUE (source, source_session_id, source_message_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_aum_source_event
+      ON agent_user_messages(source, event_at_utc);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS agent_user_messages_fts USING fts5(
+      cleaned_text,
+      source UNINDEXED,
+      event_at_utc UNINDEXED,
+      tokenize = 'trigram'
+    );
+    CREATE TRIGGER IF NOT EXISTS agent_user_messages_ad_fts
+      AFTER DELETE ON agent_user_messages BEGIN
+        DELETE FROM agent_user_messages_fts WHERE rowid = old.id;
+      END;
+
+    CREATE TABLE IF NOT EXISTS agent_user_messages_sync_state (
+      source        TEXT PRIMARY KEY,
+      watermark_ms  INTEGER,
+      last_run_at   TEXT,
+      last_status   TEXT,
+      last_error    TEXT
+    );
+
+    UPDATE meta_schema SET version = 42 WHERE id = 1;
+  `);
 }

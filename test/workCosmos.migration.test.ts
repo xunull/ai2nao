@@ -21,7 +21,7 @@ describe("schema v27 — work_cosmos_* tables", () => {
       "SELECT version FROM meta_schema WHERE id = 1"
     ).get() as { version: number }).version;
     // fresh DB migrates to the latest version; v27 created the cosmos tables
-    expect(version).toBe(41);
+    expect(version).toBe(42);
 
     const tables = db
       .prepare(
@@ -159,5 +159,82 @@ describe("schema v27 — work_cosmos_* tables", () => {
         )
         .run()
     ).toThrow(/CHECK constraint/);
+  });
+});
+
+/**
+ * v42 regression: agent 用户消息统一库 —— 建表、source CHECK、trigram FTS 命中、
+ * AFTER DELETE 触发器清 fts。设计:docs/agent-user-messages-design.md。
+ */
+describe("schema v42 — agent_user_messages 用户消息统一库", () => {
+  function fresh() {
+    const dir = mkdtempSync(join(tmpdir(), "ai2nao-aum-mig-"));
+    return openDatabase(join(dir, "test.db"));
+  }
+
+  function insertRow(
+    db: ReturnType<typeof openDatabase>,
+    o: { source: string; cleaned: string }
+  ): number {
+    const info = db
+      .prepare(
+        `INSERT INTO agent_user_messages
+           (source, source_session_id, source_message_key, event_at_utc,
+            raw_text, raw_payload_json, cleaned_text, is_human, char_len,
+            cleaner_version, parser_version, source_seen_at, ingested_at, updated_at)
+         VALUES (?, 's1', 'm1', '2026-07-03T00:00:00Z',
+            ?, '[]', ?, 1, ?, 1, 1, 'now', 'now', 'now')`
+      )
+      .run(o.source, o.cleaned, o.cleaned, o.cleaned.length);
+    return Number(info.lastInsertRowid);
+  }
+
+  it("creates agent_user_messages + fts + sync_state on full migration (v42)", () => {
+    const db = fresh();
+    const tables = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table'
+         AND name IN ('agent_user_messages','agent_user_messages_fts','agent_user_messages_sync_state')
+         ORDER BY name`
+      )
+      .all() as { name: string }[];
+    expect(tables.map((t) => t.name)).toEqual([
+      "agent_user_messages",
+      "agent_user_messages_fts",
+      "agent_user_messages_sync_state",
+    ]);
+  });
+
+  it("rejects unknown source value (CHECK)", () => {
+    const db = fresh();
+    expect(() => insertRow(db, { source: "cursor", cleaned: "x" })).toThrow(
+      /CHECK constraint/
+    );
+  });
+
+  it("trigram FTS matches a >=3-char CJK substring; AFTER DELETE clears fts", () => {
+    const db = fresh();
+    const id = insertRow(db, { source: "opencode", cleaned: "我们讨论一下这个功能" });
+    db.prepare(
+      "INSERT INTO agent_user_messages_fts(rowid, cleaned_text) VALUES (?, ?)"
+    ).run(id, "我们讨论一下这个功能");
+    const hit = (
+      db
+        .prepare(
+          "SELECT COUNT(*) c FROM agent_user_messages_fts WHERE cleaned_text MATCH ?"
+        )
+        .get('"讨论一"') as { c: number }
+    ).c;
+    expect(hit).toBe(1);
+
+    db.prepare("DELETE FROM agent_user_messages WHERE id = ?").run(id);
+    const after = (
+      db
+        .prepare(
+          "SELECT COUNT(*) c FROM agent_user_messages_fts WHERE cleaned_text MATCH ?"
+        )
+        .get('"讨论一"') as { c: number }
+    ).c;
+    expect(after).toBe(0);
   });
 });

@@ -9,15 +9,17 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClaudeCodeHistory } from "../web/src/pages/ClaudeCodeHistory";
 
-type DetailResponder = () => Response;
+type MyMessagesResponder = () => Response;
 
-// status / projects / sessions 都给固定响应;只有详情(/sessions/sess1)由每个用例定制。
-function stubFetch(detail: DetailResponder, sessionTitle = "我的会话") {
+// option C:清洗归后端。抽屉调 /sessions/sess1/my-messages,拿到的已是清洗后的
+// {messages, cleanTitle}。抽屉本身不再清洗 —— 只负责显示。清洗逻辑由后端 cleaner
+// 测试(test/agentUserMessages.cleaners.test.ts)覆盖。
+function stubFetch(myMessages: MyMessagesResponder) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/sessions/sess1")) return detail();
+      if (url.includes("/sessions/sess1")) return myMessages();
       if (url.includes("/api/claude-code-history/status")) {
         return new Response(
           JSON.stringify({
@@ -35,7 +37,7 @@ function stubFetch(detail: DetailResponder, sessionTitle = "我的会话") {
               {
                 id: "sess1",
                 index: 0,
-                title: sessionTitle,
+                title: "我的会话",
                 createdAt: "2026-06-29T00:00:00Z",
                 lastUpdatedAt: "2026-06-29T01:00:00Z",
                 messageCount: 5,
@@ -68,6 +70,13 @@ function stubFetch(detail: DetailResponder, sessionTitle = "我的会话") {
   );
 }
 
+function myMessagesResp(
+  messages: { id: string; timestamp: string; text: string }[],
+  cleanTitle = "我的会话"
+): Response {
+  return new Response(JSON.stringify({ ok: true, messages, cleanTitle }));
+}
+
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -81,28 +90,19 @@ function renderPage() {
   );
 }
 
-describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
+describe("ClaudeCodeHistory · 只看我说的抽屉(后端已清洗,抽屉只显示)", () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
   });
 
-  it("点按钮打开抽屉,只渲染清洗后的我方消息(丢 assistant、剥注入)", async () => {
+  it("点按钮打开抽屉,渲染后端返回的我方消息", async () => {
     stubFetch(() =>
-      new Response(
-        JSON.stringify({
-          ok: true,
-          session: {
-            messages: [
-              { id: "m1", role: "user", content: "帮我修一个 bug", timestamp: "2026-06-29T01:00:00Z" },
-              { id: "m2", role: "assistant", content: "好的我来看看这段代码", timestamp: "2026-06-29T01:01:00Z" },
-              { id: "m3", role: "user", content: "<command-name>/clear</command-name>", timestamp: "2026-06-29T01:02:00Z" },
-              { id: "m4", role: "user", content: "<system-reminder>注入噪音内容</system-reminder>再帮我加个测试", timestamp: "2026-06-29T01:03:00Z" },
-            ],
-          },
-        })
-      )
+      myMessagesResp([
+        { id: "m1", timestamp: "2026-06-29T01:00:00Z", text: "帮我修一个 bug" },
+        { id: "m4", timestamp: "2026-06-29T01:03:00Z", text: "再帮我加个测试" },
+      ])
     );
     const user = userEvent.setup();
     renderPage();
@@ -113,26 +113,10 @@ describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
     expect(within(dialog).getByText("你发了 2 条")).toBeInTheDocument();
     expect(within(dialog).getByText("帮我修一个 bug")).toBeInTheDocument();
     expect(within(dialog).getByText("再帮我加个测试")).toBeInTheDocument();
-    // assistant 轮被丢
-    expect(within(dialog).queryByText(/好的我来看看/)).not.toBeInTheDocument();
-    // 注入文本被剥
-    expect(within(dialog).queryByText(/注入噪音内容/)).not.toBeInTheDocument();
   });
 
-  it("会话里没有手打消息时显示空状态", async () => {
-    stubFetch(() =>
-      new Response(
-        JSON.stringify({
-          ok: true,
-          session: {
-            messages: [
-              { id: "a1", role: "assistant", content: "只有助手", timestamp: "2026-06-29T01:00:00Z" },
-              { id: "u1", role: "user", content: "<command-name>/clear</command-name>", timestamp: "2026-06-29T01:01:00Z" },
-            ],
-          },
-        })
-      )
-    );
+  it("后端返回空 messages 时显示空状态", async () => {
+    stubFetch(() => myMessagesResp([]));
     const user = userEvent.setup();
     renderPage();
 
@@ -143,7 +127,7 @@ describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
     ).toBeInTheDocument();
   });
 
-  it("详情接口失败时显示错误态", async () => {
+  it("端点失败时显示错误态", async () => {
     stubFetch(() =>
       new Response(JSON.stringify({ error: { message: "加载失败了" } }), {
         status: 500,
@@ -158,9 +142,7 @@ describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
   });
 
   it("触发按钮不嵌在会话行的 Link 里(结构隔离)", async () => {
-    stubFetch(() =>
-      new Response(JSON.stringify({ ok: true, session: { messages: [] } }))
-    );
+    stubFetch(() => myMessagesResp([]));
     renderPage();
 
     const trigger = await screen.findByRole("button", { name: "只看我发的消息" });
@@ -169,9 +151,7 @@ describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
   });
 
   it("关闭按钮能关掉抽屉", async () => {
-    stubFetch(() =>
-      new Response(JSON.stringify({ ok: true, session: { messages: [] } }))
-    );
+    stubFetch(() => myMessagesResp([]));
     const user = userEvent.setup();
     renderPage();
 
@@ -183,30 +163,19 @@ describe("ClaudeCodeHistory · 只看我说的抽屉", () => {
     );
   });
 
-  it("抽屉标题对脏首条消息做清洗(不显示注入文本)", async () => {
-    stubFetch(
-      () =>
-        new Response(
-          JSON.stringify({
-            ok: true,
-            session: {
-              messages: [
-                { id: "m1", role: "user", content: "真正的问题", timestamp: "2026-06-29T01:00:00Z" },
-              ],
-            },
-          })
-        ),
-      // 首条消息(= 标题)是被 caveat 包裹的注入。
-      "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands.</local-command-caveat>"
+  it("抽屉标题用后端清洗后的 cleanTitle(纯注入 → 只剩「只看我说的」)", async () => {
+    stubFetch(() =>
+      myMessagesResp(
+        [{ id: "m1", timestamp: "2026-06-29T01:00:00Z", text: "真正的问题" }],
+        "" // 后端把 caveat 注入标题清成空
+      )
     );
     const user = userEvent.setup();
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "只看我发的消息" }));
     const dialog = await screen.findByRole("dialog");
-    // 标题区只剩「只看我说的」,不含注入文本。
     expect(within(dialog).queryByText(/Caveat:/)).not.toBeInTheDocument();
-    expect(within(dialog).queryByText(/local-command-caveat/)).not.toBeInTheDocument();
     expect(within(dialog).getByText("真正的问题")).toBeInTheDocument();
   });
 });

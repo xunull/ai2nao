@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cleanCodexUserMessage } from "../web/src/lib/cleanCodexUserMessage";
+// option C:清洗归后端。golden 用例现测后端权威 cleaner(移植前在 web/src/lib,已删)。
+import { cleanCodexUserMessage } from "../src/codexHistory/myMessages.js";
 
 describe("cleanCodexUserMessage", () => {
   it("保留真人手打文本", () => {

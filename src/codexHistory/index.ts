@@ -6,9 +6,11 @@ export {
 } from "./paths.js";
 export {
   listCodexSessionSummaries,
+  loadCodexMyMessages,
   loadCodexSessionDetail,
   codexSessionSummaryToJson,
 } from "./load.js";
+export type { CodexMyMessage } from "./load.js";
 export { listCodexProjects } from "./projects.js";
 export type {
   CodexListFilters,

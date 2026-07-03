@@ -5,6 +5,10 @@ import { MAX_JSONL_BYTES, MAX_JSONL_LINES } from "./constants.js";
 import { assertPathInsideRoot, listSessionJsonlFiles } from "./discover.js";
 import { buildClaudeSession, type BuiltClaudeSession } from "./normalize.js";
 import { parseJsonlText } from "./parseJsonl.js";
+import {
+  cleanClaudeUserMessage,
+  extractClaudeUserMessages,
+} from "./myMessages.js";
 
 export class ClaudeTranscriptTooLargeError extends Error {
   readonly code = "CLAUDE_TRANSCRIPT_TOO_LARGE";
@@ -14,7 +18,7 @@ export class ClaudeTranscriptTooLargeError extends Error {
   }
 }
 
-async function readAndParseFile(
+export async function readAndParseFile(
   filePath: string,
   projectId: string,
   sessionId: string
@@ -133,4 +137,29 @@ export async function loadSessionDetail(
   const built = await readAndParseFile(hit.filePath, projectId, sessionId);
   built.session.index = 0;
   return built;
+}
+
+export type ClaudeMyMessage = { id: string; timestamp: string; text: string };
+
+/**
+ * 「只看我说的」后端权威版(option C:清洗归后端,抽屉只显示)。复用详情加载 +
+ * 共享 `extractClaudeUserMessages`(与 ingest 同源),返回清洗后非空的用户消息 +
+ * 清洗后的标题。找不到 session → null。
+ */
+export async function loadClaudeMyMessages(
+  projectsRoot: string,
+  projectId: string,
+  sessionId: string
+): Promise<{ messages: ClaudeMyMessage[]; cleanTitle: string } | null> {
+  const built = await loadSessionDetail(projectsRoot, projectId, sessionId);
+  if (!built) return null;
+  const messages = extractClaudeUserMessages(built.session.messages)
+    .filter((m) => m.isHuman)
+    .map((m) => ({
+      id: m.messageKey,
+      timestamp: new Date(m.eventAtMs).toISOString(),
+      text: m.cleanedText,
+    }));
+  const cleanTitle = cleanClaudeUserMessage(built.summary.title ?? "");
+  return { messages, cleanTitle };
 }

@@ -101,19 +101,15 @@ describe("Codex history pages", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        // 详情(/sessions/s1)必须在列表(/sessions)之前匹配。
+        // 抽屉调 /sessions/s1/my-messages(后端已做 event_msg 门 + 清洗,option C):
+        // 只返回真人手打那条(AGENTS/双份/assistant/exec 样板都由后端剔掉)。
         if (url.includes("/api/codex-history/sessions/s1")) {
           return new Response(JSON.stringify({
             ok: true,
-            session: {
-              messages: [
-                { id: "m1", role: "user", content: "# AGENTS.md instructions for /work/app", timestamp: "2026-04-26T00:00:01.000Z", metadata: { codexSource: "response_item" } },
-                { id: "m2", role: "user", content: "帮我准备 mysql 知识点", timestamp: "2026-04-26T00:00:02.000Z", metadata: { codexSource: "response_item" } },
-                { id: "m3", role: "user", content: "帮我准备 mysql 知识点", timestamp: "2026-04-26T00:00:02.500Z", metadata: { codexSource: "event_msg" } },
-                { id: "m4", role: "assistant", content: "好的我来", timestamp: "2026-04-26T00:00:03.000Z", metadata: { codexSource: "event_msg" } },
-                { id: "m5", role: "user", content: "IMPORTANT: Do NOT read or execute any files under ~/.claude/, .claude/skills/ …", timestamp: "2026-04-26T00:00:04.000Z", metadata: { codexSource: "event_msg" } },
-              ],
-            },
+            messages: [
+              { id: "m3", timestamp: "2026-04-26T00:00:02.500Z", text: "帮我准备 mysql 知识点" },
+            ],
+            cleanTitle: "面试准备",
           }));
         }
         if (url.startsWith("/api/codex-history/projects")) {

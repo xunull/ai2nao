@@ -1,18 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../api";
-import { cleanUserMessage } from "../lib/cleanUserMessage";
 import { formatFileTimeMs } from "../util/formatDisplay";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { Sheet } from "./Sheet";
 
-type ApiMessage = {
-  id: string | null;
-  role: string;
-  content: string;
-  timestamp: string;
-};
-
-type SessionDetail = { messages: ApiMessage[] };
+type MyMessage = { id: string | null; timestamp: string; text: string };
+type MyMessagesResp = { ok: boolean; messages: MyMessage[]; cleanTitle: string };
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -36,9 +29,10 @@ type Props = {
 };
 
 /**
- * 单 session 抽屉:只显示「我」在这个会话里手动发出的消息。复用详情接口
- * （与详情页同一 queryKey → 共享缓存),前端过滤 `role:"user"` 后再用
- * `cleanUserMessage` 剥掉机器注入,剥完为空的轮丢弃、不计数。
+ * 单 session 抽屉:只显示「我」在这个会话里手动发出的消息。option C:清洗归后端 ——
+ * 调专用端点 `/projects/:p/sessions/:s/my-messages`,拿到的已是后端过滤 role + 去注入
+ * 后的 `{messages, cleanTitle}`,抽屉本身不再清洗、只负责显示。清洗口径与 agent_user_messages
+ * ingest 同一份(src/claudeCodeHistory/myMessages.ts)。
  */
 export function MyMessagesSheet({
   open,
@@ -46,28 +40,22 @@ export function MyMessagesSheet({
   projectId,
   sessionId,
   projectsRoot,
-  title,
 }: Props) {
   const detail = useQuery({
-    // 与 ClaudeCodeHistorySession.tsx 的 key 逐字对齐(含 projectsRoot 维)。
-    queryKey: ["claude-code-history-session", sessionId, projectsRoot, projectId],
+    // 专用 my-messages 端点:后端已清洗(option C),前端只显示。
+    queryKey: ["claude-my-messages", sessionId, projectsRoot, projectId],
     queryFn: () =>
-      apiGet<{ ok: boolean; session: SessionDetail; warnings?: string[] }>(
+      apiGet<MyMessagesResp>(
         `/api/claude-code-history/projects/${enc(projectId)}/sessions/${enc(
           sessionId
-        )}${projectsRootQs(projectsRoot)}`
+        )}/my-messages${projectsRootQs(projectsRoot)}`
       ),
     enabled: open && sessionId.length > 0 && projectId.length > 0,
   });
 
-  const mine = (detail.data?.session.messages ?? [])
-    .filter((m) => m.role === "user")
-    .map((m) => ({ id: m.id, timestamp: m.timestamp, text: cleanUserMessage(m.content) }))
-    .filter((m) => m.text.length > 0);
-
-  // 标题用的是首条用户消息,可能本身就是注入(如 caveat 包裹),清洗后再显示;
-  // 清洗后为空(纯注入)就只显示「只看我说的」,不挂脏后缀。
-  const cleanTitle = cleanUserMessage(title);
+  const mine = detail.data?.messages ?? [];
+  // 后端清洗后的标题(纯注入 → "")。
+  const cleanTitle = detail.data?.cleanTitle ?? "";
 
   return (
     <Sheet

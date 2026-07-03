@@ -59,6 +59,7 @@ import {
   computeProjectLastActive,
   listProjects,
   listSessionSummaries,
+  loadClaudeMyMessages,
   loadSessionDetail,
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
@@ -68,6 +69,7 @@ import {
   codexStateDbPath,
   listCodexProjects,
   listCodexSessionSummaries,
+  loadCodexMyMessages,
   loadCodexSessionDetail,
   resolveCodexRoot,
 } from "../codexHistory/index.js";
@@ -104,6 +106,7 @@ import { registerProviderRoutes } from "./providerRoutes.js";
 import { registerWorkDashboardRoutes } from "../workDashboard/routes.js";
 import { registerWorkRecapRoutes } from "../workRecap/routes.js";
 import { registerWorkTokensTrendRoutes } from "../workTokensTrend/routes.js";
+import { registerAgentUserMessagesRoutes } from "../agentUserMessages/routes.js";
 import { registerGitChurnRoutes } from "../gitChurn/routes.js";
 import { registerSettingsRoutes } from "./settingsRoutes.js";
 import { registerCodexTokenUsageRoutes } from "../codexTokenUsage/routes.js";
@@ -262,6 +265,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerSettingsRoutes(app, db);
   registerWorkCosmosRoutes(app, db, opts.schedulerRuntime);
   registerProviderRoutes(app, db);
+  registerAgentUserMessagesRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);
   registerProjectOpenerRoutes(app);
   if (opts.schedulerRuntime) {
@@ -712,6 +716,22 @@ export function createApp(opts: ServeOptions): Hono {
     }
   );
 
+  app.get(
+    "/api/claude-code-history/projects/:projectId/sessions/:sessionId/my-messages",
+    async (c) => {
+      try {
+        const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
+        const projectId = decodeURIComponent(c.req.param("projectId"));
+        const sessionId = decodeURIComponent(c.req.param("sessionId"));
+        const result = await loadClaudeMyMessages(root, projectId, sessionId);
+        if (!result) return jsonErr(404, "session not found");
+        return c.json({ ok: true, ...result });
+      } catch (e) {
+        return claudeCodeHistoryErr(e);
+      }
+    }
+  );
+
   app.get("/api/codex-history/status", (c) => {
     try {
       const root = codexHistoryRoot(c.req.query("codexRoot"));
@@ -775,6 +795,18 @@ export function createApp(opts: ServeOptions): Hono {
         warnings: detail.warnings,
         metrics: detail.metrics,
       });
+    } catch (e) {
+      return codexHistoryErr(e);
+    }
+  });
+
+  app.get("/api/codex-history/sessions/:sessionId/my-messages", async (c) => {
+    try {
+      const root = c.req.query("codexRoot");
+      const sessionId = decodeURIComponent(c.req.param("sessionId"));
+      const result = await loadCodexMyMessages(root, sessionId);
+      if (!result) return jsonErr(404, "session not found");
+      return c.json({ ok: true, ...result });
     } catch (e) {
       return codexHistoryErr(e);
     }

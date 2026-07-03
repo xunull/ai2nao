@@ -84,6 +84,7 @@ const navGroups: NavGroup[] = [
       { to: "/work-recap", label: "工作回看", icon: GitCommit },
       { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
       { to: "/providers", label: "外部平台", icon: Plug },
+      { to: "/agent-messages", label: "对话搜索", icon: Search },
     ],
   },
   {

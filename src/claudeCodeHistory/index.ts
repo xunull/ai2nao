@@ -32,8 +32,10 @@ export type { BuiltClaudeSession } from "./normalize.js";
 export {
   ClaudeTranscriptTooLargeError,
   listSessionSummaries,
+  loadClaudeMyMessages,
   loadSessionDetail,
 } from "./load.js";
+export type { ClaudeMyMessage } from "./load.js";
 export { MAX_JSONL_BYTES, MAX_JSONL_LINES } from "./constants.js";
 export {
   decodeClaudeProjectDirName,

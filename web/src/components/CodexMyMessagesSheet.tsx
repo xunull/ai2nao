@@ -1,19 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../api";
-import { cleanCodexUserMessage } from "../lib/cleanCodexUserMessage";
 import { formatFileTimeMs } from "../util/formatDisplay";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { Sheet } from "./Sheet";
 
-type ApiMessage = {
-  id: string | null;
-  role: string;
-  content: string;
-  timestamp: string;
-  metadata?: { codexSource?: "event_msg" | "response_item" };
-};
-
-type SessionDetail = { messages: ApiMessage[] };
+type MyMessage = { id: string | null; timestamp: string; text: string };
+type MyMessagesResp = { ok: boolean; messages: MyMessage[]; cleanTitle: string };
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -36,34 +28,29 @@ type Props = {
 };
 
 /**
- * 单 codex session 抽屉:只显示「我」在这个会话里真人手打的消息。复用 codex 详情接口
- * (与详情页同一 queryKey → 共享缓存)。codex 把每条 user 记两遍、且 AGENTS.md 注入也算
- * user,所以**先按 `metadata.codexSource==='event_msg'` 过滤**(干净的真人输入信号,自动
- * 排除 AGENTS.md + 双份),再用 `cleanCodexUserMessage` 丢掉 codex-exec 样板。
+ * 单 codex session 抽屉:只显示「我」在这个会话里真人手打的消息。option C:清洗归后端 ——
+ * 调专用端点 `/sessions/:s/my-messages`,后端已按 `codexSource==='event_msg'` 过滤(排除
+ * AGENTS.md 注入 + 双份)、去 codex-exec 样板,返回 `{messages, cleanTitle}`,抽屉只显示。
+ * 清洗口径与 agent_user_messages ingest 同一份(src/codexHistory/myMessages.ts)。
  */
 export function CodexMyMessagesSheet({
   open,
   onOpenChange,
   sessionId,
   codexRoot,
-  title,
 }: Props) {
   const detail = useQuery({
-    // 与 CodexHistorySession.tsx 的 key 逐字对齐(含 codexRoot 维)。
-    queryKey: ["codex-history-session", sessionId, codexRoot],
+    // 专用 my-messages 端点:后端已清洗(option C,含 event_msg 双重门),前端只显示。
+    queryKey: ["codex-my-messages", sessionId, codexRoot],
     queryFn: () =>
-      apiGet<{ ok: boolean; session: SessionDetail; warnings?: string[] }>(
-        `/api/codex-history/sessions/${enc(sessionId)}${codexRootQs(codexRoot)}`
+      apiGet<MyMessagesResp>(
+        `/api/codex-history/sessions/${enc(sessionId)}/my-messages${codexRootQs(codexRoot)}`
       ),
     enabled: open && sessionId.length > 0,
   });
 
-  const mine = (detail.data?.session.messages ?? [])
-    .filter((m) => m.role === "user" && m.metadata?.codexSource === "event_msg")
-    .map((m) => ({ id: m.id, timestamp: m.timestamp, text: cleanCodexUserMessage(m.content) }))
-    .filter((m) => m.text.length > 0);
-
-  const cleanTitle = cleanCodexUserMessage(title);
+  const mine = detail.data?.messages ?? [];
+  const cleanTitle = detail.data?.cleanTitle ?? "";
 
   return (
     <Sheet

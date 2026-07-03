@@ -13,6 +13,9 @@ import { syncModelPrices } from "../cost/modelsDevSync.js";
 import { syncEnabledProviders } from "../providers/sync.js";
 import { getProviderConfig } from "../providers/store.js";
 import { refreshMinimaxTokenUsage } from "../minimaxTokenUsage/refresh.js";
+import { ingestOpencodeUserMessages } from "../agentUserMessages/opencodeIngest.js";
+import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
+import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
@@ -390,6 +393,77 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
         return {
           status: r.status,
           summary: r,
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // OpenCode「我发的消息」入库(供全文搜索)。本地源、常开、无 key/opt-in。
+      // 增量:按 message.time_created 水位分批 upsert;db 缺失/被锁 → 干净跳过/失败,
+      // 不影响其它任务。设计:docs/agent-user-messages-design.md。
+      key: "agent_user_messages.opencode.sync",
+      label: "OpenCode 用户消息入库",
+      description:
+        "把 opencode 会话里「我发的消息」抽取并去注入后写入 agent_user_messages,供跨 agent 全文搜索。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = ingestOpencodeUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedSessions: r.scannedSessions,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
+          },
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // Claude Code「我发的消息」入库(供全文搜索)。本地 jsonl 源、常开、无 key。
+      // 增量按会话文件 mtime 水位分批 upsert;文件缺失/过大 → 干净跳过。
+      key: "agent_user_messages.claude.sync",
+      label: "Claude 用户消息入库",
+      description:
+        "把 Claude Code 会话 jsonl 里「我发的消息」抽取并去注入后写入 agent_user_messages,供跨 agent 全文搜索。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = await ingestClaudeUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedFiles: r.scannedFiles,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
+          },
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // Codex「我发的消息」入库(供全文搜索)。本地 rollout jsonl 源、常开、无 key。
+      // 增量按文件 mtime 水位分批 upsert;文件 >5000 时 summary 标注 truncated(不静默丢)。
+      key: "agent_user_messages.codex.sync",
+      label: "Codex 用户消息入库",
+      description:
+        "把 Codex 会话 rollout jsonl 里「我发的消息」抽取并去注入后写入 agent_user_messages,供跨 agent 全文搜索。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = await ingestCodexUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedFiles: r.scannedFiles,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
+            truncated: r.truncated,
+          },
           errorSummary: r.error ?? null,
         };
       },
