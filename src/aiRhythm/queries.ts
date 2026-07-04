@@ -81,3 +81,86 @@ export function heatmapRhythm(
     generatedAt: now.toISOString(),
   };
 }
+
+export type StreakRhythm = {
+  /** 当前连续活跃天数;grace:最近活跃日 = 今天或昨天才算活着,否则 0(已断)。 */
+  currentStreak: number;
+  /** 有史以来最长的一段连续活跃日。 */
+  longestStreak: number;
+  /** 今天(本地)是否已有记录。 */
+  todayActive: boolean;
+  /** 最近一个活跃日 'YYYY-MM-DD';空库 null。 */
+  lastActiveDay: string | null;
+  totalActiveDays: number;
+  generatedAt: string;
+};
+
+/** 'YYYY-MM-DD' → 稳定的日序号。用 Date.UTC(纯字符串映射,恰为整数、与时区无关),只用于相邻判定。 */
+function dayOrdinal(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / 86400000;
+}
+
+/** 本地日 'YYYY-MM-DD'(getFullYear/Month/Date 是本地时区,与 strftime 'localtime' 一致)。 */
+function localYmd(dt: Date): string {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * 连续天数纪录(Duolingo 式)。活跃日 = 本地日有 ≥1 条 is_human 消息(全源)。
+ * - SQL 只取 DISTINCT 本地日(坏时间戳 strftime NULL 剔除,同热力图口径);连续逻辑放 TS。
+ * - grace:当前连续只在最近活跃日 = 今天或昨天时算活着,否则 currentStreak=0。
+ */
+export function streakRhythm(
+  db: Database.Database,
+  opts?: { now?: Date }
+): StreakRhythm {
+  const days = (
+    db
+      .prepare(
+        `SELECT DISTINCT strftime('%Y-%m-%d', event_at_utc, 'localtime') AS day
+         FROM agent_user_messages
+         WHERE is_human = 1
+           AND strftime('%Y-%m-%d', event_at_utc, 'localtime') IS NOT NULL
+         ORDER BY day`
+      )
+      .all() as { day: string }[]
+  ).map((r) => r.day);
+
+  const now = opts?.now ?? new Date();
+  const ords = days.map(dayOrdinal); // 已按 day 升序
+
+  // 历史最长:走一遍,相邻差 1 即连续。
+  let longestStreak = 0;
+  let run = 0;
+  let prev: number | null = null;
+  for (const o of ords) {
+    run = prev !== null && o - prev === 1 ? run + 1 : 1;
+    if (run > longestStreak) longestStreak = run;
+    prev = o;
+  }
+
+  // 当前连续:从末尾回溯,但只有最近活跃日 = 今天或昨天(grace)才算活着。
+  const todayOrd = dayOrdinal(localYmd(now));
+  const lastOrd = ords.length ? ords[ords.length - 1] : null;
+  let currentStreak = 0;
+  if (lastOrd !== null && (lastOrd === todayOrd || lastOrd === todayOrd - 1)) {
+    currentStreak = 1;
+    for (let i = ords.length - 2; i >= 0; i--) {
+      if (ords[i] === ords[i + 1] - 1) currentStreak++;
+      else break;
+    }
+  }
+
+  return {
+    currentStreak,
+    longestStreak,
+    todayActive: lastOrd === todayOrd,
+    lastActiveDay: days.length ? days[days.length - 1] : null,
+    totalActiveDays: days.length,
+    generatedAt: now.toISOString(),
+  };
+}

@@ -130,7 +130,77 @@ function Heatmap({ data }: { data: HeatmapResp }) {
   );
 }
 
-/** 「我的 AI 节律」自量化仪表盘:作息热力图(星期 × 小时)。 */
+type StreakResp = {
+  ok: true;
+  currentStreak: number;
+  longestStreak: number;
+  todayActive: boolean;
+  lastActiveDay: string | null;
+  totalActiveDays: number;
+  generatedAt: string;
+};
+
+/** 连续天数纪录卡(Duolingo 式):当前连续🔥 + 历史最长 + 累计 + 未记录提醒。 */
+function StreakCard() {
+  const q = useQuery<StreakResp>({
+    queryKey: ["ai-rhythm-streak"],
+    queryFn: () => apiGet<StreakResp>("/api/ai-rhythm/streak"),
+  });
+
+  if (q.isLoading) {
+    return <div className="mt-4 text-xs text-[var(--fg-muted)]">加载连续纪录…</div>;
+  }
+  if (q.isError) {
+    return (
+      <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+        连续纪录加载失败：{(q.error as Error).message}
+      </div>
+    );
+  }
+  const d = q.data!;
+  const empty = d.totalActiveDays === 0;
+  const broken = !empty && d.currentStreak === 0;
+  const graceNudge = d.currentStreak > 0 && !d.todayActive;
+
+  const note = empty
+    ? "还没有记录"
+    : broken
+      ? "连续已断,今天发一条重新开始"
+      : graceNudge
+        ? "今天还没记录,别断了 🔥"
+        : "保持住 🔥";
+
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+        <div>
+          <div className="text-3xl font-semibold text-[var(--fg)]">
+            🔥 {d.currentStreak}
+            <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+          </div>
+          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">当前连续</div>
+        </div>
+        <div>
+          <div className="text-xl font-semibold text-[var(--fg)]">{d.longestStreak} 天</div>
+          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">历史最长</div>
+        </div>
+        <div>
+          <div className="text-xl font-semibold text-[var(--fg)]">{d.totalActiveDays} 天</div>
+          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">累计活跃</div>
+        </div>
+        <div
+          className={`ml-auto self-center text-sm ${
+            graceNudge ? "font-medium text-amber-600" : "text-[var(--fg-muted)]"
+          }`}
+        >
+          {note}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 「我的 AI 节律」自量化仪表盘:作息热力图(星期 × 小时)+ 连续天数纪录。 */
 export function AiRhythm() {
   const q = useQuery<HeatmapResp>({
     queryKey: ["ai-rhythm-heatmap"],
@@ -156,6 +226,8 @@ export function AiRhythm() {
       ) : (
         <Heatmap data={q.data!} />
       )}
+
+      <StreakCard />
     </main>
   );
 }

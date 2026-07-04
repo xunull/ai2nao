@@ -62,3 +62,52 @@ describe("GET /api/ai-rhythm/heatmap — createApp 集成", () => {
     expect(body.maxCount).toBe(0);
   });
 });
+
+describe("GET /api/ai-rhythm/streak — createApp 集成", () => {
+  it("已挂载 + 返回连续 shape", async () => {
+    const db = freshDb();
+    upsertUserMessagesBatch(
+      db,
+      [
+        {
+          source: "claude",
+          sourceSessionId: "s1",
+          sourceMessageKey: "m1",
+          project: null,
+          eventAtUtc: "2026-07-08T04:00:00Z",
+          rawText: "x",
+          rawPayloadJson: '"x"',
+          cleanedText: "x",
+          isHuman: true,
+          cleanerVersion: 1,
+          parserVersion: 1,
+          sourcePath: "/x",
+        },
+      ],
+      "2026-07-08T00:00:00Z"
+    );
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/streak");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      currentStreak: number;
+      longestStreak: number;
+      totalActiveDays: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.totalActiveDays).toBe(1);
+    expect(body.longestStreak).toBe(1);
+  });
+
+  it("空库 → 200 + 全 0 / null", async () => {
+    const db = freshDb();
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/streak");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      currentStreak: number;
+      lastActiveDay: unknown;
+    };
+    expect(body.currentStreak).toBe(0);
+    expect(body.lastActiveDay).toBeNull();
+  });
+});
