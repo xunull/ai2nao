@@ -30,8 +30,8 @@ function userMessage(id: string, content: string, iso = "2026-06-29T01:00:00Z"):
 }
 
 describe("CLAUDE_CLEANER_VERSION pin", () => {
-  it("cleaner=2 —— 改 claude 清洗规则时必须同步 +1 并回填", () => {
-    expect(CLAUDE_CLEANER_VERSION).toBe(2);
+  it("cleaner=3 —— 改 claude 清洗规则时必须同步 +1 并回填", () => {
+    expect(CLAUDE_CLEANER_VERSION).toBe(3);
     expect(CLAUDE_PARSER_VERSION).toBe(1);
   });
 });
@@ -81,9 +81,9 @@ describe("extractClaudeUserMessages — role 门 + 口径", () => {
     expect(ex.map((e) => e.messageKey)).toEqual(["m1", "m3", "m4"]);
     expect(ex[0].cleanedText).toBe("帮我修一个 bug");
     expect(ex[0].isHuman).toBe(true);
-    // 纯 command → cleaned '' / is_human false(留底)
-    expect(ex[1].cleanedText).toBe("");
-    expect(ex[1].isHuman).toBe(false);
+    // command 调用 → 紧凑 /名字 / is_human true(用户裁定:调用是我的输入)
+    expect(ex[1].cleanedText).toBe("/clear");
+    expect(ex[1].isHuman).toBe(true);
     // 剥注入留真人
     expect(ex[2].cleanedText).toBe("再加个测试");
   });

@@ -29,11 +29,11 @@ describe("cleanCodexUserMessage", () => {
     expect(cleanCodexUserMessage("IMPORTANT: 把这个函数改成异步")).toBe("IMPORTANT: 把这个函数改成异步");
   });
 
-  it("[$cmd](path) slash 命令展开注入 → 整条丢弃", () => {
+  it("[$cmd](path) 命令调用 → 紧凑 /名字(调用是我的输入)", () => {
     expect(
       cleanCodexUserMessage("[$review](/Users/x/skills/gstack/.agents/skills/review)")
-    ).toBe("");
-    expect(cleanCodexUserMessage("[$design-review](/some/path)")).toBe("");
+    ).toBe("/review");
+    expect(cleanCodexUserMessage("[$design-review](/some/path)")).toBe("/design-review");
   });
 
   it("正常 markdown 链接(非 [$) 不误删", () => {

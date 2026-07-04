@@ -40,8 +40,8 @@ function responseItemUser(id: string, content: string): Message {
 }
 
 describe("CODEX_CLEANER_VERSION pin", () => {
-  it("固定为 2 —— 改 codex 清洗/提取规则时必须同步 +1 并回填", () => {
-    expect(CODEX_CLEANER_VERSION).toBe(2);
+  it("cleaner=3 —— 改 codex 清洗/提取规则时必须同步 +1 并回填", () => {
+    expect(CODEX_CLEANER_VERSION).toBe(3);
     expect(CODEX_PARSER_VERSION).toBe(2);
   });
 });
@@ -80,12 +80,12 @@ describe("extractCodexUserMessages — event_msg 双重门", () => {
     expect(ex).toEqual([]);
   });
 
-  it("[$cmd](path) slash 命令注入 → cleaned='' / is_human=false", () => {
+  it("[$cmd](path) 命令调用 → 紧凑 /名字 / is_human=true(用户裁定:调用是我的输入)", () => {
     const ex = extractCodexUserMessages([
       eventMsg("u1", "[$review](/Users/x/skills/gstack/.agents/skills/review)"),
     ]);
-    expect(ex[0].cleanedText).toBe("");
-    expect(ex[0].isHuman).toBe(false);
+    expect(ex[0].cleanedText).toBe("/review");
+    expect(ex[0].isHuman).toBe(true);
   });
 
   it("重清洗往返:payload 能重现 cleaned(证明 D5)", () => {

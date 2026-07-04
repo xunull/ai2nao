@@ -7,12 +7,12 @@ describe("cleanUserMessage", () => {
     expect(cleanUserMessage("帮我看下这个 bug")).toBe("帮我看下这个 bug");
   });
 
-  it("剥掉斜杠命令元数据(整轮变空)", () => {
+  it("命令调用 → 紧凑 /名字(空参数)", () => {
     const raw =
       "<command-message>graphify is running</command-message>\n" +
       "<command-name>/graphify</command-name>\n" +
       "<command-args></command-args>";
-    expect(cleanUserMessage(raw)).toBe("");
+    expect(cleanUserMessage(raw)).toBe("/graphify");
   });
 
   it("剥掉 local-command-stdout", () => {
@@ -50,11 +50,18 @@ describe("cleanUserMessage", () => {
     expect(cleanUserMessage(raw)).toBe("继续帮我实现这个功能");
   });
 
-  it("斜杠命令展开(含 command-name)整轮丢弃", () => {
+  it("命令调用(含 command-name)→ /名字", () => {
     const raw =
       "<command-message>gstack-plan-eng-review</command-message>\n" +
       "<command-name>/gstack-plan-eng-review</command-name>";
-    expect(cleanUserMessage(raw)).toBe("");
+    expect(cleanUserMessage(raw)).toBe("/gstack-plan-eng-review");
+  });
+
+  it("命令调用带参数 → /名字 参数", () => {
+    const raw =
+      "<command-name>/karpathy-llm-wiki</command-name>\n" +
+      "<command-args>Ingest the page</command-args>";
+    expect(cleanUserMessage(raw)).toBe("/karpathy-llm-wiki Ingest the page");
   });
 
   it("裸 skill 正文轮(Base directory 前缀,无命令标签)整轮丢弃", () => {

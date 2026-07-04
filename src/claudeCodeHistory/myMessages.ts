@@ -12,8 +12,9 @@ import type { Message } from "../cursorHistory/types.js";
  * 清洗版本。改动清洗规则必须 bump,触发 agent_user_messages 里 source='claude' 行的
  * cleaner_version 回填(从 raw_payload_json 重算)。有 pin 测试逼出有意识的版本升。
  */
-// v2(2026-07-04):新增压缩摘要续接 / context 报告 / task-notification / 图片占位 过滤。
-export const CLAUDE_CLEANER_VERSION = 2;
+// v2(2026-07-04):压缩摘要续接 / context 报告 / task-notification / 图片占位 过滤。
+// v3(2026-07-04):命令/skill 调用不再丢弃 → 显示紧凑 /名字(用户裁定:调用 skill 是我的输入)。
+export const CLAUDE_CLEANER_VERSION = 3;
 export const CLAUDE_PARSER_VERSION = 1;
 
 // 成对、可跨行的注入标记。
@@ -34,8 +35,15 @@ const CLAUDE_IMAGE_PLACEHOLDER_RE = /\[Images?\b[^\]]*\]/g;
 export function cleanClaudeUserMessage(raw: string): string {
   if (!raw) return "";
 
-  // 0) 整轮机器内容 → 直接丢弃:斜杠命令/技能、压缩摘要续接、/context 报告。
-  if (/<command-name>/.test(raw)) return "";
+  // 斜杠命令/skill 调用是你的输入 → 显示紧凑 /名字(+ 参数);展开的 skill 正文不算(用户裁定)。
+  const cmd = /<command-name>\s*([^<]+?)\s*<\/command-name>/.exec(raw);
+  if (cmd) {
+    const name = cmd[1].trim(); // command-name 已含前导 /
+    const argsM = /<command-args>\s*([\s\S]*?)\s*<\/command-args>/.exec(raw);
+    const args = argsM ? argsM[1].trim() : "";
+    return args ? `${name} ${args}` : name;
+  }
+  // 机器生成内容 → 直接丢弃:skill 正文注入、压缩摘要续接、/context 报告。
   const head = raw.trimStart();
   if (head.startsWith("Base directory for this skill:")) return "";
   // 上下文压缩后自动生成的摘要 + 续接指令(非人)。

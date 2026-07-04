@@ -8,12 +8,14 @@
  *   - codex exec / 审批 / 插件会话把机器 prompt + 「approval assessment」历史回灌成 user_message;
  *   - 交互会话里 slash 命令展开 `[$review](/path)` 也记成 user_message。
  * 故多重过滤:role=user + event_msg(排双份/AGENTS.md 注入)+ **跳过程序化会话**(programmatic:
- * originator=codex_exec / source=exec)+ 剥 exec 样板与 `[$cmd](...)` 注入。
+ * originator=codex_exec / source=exec)+ 剥 exec 样板/审批回灌。**斜杠命令调用是你的输入**
+ * → 不丢,显示紧凑 `/名字`(展开全文留 raw_payload)。
  */
 import type { Message } from "../cursorHistory/types.js";
 
-// v2(2026-07-04):新增程序化会话跳过 + [$cmd] 注入剥离。
-export const CODEX_CLEANER_VERSION = 2;
+// v2(2026-07-04):程序化会话跳过 + [$cmd] 剥离。
+// v3(2026-07-04):命令调用不再丢弃 → 显示紧凑 /名字(用户裁定:调用 skill 是我的输入)。
+export const CODEX_CLEANER_VERSION = 3;
 export const CODEX_PARSER_VERSION = 2;
 
 /**
@@ -23,8 +25,8 @@ export const CODEX_PARSER_VERSION = 2;
 const CODEX_EXEC_BOILERPLATE_PREFIX =
   "IMPORTANT: Do NOT read or execute any files under ~/.claude/";
 
-/** codex 把 slash 命令展开成 `[$review](/path/to/skill)` 记进 user_message —— 非真人 prose。 */
-const CODEX_COMMAND_INJECTION_RE = /^\[\$[^\]\n]+\]\(/;
+/** codex 把 slash 命令展开成 `[$review](/path/to/skill)`;调用是你的输入 → 显示紧凑 `/review`。 */
+const CODEX_COMMAND_INVOCATION_RE = /^\[\$([^\]\n]+)\]\(/;
 
 /**
  * codex 审批/子代理(guardian)评估把整段对话转录回灌成 user_message,均以此开头
@@ -36,10 +38,12 @@ const CODEX_APPROVAL_INJECTION_PREFIX = "The following is the Codex agent histor
 export function cleanCodexUserMessage(raw: string): string {
   if (!raw) return "";
   const head = raw.trimStart();
-  // exec 样板 / slash 命令展开 / 审批转录回灌 → 整条丢弃(仅 startsWith:正文中段偶含不受影响)。
+  // exec 样板 / 审批转录回灌 → 整条丢弃(机器生成,非你敲的)。
   if (head.startsWith(CODEX_EXEC_BOILERPLATE_PREFIX)) return "";
   if (head.startsWith(CODEX_APPROVAL_INJECTION_PREFIX)) return "";
-  if (CODEX_COMMAND_INJECTION_RE.test(head)) return "";
+  // slash 命令调用是你的输入 → 显示紧凑 /名字(展开全文仍留 raw_payload)。
+  const cmd = CODEX_COMMAND_INVOCATION_RE.exec(head);
+  if (cmd) return `/${cmd[1].trim()}`;
   return raw.trim();
 }
 
