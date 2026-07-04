@@ -29,6 +29,31 @@ describe("cleanCodexUserMessage", () => {
     expect(cleanCodexUserMessage("IMPORTANT: 把这个函数改成异步")).toBe("IMPORTANT: 把这个函数改成异步");
   });
 
+  it("[$cmd](path) slash 命令展开注入 → 整条丢弃", () => {
+    expect(
+      cleanCodexUserMessage("[$review](/Users/x/skills/gstack/.agents/skills/review)")
+    ).toBe("");
+    expect(cleanCodexUserMessage("[$design-review](/some/path)")).toBe("");
+  });
+
+  it("正常 markdown 链接(非 [$) 不误删", () => {
+    const raw = "看这个 [文档](https://example.com) 里的说明";
+    expect(cleanCodexUserMessage(raw)).toBe(raw.trim());
+  });
+
+  it("审批/子代理转录回灌(The following is the Codex agent history…)→ 整条丢弃", () => {
+    expect(
+      cleanCodexUserMessage(
+        "The following is the Codex agent history added since your last approval assessment.\n>>> TRANSCRIPT START\n[1] user: …"
+      )
+    ).toBe("");
+    expect(
+      cleanCodexUserMessage(
+        "The following is the Codex agent history whose request action you are assessing."
+      )
+    ).toBe("");
+  });
+
   it("纯空白 → 空串", () => {
     expect(cleanCodexUserMessage("   \n  ")).toBe("");
   });

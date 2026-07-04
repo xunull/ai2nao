@@ -327,7 +327,12 @@ export async function loadCodexMyMessages(
 ): Promise<{ messages: CodexMyMessage[]; cleanTitle: string } | null> {
   const built = await loadCodexSessionDetail(rawCodexRoot, sessionId);
   if (!built) return null;
-  const messages = extractCodexUserMessages(built.session.messages)
+  const codexMeta = built.session.metadata?.codex as
+    | { programmatic?: boolean }
+    | undefined;
+  const messages = extractCodexUserMessages(built.session.messages, {
+    programmatic: codexMeta?.programmatic ?? false,
+  })
     .filter((m) => m.isHuman)
     .map((m) => ({
       id: m.messageKey,

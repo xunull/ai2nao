@@ -40,9 +40,9 @@ function responseItemUser(id: string, content: string): Message {
 }
 
 describe("CODEX_CLEANER_VERSION pin", () => {
-  it("固定为 1 —— 改 codex 清洗规则时必须同步 +1 并回填", () => {
-    expect(CODEX_CLEANER_VERSION).toBe(1);
-    expect(CODEX_PARSER_VERSION).toBe(1);
+  it("固定为 2 —— 改 codex 清洗/提取规则时必须同步 +1 并回填", () => {
+    expect(CODEX_CLEANER_VERSION).toBe(2);
+    expect(CODEX_PARSER_VERSION).toBe(2);
   });
 });
 
@@ -65,6 +65,27 @@ describe("extractCodexUserMessages — event_msg 双重门", () => {
     expect(ex[0].cleanedText).toBe("");
     expect(ex[0].isHuman).toBe(false);
     expect(ex[0].rawText).toContain("IMPORTANT");
+  });
+
+  it("程序化会话(codex exec/审批/插件)→ 整场跳过(根因修复,2026-07-04)", () => {
+    const ex = extractCodexUserMessages(
+      [
+        eventMsg(
+          "u1",
+          "The following is the Codex agent history added since your last approval assessment"
+        ),
+      ],
+      { programmatic: true }
+    );
+    expect(ex).toEqual([]);
+  });
+
+  it("[$cmd](path) slash 命令注入 → cleaned='' / is_human=false", () => {
+    const ex = extractCodexUserMessages([
+      eventMsg("u1", "[$review](/Users/x/skills/gstack/.agents/skills/review)"),
+    ]);
+    expect(ex[0].cleanedText).toBe("");
+    expect(ex[0].isHuman).toBe(false);
   });
 
   it("重清洗往返:payload 能重现 cleaned(证明 D5)", () => {

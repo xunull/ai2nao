@@ -85,7 +85,13 @@ export async function ingestCodexUserMessages(
           continue; // 单文件坏/过大 → 跳过
         }
         if (!built) continue;
-        for (const ex of extractCodexUserMessages(built.session.messages)) {
+        const codexMeta = built.session.metadata?.codex as
+          | { programmatic?: boolean }
+          | undefined;
+        const programmatic = codexMeta?.programmatic ?? false;
+        for (const ex of extractCodexUserMessages(built.session.messages, {
+          programmatic,
+        })) {
           rows.push({
             source: "codex",
             sourceSessionId: f.id,

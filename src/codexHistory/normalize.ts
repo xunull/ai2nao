@@ -328,6 +328,9 @@ export function buildCodexSession(options: {
   let firstUserText: string | null = thread?.firstUserMessage?.trim() || null;
   let titleFromEvent: string | null = null;
   let cwd = thread?.cwd ?? "";
+  let originator = "";
+  let sourceKind = "";
+  let subagent = false;
   let model = thread?.model;
   let tMin: Date | null = thread?.createdAt ?? null;
   let tMax: Date | null = thread?.lastUpdatedAt ?? null;
@@ -360,6 +363,22 @@ export function buildCodexSession(options: {
     if (typ === "session_meta" && payload) {
       const pCwd = str(payload.cwd);
       if (pCwd && !cwd) cwd = pCwd;
+      // 会话来源:交互(Codex Desktop / vscode …)vs 程序化(codex_exec / source=exec)。
+      // 程序化会话把机器 prompt + 审批历史回灌成 user_message,不是真人输入。
+      const pOrig = str(payload.originator);
+      if (pOrig && !originator) originator = pOrig;
+      // source 可能是字符串("vscode"/"exec")或对象({subagent:{...}})。
+      // 子代理会话(guardian 审批评估等)把整段对话转录回灌成 user_message,非真人。
+      const rawSrc = payload.source;
+      if (typeof rawSrc === "string") {
+        if (!sourceKind) sourceKind = rawSrc;
+      } else if (
+        rawSrc &&
+        typeof rawSrc === "object" &&
+        (rawSrc as { subagent?: unknown }).subagent
+      ) {
+        subagent = true;
+      }
       continue;
     }
 
@@ -520,6 +539,9 @@ export function buildCodexSession(options: {
     titleFromEvent?.trim() ||
     summaryTitle(firstUserText, "");
   const preview = firstUserText ? truncate(firstUserText, 100) : title;
+  // 程序化会话:codex exec / 子代理审批(guardian)/ 插件跑的,user_message 全是机器注入,非真人。
+  const programmatic =
+    sourceKind === "exec" || originator === "codex_exec" || subagent;
   const metadata: { codex: CodexSessionMetadata } = {
     codex: {
       cwd: cwd || thread?.cwd || "",
@@ -530,6 +552,7 @@ export function buildCodexSession(options: {
       degraded: options.degraded,
       degradationReason: options.degradationReason,
       metrics,
+      programmatic,
     },
   };
 

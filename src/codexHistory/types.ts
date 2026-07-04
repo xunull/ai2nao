@@ -17,6 +17,8 @@ export type CodexSessionMetadata = {
   degraded?: boolean;
   degradationReason?: CodexErrorKind;
   metrics: CodexSessionMetrics;
+  /** 程序化会话(codex exec / 审批 / 插件):user_message 全是机器注入,非真人输入。 */
+  programmatic?: boolean;
 };
 
 export type CodexThreadRow = {
