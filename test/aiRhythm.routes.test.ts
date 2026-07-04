@@ -111,3 +111,49 @@ describe("GET /api/ai-rhythm/streak — createApp 集成", () => {
     expect(body.lastActiveDay).toBeNull();
   });
 });
+
+describe("GET /api/ai-rhythm/commands — createApp 集成", () => {
+  it("已挂载 + 返回排行 shape(路径守卫生效)", async () => {
+    const db = freshDb();
+    upsertUserMessagesBatch(
+      db,
+      [
+        {
+          source: "claude",
+          sourceSessionId: "s1",
+          sourceMessageKey: "m1",
+          project: null,
+          eventAtUtc: "2026-07-08T04:00:00Z",
+          rawText: "/ship",
+          rawPayloadJson: '"x"',
+          cleanedText: "/ship",
+          isHuman: true,
+          cleanerVersion: 1,
+          parserVersion: 1,
+          sourcePath: "/x",
+        },
+      ],
+      "2026-07-08T00:00:00Z"
+    );
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/commands");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      commands: { name: string; count: number }[];
+      maxCount: number;
+      totalCommands: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.commands).toEqual([{ name: "ship", count: 1 }]);
+    expect(body.maxCount).toBe(1);
+  });
+
+  it("空库 → 200 + commands []", async () => {
+    const db = freshDb();
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/commands");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { commands: unknown[]; maxCount: number };
+    expect(body.commands).toEqual([]);
+    expect(body.maxCount).toBe(0);
+  });
+});

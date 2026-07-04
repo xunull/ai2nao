@@ -40,10 +40,24 @@ const EMPTY_STREAK = {
   totalActiveDays: 0,
   generatedAt: "2026-07-08T12:00:00Z",
 };
-function installFetchMock(opts: { heatmap?: unknown; streak?: unknown }): void {
+const EMPTY_COMMANDS = {
+  ok: true,
+  commands: [],
+  maxCount: 0,
+  totalCommands: 0,
+  distinctCommands: 0,
+  generatedAt: "2026-07-08T12:00:00Z",
+};
+function installFetchMock(opts: {
+  heatmap?: unknown;
+  streak?: unknown;
+  commands?: unknown;
+}): void {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/streak")) return jsonResponse(opts.streak ?? EMPTY_STREAK);
+    if (url.includes("/commands"))
+      return jsonResponse(opts.commands ?? EMPTY_COMMANDS);
     return jsonResponse(opts.heatmap ?? EMPTY_HEATMAP);
   }) as unknown as typeof fetch;
 }
@@ -155,6 +169,38 @@ describe("AiRhythm — 连续天数卡", () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("还没有记录")).toBeInTheDocument()
+    );
+  });
+});
+
+describe("AiRhythm — 命令排行卡", () => {
+  it("有榜 → 渲染 /名字 + 次数 + 汇总", async () => {
+    installFetchMock({
+      commands: {
+        ok: true,
+        commands: [
+          { name: "gstack-office-hours", count: 178 },
+          { name: "model", count: 74 },
+        ],
+        maxCount: 178,
+        totalCommands: 824,
+        distinctCommands: 40,
+        generatedAt: "2026-07-08T12:00:00Z",
+      },
+    });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("/gstack-office-hours")).toBeInTheDocument()
+    );
+    expect(screen.getByText("824 次 · 40 种")).toBeInTheDocument();
+    expect(screen.getByText("74")).toBeInTheDocument();
+  });
+
+  it("空库 → 还没有命令调用", async () => {
+    installFetchMock({ commands: EMPTY_COMMANDS });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("还没有命令调用")).toBeInTheDocument()
     );
   });
 });

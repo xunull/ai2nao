@@ -200,7 +200,71 @@ function StreakCard() {
   );
 }
 
-/** 「我的 AI 节律」自量化仪表盘:作息热力图(星期 × 小时)+ 连续天数纪录。 */
+type CommandRank = { name: string; count: number };
+type CommandsResp = {
+  ok: true;
+  commands: CommandRank[];
+  maxCount: number;
+  totalCommands: number;
+  distinctCommands: number;
+  generatedAt: string;
+};
+
+/** 命令 / 技能用量排行卡:top N + 次数 + 占比横条。 */
+function CommandLeaderboardCard() {
+  const q = useQuery<CommandsResp>({
+    queryKey: ["ai-rhythm-commands"],
+    queryFn: () => apiGet<CommandsResp>("/api/ai-rhythm/commands"),
+  });
+
+  if (q.isLoading) {
+    return <div className="mt-4 text-xs text-[var(--fg-muted)]">加载命令排行…</div>;
+  }
+  if (q.isError) {
+    return (
+      <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+        命令排行加载失败：{(q.error as Error).message}
+      </div>
+    );
+  }
+  const d = q.data!;
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-sm font-medium text-[var(--fg)]">
+          命令 / 技能排行 <span className="text-[var(--fg-muted)]">· 你最依赖的工作流</span>
+        </h2>
+        <span className="text-xs text-[var(--fg-muted)]">
+          {d.totalCommands} 次 · {d.distinctCommands} 种
+        </span>
+      </div>
+      {d.commands.length === 0 ? (
+        <p className="text-xs text-[var(--fg-muted)]">还没有命令调用</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {d.commands.map((c) => (
+            <li key={c.name} className="flex items-center gap-3 text-xs">
+              <code className="w-52 shrink-0 truncate text-[var(--fg)]" title={`/${c.name}`}>
+                /{c.name}
+              </code>
+              <div className="h-2 flex-1 overflow-hidden rounded-sm bg-[var(--border)]/40">
+                <div
+                  className="h-full rounded-sm bg-emerald-500"
+                  style={{ width: `${(c.count / Math.max(1, d.maxCount)) * 100}%` }}
+                />
+              </div>
+              <span className="w-10 shrink-0 text-right tabular-nums text-[var(--fg-muted)]">
+                {c.count}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/** 「我的 AI 节律」自量化仪表盘:作息热力图 + 连续天数 + 命令排行。 */
 export function AiRhythm() {
   const q = useQuery<HeatmapResp>({
     queryKey: ["ai-rhythm-heatmap"],
@@ -228,6 +292,7 @@ export function AiRhythm() {
       )}
 
       <StreakCard />
+      <CommandLeaderboardCard />
     </main>
   );
 }

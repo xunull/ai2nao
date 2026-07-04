@@ -164,3 +164,67 @@ export function streakRhythm(
     generatedAt: now.toISOString(),
   };
 }
+
+export type CommandRank = { name: string; count: number };
+export type CommandLeaderboard = {
+  /** 按次数降序、平局 name 升序,取 top limit。 */
+  commands: CommandRank[];
+  /** 榜首次数(占比条标度);空库 0(前端防除零)。 */
+  maxCount: number;
+  /** 有效命令调用总数(路径守卫后)。 */
+  totalCommands: number;
+  distinctCommands: number;
+  generatedAt: string;
+};
+
+/**
+ * 命令名 = 去掉开头 '/' 后的首个空白前 token。
+ * 路径守卫:token 含 '/'(如绝对路径 /tmp/a/b)→ null(不是命令);单 '/' → null。
+ */
+export function extractCommandName(cleaned: string): string | null {
+  if (!cleaned.startsWith("/")) return null;
+  const token = cleaned.slice(1).split(/\s/, 1)[0];
+  if (!token || token.includes("/")) return null;
+  return token;
+}
+
+/**
+ * 命令 / 技能用量排行(纯排行:top N + 次数)。
+ * cleaned_text LIKE '/%' 的 is_human 消息,TS 侧提名 + 路径守卫 + 计数。
+ */
+export function commandLeaderboard(
+  db: Database.Database,
+  opts?: { now?: Date; limit?: number }
+): CommandLeaderboard {
+  const limit = opts?.limit ?? 10;
+  const rows = db
+    .prepare(
+      `SELECT cleaned_text AS text
+       FROM agent_user_messages
+       WHERE is_human = 1 AND cleaned_text LIKE '/%'`
+    )
+    .all() as { text: string }[];
+
+  const tally = new Map<string, number>();
+  let totalCommands = 0;
+  for (const r of rows) {
+    const name = extractCommandName(r.text);
+    if (!name) continue;
+    tally.set(name, (tally.get(name) ?? 0) + 1);
+    totalCommands++;
+  }
+
+  const commands = [...tally.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, limit);
+
+  const now = opts?.now ?? new Date();
+  return {
+    commands,
+    maxCount: commands.length ? commands[0].count : 0,
+    totalCommands,
+    distinctCommands: tally.size,
+    generatedAt: now.toISOString(),
+  };
+}
