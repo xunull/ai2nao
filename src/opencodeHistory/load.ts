@@ -3,7 +3,6 @@ import { sessionSummaryToJson } from "../cursorHistory/json.js";
 import type { ChatSessionSummary } from "../cursorHistory/types.js";
 import { diagnosticFromError, type OpencodeDiagnostic } from "./errors.js";
 import {
-  detectSlashCommand,
   extractOpencodeUserMessage,
   groupRawPartsByMessage,
 } from "./myMessages.js";
@@ -145,9 +144,8 @@ export function opencodeSessionSummaryToJson(s: ChatSessionSummary) {
 export type OpencodeMyMessage = {
   id: string;
   timestamp: string;
+  /** 已过滤注入的「我的输入」;斜杠命令已由 cleaner 压成紧凑 `/名字`。 */
   text: string;
-  /** 命中 oh-my-opencode 斜杠命令展开时的命令名（前端据此折叠）；普通消息无此字段。 */
-  slashCommand?: { name: string };
 };
 
 /**
@@ -176,12 +174,10 @@ export async function loadOpencodeMyMessages(
       // 共享 extractor 内含 role 门 + 清洗 + 时间解析(与 ingest 同一口径)。
       const ex = extractOpencodeUserMessage(m, byMsg.get(m.id) ?? []);
       if (!ex || !ex.cleanedText) continue;
-      const slash = detectSlashCommand(ex.cleanedText);
       out.push({
         id: m.id,
         timestamp: new Date(ex.eventAtMs).toISOString(),
-        text: ex.cleanedText,
-        ...(slash ? { slashCommand: slash } : {}),
+        text: ex.cleanedText, // 斜杠命令已由 cleaner 压成紧凑 /名字
       });
     }
     return out;

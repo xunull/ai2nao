@@ -118,7 +118,7 @@ describe("opencode history API", () => {
     });
   });
 
-  it("GET /my-messages 斜杠命令展开 → 带 slashCommand;普通消息不带该字段", async () => {
+  it("GET /my-messages 斜杠命令展开 → 压成紧凑 /名字(cleaner 已压,抽屉直接显示)", async () => {
     const dir = join(tmpdir(), `ai2nao-opencode-slash-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     mkdirSync(dir, { recursive: true });
     const db = new Database(join(dir, "opencode.db"));
@@ -141,12 +141,10 @@ describe("opencode history API", () => {
 
     await withApp(async (app) => {
       const res = await app.request(`http://x/api/opencode-history/sessions/s1/my-messages?opencodeRoot=${encodeURIComponent(dir)}`);
-      const j = (await res.json()) as { messages: { text: string; slashCommand?: { name: string } }[] };
-      const bySlash = j.messages.map((m) => m.slashCommand?.name ?? null);
-      expect(bySlash).toContain("graphify"); // m1 折叠标记
-      // 普通消息(m2)不带 slashCommand 键(additive,非 null)。
-      const plain = j.messages.find((m) => m.text === "帮我改个 bug")!;
-      expect("slashCommand" in plain).toBe(false);
+      const j = (await res.json()) as { messages: { text: string }[] };
+      const texts = j.messages.map((m) => m.text);
+      expect(texts).toContain("/graphify"); // m1 压成紧凑命令名(调用是我的输入)
+      expect(texts).toContain("帮我改个 bug"); // m2 普通真人原样
     });
   });
 

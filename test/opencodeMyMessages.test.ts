@@ -114,6 +114,12 @@ describe("cleanOpencodeUserMessageParts —— message 级", () => {
   it("真人只是提到 <system-reminder>(无闭合)→ 保留(prefer-preserve)", () => {
     expect(cleanOpencodeUserMessageParts([textPart("这个 <system-reminder> 标签是干嘛的?")])).toBe("这个 <system-reminder> 标签是干嘛的?");
   });
+
+  it("斜杠命令展开 → 紧凑 /名字(调用是我的输入,与 claude/codex 一致)", () => {
+    const expansion =
+      "<auto-slash-command>\n# /graphify Command\n\n**Description**: 大模板正文…(省略两千字)";
+    expect(cleanOpencodeUserMessageParts([textPart(expansion)])).toBe("/graphify");
+  });
 });
 
 describe("detectSlashCommand —— 锚定 + prefer-preserve（codex 加固）", () => {

@@ -9,7 +9,8 @@
  *  2. mode 块保守锚定前缀剥:oh-my-opencode 把 `[search-mode]`/`[analyze-mode]` 等 prepend 进同一
  *     text part、`---` 分隔。只在**文本开头**按 `---` 分段,逐块吃掉命中已知锚(mode 头 / MANDATORY
  *     delegate_task）的前导块,**遇第一个非前导块即停、保留其及其后全部**（含正文里的 `---`/HR）。
- *  3. 斜杠命令展开(`/agents`→大模板)无标记、看着像真人 → 本轮残留,靠抽屉诚实文案兜底。
+ *  3. 斜杠命令调用(`/agents`→大模板):调用是你的输入 → 压成紧凑 `/名字`(展开全文留
+ *     raw_payload)。用户裁定,与 claude/codex 一致(2026-07-04)。
  */
 
 import type { OpencodeRawMessage, OpencodeRawPart } from "./stateDb.js";
@@ -104,7 +105,11 @@ export function cleanOpencodeUserMessageParts(parts: ParsedPart[]): string {
     const cleaned = stripModePreamble(raw).trim();
     if (cleaned) texts.push(cleaned);
   }
-  return texts.join("\n\n");
+  const joined = texts.join("\n\n");
+  // 斜杠命令调用是你的输入 → 显示紧凑 /名字(展开的技能全文留 raw_payload)。用户裁定,三源一致。
+  const cmd = detectSlashCommand(joined);
+  if (cmd) return `/${cmd.name}`;
+  return joined;
 }
 
 export function parsePartData(data: string): ParsedPart {
@@ -139,7 +144,8 @@ export function detectSlashCommand(cleanedText: string): { name: string } | null
  * stripModePreamble / cleanOpencodeUserMessageParts)必须 bump**,触发 agent_user_messages
  * 的 cleaner_version 回填(从 raw_payload_json 从头重算)。有 pin 测试逼出有意识的版本升。
  */
-export const CLEANER_VERSION = 1;
+// v2(2026-07-04):斜杠命令调用 → 显示紧凑 /名字(用户裁定:调用是我的输入,与 claude/codex 一致)。
+export const CLEANER_VERSION = 2;
 /** 解析口径版本:改 part→text 组装 / role 判定 / 时间解析时 bump。 */
 export const PARSER_VERSION = 1;
 

@@ -139,9 +139,9 @@ describe("重清洗往返(证明 D5:payload 能重现 cleaner 输出)", () => {
 });
 
 describe("CLEANER_VERSION pin(改清洗逻辑必 bump)", () => {
-  it("CLEANER_VERSION 固定为 1 —— 改动 myMessages 清洗规则时必须同步 +1", () => {
+  it("CLEANER_VERSION=2 —— 改动 myMessages 清洗规则时必须同步 +1", () => {
     // 这条 pin 逼出有意识的版本升:清洗改了但没 bump,此断言会挂,提醒补 bump + 回填。
-    expect(CLEANER_VERSION).toBe(1);
+    expect(CLEANER_VERSION).toBe(2);
     expect(PARSER_VERSION).toBe(1);
   });
 });
