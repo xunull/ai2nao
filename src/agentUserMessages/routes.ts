@@ -4,6 +4,7 @@ import {
   getUserMessageRaw,
   searchUserMessages,
   userMessageAnalytics,
+  userMessageList,
   userMessageTimeline,
   type TimelineWindow,
 } from "./queries.js";
@@ -78,6 +79,49 @@ export function registerAgentUserMessagesRoutes(
       const allTimeTotals = userMessageAnalytics(db, { source }).totals;
       const timeline = userMessageTimeline(db, { window, source });
       return c.json({ ok: true, allTimeTotals, timeline });
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  // 窗口内浏览(全源、最新在前、keyset 分页)。window 校验与 /analytics 一致。
+  app.get("/api/agent-user-messages/list", (c) => {
+    const windowRaw = c.req.query("window")?.trim();
+    const beforeRaw = c.req.query("before")?.trim() || undefined;
+    const beforeIdRaw = c.req.query("beforeId")?.trim() || undefined;
+    const limitRaw = c.req.query("limit")?.trim();
+    if (windowRaw && windowRaw !== "today" && !isWindowKey(windowRaw)) {
+      return jsonErr(400, `invalid window parameter: ${JSON.stringify(windowRaw)}`);
+    }
+    const window: TimelineWindow =
+      windowRaw === "today"
+        ? "today"
+        : windowRaw && isWindowKey(windowRaw)
+          ? windowRaw
+          : "1w";
+    // 复合游标必须成对。
+    if ((beforeRaw === undefined) !== (beforeIdRaw === undefined)) {
+      return jsonErr(400, "before and beforeId must be provided together");
+    }
+    let before: string | undefined;
+    let beforeId: number | undefined;
+    if (beforeRaw !== undefined && beforeIdRaw !== undefined) {
+      before = beforeRaw;
+      beforeId = Number(beforeIdRaw);
+      if (!Number.isInteger(beforeId) || beforeId <= 0) {
+        return jsonErr(400, `invalid beforeId parameter: ${JSON.stringify(beforeIdRaw)}`);
+      }
+    }
+    let limit: number | undefined;
+    if (limitRaw) {
+      limit = Number(limitRaw);
+      if (!Number.isFinite(limit) || limit <= 0) {
+        return jsonErr(400, `invalid limit parameter: ${JSON.stringify(limitRaw)}`);
+      }
+    }
+    try {
+      const page = userMessageList(db, { window, before, beforeId, limit });
+      return c.json({ ok: true, ...page });
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
     }

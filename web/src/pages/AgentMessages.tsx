@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   Bar,
@@ -133,9 +133,14 @@ function bucketLabel(iso: string, g: Timeline["granularity"]): string {
   return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** 输入统计:累计(all-time)+ 可调窗口趋势图(recharts,自适应粒度 + 环比)。 */
-function AnalyticsStrip() {
-  const [windowKey, setWindowKey] = useState<string>("1w");
+/** 输入统计:累计(all-time)+ 可调窗口趋势图(recharts,自适应粒度 + 环比)。windowKey 受控(父上提)。 */
+function AnalyticsStrip({
+  windowKey,
+  setWindowKey,
+}: {
+  windowKey: string;
+  setWindowKey: (w: string) => void;
+}) {
   const q = useQuery<AnalyticsResp>({
     queryKey: ["aum-analytics", windowKey],
     queryFn: () =>
@@ -218,11 +223,102 @@ function AnalyticsStrip() {
   );
 }
 
+type ListItem = {
+  id: number;
+  source: string;
+  sourceSessionId: string;
+  eventAtUtc: string;
+  text: string;
+};
+type ListCursor = { eventAt: string; id: number };
+type ListResp = { ok: true; items: ListItem[]; nextBefore: ListCursor | null };
+
+/**
+ * 窗口浏览列表(全源、最新在前、keyset 加载更多)。搜索框为空时显示。
+ * - useInfiniteQuery + 复合游标(eventAt,id);窗口切换 → queryKey 变 → 自动重置分页。
+ * - plain-text 渲染(codex#5:不用 Snippet,避免误高亮正文里的方括号)。
+ * - 定高滚动容器,守项目「不竖着铺很多」约束。
+ */
+function BrowseList({ windowKey }: { windowKey: string }) {
+  const [openId, setOpenId] = useState<number | null>(null);
+  const q = useInfiniteQuery<ListResp>({
+    queryKey: ["aum-browse", windowKey],
+    queryFn: ({ pageParam }) => {
+      const p = new URLSearchParams({ window: windowKey });
+      const cur = pageParam as ListCursor | null;
+      if (cur) {
+        p.set("before", cur.eventAt);
+        p.set("beforeId", String(cur.id));
+      }
+      return apiGet<ListResp>(`/api/agent-user-messages/list?${p.toString()}`);
+    },
+    initialPageParam: null,
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+  });
+
+  if (q.isLoading)
+    return <div className="text-xs text-[var(--fg-muted)]">加载中…</div>;
+  if (q.isError)
+    return (
+      <div className="text-sm text-rose-600">浏览失败：{(q.error as Error).message}</div>
+    );
+  const items = q.data?.pages.flatMap((pg) => pg.items) ?? [];
+  if (items.length === 0)
+    return (
+      <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
+        这个时间窗口内还没有你发的消息。换个窗口，或确认历史已同步。
+      </div>
+    );
+
+  return (
+    <div>
+      <div className="mb-2 text-xs text-[var(--fg-muted)]">本窗口消息(最新在前)</div>
+      <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+        {items.map((it) => (
+          <section
+            key={it.id}
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
+          >
+            <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
+              <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] uppercase">
+                {it.source}
+              </span>
+              <span>{fmtTime(it.eventAtUtc)}</span>
+              <button
+                type="button"
+                className="ml-auto text-[var(--fg-muted)] underline hover:text-[var(--fg)]"
+                onClick={() => setOpenId(openId === it.id ? null : it.id)}
+              >
+                {openId === it.id ? "收起原文" : "查看原文"}
+              </button>
+            </div>
+            <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
+              {it.text}
+            </div>
+            {openId === it.id && <RawPanel id={it.id} />}
+          </section>
+        ))}
+        {q.hasNextPage && (
+          <button
+            type="button"
+            onClick={() => q.fetchNextPage()}
+            disabled={q.isFetchingNextPage}
+            className="w-full rounded-md border border-[var(--border)] py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+          >
+            {q.isFetchingNextPage ? "加载中…" : "加载更多"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AgentMessages() {
   const [input, setInput] = useState("");
   const [source, setSource] = useState("");
   const [submitted, setSubmitted] = useState<{ q: string; source: string }>({ q: "", source: "" });
   const [openId, setOpenId] = useState<number | null>(null);
+  const [windowKey, setWindowKey] = useState<string>("1w"); // 上提:图 + 浏览列表共用
 
   const q = useQuery<SearchResp>({
     queryKey: ["aum-search", submitted.q, submitted.source],
@@ -248,7 +344,7 @@ export function AgentMessages() {
         </p>
       </header>
 
-      <AnalyticsStrip />
+      <AnalyticsStrip windowKey={windowKey} setWindowKey={setWindowKey} />
 
       {/* 搜索框 + 结果:窄 measure 列(左对齐,与标题左边缘齐);图表在上方吃满外壳宽度。 */}
       <div className="max-w-[820px]">
@@ -264,7 +360,15 @@ export function AgentMessages() {
           type="text"
           value={input}
           placeholder="搜我说过的话…"
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setInput(v);
+            // 清空输入 → 回到窗口浏览(codex#3:显示模式绑 input,清 submitted)
+            if (!v.trim()) {
+              setSubmitted({ q: "", source: "" });
+              setOpenId(null);
+            }
+          }}
           className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--fg)]"
         />
         <select
@@ -287,50 +391,57 @@ export function AgentMessages() {
         </button>
       </form>
 
-      {q.isError && (
-        <div className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
-          搜索失败：{(q.error as Error).message}
-        </div>
-      )}
+      {/* 搜索框为空 → 窗口浏览列表;有提交词 → 全量搜索结果(codex#3) */}
+      {submitted.q ? (
+        <>
+          {q.isError && (
+            <div className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+              搜索失败：{(q.error as Error).message}
+            </div>
+          )}
 
-      {submitted.q && !q.isLoading && (
-        <div className="mb-2 text-xs text-[var(--fg-muted)]">
-          「{submitted.q}」命中 {hits.length} 条
-        </div>
-      )}
+          {!q.isLoading && !q.isError && (
+            <div className="mb-2 text-xs text-[var(--fg-muted)]">
+              「{submitted.q}」命中 {hits.length} 条
+            </div>
+          )}
 
-      <div className="space-y-2">
-        {hits.map((h) => (
-          <section
-            key={h.id}
-            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
-          >
-            <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
-              <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] uppercase">
-                {h.source}
-              </span>
-              <span>{fmtTime(h.eventAtUtc)}</span>
-              <button
-                type="button"
-                className="ml-auto text-[var(--fg-muted)] underline hover:text-[var(--fg)]"
-                onClick={() => setOpenId(openId === h.id ? null : h.id)}
+          <div className="space-y-2">
+            {hits.map((h) => (
+              <section
+                key={h.id}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
               >
-                {openId === h.id ? "收起原文" : "查看原文"}
-              </button>
-            </div>
-            <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
-              <Snippet text={h.snippet} />
-            </div>
-            {openId === h.id && <RawPanel id={h.id} />}
-          </section>
-        ))}
-      </div>
+                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
+                  <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] uppercase">
+                    {h.source}
+                  </span>
+                  <span>{fmtTime(h.eventAtUtc)}</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-[var(--fg-muted)] underline hover:text-[var(--fg)]"
+                    onClick={() => setOpenId(openId === h.id ? null : h.id)}
+                  >
+                    {openId === h.id ? "收起原文" : "查看原文"}
+                  </button>
+                </div>
+                <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
+                  <Snippet text={h.snippet} />
+                </div>
+                {openId === h.id && <RawPanel id={h.id} />}
+              </section>
+            ))}
+          </div>
 
-      {submitted.q && !q.isLoading && hits.length === 0 && !q.isError && (
-        <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
-          没搜到「{submitted.q}」。换个词试试，或确认 OpenCode 用量历史已同步（定时任务
-          <code className="mx-1">agent_user_messages.opencode.sync</code>）。
-        </div>
+          {!q.isLoading && hits.length === 0 && !q.isError && (
+            <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
+              没搜到「{submitted.q}」。换个词试试，或确认 OpenCode 用量历史已同步（定时任务
+              <code className="mx-1">agent_user_messages.opencode.sync</code>）。
+            </div>
+          )}
+        </>
+      ) : (
+        <BrowseList windowKey={windowKey} />
       )}
       </div>
     </main>

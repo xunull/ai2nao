@@ -221,6 +221,28 @@ export type UserMessageTimeline = {
 };
 
 /**
+ * 窗口 → 半开范围 `[from, to)`(本地锚定)。时间线图与浏览列表**同源**,保证
+ * 两者「同一个窗口」范围一致。设计 codex#1:非 today 必须 anchorBucketStart(向下含
+ * 完整首桶),裸 windowToRange.from 会回归 anchor 向下的零丢弃。
+ *   today → [今天 00:00 本地, now)
+ *   else  → [anchorBucketStart(now-Ndays, granularity), now)
+ */
+export function resolveWindowRange(
+  window: TimelineWindow,
+  now: Date
+): { from: Date; to: Date } {
+  const to = new Date(now);
+  if (window === "today") {
+    return { from: anchorBucketStart(now, "day"), to };
+  }
+  const granularity = windowToGranularity(window);
+  return {
+    from: anchorBucketStart(windowToRange(window, now).from, granularity),
+    to,
+  };
+}
+
+/**
  * 窗口化时间线(复用 src/timeWindow 的窗口核)。设计 D3/D4/D6:
  * - anchor 向下:from = anchorBucketStart(windowToRange.from) → 首桶完整、zero-fill 零丢弃。
  * - zero-fill:iterateBuckets 枚举全桶,按 key(=bucketExpr SQL 输出)合并三源 count。
@@ -232,14 +254,10 @@ export function userMessageTimeline(
   opts: { window: TimelineWindow; source?: AgentUserMessageSource; now?: Date }
 ): UserMessageTimeline {
   const now = opts.now ?? new Date();
-  // 「今天」:今天 0 点 → 现在、小时粒度;其余为标准滚动窗口(anchor 向下含完整首桶,D3)。
+  // 粒度独立算(分桶用);from/to 复用 resolveWindowRange(与浏览列表同源,anchor 向下 D3)。
   const granularity: BucketGranularity =
     opts.window === "today" ? "hour" : windowToGranularity(opts.window);
-  const to = now;
-  const from =
-    opts.window === "today"
-      ? anchorBucketStart(now, "day") // 今天 00:00(本地)
-      : anchorBucketStart(windowToRange(opts.window, now).from, granularity);
+  const { from, to } = resolveWindowRange(opts.window, now);
   const buckets = iterateBuckets(from, to, granularity);
 
   const filters = ["is_human = 1", "event_at_utc >= @from", "event_at_utc < @to"];
@@ -333,6 +351,78 @@ export function userMessageTimeline(
     deltaRatio,
     lastBucketPartial,
   };
+}
+
+export type UserMessageListItem = {
+  id: number;
+  source: AgentUserMessageSource;
+  sourceSessionId: string;
+  eventAtUtc: string;
+  text: string;
+};
+
+export type UserMessageListPage = {
+  items: UserMessageListItem[];
+  /** 下一页复合游标 {eventAt,id};已到底为 null。 */
+  nextBefore: { eventAt: string; id: number } | null;
+};
+
+/**
+ * 窗口内浏览(全源、最新在前、keyset 分页)。设计 codex#1/#2/#4:
+ * - 范围 = resolveWindowRange(与图同源,anchor 向下)。
+ * - 全源:不带 source filter → idx_aum_human_event(is_human,event_at_utc,source)
+ *   等值+范围+倒序最优,零新索引。
+ * - keyset 复合游标 (event_at_utc, id):event_at_utc 非唯一(唯一键是
+ *   source+session+message_key),单列游标会跳过同时间戳剩余行;故
+ *   ORDER BY event_at_utc DESC, id DESC + (before, beforeId) 严格下界。
+ * - text = cleaned_text(浏览不做搜索 snippet)。
+ */
+export function userMessageList(
+  db: Database.Database,
+  opts: {
+    window: TimelineWindow;
+    before?: string;
+    beforeId?: number;
+    limit?: number;
+    now?: Date;
+  }
+): UserMessageListPage {
+  const now = opts.now ?? new Date();
+  const { from, to } = resolveWindowRange(opts.window, now);
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+
+  const filters = ["is_human = 1", "event_at_utc >= @from", "event_at_utc < @to"];
+  const params: Record<string, unknown> = {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    limit,
+  };
+  if (opts.before != null && opts.beforeId != null) {
+    filters.push(
+      "(event_at_utc < @before OR (event_at_utc = @before AND id < @beforeId))"
+    );
+    params.before = opts.before;
+    params.beforeId = opts.beforeId;
+  }
+
+  const items = db
+    .prepare(
+      `SELECT id, source, source_session_id AS sourceSessionId,
+              event_at_utc AS eventAtUtc, cleaned_text AS text
+       FROM agent_user_messages
+       WHERE ${filters.join(" AND ")}
+       ORDER BY event_at_utc DESC, id DESC
+       LIMIT @limit`
+    )
+    .all(params) as UserMessageListItem[];
+
+  // 满页 → 可能还有下一页;不足 → 到底。
+  const last = items[items.length - 1];
+  const nextBefore =
+    items.length === limit && last != null
+      ? { eventAt: last.eventAtUtc, id: last.id }
+      : null;
+  return { items, nextBefore };
 }
 
 export function getUserMessageRaw(
