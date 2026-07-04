@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -41,8 +41,23 @@ const SOURCES = [
   { value: "codex", label: "Codex" },
 ] as const;
 
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  claude: { label: "Claude", color: "#d97757" },
+  codex: { label: "Codex", color: "#2563eb" },
+  opencode: { label: "OpenCode", color: "#7c3aed" },
+};
+
+/** 日期分隔条(按本地日分组);行内只留时分秒,不重复日期。 */
+function fmtDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+}
+function fmtTimeOnly(iso: string): string {
+  return new Date(iso).toLocaleTimeString("zh-CN", { hour12: false });
 }
 
 /** 片段里 [..] 是命中高亮(trigram snippet / LIKE 手工窗口都用这对括号)。 */
@@ -68,23 +83,102 @@ function RawPanel({ id }: { id: number }) {
     queryKey: ["aum-raw", id],
     queryFn: () => apiGet<RawResp>(`/api/agent-user-messages/${id}/raw`),
   });
-  if (q.isLoading) return <div className="text-xs text-[var(--fg-muted)]">加载原文…</div>;
+  if (q.isLoading) return <div className="mt-2 text-xs text-[var(--fg-muted)]">加载原文…</div>;
   if (q.isError)
-    return <div className="text-xs text-rose-600">原文读取失败：{(q.error as Error).message}</div>;
+    return (
+      <div className="mt-2 text-xs text-rose-600">
+        原文读取失败：{(q.error as Error).message}
+      </div>
+    );
   const raw = q.data!.raw;
   return (
-    <div className="mt-2 space-y-2 border-t border-[var(--border)] pt-2 text-xs">
+    <div className="mt-2 space-y-2 border-l-2 border-[var(--border)] pl-3 text-xs">
       <div className="text-[var(--fg-muted)]">
         清洗版本 v{raw.cleanerVersion} · is_human={String(raw.isHuman)} · session {raw.sourceSessionId}
       </div>
-      <div>
-        <div className="mb-1 font-medium text-[var(--fg)]">原文(raw_text)</div>
-        <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded bg-[var(--surface-2)] p-2 text-[var(--fg)]">
-          {raw.rawText || "（空）"}
-        </pre>
+      <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded bg-[var(--surface-2)] p-2 text-[var(--fg)]">
+        {raw.rawText || "（空）"}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * 消息流:紧凑行(去卡片壳)。左侧品牌色圆点标来源,正文为主行,时间小号,
+ * 「查看原文」悬停/聚焦才出;行间细分隔线,悬停微高亮。按天分组。
+ */
+type StreamRow = { id: number; source: string; eventAtUtc: string; content: ReactNode };
+
+function MessageRow({
+  row,
+  open,
+  onToggle,
+}: {
+  row: StreamRow;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="group flex gap-2.5 border-b border-[var(--border)] py-2.5 last:border-b-0 hover:bg-[var(--surface-2)]">
+      <span
+        className="mt-[7px] h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: SOURCE_META[row.source]?.color ?? "var(--fg-muted)" }}
+        title={SOURCE_META[row.source]?.label ?? row.source}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
+          {row.content}
+        </div>
+        <div className="mt-1 flex items-center gap-3 text-[11px] text-[var(--fg-muted)]">
+          <span className="tabular-nums">{fmtTimeOnly(row.eventAtUtc)}</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="underline decoration-dotted underline-offset-2 opacity-0 transition group-hover:opacity-100 hover:text-[var(--fg)] focus-visible:opacity-100"
+          >
+            {open ? "收起原文" : "查看原文"}
+          </button>
+        </div>
+        {open && <RawPanel id={row.id} />}
       </div>
     </div>
   );
+}
+
+function MessageStream({
+  rows,
+  openId,
+  setOpenId,
+}: {
+  rows: StreamRow[];
+  openId: number | null;
+  setOpenId: (n: number | null) => void;
+}) {
+  const out: ReactNode[] = [];
+  let lastDay = "";
+  for (const r of rows) {
+    const day = fmtDay(r.eventAtUtc);
+    if (day !== lastDay) {
+      out.push(
+        <div
+          key={`day-${day}`}
+          className="mb-0.5 mt-5 text-xs font-medium text-[var(--fg-muted)] first:mt-0"
+        >
+          {day}
+        </div>
+      );
+      lastDay = day;
+    }
+    out.push(
+      <MessageRow
+        key={r.id}
+        row={r}
+        open={openId === r.id}
+        onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+      />
+    );
+  }
+  return <div>{out}</div>;
 }
 
 type AllTimeTotal = { source: string; count: number; charSum: number };
@@ -118,12 +212,6 @@ const WINDOWS = [
   { value: "3m", label: "3月" },
   { value: "6m", label: "6月" },
 ] as const;
-
-const SOURCE_META: Record<string, { label: string; color: string }> = {
-  claude: { label: "Claude", color: "#d97757" },
-  codex: { label: "Codex", color: "#2563eb" },
-  opencode: { label: "OpenCode", color: "#7c3aed" },
-};
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 /** x 轴标签按粒度自适应:小时→HH:00,天/周→MM-DD。 */
@@ -160,8 +248,8 @@ function AnalyticsStrip({
   const delta = timeline.deltaRatio;
 
   return (
-    <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-      {/* 累计(all-time)+ 窗口选择器(D5:累计与窗口分开标) */}
+    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+      {/* 累计(all-time)+ 窗口选择器 */}
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--fg-muted)]">
         <span className="font-medium text-[var(--fg)]">累计 {grand} 条</span>
         {allTimeTotals.map((t) => (
@@ -234,10 +322,9 @@ type ListCursor = { eventAt: string; id: number };
 type ListResp = { ok: true; items: ListItem[]; nextBefore: ListCursor | null };
 
 /**
- * 窗口浏览列表(全源、最新在前、keyset 加载更多)。搜索框为空时显示。
- * - useInfiniteQuery + 复合游标(eventAt,id);窗口切换 → queryKey 变 → 自动重置分页。
- * - plain-text 渲染(codex#5:不用 Snippet,避免误高亮正文里的方括号)。
- * - 定高滚动容器,守项目「不竖着铺很多」约束。
+ * 窗口浏览(全源、最新在前、keyset 加载更多)。搜索框为空时显示。
+ * useInfiniteQuery + 复合游标(eventAt,id);窗口切换 → queryKey 变 → 自动重置分页。
+ * 消息用 MessageStream(紧凑行、按天分组、plain-text)渲染;加载更多在流末尾,页面自然增长。
  */
 function BrowseList({ windowKey }: { windowKey: string }) {
   const [openId, setOpenId] = useState<number | null>(null);
@@ -270,45 +357,25 @@ function BrowseList({ windowKey }: { windowKey: string }) {
       </div>
     );
 
+  const rows: StreamRow[] = items.map((it) => ({
+    id: it.id,
+    source: it.source,
+    eventAtUtc: it.eventAtUtc,
+    content: it.text,
+  }));
   return (
     <div>
-      <div className="mb-2 text-xs text-[var(--fg-muted)]">本窗口消息(最新在前)</div>
-      <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
-        {items.map((it) => (
-          <section
-            key={it.id}
-            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
-          >
-            <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
-              <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] uppercase">
-                {it.source}
-              </span>
-              <span>{fmtTime(it.eventAtUtc)}</span>
-              <button
-                type="button"
-                className="ml-auto text-[var(--fg-muted)] underline hover:text-[var(--fg)]"
-                onClick={() => setOpenId(openId === it.id ? null : it.id)}
-              >
-                {openId === it.id ? "收起原文" : "查看原文"}
-              </button>
-            </div>
-            <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
-              {it.text}
-            </div>
-            {openId === it.id && <RawPanel id={it.id} />}
-          </section>
-        ))}
-        {q.hasNextPage && (
-          <button
-            type="button"
-            onClick={() => q.fetchNextPage()}
-            disabled={q.isFetchingNextPage}
-            className="w-full rounded-md border border-[var(--border)] py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--surface-2)] disabled:opacity-50"
-          >
-            {q.isFetchingNextPage ? "加载中…" : "加载更多"}
-          </button>
-        )}
-      </div>
+      <MessageStream rows={rows} openId={openId} setOpenId={setOpenId} />
+      {q.hasNextPage && (
+        <button
+          type="button"
+          onClick={() => q.fetchNextPage()}
+          disabled={q.isFetchingNextPage}
+          className="mt-3 w-full rounded-md border border-[var(--border)] py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+        >
+          {q.isFetchingNextPage ? "加载中…" : "加载更多"}
+        </button>
+      )}
     </div>
   );
 }
@@ -331,11 +398,15 @@ export function AgentMessages() {
   });
 
   const hits = q.data?.hits ?? [];
+  const searchRows: StreamRow[] = hits.map((h) => ({
+    id: h.id,
+    source: h.source,
+    eventAtUtc: h.eventAtUtc,
+    content: <Snippet text={h.snippet} />,
+  }));
 
   return (
-    <main className="mx-auto max-w-[1280px] px-8 py-6">
-      {/* 分区自适应(见 docs/max-width-responsive-content-column.md):外壳放宽用满桌面横向,
-          图表吃满宽度;搜索框+结果套窄 measure 列(左对齐)保文本可读。 */}
+    <main className="mx-auto max-w-[1040px] px-8 py-6">
       <header className="mb-5">
         <h1 className="text-xl font-semibold text-[var(--fg)]">对话搜索</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
@@ -346,8 +417,6 @@ export function AgentMessages() {
 
       <AnalyticsStrip windowKey={windowKey} setWindowKey={setWindowKey} />
 
-      {/* 搜索框 + 结果:窄 measure 列(左对齐,与标题左边缘齐);图表在上方吃满外壳宽度。 */}
-      <div className="max-w-[820px]">
       <form
         className="mb-4 flex items-center gap-2"
         onSubmit={(e) => {
@@ -363,7 +432,7 @@ export function AgentMessages() {
           onChange={(e) => {
             const v = e.target.value;
             setInput(v);
-            // 清空输入 → 回到窗口浏览(codex#3:显示模式绑 input,清 submitted)
+            // 清空输入 → 回到窗口浏览
             if (!v.trim()) {
               setSubmitted({ q: "", source: "" });
               setOpenId(null);
@@ -391,7 +460,7 @@ export function AgentMessages() {
         </button>
       </form>
 
-      {/* 搜索框为空 → 窗口浏览列表;有提交词 → 全量搜索结果(codex#3) */}
+      {/* 搜索框为空 → 窗口浏览列表;有提交词 → 全量搜索结果 */}
       {submitted.q ? (
         <>
           {q.isError && (
@@ -401,37 +470,12 @@ export function AgentMessages() {
           )}
 
           {!q.isLoading && !q.isError && (
-            <div className="mb-2 text-xs text-[var(--fg-muted)]">
+            <div className="mb-1 text-xs text-[var(--fg-muted)]">
               「{submitted.q}」命中 {hits.length} 条
             </div>
           )}
 
-          <div className="space-y-2">
-            {hits.map((h) => (
-              <section
-                key={h.id}
-                className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
-              >
-                <div className="mb-1 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
-                  <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] uppercase">
-                    {h.source}
-                  </span>
-                  <span>{fmtTime(h.eventAtUtc)}</span>
-                  <button
-                    type="button"
-                    className="ml-auto text-[var(--fg-muted)] underline hover:text-[var(--fg)]"
-                    onClick={() => setOpenId(openId === h.id ? null : h.id)}
-                  >
-                    {openId === h.id ? "收起原文" : "查看原文"}
-                  </button>
-                </div>
-                <div className="whitespace-pre-wrap break-words text-sm text-[var(--fg)]">
-                  <Snippet text={h.snippet} />
-                </div>
-                {openId === h.id && <RawPanel id={h.id} />}
-              </section>
-            ))}
-          </div>
+          <MessageStream rows={searchRows} openId={openId} setOpenId={setOpenId} />
 
           {!q.isLoading && hits.length === 0 && !q.isError && (
             <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
@@ -443,7 +487,6 @@ export function AgentMessages() {
       ) : (
         <BrowseList windowKey={windowKey} />
       )}
-      </div>
     </main>
   );
 }

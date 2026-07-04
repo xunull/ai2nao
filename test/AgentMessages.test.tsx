@@ -86,8 +86,6 @@ function router(url: string): Response {
   return jsonResponse({ ok: true });
 }
 
-const BROWSE_TITLE = "本窗口消息(最新在前)";
-
 describe("AgentMessages — 浏览默认 / 搜索接管 / 清空回浏览(codex#3)", () => {
   it("搜索框空 → 显示窗口浏览列表", async () => {
     installFetchMock(router);
@@ -95,7 +93,6 @@ describe("AgentMessages — 浏览默认 / 搜索接管 / 清空回浏览(codex#
     await waitFor(() =>
       expect(screen.getByText("浏览到的消息")).toBeInTheDocument()
     );
-    expect(screen.getByText(BROWSE_TITLE)).toBeInTheDocument();
   });
 
   it("搜索 → 结果接管;清空输入 → 回浏览", async () => {
@@ -109,16 +106,16 @@ describe("AgentMessages — 浏览默认 / 搜索接管 / 清空回浏览(codex#
     fireEvent.change(input, { target: { value: "关键词" } });
     fireEvent.click(screen.getByRole("button", { name: "搜索" }));
 
-    // 搜索结果接管:命中计数出现,浏览标题消失
+    // 搜索结果接管:命中计数出现,浏览项消失
     await waitFor(() =>
       expect(screen.getByText(/命中 1 条/)).toBeInTheDocument()
     );
-    expect(screen.queryByText(BROWSE_TITLE)).not.toBeInTheDocument();
+    expect(screen.queryByText("浏览到的消息")).not.toBeInTheDocument();
 
     // 清空输入 → 回到浏览
     fireEvent.change(input, { target: { value: "" } });
     await waitFor(() =>
-      expect(screen.getByText(BROWSE_TITLE)).toBeInTheDocument()
+      expect(screen.getByText("浏览到的消息")).toBeInTheDocument()
     );
   });
 });
