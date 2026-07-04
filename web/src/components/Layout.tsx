@@ -85,6 +85,7 @@ const navGroups: NavGroup[] = [
       { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
       { to: "/providers", label: "外部平台", icon: Plug },
       { to: "/agent-messages", label: "对话搜索", icon: Search },
+      { to: "/ai-rhythm", label: "AI 节律", icon: CalendarClock },
     ],
   },
   {
