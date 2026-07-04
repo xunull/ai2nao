@@ -12,7 +12,8 @@ import type { Message } from "../cursorHistory/types.js";
  * 清洗版本。改动清洗规则必须 bump,触发 agent_user_messages 里 source='claude' 行的
  * cleaner_version 回填(从 raw_payload_json 重算)。有 pin 测试逼出有意识的版本升。
  */
-export const CLAUDE_CLEANER_VERSION = 1;
+// v2(2026-07-04):新增压缩摘要续接 / context 报告 / task-notification / 图片占位 过滤。
+export const CLAUDE_CLEANER_VERSION = 2;
 export const CLAUDE_PARSER_VERSION = 1;
 
 // 成对、可跨行的注入标记。
@@ -24,14 +25,24 @@ const PAIRED_TAGS = [
   "local-command-stdout",
   "local-command-stderr",
   "system-reminder",
+  "task-notification", // 后台任务完成通知注入(非人)。
 ];
+
+/** 粘图占位/元数据:`[Image: …]` / `[Image #N]` / `[Image showing …]`(Claude Code 注入,非 prose)。 */
+const CLAUDE_IMAGE_PLACEHOLDER_RE = /\[Images?\b[^\]]*\]/g;
 
 export function cleanClaudeUserMessage(raw: string): string {
   if (!raw) return "";
 
-  // 0) 斜杠命令 / 技能调用:整轮机器展开,用户其实只敲了 `/xxx` 或触发技能 → 整轮丢弃。
+  // 0) 整轮机器内容 → 直接丢弃:斜杠命令/技能、压缩摘要续接、/context 报告。
   if (/<command-name>/.test(raw)) return "";
-  if (raw.trimStart().startsWith("Base directory for this skill:")) return "";
+  const head = raw.trimStart();
+  if (head.startsWith("Base directory for this skill:")) return "";
+  // 上下文压缩后自动生成的摘要 + 续接指令(非人)。
+  if (head.startsWith("This session is being continued from a previous conversation"))
+    return "";
+  // /context 命令报告(非人)。
+  if (head.startsWith("## Context Usage") && head.includes("**Model:**")) return "";
 
   let s = raw;
 
@@ -42,9 +53,12 @@ export function cleanClaudeUserMessage(raw: string): string {
 
   // 2) 残留的未闭合 / 自闭合同类标记。
   s = s.replace(
-    /<\/?(?:command-[a-z-]+|local-command-[a-z]+|system-reminder)[^>]*>/g,
+    /<\/?(?:command-[a-z-]+|local-command-[a-z]+|system-reminder|task-[a-z-]+)[^>]*>/g,
     ""
   );
+
+  // 2.5) 图片占位/元数据:纯占位 → 剥完为空 → is_human=0;混在真人文字里 → 保留文字。
+  s = s.replace(CLAUDE_IMAGE_PLACEHOLDER_RE, "");
 
   // 3) Caveat 声明整行(Claude Code 在本地命令上下文前注入)。
   s = s.replace(

@@ -30,9 +30,42 @@ function userMessage(id: string, content: string, iso = "2026-06-29T01:00:00Z"):
 }
 
 describe("CLAUDE_CLEANER_VERSION pin", () => {
-  it("固定为 1 —— 改 claude 清洗规则时必须同步 +1 并回填", () => {
-    expect(CLAUDE_CLEANER_VERSION).toBe(1);
+  it("cleaner=2 —— 改 claude 清洗规则时必须同步 +1 并回填", () => {
+    expect(CLAUDE_CLEANER_VERSION).toBe(2);
     expect(CLAUDE_PARSER_VERSION).toBe(1);
+  });
+});
+
+describe("claude 机器注入过滤(v2 根因修复,2026-07-04)", () => {
+  it("压缩摘要续接 → is_human=false", () => {
+    const ex = extractClaudeUserMessages([
+      userMessage("m1", "This session is being continued from a previous conversation that ran out of context. …摘要…"),
+    ]);
+    expect(ex[0].cleanedText).toBe("");
+    expect(ex[0].isHuman).toBe(false);
+  });
+  it("/context 报告 → is_human=false", () => {
+    const ex = extractClaudeUserMessages([
+      userMessage("m1", "## Context Usage\n\n**Model:** claude-opus-4-8[1m]\n…"),
+    ]);
+    expect(ex[0].isHuman).toBe(false);
+  });
+  it("task-notification 注入 → is_human=false", () => {
+    const ex = extractClaudeUserMessages([
+      userMessage("m1", "<task-notification>\n<task-id>abc</task-id>\n完成\n</task-notification>"),
+    ]);
+    expect(ex[0].isHuman).toBe(false);
+  });
+  it("纯图片占位 → is_human=false;混文字 → 保留文字", () => {
+    const pure = extractClaudeUserMessages([
+      userMessage("m1", "[Image: original 3024x4032, displayed at 1500x2000. Multiply coordinates by 2]"),
+    ]);
+    expect(pure[0].isHuman).toBe(false);
+    const mixed = extractClaudeUserMessages([
+      userMessage("m2", "[Image #1] 这个图标没显示出来"),
+    ]);
+    expect(mixed[0].cleanedText).toBe("这个图标没显示出来");
+    expect(mixed[0].isHuman).toBe(true);
   });
 });
 
