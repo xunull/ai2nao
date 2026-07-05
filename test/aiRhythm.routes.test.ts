@@ -204,3 +204,50 @@ describe("GET /api/ai-rhythm/source-trend — createApp 集成", () => {
     expect(body.weeks).toEqual([]);
   });
 });
+
+describe("GET /api/ai-rhythm/records — createApp 集成", () => {
+  it("已挂载 + 返回纪录 shape", async () => {
+    const db = freshDb();
+    upsertUserMessagesBatch(
+      db,
+      [
+        {
+          source: "claude",
+          sourceSessionId: "s1",
+          sourceMessageKey: "m1",
+          project: null,
+          eventAtUtc: "2026-07-06T04:00:00Z",
+          rawText: "x",
+          rawPayloadJson: '"x"',
+          cleanedText: "xxxxx",
+          isHuman: true,
+          cleanerVersion: 1,
+          parserVersion: 1,
+          sourcePath: "/x",
+        },
+      ],
+      "2026-07-08T00:00:00Z"
+    );
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/records");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      busiestDay: { day: string; count: number } | null;
+      total: number;
+      maxCharLen: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.busiestDay).toEqual({ day: "2026-07-06", count: 1 });
+    expect(body.total).toBe(1);
+    expect(body.maxCharLen).toBe(5);
+  });
+
+  it("空库 → 200 + busiestDay null / total 0", async () => {
+    const db = freshDb();
+    const res = await createApp({ db }).request("http://x/api/ai-rhythm/records");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { busiestDay: unknown; total: number };
+    expect(body.busiestDay).toBeNull();
+    expect(body.total).toBe(0);
+  });
+});

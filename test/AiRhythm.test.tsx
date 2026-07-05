@@ -53,11 +53,21 @@ const EMPTY_SOURCE_TREND = {
   weeks: [],
   generatedAt: "2026-07-08T12:00:00Z",
 };
+const EMPTY_RECORDS = {
+  ok: true,
+  busiestDay: null,
+  peakHour: null,
+  total: 0,
+  firstDay: null,
+  maxCharLen: 0,
+  generatedAt: "2026-07-08T12:00:00Z",
+};
 function installFetchMock(opts: {
   heatmap?: unknown;
   streak?: unknown;
   commands?: unknown;
   sourceTrend?: unknown;
+  records?: unknown;
 }): void {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -66,6 +76,8 @@ function installFetchMock(opts: {
       return jsonResponse(opts.commands ?? EMPTY_COMMANDS);
     if (url.includes("/source-trend"))
       return jsonResponse(opts.sourceTrend ?? EMPTY_SOURCE_TREND);
+    if (url.includes("/records"))
+      return jsonResponse(opts.records ?? EMPTY_RECORDS);
     return jsonResponse(opts.heatmap ?? EMPTY_HEATMAP);
   }) as unknown as typeof fetch;
 }
@@ -237,6 +249,38 @@ describe("AiRhythm — 习惯演变卡", () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("还没有足够数据")).toBeInTheDocument()
+    );
+  });
+});
+
+describe("AiRhythm — 个人纪录卡", () => {
+  it("有纪录 → 渲染极值 + 日期", async () => {
+    installFetchMock({
+      records: {
+        ok: true,
+        busiestDay: { day: "2026-06-27", count: 168 },
+        peakHour: { hour: "2026-05-25 14:00", count: 81 },
+        total: 4269,
+        firstDay: "2026-04-24",
+        maxCharLen: 341393,
+        generatedAt: "2026-07-08T12:00:00Z",
+      },
+    });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("🔥 最忙一天 · 6-27")).toBeInTheDocument()
+    );
+    expect(screen.getByText("168 条")).toBeInTheDocument();
+    expect(screen.getByText("⚡ 一小时最多 · 5-25 14:00")).toBeInTheDocument();
+    expect(screen.getByText("341K")).toBeInTheDocument(); // 341393 → 341K
+    expect(screen.getByText("4269")).toBeInTheDocument();
+  });
+
+  it("空库 → 还没有纪录", async () => {
+    installFetchMock({ records: EMPTY_RECORDS });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("还没有纪录")).toBeInTheDocument()
     );
   });
 });

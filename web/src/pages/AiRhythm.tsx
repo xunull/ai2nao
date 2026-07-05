@@ -279,6 +279,70 @@ function CommandLeaderboardCard() {
   );
 }
 
+type RecordsResp = {
+  ok: true;
+  busiestDay: { day: string; count: number } | null;
+  peakHour: { hour: string; count: number } | null;
+  total: number;
+  firstDay: string | null;
+  maxCharLen: number;
+  generatedAt: string;
+};
+
+const fmtMd = (day: string) => {
+  const [, m, d] = day.split("-");
+  return `${Number(m)}-${Number(d)}`;
+};
+const fmtK = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
+
+/** 个人纪录卡(奖杯架):4 个极值横排一行。 */
+function RecordsCard() {
+  const q = useQuery<RecordsResp>({
+    queryKey: ["ai-rhythm-records"],
+    queryFn: () => apiGet<RecordsResp>("/api/ai-rhythm/records"),
+  });
+
+  if (q.isLoading) {
+    return <div className="mt-4 text-xs text-[var(--fg-muted)]">加载个人纪录…</div>;
+  }
+  if (q.isError) {
+    return (
+      <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+        个人纪录加载失败：{(q.error as Error).message}
+      </div>
+    );
+  }
+  const d = q.data!;
+  if (d.total === 0) {
+    return (
+      <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 text-xs text-[var(--fg-muted)]">
+        还没有纪录
+      </div>
+    );
+  }
+  const peakWhen = d.peakHour
+    ? `${fmtMd(d.peakHour.hour.slice(0, 10))} ${d.peakHour.hour.slice(11)}`
+    : "-";
+  const stats = [
+    { big: `${d.busiestDay?.count ?? 0} 条`, label: `🔥 最忙一天 · ${d.busiestDay ? fmtMd(d.busiestDay.day) : "-"}` },
+    { big: `${d.peakHour?.count ?? 0} 条`, label: `⚡ 一小时最多 · ${peakWhen}` },
+    { big: `${d.total}`, label: `📊 总输入 · 自 ${d.firstDay ? fmtMd(d.firstDay) : "-"}` },
+    { big: fmtK(d.maxCharLen), label: `📜 最大一次输入(字符)` },
+  ];
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex flex-wrap gap-x-10 gap-y-3">
+        {stats.map((s) => (
+          <div key={s.label}>
+            <div className="text-2xl font-semibold text-[var(--fg)]">{s.big}</div>
+            <div className="mt-0.5 text-xs text-[var(--fg-muted)]">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type WeekMix = {
   week: string;
   claude: number;
@@ -407,6 +471,7 @@ export function AiRhythm() {
       )}
 
       <StreakCard />
+      <RecordsCard />
       <CommandLeaderboardCard />
       <SourceTrendCard />
     </main>

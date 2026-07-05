@@ -264,3 +264,60 @@ export function weeklySourceMix(
   const now = opts?.now ?? new Date();
   return { weeks, generatedAt: now.toISOString() };
 }
+
+export type PersonalRecords = {
+  busiestDay: { day: string; count: number } | null; // day 'YYYY-MM-DD'
+  peakHour: { hour: string; count: number } | null; // hour 'YYYY-MM-DD HH:00'
+  total: number;
+  firstDay: string | null;
+  maxCharLen: number;
+  generatedAt: string;
+};
+
+/**
+ * 个人纪录/极值(奖杯架):最忙一天、一小时最多、总量+起始日、最大一次输入。
+ * 全 MIN/MAX/COUNT;坏时间戳守卫;平局取最早(确定性)。
+ */
+export function personalRecords(
+  db: Database.Database,
+  opts?: { now?: Date }
+): PersonalRecords {
+  const busiestDay =
+    (db
+      .prepare(
+        `SELECT date(event_at_utc, 'localtime') AS day, COUNT(*) AS count
+         FROM agent_user_messages
+         WHERE is_human = 1 AND date(event_at_utc, 'localtime') IS NOT NULL
+         GROUP BY day ORDER BY count DESC, day ASC LIMIT 1`
+      )
+      .get() as { day: string; count: number } | undefined) ?? null;
+
+  const peakHour =
+    (db
+      .prepare(
+        `SELECT strftime('%Y-%m-%d %H:00', event_at_utc, 'localtime') AS hour, COUNT(*) AS count
+         FROM agent_user_messages
+         WHERE is_human = 1 AND strftime('%Y-%m-%d %H:00', event_at_utc, 'localtime') IS NOT NULL
+         GROUP BY hour ORDER BY count DESC, hour ASC LIMIT 1`
+      )
+      .get() as { hour: string; count: number } | undefined) ?? null;
+
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              MIN(date(event_at_utc, 'localtime')) AS firstDay,
+              MAX(char_len) AS maxCharLen
+       FROM agent_user_messages WHERE is_human = 1`
+    )
+    .get() as { total: number; firstDay: string | null; maxCharLen: number | null };
+
+  const now = opts?.now ?? new Date();
+  return {
+    busiestDay,
+    peakHour,
+    total: totals.total,
+    firstDay: totals.firstDay,
+    maxCharLen: totals.maxCharLen ?? 0,
+    generatedAt: now.toISOString(),
+  };
+}
