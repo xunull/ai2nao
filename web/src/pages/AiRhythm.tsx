@@ -187,24 +187,33 @@ function StreakCard() {
 
   return (
     <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-        <div>
-          <div className="text-3xl font-semibold text-[var(--fg)]">
-            🔥 {d.currentStreak}
-            <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+      {/* 左侧 3 数字走等宽网格成列对齐(数字统一 text-2xl),提醒留右 */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="grid grid-cols-3 gap-6">
+          <div>
+            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+              🔥 {d.currentStreak}
+              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--fg-muted)]">当前连续</div>
           </div>
-          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">当前连续</div>
-        </div>
-        <div>
-          <div className="text-xl font-semibold text-[var(--fg)]">{d.longestStreak} 天</div>
-          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">历史最长</div>
-        </div>
-        <div>
-          <div className="text-xl font-semibold text-[var(--fg)]">{d.totalActiveDays} 天</div>
-          <div className="mt-0.5 text-xs text-[var(--fg-muted)]">累计活跃</div>
+          <div>
+            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+              {d.longestStreak}
+              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--fg-muted)]">历史最长</div>
+          </div>
+          <div>
+            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+              {d.totalActiveDays}
+              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--fg-muted)]">累计活跃</div>
+          </div>
         </div>
         <div
-          className={`ml-auto self-center text-sm ${
+          className={`shrink-0 text-sm ${
             graceNudge ? "font-medium text-amber-600" : "text-[var(--fg-muted)]"
           }`}
         >
