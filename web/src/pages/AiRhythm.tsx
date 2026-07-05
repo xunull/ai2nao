@@ -187,38 +187,37 @@ function StreakCard() {
 
   return (
     <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      {/* 左侧 3 数字走等宽网格成列对齐(数字统一 text-2xl),提醒留右 */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="grid grid-cols-3 gap-6">
-          <div>
-            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
-              🔥 {d.currentStreak}
-              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--fg-muted)]">当前连续</div>
+      {/* 三数字铺满整行:左/中/右对齐到两边缘,不挤左也不留右空 */}
+      <div className="grid grid-cols-3">
+        <div>
+          <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+            🔥 {d.currentStreak}
+            <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
           </div>
-          <div>
-            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
-              {d.longestStreak}
-              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--fg-muted)]">历史最长</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
-              {d.totalActiveDays}
-              <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--fg-muted)]">累计活跃</div>
-          </div>
+          <div className="mt-1 text-xs text-[var(--fg-muted)]">当前连续</div>
         </div>
-        <div
-          className={`shrink-0 text-sm ${
-            graceNudge ? "font-medium text-amber-600" : "text-[var(--fg-muted)]"
-          }`}
-        >
-          {note}
+        <div className="text-center">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+            {d.longestStreak}
+            <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+          </div>
+          <div className="mt-1 text-xs text-[var(--fg-muted)]">历史最长</div>
         </div>
+        <div className="text-right">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+            {d.totalActiveDays}
+            <span className="ml-1 text-sm font-normal text-[var(--fg-muted)]">天</span>
+          </div>
+          <div className="mt-1 text-xs text-[var(--fg-muted)]">累计活跃</div>
+        </div>
+      </div>
+      {/* 状态提醒:单独一行 footer,不跟数字抢位 */}
+      <div
+        className={`mt-3 border-t border-[var(--border)] pt-2.5 text-xs ${
+          graceNudge ? "font-medium text-amber-600" : "text-[var(--fg-muted)]"
+        }`}
+      >
+        {note}
       </div>
     </div>
   );
