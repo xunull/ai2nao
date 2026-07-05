@@ -331,11 +331,16 @@ function RecordsCard() {
   ];
   return (
     <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="flex flex-wrap gap-x-10 gap-y-3">
+      {/* 4 列等宽网格 —— 数字/标签成列对齐(flex+gap 会随内容宽度参差) */}
+      <div className="grid grid-cols-4 gap-4">
         {stats.map((s) => (
           <div key={s.label}>
-            <div className="text-2xl font-semibold text-[var(--fg)]">{s.big}</div>
-            <div className="mt-0.5 text-xs text-[var(--fg-muted)]">{s.label}</div>
+            <div className="text-2xl font-semibold tabular-nums text-[var(--fg)]">
+              {s.big}
+            </div>
+            <div className="mt-1 text-xs leading-snug text-[var(--fg-muted)]">
+              {s.label}
+            </div>
           </div>
         ))}
       </div>
