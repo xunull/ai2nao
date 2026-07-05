@@ -228,3 +228,39 @@ export function commandLeaderboard(
     generatedAt: now.toISOString(),
   };
 }
+
+export type WeekMix = {
+  week: string; // 'YYYY-Www'(本地周,按字典序=时间序)
+  claude: number;
+  codex: number;
+  opencode: number;
+  total: number;
+};
+export type SourceTrend = { weeks: WeekMix[]; generatedAt: string };
+
+/**
+ * 三源迁移周趋势:按本地周分桶,统计 claude/codex/opencode 各自的 is_human 消息数。
+ * 坏时间戳守卫(strftime NULL → 剔除,同热力图口径)。
+ */
+export function weeklySourceMix(
+  db: Database.Database,
+  opts?: { now?: Date }
+): SourceTrend {
+  const weeks = db
+    .prepare(
+      `SELECT strftime('%Y-W%W', event_at_utc, 'localtime') AS week,
+              SUM(source = 'claude')   AS claude,
+              SUM(source = 'codex')    AS codex,
+              SUM(source = 'opencode') AS opencode,
+              COUNT(*)                 AS total
+       FROM agent_user_messages
+       WHERE is_human = 1
+         AND strftime('%Y-W%W', event_at_utc, 'localtime') IS NOT NULL
+       GROUP BY week
+       ORDER BY week`
+    )
+    .all() as WeekMix[];
+
+  const now = opts?.now ?? new Date();
+  return { weeks, generatedAt: now.toISOString() };
+}

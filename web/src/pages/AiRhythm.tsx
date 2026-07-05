@@ -1,5 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { apiGet } from "../api";
+
+// 三源品牌色,与全 app 一致(AgentMessages SOURCE_META)。
+const SOURCE_COLORS = {
+  claude: "#d97757",
+  codex: "#2563eb",
+  opencode: "#7c3aed",
+} as const;
 
 type Cell = { weekday: number; hour: number; count: number }; // weekday 0=周日
 type HeatmapResp = {
@@ -264,7 +279,107 @@ function CommandLeaderboardCard() {
   );
 }
 
-/** 「我的 AI 节律」自量化仪表盘:作息热力图 + 连续天数 + 命令排行。 */
+type WeekMix = {
+  week: string;
+  claude: number;
+  codex: number;
+  opencode: number;
+  total: number;
+};
+type SourceTrendResp = { ok: true; weeks: WeekMix[]; generatedAt: string };
+
+/** 习惯演变 · 三源迁移卡:每周三源计数的堆叠面积。 */
+function SourceTrendCard() {
+  const q = useQuery<SourceTrendResp>({
+    queryKey: ["ai-rhythm-source-trend"],
+    queryFn: () => apiGet<SourceTrendResp>("/api/ai-rhythm/source-trend"),
+  });
+
+  if (q.isLoading) {
+    return <div className="mt-4 text-xs text-[var(--fg-muted)]">加载习惯曲线…</div>;
+  }
+  if (q.isError) {
+    return (
+      <div className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+        习惯曲线加载失败：{(q.error as Error).message}
+      </div>
+    );
+  }
+  const weeks = q.data!.weeks;
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-sm font-medium text-[var(--fg)]">
+          习惯演变 · 三源迁移{" "}
+          <span className="text-[var(--fg-muted)]">· 你按周用哪个 agent</span>
+        </h2>
+        <div className="flex items-center gap-3 text-xs text-[var(--fg-muted)]">
+          {(["claude", "codex", "opencode"] as const).map((s) => (
+            <span key={s} className="flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{ background: SOURCE_COLORS[s] }}
+              />
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+      {weeks.length === 0 ? (
+        <p className="text-xs text-[var(--fg-muted)]">还没有足够数据</p>
+      ) : (
+        <div className="h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={weeks} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <XAxis
+                dataKey="week"
+                tickFormatter={(w: string) => w.replace(/^\d{4}-/, "")}
+                tick={{ fontSize: 10, fill: "#6b7280" }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: "#6b7280" }}
+                width={40}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{ fontSize: 12 }}
+                labelFormatter={(label) => String(label).replace(/^\d{4}-/, "")}
+              />
+              {/* codex 在底(初期主力),claude 在上(后期反超),迁移一眼可见 */}
+              <Area
+                type="monotone"
+                dataKey="codex"
+                stackId="s"
+                stroke={SOURCE_COLORS.codex}
+                fill={SOURCE_COLORS.codex}
+                fillOpacity={0.75}
+              />
+              <Area
+                type="monotone"
+                dataKey="claude"
+                stackId="s"
+                stroke={SOURCE_COLORS.claude}
+                fill={SOURCE_COLORS.claude}
+                fillOpacity={0.75}
+              />
+              <Area
+                type="monotone"
+                dataKey="opencode"
+                stackId="s"
+                stroke={SOURCE_COLORS.opencode}
+                fill={SOURCE_COLORS.opencode}
+                fillOpacity={0.75}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 「我的 AI 节律」自量化仪表盘:作息热力图 + 连续天数 + 命令排行 + 习惯演变。 */
 export function AiRhythm() {
   const q = useQuery<HeatmapResp>({
     queryKey: ["ai-rhythm-heatmap"],
@@ -293,6 +408,7 @@ export function AiRhythm() {
 
       <StreakCard />
       <CommandLeaderboardCard />
+      <SourceTrendCard />
     </main>
   );
 }

@@ -48,16 +48,24 @@ const EMPTY_COMMANDS = {
   distinctCommands: 0,
   generatedAt: "2026-07-08T12:00:00Z",
 };
+const EMPTY_SOURCE_TREND = {
+  ok: true,
+  weeks: [],
+  generatedAt: "2026-07-08T12:00:00Z",
+};
 function installFetchMock(opts: {
   heatmap?: unknown;
   streak?: unknown;
   commands?: unknown;
+  sourceTrend?: unknown;
 }): void {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/streak")) return jsonResponse(opts.streak ?? EMPTY_STREAK);
     if (url.includes("/commands"))
       return jsonResponse(opts.commands ?? EMPTY_COMMANDS);
+    if (url.includes("/source-trend"))
+      return jsonResponse(opts.sourceTrend ?? EMPTY_SOURCE_TREND);
     return jsonResponse(opts.heatmap ?? EMPTY_HEATMAP);
   }) as unknown as typeof fetch;
 }
@@ -201,6 +209,34 @@ describe("AiRhythm — 命令排行卡", () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("还没有命令调用")).toBeInTheDocument()
+    );
+  });
+});
+
+describe("AiRhythm — 习惯演变卡", () => {
+  it("有数据 → 渲染标题 + 图例(非空态)", async () => {
+    installFetchMock({
+      sourceTrend: {
+        ok: true,
+        weeks: [
+          { week: "2026-W22", claude: 546, codex: 121, opencode: 0, total: 667 },
+          { week: "2026-W23", claude: 377, codex: 30, opencode: 72, total: 479 },
+        ],
+        generatedAt: "2026-07-08T12:00:00Z",
+      },
+    });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText(/习惯演变 · 三源迁移/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText("还没有足够数据")).not.toBeInTheDocument();
+  });
+
+  it("空库 → 还没有足够数据", async () => {
+    installFetchMock({ sourceTrend: EMPTY_SOURCE_TREND });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("还没有足够数据")).toBeInTheDocument()
     );
   });
 });

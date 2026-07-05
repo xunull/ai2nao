@@ -157,3 +157,50 @@ describe("GET /api/ai-rhythm/commands — createApp 集成", () => {
     expect(body.maxCount).toBe(0);
   });
 });
+
+describe("GET /api/ai-rhythm/source-trend — createApp 集成", () => {
+  it("已挂载 + 返回周趋势 shape", async () => {
+    const db = freshDb();
+    upsertUserMessagesBatch(
+      db,
+      [
+        {
+          source: "codex",
+          sourceSessionId: "s1",
+          sourceMessageKey: "m1",
+          project: null,
+          eventAtUtc: "2026-07-06T04:00:00Z",
+          rawText: "x",
+          rawPayloadJson: '"x"',
+          cleanedText: "x",
+          isHuman: true,
+          cleanerVersion: 1,
+          parserVersion: 1,
+          sourcePath: "/x",
+        },
+      ],
+      "2026-07-08T00:00:00Z"
+    );
+    const res = await createApp({ db }).request(
+      "http://x/api/ai-rhythm/source-trend"
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      weeks: { week: string; codex: number }[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.weeks.length).toBe(1);
+    expect(body.weeks[0].codex).toBe(1);
+  });
+
+  it("空库 → 200 + weeks []", async () => {
+    const db = freshDb();
+    const res = await createApp({ db }).request(
+      "http://x/api/ai-rhythm/source-trend"
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { weeks: unknown[] };
+    expect(body.weeks).toEqual([]);
+  });
+});
