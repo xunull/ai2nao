@@ -16,6 +16,7 @@ import {
   extractCodexUserMessages,
 } from "../codexHistory/myMessages.js";
 import { codexSessionsRoot, resolveCodexRoot } from "../codexHistory/paths.js";
+import { slugFromPath } from "./projectKey.js";
 import { getSyncState, setSyncState, upsertUserMessagesBatch } from "./store.js";
 import type { UpsertUserMessageInput } from "./types.js";
 
@@ -89,6 +90,8 @@ export async function ingestCodexUserMessages(
           | { programmatic?: boolean }
           | undefined;
         const programmatic = codexMeta?.programmatic ?? false;
+        // 从 session cwd 回填 project(slug,与 claude 对齐;供对话↔提交桥归属)。
+        const project = slugFromPath(built.session.workspacePath);
         for (const ex of extractCodexUserMessages(built.session.messages, {
           programmatic,
         })) {
@@ -96,7 +99,7 @@ export async function ingestCodexUserMessages(
             source: "codex",
             sourceSessionId: f.id,
             sourceMessageKey: ex.messageKey,
-            project: null, // v1 不填
+            project,
             eventAtUtc: new Date(ex.eventAtMs).toISOString(),
             rawText: ex.rawText,
             rawPayloadJson: ex.rawPayloadJson,

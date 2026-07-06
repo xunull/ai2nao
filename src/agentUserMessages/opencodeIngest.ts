@@ -20,6 +20,7 @@ import {
   loadSessionMessagesAndParts,
   openOpencodeDb,
 } from "../opencodeHistory/stateDb.js";
+import { slugFromPath } from "./projectKey.js";
 import { getSyncState, setSyncState, upsertUserMessagesBatch } from "./store.js";
 import type { UpsertUserMessageInput } from "./types.js";
 
@@ -79,6 +80,8 @@ export function ingestOpencodeUserMessages(
 
       for (const s of batch) {
         scanned++;
+        // 从 session directory 回填 project(slug,与 claude 对齐;供对话↔提交桥归属)。
+        const project = slugFromPath(s.directory);
         const { messages, parts } = loadSessionMessagesAndParts(src, dbPath, s.id);
         const byMsg = groupRawPartsByMessage(parts);
         for (const m of messages) {
@@ -89,7 +92,7 @@ export function ingestOpencodeUserMessages(
             source: "opencode",
             sourceSessionId: s.id,
             sourceMessageKey: ex.messageId,
-            project: null, // v1 不填(可搜/审计不需要;analytics=v1.1)
+            project,
             eventAtUtc: new Date(ex.eventAtMs).toISOString(),
             rawText: ex.rawText,
             rawPayloadJson: ex.rawPayloadJson,

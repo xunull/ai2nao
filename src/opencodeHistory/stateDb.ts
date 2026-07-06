@@ -288,13 +288,13 @@ export function loadSessionMessagesAndParts(
 export function listAllSessionsForIngest(
   db: Database.Database,
   dbPath: string
-): { id: string; timeUpdatedMs: number }[] {
+): { id: string; timeUpdatedMs: number; directory: string }[] {
   assertSchema(db, dbPath);
   let rows: Record<string, unknown>[];
   try {
     rows = db
       .prepare(
-        `SELECT id, time_updated AS t FROM session ORDER BY time_updated ASC, id ASC`
+        `SELECT id, time_updated AS t, directory FROM session ORDER BY time_updated ASC, id ASC`
       )
       .all() as Record<string, unknown>[];
   } catch (e) {
@@ -304,5 +304,6 @@ export function listAllSessionsForIngest(
   return rows.map((r) => ({
     id: String(r.id ?? ""),
     timeUpdatedMs: Number(r.t ?? 0),
+    directory: String(r.directory ?? ""),
   }));
 }
