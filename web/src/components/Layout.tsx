@@ -21,6 +21,7 @@ import {
   FolderCode,
   GitBranch,
   GitCommit,
+  GitCompare,
   GitFork,
   Gauge,
   Settings as SettingsIcon,
@@ -86,6 +87,7 @@ const navGroups: NavGroup[] = [
       { to: "/providers", label: "外部平台", icon: Plug },
       { to: "/agent-messages", label: "对话搜索", icon: Search },
       { to: "/ai-rhythm", label: "AI 节律", icon: CalendarClock },
+      { to: "/commit-bridge", label: "对话↔提交", icon: GitCompare },
     ],
   },
   {
