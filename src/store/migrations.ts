@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 43;
+const CURRENT_VERSION = 44;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -54,6 +54,7 @@ export function migrate(db: Database.Database): void {
     applyV41(db);
     applyV42(db);
     applyV43(db);
+    applyV44(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -103,6 +104,7 @@ export function migrate(db: Database.Database): void {
   if (v < 41) applyV41(db);
   if (v < 42) applyV42(db);
   if (v < 43) applyV43(db);
+  if (v < 44) applyV44(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2076,5 +2078,45 @@ function applyV43(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_aum_human_event
       ON agent_user_messages(is_human, event_at_utc, source);
     UPDATE meta_schema SET version = 43 WHERE id = 1;
+  `);
+}
+
+/**
+ * v44: 对话↔提交桥(T1a)git commit 摄取落地。git_commits 记录本机全局 git author 的
+ * 每个非合并提交(repo_key + commit_hash 主键,幂等 upsert),author_date_utc/committer_date_utc
+ * 均为规范化 UTC ISO;project_key = slugFromPath(repo_key) 与三源对话侧的 project 正向编码对齐,
+ * 便于后续按项目把提交与对话关联。git_commits_state 存每仓库增量水位(last_hash)与上次运行状态,
+ * 供 ingest 决定「lastHash..HEAD 增量」还是「历史被改写/首跑时 --since 全量重扫」。
+ */
+function applyV44(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS git_commits (
+      repo_key           TEXT NOT NULL,
+      commit_hash        TEXT NOT NULL,
+      author_date_utc    TEXT NOT NULL,
+      committer_date_utc TEXT,
+      subject            TEXT,
+      added              INTEGER NOT NULL DEFAULT 0,
+      deleted            INTEGER NOT NULL DEFAULT 0,
+      files_changed      INTEGER NOT NULL DEFAULT 0,
+      project_key        TEXT,
+      ingested_at        TEXT NOT NULL,
+      PRIMARY KEY (repo_key, commit_hash)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_git_commits_repo_authored
+      ON git_commits(repo_key, author_date_utc, commit_hash);
+    CREATE INDEX IF NOT EXISTS idx_git_commits_project
+      ON git_commits(project_key);
+
+    CREATE TABLE IF NOT EXISTS git_commits_state (
+      repo_key    TEXT PRIMARY KEY,
+      last_hash   TEXT,
+      last_run_at TEXT,
+      last_status TEXT,
+      last_error  TEXT
+    );
+
+    UPDATE meta_schema SET version = 44 WHERE id = 1;
   `);
 }
