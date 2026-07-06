@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { apiGet } from "../api";
 
-// 三源品牌色,与全 app 一致(AgentMessages / AiRhythm)。
-const SOURCE_COLORS: Record<string, string> = {
+// 三源品牌色,与全 app 一致(AgentMessages / AiRhythm)。导出供「那天回放」复用。
+export const SOURCE_COLORS: Record<string, string> = {
   claude: "#d97757",
   codex: "#2563eb",
   opencode: "#7c3aed",

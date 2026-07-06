@@ -15,6 +15,7 @@ import {
   BrainCircuit,
   Bug,
   CalendarClock,
+  Clapperboard,
   Command,
   Database,
   Download,
@@ -88,6 +89,7 @@ const navGroups: NavGroup[] = [
       { to: "/agent-messages", label: "对话搜索", icon: Search },
       { to: "/ai-rhythm", label: "AI 节律", icon: CalendarClock },
       { to: "/commit-bridge", label: "对话↔提交", icon: GitCompare },
+      { to: "/replay", label: "那天回放", icon: Clapperboard },
     ],
   },
   {

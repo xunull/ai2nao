@@ -132,6 +132,7 @@ const AiRhythm = lazy(() =>
 const CommitBridge = lazy(() =>
   import("./pages/CommitBridge").then((m) => ({ default: m.CommitBridge }))
 );
+const Replay = lazy(() => import("./pages/Replay").then((m) => ({ default: m.Replay })));
 
 export function App() {
   return (
@@ -150,6 +151,7 @@ export function App() {
           <Route path="/agent-messages" element={<AgentMessages />} />
           <Route path="/ai-rhythm" element={<AiRhythm />} />
           <Route path="/commit-bridge" element={<CommitBridge />} />
+          <Route path="/replay" element={<Replay />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/repos/:id/file" element={<FileView />} />
