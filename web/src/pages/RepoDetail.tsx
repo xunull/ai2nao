@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { apiGet } from "../api";
-import { shortPath } from "../util/path";
+import { CommitBridgeList } from "../components/CommitBridgeList";
+import { projectKeyFromPath, shortPath } from "../util/path";
 
 type Repo = {
   id: number;
@@ -57,6 +58,19 @@ export function RepoDetail() {
       <p className="text-sm text-[var(--muted)]">
         最后扫描: {repo.last_scanned_at ?? "—"}
       </p>
+
+      {/* 对话 ↔ 提交:本仓库的提交,你写它时在跟 AI 聊什么(复用 commitBridge) */}
+      <div className="pt-2">
+        <h2 className="text-lg font-medium">
+          对话 ↔ 提交{" "}
+          <span className="text-sm font-normal text-[var(--muted)]">
+            · 本仓库的提交,你写它时在跟 AI 聊什么(启发式,非因果)
+          </span>
+        </h2>
+        <div className="mt-2">
+          <CommitBridgeList repo={projectKeyFromPath(repo.path_canonical) ?? ""} />
+        </div>
+      </div>
 
       <h2 className="text-lg font-medium pt-2">已索引文件</h2>
       {manifests.length === 0 ? (
