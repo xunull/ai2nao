@@ -109,6 +109,7 @@ import { registerWorkTokensTrendRoutes } from "../workTokensTrend/routes.js";
 import { registerAgentUserMessagesRoutes } from "../agentUserMessages/routes.js";
 import { registerAiRhythmRoutes } from "../aiRhythm/routes.js";
 import { registerCommitBridgeRoutes } from "../commitBridge/routes.js";
+import { registerReplayRoutes } from "../replay/routes.js";
 import { registerGitChurnRoutes } from "../gitChurn/routes.js";
 import { registerSettingsRoutes } from "./settingsRoutes.js";
 import { registerCodexTokenUsageRoutes } from "../codexTokenUsage/routes.js";
@@ -270,6 +271,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerAgentUserMessagesRoutes(app, db);
   registerAiRhythmRoutes(app, db);
   registerCommitBridgeRoutes(app, db);
+  registerReplayRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);
   registerProjectOpenerRoutes(app);
   if (opts.schedulerRuntime) {
