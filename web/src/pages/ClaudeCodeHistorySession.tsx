@@ -1,18 +1,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import {
-  VariableSizeList,
-  type ListChildComponentProps,
-  type ListOnItemsRenderedProps,
-} from "react-window";
 import { apiGet } from "../api";
 import { JsonHighlighted } from "../components/JsonHighlighted";
 import { MessageMarkdown } from "../components/MessageMarkdown";
@@ -56,15 +45,11 @@ type PageResp = {
   hasMore: boolean;
 };
 
-// 每页大小(与后端默认一致);maxPages 上限累计页数,数据层内存有界(DOM 由 react-window 有界)。
+// 每页大小(与后端默认一致);maxPages 上限累计页数,数据层内存有界(DOM 由虚拟列表有界)。
 const PAGE_LIMIT = 50;
 const MAX_PAGES = 40;
-// 行高缓存未命中时的估算值(首帧用,measure 后立即被真实高度替换)。
+// 虚拟列表未测量前的估算行高(首帧用,measureElement 量到真实高度后自动替换)。
 const ROW_ESTIMATE = 180;
-// 视口底部留白;列表高度 = 视口高 − 列表顶端 − 该留白。
-const BOTTOM_GAP = 16;
-// 列表最小高度(极端窄视口兜底,也是 jsdom 无布局时的下限)。
-const MIN_LIST_HEIGHT = 240;
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -155,103 +140,12 @@ function MessageArticle({ m }: { m: ApiMessage }) {
   );
 }
 
-// 传给 react-window 每行的上下文(itemData)。
-type RowData = {
-  items: ApiMessage[];
-  setSize: (index: number, size: number) => void;
-  hasNextPage: boolean;
-  isFetchingNextPage: boolean;
-};
-
 /**
- * 虚拟列表的单行:最后一行(index === items.length)是页脚(加载中 / 到达开头提示),
- * 其余是消息卡片。用一个「测量包裹层」把行的真实自然高度上报给 setSize:
- * - useLayoutEffect 首次测量(offsetHeight,含 pb-5 的行间距);
- * - ResizeObserver 监听后续高度变化(如展开 thinking / details),再次上报 → resetAfterIndex。
- * 外层 div 用的是 react-window 传入的 style(绝对定位 + 由 itemSize 决定的高度);
- * 我们测量的是不受该高度约束的内层包裹层,拿到的是内容的自然高度。
- */
-function VirtualRow({ index, style, data }: ListChildComponentProps<RowData>) {
-  const { items, setSize, hasNextPage, isFetchingNextPage } = data;
-  const rowRef = useRef<HTMLDivElement>(null);
-  const isFooter = index >= items.length;
-  const m = isFooter ? null : items[index];
-
-  useLayoutEffect(() => {
-    const el = rowRef.current;
-    if (!el) return;
-    const report = () => {
-      const h = el.offsetHeight;
-      if (h > 0) setSize(index, h);
-    };
-    report();
-    let ro: ResizeObserver | undefined;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(report);
-      ro.observe(el);
-    }
-    return () => ro?.disconnect();
-    // 行内容变化(index 对应的消息 id 变了,如翻页顶部被淘汰致索引位移)时重测。
-  }, [index, setSize, m?.id, isFooter]);
-
-  return (
-    <div style={style}>
-      <div ref={rowRef} className="mx-auto max-w-3xl px-1 pb-5">
-        {isFooter ? (
-          <div className="py-6 text-center text-xs text-neutral-400">
-            {isFetchingNextPage
-              ? "加载更多消息…"
-              : hasNextPage
-                ? "向下滚动加载更多"
-                : "已到对话末尾"}
-          </div>
-        ) : (
-          <MessageArticle m={m!} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * 测量「列表容器可用高度」= 视口高 − 列表顶端在视口中的 top − 底部留白。
- * 这样列表内部滚动、整页不再随消息增长(工作台布局)。deps 变化(头部渲染完成)时重测。
- * jsdom 无真实布局:innerHeight 默认 768、top 为 0 → 得到正高度,列表照样渲染(便于测试)。
- */
-function useAvailableHeight(recomputeKey: unknown): [
-  RefObject<HTMLDivElement | null>,
-  number,
-] {
-  const ref = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(MIN_LIST_HEIGHT);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const recompute = () => {
-      const top = el.getBoundingClientRect().top;
-      const h = Math.floor(window.innerHeight - top - BOTTOM_GAP);
-      setHeight(Math.max(MIN_LIST_HEIGHT, h));
-    };
-    recompute();
-    window.addEventListener("resize", recompute);
-    let ro: ResizeObserver | undefined;
-    if (typeof ResizeObserver !== "undefined") {
-      // 观察 body:头部高度变化(告警出现等)会改变列表 top,据此重算。
-      ro = new ResizeObserver(recompute);
-      ro.observe(document.body);
-    }
-    return () => {
-      window.removeEventListener("resize", recompute);
-      ro?.disconnect();
-    };
-  }, [recomputeKey]);
-  return [ref, height];
-}
-
-/**
- * 消息虚拟列表:VariableSizeList + 行高缓存(Map<index,height>)。
- * - itemSize 读缓存,未命中回退 ROW_ESTIMATE;某行真实高度变化 → resetAfterIndex 重排。
- * - onItemsRendered 里 visibleStopIndex 逼近末尾时 fetchNextPage(哨兵页脚也在可视区内)。
+ * 消息虚拟列表:@tanstack/react-virtual + measureElement 自动测量。
+ * - 滚动容器是 parentRef 这个 div(flex-1 填满剩余高度、内部纵向滚动、禁横向滚动)。
+ * - 每行挂 virtualizer.measureElement,内建 ResizeObserver 自动量到真实高度并回填位置,
+ *   无需手动 resetAfterIndex/行高缓存;内容变高(展开 thinking/details、正文加载)会自动重排。
+ * - 末尾多一行哨兵页脚(index === items.length):承载「加载中 / 已到末尾」,也是触底触发点。
  */
 function MessageList({
   items,
@@ -264,51 +158,73 @@ function MessageList({
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
 }) {
-  const listRef = useRef<VariableSizeList>(null);
-  const sizeMap = useRef<Map<number, number>>(new Map());
-  const [wrapRef, listHeight] = useAvailableHeight(items.length === 0);
-
-  const setSize = useCallback((index: number, size: number) => {
-    if (sizeMap.current.get(index) === size) return;
-    sizeMap.current.set(index, size);
-    listRef.current?.resetAfterIndex(index);
-  }, []);
-
-  const getSize = useCallback(
-    (index: number) => sizeMap.current.get(index) ?? ROW_ESTIMATE,
-    []
-  );
-
-  const onItemsRendered = useCallback(
-    ({ visibleStopIndex }: ListOnItemsRenderedProps) => {
-      if (hasNextPage && !isFetchingNextPage && visibleStopIndex >= items.length - 1) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, isFetchingNextPage, items.length, fetchNextPage]
-  );
-
-  // 末尾多一行哨兵页脚:承载「加载中 / 已到末尾」并作为滚动触底的触发点。
+  const parentRef = useRef<HTMLDivElement>(null);
+  // 末尾多一行哨兵页脚。
   const itemCount = items.length + 1;
-  const itemData: RowData = { items, setSize, hasNextPage, isFetchingNextPage };
-  const listStyle: CSSProperties = { overflowX: "hidden" };
+
+  const virtualizer = useVirtualizer({
+    count: itemCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_ESTIMATE,
+    overscan: 6,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // 触底:最后一个已渲染的虚拟行(哨兵页脚 / 最末消息)进入可视区 → 拉下一页。
+  useEffect(() => {
+    const last = virtualItems.at(-1);
+    if (!last) return;
+    if (last.index >= items.length - 1 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [virtualItems, items.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div ref={wrapRef} className="min-h-0 flex-1">
-      <VariableSizeList
-        ref={listRef}
-        height={listHeight}
-        width="100%"
-        itemCount={itemCount}
-        itemSize={getSize}
-        estimatedItemSize={ROW_ESTIMATE}
-        overscanCount={4}
-        itemData={itemData}
-        onItemsRendered={onItemsRendered}
-        style={listStyle}
+    <div
+      ref={parentRef}
+      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+    >
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: "100%",
+          position: "relative",
+        }}
       >
-        {VirtualRow}
-      </VariableSizeList>
+        {virtualItems.map((virtualItem) => {
+          const isFooter = virtualItem.index >= items.length;
+          return (
+            <div
+              key={virtualItem.key}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <div className="mx-auto max-w-3xl px-1 pb-5">
+                {isFooter ? (
+                  <div className="py-6 text-center text-xs text-neutral-400">
+                    {isFetchingNextPage
+                      ? "加载更多消息…"
+                      : hasNextPage
+                        ? "向下滚动加载更多"
+                        : "已到对话末尾"}
+                  </div>
+                ) : (
+                  <MessageArticle m={items[virtualItem.index]!} />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
