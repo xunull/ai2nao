@@ -2,6 +2,7 @@ import { open, stat } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import { MAX_JSONL_BYTES, MAX_JSONL_LINES } from "./constants.js";
 import { ClaudeTranscriptTooLargeError } from "./load.js";
+import { cleanClaudeUserMessage } from "./myMessages.js";
 
 /**
  * 大 Claude transcript 分页的地基(T1a):对一个 `.jsonl` 会话文件做「一次流式扫描」,
@@ -27,6 +28,7 @@ export type SessionHeader = {
   /** = max(timestamp) 覆盖所有 ok 行;全无有效时间戳时回退到 fileMtime。对齐 `tMax ?? new Date(fileMtimeMs)`。 */
   lastUpdatedAt: Date;
   /** 首条非空用户消息的可见文本(已 trim);无则 null。 */
+  /** 首条**有意义**的用户文本(已过 cleanClaudeUserMessage:命令→`/名 参数`、样板→跳过)。 */
   firstUserText: string | null;
   /** 标题:firstUserText 截断到 120 字符 + `…`;无用户消息时为「(无用户消息)」。 */
   title: string;
@@ -174,7 +176,11 @@ function foldLine(raw: string, acc: HeaderAcc): void {
   if (!acc.firstUserText && isUserShape(rec)) {
     const msg = rec.message as Record<string, unknown>;
     const body = userVisibleFromContent(msg.content);
-    if (body.trim()) acc.firstUserText = body.trim(); // 首条非空用户文本
+    // 首条**有意义**的用户文本:走后端权威清洗(cleanClaudeUserMessage,versioned +
+    // parity 测试)。命令注入回显 → 紧凑 `/名 参数`;skill 正文 / caveat / 压缩摘要等
+    // 机器注入 → 清成空则跳过、继续找下一条。标题/预览由此派生,不再裸露 XML 标签/SGR 残骸。
+    const cleaned = cleanClaudeUserMessage(body).trim();
+    if (cleaned) acc.firstUserText = cleaned;
   }
 }
 
