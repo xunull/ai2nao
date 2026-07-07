@@ -84,8 +84,8 @@ function MessageArticle({ m }: { m: ApiMessage }) {
       className={[
         "rounded-2xl px-4 py-4 shadow-sm sm:px-5 sm:py-5",
         isUser
-          ? "ml-4 border border-slate-200/80 bg-slate-100/90 sm:ml-8"
-          : "mr-4 border border-neutral-100 bg-white ring-1 ring-black/[0.04] sm:mr-8",
+          ? "border border-blue-200/70 bg-blue-50/70"
+          : "border border-neutral-100 bg-white ring-1 ring-black/[0.04]",
       ].join(" ")}
     >
       <header className="mb-3 flex flex-wrap items-center gap-2">
