@@ -208,7 +208,7 @@ function MessageList({
                 transform: `translateY(${virtualItem.start}px)`,
               }}
             >
-              <div className="mx-auto max-w-3xl px-1 pb-5">
+              <div className="px-1 pb-5">
                 {isFooter ? (
                   <div className="py-6 text-center text-xs text-neutral-400">
                     {isFetchingNextPage
