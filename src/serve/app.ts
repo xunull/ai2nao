@@ -49,6 +49,7 @@ import {
   searchSessions,
 } from "../cursorHistory/index.js";
 import {
+  messageToJson,
   searchResultToJson,
   sessionSummaryToJson,
   sessionToJson,
@@ -60,9 +61,12 @@ import {
   listProjects,
   listSessionSummaries,
   loadClaudeMyMessages,
+  loadClaudeSessionMessagePage,
+  loadClaudeSessionMeta,
   loadSessionDetail,
   resolveClaudeProjectsRoot,
 } from "../claudeCodeHistory/index.js";
+import type { SessionHeader } from "../claudeCodeHistory/index.js";
 import { projectSessionTimes } from "../claudeTokenUsage/queries.js";
 import { createMcpHandler } from "../mcp/server.js";
 import {
@@ -154,6 +158,20 @@ function claudeCodeHistoryErr(e: unknown) {
     return jsonErr(413, e.message);
   }
   return jsonErr(500, String(e));
+}
+
+/** 序列化 SessionHeader(Date → ISO),用于详情页 ?meta=1 的头部响应。 */
+function claudeSessionHeaderToJson(h: SessionHeader) {
+  return {
+    messageCount: h.messageCount,
+    createdAt: h.createdAt.toISOString(),
+    lastUpdatedAt: h.lastUpdatedAt.toISOString(),
+    firstUserText: h.firstUserText,
+    title: h.title,
+    preview: h.preview,
+    workspacePath: h.workspacePath,
+    warnings: h.warnings,
+  };
 }
 
 function codexHistoryRoot(raw: string | undefined): string {
@@ -702,6 +720,32 @@ export function createApp(opts: ServeOptions): Hono {
         const root = claudeCodeHistoryRoot(c.req.query("projectsRoot"));
         const projectId = decodeURIComponent(c.req.param("projectId"));
         const sessionId = decodeURIComponent(c.req.param("sessionId"));
+
+        // 分页路径(T1b):?meta=1 只回头部;?cursor=&limit= 回一页消息(均走 sessionIndex,
+        // 不整文件重读)。缺省(无 meta / 无 cursor)仍走旧的整会话加载,保持向后兼容(整文件读)。
+        if (boolQuery(c.req.query("meta"))) {
+          const meta = await loadClaudeSessionMeta(root, projectId, sessionId);
+          if (!meta) return jsonErr(404, "session not found");
+          return c.json({ ok: true, header: claudeSessionHeaderToJson(meta.header) });
+        }
+
+        const cursorRaw = c.req.query("cursor");
+        if (cursorRaw != null) {
+          const cursor = Math.max(0, parseInt(cursorRaw, 10) || 0);
+          const limit = intQuery(c.req.query("limit"), 50);
+          const page = await loadClaudeSessionMessagePage(root, projectId, sessionId, {
+            cursor,
+            limit,
+          });
+          if (!page) return jsonErr(404, "session not found");
+          return c.json({
+            ok: true,
+            messages: page.messages.map(messageToJson),
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
+          });
+        }
+
         const detail = await loadSessionDetail(root, projectId, sessionId);
         if (!detail) {
           return jsonErr(404, "session not found");

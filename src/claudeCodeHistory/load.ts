@@ -1,10 +1,19 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ChatSessionSummary } from "../cursorHistory/types.js";
+import type { ChatSessionSummary, Message } from "../cursorHistory/types.js";
 import { MAX_JSONL_BYTES, MAX_JSONL_LINES } from "./constants.js";
 import { assertPathInsideRoot, listSessionJsonlFiles } from "./discover.js";
-import { buildClaudeSession, type BuiltClaudeSession } from "./normalize.js";
+import {
+  buildClaudeSession,
+  mapRecordToMessage,
+  type BuiltClaudeSession,
+} from "./normalize.js";
 import { parseJsonlText } from "./parseJsonl.js";
+import {
+  getSessionIndex,
+  readLineRange,
+  type SessionHeader,
+} from "./sessionIndex.js";
 import {
   cleanClaudeUserMessage,
   extractClaudeUserMessages,
@@ -60,45 +69,44 @@ export async function listSessionSummaries(
 
   for (const f of boundedFiles) {
     try {
-      const st = await stat(f.filePath);
-      if (st.size > MAX_JSONL_BYTES) {
-        summaries.push({
-          id: f.id,
-          index: 0,
-          title: "(文件过大)",
-          createdAt: new Date(f.mtimeMs),
-          lastUpdatedAt: new Date(f.mtimeMs),
-          messageCount: 0,
-          workspaceId: projectId,
-          workspacePath: projectId,
-          preview: `>${MAX_JSONL_BYTES} bytes，仅详情可尝试加载`,
-        });
-        continue;
-      }
-      const text = await readFile(f.filePath, "utf8");
-      if (text.split("\n").length > MAX_JSONL_LINES) {
-        summaries.push({
-          id: f.id,
-          index: 0,
-          title: "(行数过多)",
-          createdAt: new Date(f.mtimeMs),
-          lastUpdatedAt: new Date(f.mtimeMs),
-          messageCount: 0,
-          workspaceId: projectId,
-          workspacePath: projectId,
-          preview: `>${MAX_JSONL_LINES} lines`,
-        });
-        continue;
-      }
-      const parse = parseJsonlText(text);
-      const { summary } = buildClaudeSession({
+      // T1c:列表页改用「一次流式扫描」得到的 header,不再整文件 readFile + 全量 parse。
+      // 小文件语义与旧版逐字节一致(header 口径与 buildClaudeSession 对齐,见 sessionIndex.ts)。
+      const index = await getSessionIndex(f.filePath, {
+        fileMtimeMs: f.mtimeMs,
         projectId,
         sessionId: f.id,
-        parse,
-        fileMtimeMs: f.mtimeMs,
       });
-      summaries.push(summary);
-    } catch {
+      const h = index.header;
+      summaries.push({
+        id: f.id,
+        index: 0,
+        title: h.title,
+        createdAt: h.createdAt,
+        lastUpdatedAt: h.lastUpdatedAt,
+        messageCount: h.messageCount,
+        workspaceId: projectId,
+        workspacePath: h.workspacePath,
+        preview: h.preview,
+      });
+    } catch (e) {
+      // 超限:getSessionIndex 抛 ClaudeTranscriptTooLargeError,按「字节/行数」还原旧占位摘要。
+      if (e instanceof ClaudeTranscriptTooLargeError) {
+        const isBytes = e.message.includes("bytes");
+        summaries.push({
+          id: f.id,
+          index: 0,
+          title: isBytes ? "(文件过大)" : "(行数过多)",
+          createdAt: new Date(f.mtimeMs),
+          lastUpdatedAt: new Date(f.mtimeMs),
+          messageCount: 0,
+          workspaceId: projectId,
+          workspacePath: projectId,
+          preview: isBytes
+            ? `>${MAX_JSONL_BYTES} bytes，仅详情可尝试加载`
+            : `>${MAX_JSONL_LINES} lines`,
+        });
+        continue;
+      }
       summaries.push({
         id: f.id,
         index: 0,
@@ -137,6 +145,104 @@ export async function loadSessionDetail(
   const built = await readAndParseFile(hit.filePath, projectId, sessionId);
   built.session.index = 0;
   return built;
+}
+
+// ─────────────────────── 大 transcript 分页(T1b,viewer-only) ───────────────────────
+// 下面两个函数是「详情查看器」的分页专用入口,绝不改动 readAndParseFile /
+// loadSessionDetail 的整文件语义(那两个被 sessionMemory / workDashboard /
+// loadClaudeMyMessages / agentUserMessages 共用)。它们统一走 getSessionIndex(缓存 +
+// 一次流式扫描)+ readLineRange(字节 seek),不整文件重读。
+
+/** loadClaudeSessionMessagePage 的默认页大小与硬上限。 */
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 200;
+
+/** 在 project 目录里按 sessionId 定位磁盘文件行;找不到 → null。 */
+async function findSessionFile(
+  projectsRoot: string,
+  projectId: string,
+  sessionId: string
+) {
+  const base = resolve(projectsRoot);
+  const projectPath = assertPathInsideRoot(base, join(base, projectId));
+  const files = await listSessionJsonlFiles(projectPath);
+  return files.find((f) => f.id === sessionId) ?? null;
+}
+
+/**
+ * 详情页头部(只要 header,不要消息)。走 getSessionIndex 的流式头部,不整文件重读。
+ * 找不到 session → null(路由据此回 404)。header 口径与 buildClaudeSession 完全对齐。
+ */
+export async function loadClaudeSessionMeta(
+  projectsRoot: string,
+  projectId: string,
+  sessionId: string
+): Promise<{ header: SessionHeader } | null> {
+  const hit = await findSessionFile(projectsRoot, projectId, sessionId);
+  if (!hit) return null;
+  const index = await getSessionIndex(hit.filePath, {
+    fileMtimeMs: hit.mtimeMs,
+    projectId,
+    sessionId,
+  });
+  return { header: index.header };
+}
+
+/**
+ * 从 `cursor`(物理行号,0-based,oldest→new)向后取一页消息。
+ * - `cursor` 缺省 0;`limit` 缺省 {@link DEFAULT_PAGE_LIMIT},上限 {@link MAX_PAGE_LIMIT}。
+ * - 用 readLineRange 只回读 `[cursor, cursor+limit)` 的原始物理行,逐行解析后交给
+ *   mapRecordToMessage(传入「1-based 绝对行号」= cursor+j+1,合成 id 与整文件路径一致)。
+ * - 空行/坏行在页内被安静跳过(告警口径已由 header.warnings 承载);只收集非空消息。
+ * - `nextCursor` = 下一页起始物理行号(= 本页末尾),到 EOF 时为 null;`hasMore` 同义。
+ * 找不到 session → null(路由据此回 404)。
+ */
+export async function loadClaudeSessionMessagePage(
+  projectsRoot: string,
+  projectId: string,
+  sessionId: string,
+  opts?: { cursor?: number; limit?: number }
+): Promise<{ messages: Message[]; nextCursor: number | null; hasMore: boolean } | null> {
+  const hit = await findSessionFile(projectsRoot, projectId, sessionId);
+  if (!hit) return null;
+
+  const index = await getSessionIndex(hit.filePath, {
+    fileMtimeMs: hit.mtimeMs,
+    projectId,
+    sessionId,
+  });
+
+  const total = index.lineCount;
+  const cursor = Math.max(0, Math.min(Math.trunc(opts?.cursor ?? 0), total));
+  const limit = Math.max(
+    1,
+    Math.min(Math.trunc(opts?.limit ?? DEFAULT_PAGE_LIMIT), MAX_PAGE_LIMIT)
+  );
+  const end = Math.min(cursor + limit, total);
+
+  const rawLines = await readLineRange(hit.filePath, index, cursor, end);
+  const messages: Message[] = [];
+  for (let j = 0; j < rawLines.length; j++) {
+    const raw = rawLines[j];
+    if (raw.trim() === "") continue; // 空行:跳过(对齐 parseJsonlText)
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue; // 坏行:安静跳过(header.warnings 已计入解析错误数)
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const lineNumber = cursor + j + 1; // 1-based 绝对物理行号(readLineRange 从 cursor 起返回)
+    const message = mapRecordToMessage(
+      parsed as Record<string, unknown>,
+      lineNumber,
+      hit.mtimeMs
+    );
+    if (message) messages.push(message);
+  }
+
+  const hasMore = end < total;
+  return { messages, nextCursor: hasMore ? end : null, hasMore };
 }
 
 export type ClaudeMyMessage = { id: string; timestamp: string; text: string };

@@ -27,15 +27,24 @@ export type {
   JsonlLineOk,
   ParseJsonlResult,
 } from "./parseJsonl.js";
-export { buildClaudeSession } from "./normalize.js";
+export { buildClaudeSession, mapRecordToMessage } from "./normalize.js";
 export type { BuiltClaudeSession } from "./normalize.js";
 export {
   ClaudeTranscriptTooLargeError,
   listSessionSummaries,
   loadClaudeMyMessages,
+  loadClaudeSessionMessagePage,
+  loadClaudeSessionMeta,
   loadSessionDetail,
 } from "./load.js";
 export type { ClaudeMyMessage } from "./load.js";
+export {
+  buildSessionIndex,
+  getSessionIndex,
+  readLineRange,
+  resetSessionIndexCache,
+} from "./sessionIndex.js";
+export type { SessionHeader, SessionIndex } from "./sessionIndex.js";
 export { MAX_JSONL_BYTES, MAX_JSONL_LINES } from "./constants.js";
 export {
   decodeClaudeProjectDirName,

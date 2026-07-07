@@ -286,6 +286,75 @@ export type BuiltClaudeSession = {
   warnings: string[];
 };
 
+/**
+ * 把「单条已解析的 JSONL 记录」映射成「一条 Message」——这是 buildClaudeSession 里
+ * per-okLine 分支逻辑的原样抽取(make the change easy, then make the easy change)。
+ *
+ * - `lineNumber`:该记录所在的「1-based 物理行号」。仅当记录缺少 `uuid` 时用于合成 id
+ *   (`user-L<line>` / `assistant-L<line>` / `event-L<line>`),与原实现逐字对齐。
+ * - `fileMtimeMs`:记录缺时间戳时的回退基准(`ts ?? new Date(fileMtimeMs)`)。
+ *
+ * 纯函数:不做任何会话级聚合(firstUserText / 时间范围 / sessionId / cwd 仍归调用方)。
+ * user → user 消息;assistant → assistant 消息(text/thinking/toolCalls/model/tokenUsage);
+ * 其它类型 → 折叠为 appendix(role=assistant,metadata.claudeAppendix)。返回 null 预留
+ * 给未来「该行不产出消息」的过滤;当前恒返回一条,故 buildClaudeSession 的输出保持逐字节一致。
+ */
+export function mapRecordToMessage(
+  record: Record<string, unknown>,
+  lineNumber: number,
+  fileMtimeMs: number
+): Message | null {
+  const ts = isoDate(record.timestamp);
+
+  if (isUserShape(record)) {
+    const msg = record.message as Record<string, unknown>;
+    const body = userVisibleFromContent(msg.content);
+    const id = typeof record.uuid === "string" ? record.uuid : `user-L${lineNumber}`;
+    return {
+      id,
+      role: "user",
+      content: body,
+      timestamp: ts ?? new Date(fileMtimeMs),
+      codeBlocks: extractCodeBlocks(body),
+    };
+  }
+
+  if (isAssistantShape(record)) {
+    const msg = record.message as Record<string, unknown>;
+    const { text, thinking, toolCalls } = assistantFromContent(msg.content);
+    const id =
+      typeof record.uuid === "string" ? record.uuid : `assistant-L${lineNumber}`;
+    const model = typeof msg.model === "string" ? msg.model : undefined;
+    const tokenUsage = mapTokenUsage(msg.usage);
+    return {
+      id,
+      role: "assistant",
+      content: text,
+      timestamp: ts ?? new Date(fileMtimeMs),
+      codeBlocks: extractCodeBlocks(text),
+      thinking,
+      toolCalls,
+      model,
+      tokenUsage,
+    };
+  }
+
+  const typ = recordType(record) ?? "unknown";
+  const id = typeof record.uuid === "string" ? record.uuid : `event-L${lineNumber}`;
+  const appendixBody = "```json\n" + JSON.stringify(record, null, 2) + "\n```";
+  return {
+    id,
+    role: "assistant",
+    content: appendixBody,
+    timestamp: ts ?? new Date(fileMtimeMs),
+    codeBlocks: [],
+    metadata: {
+      claudeEventType: typ,
+      claudeAppendix: true,
+    },
+  };
+}
+
 export function buildClaudeSession(options: {
   projectId: string;
   sessionId: string;
@@ -329,59 +398,21 @@ export function buildClaudeSession(options: {
   };
 
   for (const { line, record } of parse.okLines) {
+    // 时间范围仍是会话级聚合,保留在此(每条 okLine 都参与 min/max,与原实现一致)。
     const ts = isoDate(record.timestamp);
     bumpTime(ts);
 
-    if (isUserShape(record)) {
-      const msg = record.message as Record<string, unknown>;
-      const body = userVisibleFromContent(msg.content);
-      if (!firstUserText && body.trim()) firstUserText = body.trim();
-      const id = typeof record.uuid === "string" ? record.uuid : `user-L${line}`;
-      messages.push({
-        id,
-        role: "user",
-        content: body,
-        timestamp: ts ?? new Date(fileMtimeMs),
-        codeBlocks: extractCodeBlocks(body),
-      });
-      continue;
+    // per-okLine → Message 的映射抽到 mapRecordToMessage;输出与原内联逻辑逐字节一致。
+    const message = mapRecordToMessage(record, line, fileMtimeMs);
+    if (!message) continue;
+
+    // firstUserText 仍是会话级聚合:只有 user-shape 会产出 role=user(assistant / appendix
+    // 均为 role=assistant),且其 content 恰为 userVisibleFromContent 的 body,故等价原逻辑。
+    if (message.role === "user" && !firstUserText && message.content.trim()) {
+      firstUserText = message.content.trim();
     }
 
-    if (isAssistantShape(record)) {
-      const msg = record.message as Record<string, unknown>;
-      const { text, thinking, toolCalls } = assistantFromContent(msg.content);
-      const id =
-        typeof record.uuid === "string" ? record.uuid : `assistant-L${line}`;
-      const model = typeof msg.model === "string" ? msg.model : undefined;
-      const tokenUsage = mapTokenUsage(msg.usage);
-      messages.push({
-        id,
-        role: "assistant",
-        content: text,
-        timestamp: ts ?? new Date(fileMtimeMs),
-        codeBlocks: extractCodeBlocks(text),
-        thinking,
-        toolCalls,
-        model,
-        tokenUsage,
-      });
-      continue;
-    }
-
-    const typ = recordType(record) ?? "unknown";
-    const id = typeof record.uuid === "string" ? record.uuid : `event-L${line}`;
-    const appendixBody = "```json\n" + JSON.stringify(record, null, 2) + "\n```";
-    messages.push({
-      id,
-      role: "assistant",
-      content: appendixBody,
-      timestamp: ts ?? new Date(fileMtimeMs),
-      codeBlocks: [],
-      metadata: {
-        claudeEventType: typ,
-        claudeAppendix: true,
-      },
-    });
+    messages.push(message);
   }
 
   const titleText = firstUserText
