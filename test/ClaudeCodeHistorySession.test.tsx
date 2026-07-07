@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -185,6 +185,78 @@ describe("ClaudeCodeHistorySession — 大 transcript 分页详情页", () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("索引大文件失败")).toBeInTheDocument()
+    );
+  });
+});
+
+describe("ClaudeCodeHistorySession — user 命令注入回显结构化渲染", () => {
+  // 含 /model 命令 + stdout(带无-ESC 的 [1m..[22m 加粗残骸)的 user 消息。
+  const INJECT_PAGE = {
+    ok: true,
+    messages: [
+      {
+        id: "user-L1",
+        role: "user",
+        content:
+          "<command-name>/model</command-name><command-args></command-args>" +
+          "<local-command-stdout>Set model to [1mOpus[22m done</local-command-stdout>",
+        timestamp: "2026-06-29T00:00:00.000Z",
+      },
+    ],
+    nextCursor: null,
+    hasMore: false,
+  };
+
+  it("命令成 chip、stdout 的 SGR 残骸还原成加粗、原始标签不裸露", async () => {
+    installFetchMock({ pageA: INJECT_PAGE });
+    renderPage();
+    // 命令徽标。
+    await waitFor(() => expect(screen.getByText("/model")).toBeInTheDocument());
+    // SGR 残骸被吃掉:Opus 作为独立(加粗)文本节点出现,且不带 [1m/[22m。
+    const opus = screen.getByText("Opus");
+    expect(opus).toBeInTheDocument();
+    expect(opus.className).toContain("font-bold");
+    // 结构化视图里不裸露 <local-command-stdout> 标签,也没有 [22m 残骸。
+    expect(screen.queryByText(/local-command-stdout/)).toBeNull();
+    expect(screen.queryByText(/\[22m/)).toBeNull();
+  });
+
+  it("「查看原文」切换能看到原始 payload(带标签/残骸)", async () => {
+    installFetchMock({ pageA: INJECT_PAGE });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("查看原文")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("查看原文"));
+    // 原文里带标签与 SGR 残骸。
+    await waitFor(() =>
+      expect(screen.getByText(/local-command-stdout/)).toBeInTheDocument()
+    );
+    expect(screen.getByText(/\[22m/)).toBeInTheDocument();
+    // 切回结构化。
+    fireEvent.click(screen.getByText("← 结构化视图"));
+    await waitFor(() =>
+      expect(screen.queryByText(/local-command-stdout/)).toBeNull()
+    );
+  });
+
+  it("误伤边界:纯真人正文里碰巧含 [1m 不被当 SGR、原样保留", async () => {
+    const TEXT_PAGE = {
+      ok: true,
+      messages: [
+        {
+          id: "user-L1",
+          role: "user",
+          content: "矩阵元素 M[1m] 就是普通文字不该被上色",
+          timestamp: "2026-06-29T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    };
+    installFetchMock({ pageA: TEXT_PAGE });
+    renderPage();
+    // 无控制标签 → 走 MessageMarkdown,[1m] 原样在文本里(未被 SGR 解析吃掉)。
+    await waitFor(() =>
+      expect(screen.getByText(/M\[1m\]/)).toBeInTheDocument()
     );
   });
 });

@@ -1,11 +1,17 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { JsonHighlighted } from "../components/JsonHighlighted";
 import { MessageMarkdown } from "../components/MessageMarkdown";
 import { formatFileTimeMs } from "../util/formatDisplay";
+import {
+  hasCommandInjection,
+  parseUserMessage,
+  type UserSegment,
+} from "../util/parseUserMessage";
+import { sgrParse, type SgrSpan } from "../util/sgrParse";
 
 // 单条消息(与后端 messageToJson 序列化后的形状对齐;分页 ?cursor= 每页返回一组)。
 // 渲染只用到下面这些字段(与旧整会话渲染完全一致,不引入 toolCalls 等新展示)。
@@ -73,12 +79,122 @@ const backLinkClass =
 const btnGhost =
   "inline-flex items-center justify-center rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm transition hover:border-blue-200 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
 
+// SGR 色名 → Tailwind 文本/背景类(有限调色板,不放任意 rgb)。
+const FG_CLASS: Record<string, string> = {
+  black: "text-neutral-800", red: "text-red-600", green: "text-green-600",
+  yellow: "text-yellow-600", blue: "text-blue-600", magenta: "text-fuchsia-600",
+  cyan: "text-cyan-600", white: "text-neutral-500",
+  "bright-black": "text-neutral-600", "bright-red": "text-red-500",
+  "bright-green": "text-green-500", "bright-yellow": "text-amber-500",
+  "bright-blue": "text-blue-500", "bright-magenta": "text-fuchsia-500",
+  "bright-cyan": "text-cyan-500", "bright-white": "text-neutral-700",
+};
+const BG_CLASS: Record<string, string> = {
+  black: "bg-neutral-200", red: "bg-red-100", green: "bg-green-100",
+  yellow: "bg-yellow-100", blue: "bg-blue-100", magenta: "bg-fuchsia-100",
+  cyan: "bg-cyan-100", white: "bg-neutral-100",
+  "bright-black": "bg-neutral-300", "bright-red": "bg-red-200",
+  "bright-green": "bg-green-200", "bright-yellow": "bg-amber-200",
+  "bright-blue": "bg-blue-200", "bright-magenta": "bg-fuchsia-200",
+  "bright-cyan": "bg-cyan-200", "bright-white": "bg-neutral-200",
+};
+
+// 海量 span 上限守卫(codex #8):高频 SGR(逐字上色)会炸 DOM,超限降级纯文本。
+const MAX_SGR_SPANS = 1500;
+
+function spanClass(s: SgrSpan): string {
+  const cls: string[] = [];
+  if (s.bold) cls.push("font-bold");
+  if (s.italic) cls.push("italic");
+  if (s.underline) cls.push("underline");
+  if (s.fg && FG_CLASS[s.fg]) cls.push(FG_CLASS[s.fg]);
+  if (s.bg && BG_CLASS[s.bg]) cls.push(BG_CLASS[s.bg]);
+  return cls.join(" ");
+}
+
+/**
+ * 命令输出块:等宽深底,SGR 残骸解析成样式 span。
+ * 安全边界(codex #11):内容一律作**文本**(span 的 children 是纯字符串,不走
+ * MessageMarkdown / dangerouslySetInnerHTML),user 消息含任意内容也不扩大 XSS 面。
+ */
+function TerminalOutput({ raw }: { raw: string }) {
+  const spans = useMemo(() => sgrParse(raw), [raw]);
+  const capped = spans.length > MAX_SGR_SPANS;
+  return (
+    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-800/10 bg-neutral-900 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-100">
+      {capped
+        ? spans.map((s) => s.text).join("")
+        : spans.map((s, i) => {
+            const cls = spanClass(s);
+            return cls ? (
+              <span key={i} className={cls}>
+                {s.text}
+              </span>
+            ) : (
+              <span key={i}>{s.text}</span>
+            );
+          })}
+    </pre>
+  );
+}
+
+// 斜杠命令 / bash 输入 → 徽标 chip + 参数。
+function CommandChip({
+  seg,
+}: {
+  seg: Extract<UserSegment, { kind: "command" }>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="rounded-md bg-blue-100 px-2 py-0.5 font-mono text-xs font-semibold text-blue-800">
+        {seg.name?.trim() || "命令"}
+      </span>
+      {seg.args && seg.args.trim() !== "" && (
+        <span className="font-mono text-xs text-neutral-500">{seg.args}</span>
+      )}
+    </div>
+  );
+}
+
+// caveat / system-reminder 样板 → 默认折叠。
+function CaveatBlock({ text }: { text: string }) {
+  return (
+    <details className="overflow-hidden rounded-lg border border-neutral-200 bg-slate-50/60">
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-[11px] font-medium text-neutral-500 hover:bg-slate-100">
+        系统注入样板(点开查看)
+      </summary>
+      <div className="whitespace-pre-wrap break-words border-t border-neutral-200/70 px-3 py-2 font-mono text-[11px] text-neutral-500">
+        {text}
+      </div>
+    </details>
+  );
+}
+
+// 单段派发。text 段走既有 MessageMarkdown(真人正文,信任路径);其余是结构化注入回显。
+function UserSegmentView({ seg }: { seg: UserSegment }) {
+  if (seg.kind === "command") return <CommandChip seg={seg} />;
+  if (seg.kind === "stdout") return <TerminalOutput raw={seg.raw} />;
+  if (seg.kind === "caveat") return <CaveatBlock text={seg.text} />;
+  return <MessageMarkdown text={seg.text} />;
+}
+
 /**
  * 单条消息卡片——完全沿用旧整会话渲染的每条行 markup(不重新设计气泡):
- * 角色徽标 / appendix 事件徽标 / 时间 / 模型 / 损坏徽标 + 可展开 thinking + 正文 Markdown。
+ * 角色徽标 / appendix 事件徽标 / 时间 / 模型 / 损坏徽标 + 可展开 thinking + 正文。
+ *
+ * user 消息若含命令注入回显(斜杠/! 命令的标签+SGR 残骸),按段结构化渲染,并给一个
+ * 「查看原文」切换看原始 payload(数据工作台排查用)。其余照旧走 MessageMarkdown。
  */
 function MessageArticle({ m }: { m: ApiMessage }) {
   const isUser = m.role === "user";
+  // 解析按 m.content key(codex #1:本 repo 回溯改写老行,同 id 内容会变,按 id 会陈旧)。
+  const segments = useMemo<UserSegment[] | null>(
+    () => (isUser && hasCommandInjection(m.content) ? parseUserMessage(m.content) : null),
+    [isUser, m.content]
+  );
+  const [showRaw, setShowRaw] = useState(false);
+  // 虚拟列表同一 DOM 槽会换消息;内容变了把「看原文」重置回结构化视图。
+  useEffect(() => setShowRaw(false), [m.content]);
   return (
     <article
       className={[
@@ -135,7 +251,30 @@ function MessageArticle({ m }: { m: ApiMessage }) {
         </details>
       )}
 
-      <MessageMarkdown text={m.content} />
+      {segments ? (
+        <div>
+          {showRaw ? (
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-600">
+              {m.content}
+            </pre>
+          ) : (
+            <div className="space-y-2">
+              {segments.map((seg, i) => (
+                <UserSegmentView key={i} seg={seg} />
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowRaw((v) => !v)}
+            className="mt-2 text-[11px] font-medium text-neutral-400 transition hover:text-blue-600"
+          >
+            {showRaw ? "← 结构化视图" : "查看原文"}
+          </button>
+        </div>
+      ) : (
+        <MessageMarkdown text={m.content} />
+      )}
     </article>
   );
 }
