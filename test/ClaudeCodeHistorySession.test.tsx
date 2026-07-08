@@ -330,6 +330,26 @@ describe("ClaudeCodeHistorySession — appendix 智能 JSON 渲染", () => {
     expect(screen.queryByText("查看原文")).toBeNull();
   });
 
+  it("全局开关:打开 → 可见 appendix 自动展开(无需逐个点)", async () => {
+    installFetchMock({ pageA: APPENDIX_PAGE });
+    renderPage();
+    // 初始折叠。
+    await waitFor(() =>
+      expect(screen.getByText(/展开查看结构化内容/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/SUPERPOWERS_MARKER/)).toBeNull();
+    // 打开标题旁的全局开关 → appendix 跟随默认自动展开。
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() =>
+      expect(screen.getByText(/SUPERPOWERS_MARKER/)).toBeInTheDocument()
+    );
+    // 再关 → 折叠回去。
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() =>
+      expect(screen.queryByText(/SUPERPOWERS_MARKER/)).toBeNull()
+    );
+  });
+
   it("非 appendix 的普通消息不路由到 AppendixBody(无展开按钮)", async () => {
     const PLAIN = {
       ok: true,

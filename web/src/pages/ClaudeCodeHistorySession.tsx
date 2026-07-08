@@ -186,9 +186,12 @@ function UserSegmentView({ seg }: { seg: UserSegment }) {
  * (递归解 JSON-in-string、长文本叶子显真实换行)。「查看原文」切回原始 ```json fence。
  * 解析失败(半截 JSON / 超限)→ 降级回既有 Markdown/Prism,绝不空白。
  */
-function AppendixBody({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
+function AppendixBody({ content, expandDefault }: { content: string; expandDefault: boolean }) {
+  // 初值取全局默认:虚拟列表里新滚进来的块挂载即读它 → 步入视口自动展开(开关开时)。
+  const [expanded, setExpanded] = useState(expandDefault);
   const [showRaw, setShowRaw] = useState(false);
+  // 全局开关翻转 → 已挂载的块跟随新默认(单块手动开合在下次翻转前保留)。
+  useEffect(() => setExpanded(expandDefault), [expandDefault]);
   const node = useMemo(
     () => (expanded && !showRaw ? parseSmartJson(extractJsonFence(content) ?? content) : null),
     [expanded, showRaw, content]
@@ -237,7 +240,7 @@ function AppendixBody({ content }: { content: string }) {
  * user 消息若含命令注入回显(斜杠/! 命令的标签+SGR 残骸),按段结构化渲染,并给一个
  * 「查看原文」切换看原始 payload(数据工作台排查用)。其余照旧走 MessageMarkdown。
  */
-function MessageArticle({ m }: { m: ApiMessage }) {
+function MessageArticle({ m, expandAppendix }: { m: ApiMessage; expandAppendix: boolean }) {
   const isUser = m.role === "user";
   // 解析按 m.content key(codex #1:本 repo 回溯改写老行,同 id 内容会变,按 id 会陈旧)。
   const segments = useMemo<UserSegment[] | null>(
@@ -325,7 +328,7 @@ function MessageArticle({ m }: { m: ApiMessage }) {
           </button>
         </div>
       ) : m.metadata?.claudeAppendix ? (
-        <AppendixBody content={m.content} />
+        <AppendixBody content={m.content} expandDefault={expandAppendix} />
       ) : (
         <MessageMarkdown text={m.content} />
       )}
@@ -345,16 +348,21 @@ function MessageList({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  expandAppendix,
 }: {
   items: ApiMessage[];
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
+  expandAppendix: boolean;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   // 末尾多一行哨兵页脚。
   const itemCount = items.length + 1;
 
+  // measureElement 内建 ResizeObserver 自动测量;react-virtual 默认对「视口上方项变高」自动
+  // 补偿滚动(shouldAdjustScrollPositionOnItemSizeChange 的默认行为)——翻转全局展开开关、上方
+  // appendix 就地展开时,滚动随之调整,当前视口内容不被挤走。无需手搓锚定。
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => parentRef.current,
@@ -411,7 +419,10 @@ function MessageList({
                         : "已到对话末尾"}
                   </div>
                 ) : (
-                  <MessageArticle m={items[virtualItem.index]!} />
+                  <MessageArticle
+                    m={items[virtualItem.index]!}
+                    expandAppendix={expandAppendix}
+                  />
                 )}
               </div>
             </div>
@@ -432,6 +443,9 @@ export function ClaudeCodeHistorySession() {
   const enabled = id.length > 0 && projectId.length > 0;
   const baseUrl = `/api/claude-code-history/projects/${enc(projectId)}/sessions/${enc(id)}`;
   const rootQs = projectsRootQs(projectsRoot);
+
+  // 全局「结构化内容默认展开」开关:开→当前可见 + 之后滚进来的 appendix 都自动展开(单块仍可手动开合)。
+  const [expandAppendix, setExpandAppendix] = useState(false);
 
   // 头部:?meta=1 触发后端一次性索引(大文件约 1~2s),据此显示「首次打开」加载态。
   const meta = useQuery({
@@ -527,6 +541,26 @@ export function ClaudeCodeHistorySession() {
         <button type="button" className={btnGhost} onClick={() => refreshSession()}>
           刷新此会话
         </button>
+        <label className="ml-auto flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
+          <span>结构化内容默认展开</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={expandAppendix}
+            onClick={() => setExpandAppendix((v) => !v)}
+            className={[
+              "relative inline-flex h-5 w-9 items-center rounded-full transition",
+              expandAppendix ? "bg-blue-500" : "bg-neutral-300",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
+                expandAppendix ? "translate-x-4" : "translate-x-0.5",
+              ].join(" ")}
+            />
+          </button>
+        </label>
       </header>
 
       <div className="mt-4 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
@@ -580,6 +614,7 @@ export function ClaudeCodeHistorySession() {
             hasNextPage={Boolean(messages.hasNextPage)}
             isFetchingNextPage={messages.isFetchingNextPage}
             fetchNextPage={() => void messages.fetchNextPage()}
+            expandAppendix={expandAppendix}
           />
         )}
       </div>
