@@ -260,3 +260,95 @@ describe("ClaudeCodeHistorySession — user 命令注入回显结构化渲染", 
     );
   });
 });
+
+describe("ClaudeCodeHistorySession — appendix 智能 JSON 渲染", () => {
+  const RECORD = {
+    attachment: {
+      type: "hook_success",
+      stdout: JSON.stringify({
+        hookSpecificOutput: { additionalContext: "SUPERPOWERS_MARKER\n第二行文本" },
+      }),
+      exitCode: 0,
+    },
+    type: "attachment",
+  };
+  const APPENDIX_PAGE = {
+    ok: true,
+    messages: [
+      {
+        id: "event-L1",
+        role: "assistant",
+        content: "```json\n" + JSON.stringify(RECORD, null, 2) + "\n```",
+        timestamp: "2026-06-29T00:00:00.000Z",
+        metadata: { claudeAppendix: true, claudeEventType: "attachment" },
+      },
+    ],
+    nextCursor: null,
+    hasMore: false,
+  };
+
+  it("appendix 默认折叠;展开后解嵌套 stdout、里层长文本显真实换行、无转义墙", async () => {
+    installFetchMock({ pageA: APPENDIX_PAGE });
+    renderPage();
+    // 折叠态:只有展开按钮,里层内容还没渲染。
+    await waitFor(() =>
+      expect(screen.getByText(/展开查看结构化内容/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/SUPERPOWERS_MARKER/)).toBeNull();
+    // 展开 → 智能 JSON:additionalContext 长文本可读(真实换行),且不裸露 \n 转义。
+    fireEvent.click(screen.getByText(/展开查看结构化内容/));
+    await waitFor(() =>
+      expect(screen.getByText(/SUPERPOWERS_MARKER/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/SUPERPOWERS_MARKER\\n/)).toBeNull(); // 无字面 \n 转义
+    expect(screen.getByText("查看原文")).toBeInTheDocument();
+  });
+
+  it("解析失败(半截 JSON)→ 降级回原文,不空白、不崩", async () => {
+    const BAD = {
+      ok: true,
+      messages: [
+        {
+          id: "event-L1",
+          role: "assistant",
+          content: "```json\n{ 这是半截 JSON 没法 parse\n```",
+          timestamp: "2026-06-29T00:00:00.000Z",
+          metadata: { claudeAppendix: true, claudeEventType: "attachment" },
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    };
+    installFetchMock({ pageA: BAD });
+    renderPage();
+    fireEvent.click(await screen.findByText(/展开查看结构化内容/));
+    // 降级:原始内容可见(经 MessageMarkdown),不空白。
+    await waitFor(() =>
+      expect(screen.getByText(/半截 JSON/)).toBeInTheDocument()
+    );
+    // 解析失败时不给「查看原文」切换(已经是原文)。
+    expect(screen.queryByText("查看原文")).toBeNull();
+  });
+
+  it("非 appendix 的普通消息不路由到 AppendixBody(无展开按钮)", async () => {
+    const PLAIN = {
+      ok: true,
+      messages: [
+        {
+          id: "assistant-L1",
+          role: "assistant",
+          content: "这是一条普通助手回复,没有 appendix 标记",
+          timestamp: "2026-06-29T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    };
+    installFetchMock({ pageA: PLAIN });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText(/这是一条普通助手回复/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/展开查看结构化内容/)).toBeNull();
+  });
+});

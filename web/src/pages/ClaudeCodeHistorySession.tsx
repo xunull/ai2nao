@@ -12,6 +12,8 @@ import {
   type UserSegment,
 } from "../util/parseUserMessage";
 import { sgrParse, type SgrSpan } from "../util/sgrParse";
+import { extractJsonFence, parseSmartJson } from "../util/smartJson";
+import { SmartJsonView } from "../components/SmartJsonView";
 
 // 单条消息(与后端 messageToJson 序列化后的形状对齐;分页 ?cursor= 每页返回一组)。
 // 渲染只用到下面这些字段(与旧整会话渲染完全一致,不引入 toolCalls 等新展示)。
@@ -179,6 +181,56 @@ function UserSegmentView({ seg }: { seg: UserSegment }) {
 }
 
 /**
+ * appendix 事件(hook/snapshot/attachment 等)正文:默认折叠成一个展开按钮。
+ * 展开后**才** parse(懒解析,避免大量 appendix 挂载时一次性吃 CPU)→ SmartJsonView 智能 JSON
+ * (递归解 JSON-in-string、长文本叶子显真实换行)。「查看原文」切回原始 ```json fence。
+ * 解析失败(半截 JSON / 超限)→ 降级回既有 Markdown/Prism,绝不空白。
+ */
+function AppendixBody({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+  const node = useMemo(
+    () => (expanded && !showRaw ? parseSmartJson(extractJsonFence(content) ?? content) : null),
+    [expanded, showRaw, content]
+  );
+  const approxKb = Math.max(1, Math.round(content.length / 1024));
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="text-xs font-medium text-blue-600 transition hover:text-blue-800"
+      >
+        展开查看结构化内容(约 {approxKb} KB)
+      </button>
+    );
+  }
+  return (
+    <div>
+      {showRaw || node === null ? (
+        // 原文视图 / 解析失败降级:回既有 Prism 渲染,不空白。
+        <MessageMarkdown text={content} />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-neutral-100 bg-slate-50/40 p-3">
+          <SmartJsonView node={node} />
+        </div>
+      )}
+      <div className="mt-2 flex gap-3 text-[11px] text-neutral-400">
+        <button type="button" onClick={() => setExpanded(false)} className="transition hover:text-blue-600">
+          收起
+        </button>
+        {node !== null && (
+          <button type="button" onClick={() => setShowRaw((v) => !v)} className="transition hover:text-blue-600">
+            {showRaw ? "← 结构化视图" : "查看原文"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * 单条消息卡片——完全沿用旧整会话渲染的每条行 markup(不重新设计气泡):
  * 角色徽标 / appendix 事件徽标 / 时间 / 模型 / 损坏徽标 + 可展开 thinking + 正文。
  *
@@ -272,6 +324,8 @@ function MessageArticle({ m }: { m: ApiMessage }) {
             {showRaw ? "← 结构化视图" : "查看原文"}
           </button>
         </div>
+      ) : m.metadata?.claudeAppendix ? (
+        <AppendixBody content={m.content} />
       ) : (
         <MessageMarkdown text={m.content} />
       )}
