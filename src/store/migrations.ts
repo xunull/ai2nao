@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 44;
+const CURRENT_VERSION = 46;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -55,6 +55,8 @@ export function migrate(db: Database.Database): void {
     applyV42(db);
     applyV43(db);
     applyV44(db);
+    applyV45(db);
+    applyV46(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -105,6 +107,8 @@ export function migrate(db: Database.Database): void {
   if (v < 42) applyV42(db);
   if (v < 43) applyV43(db);
   if (v < 44) applyV44(db);
+  if (v < 45) applyV45(db);
+  if (v < 46) applyV46(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -724,6 +728,67 @@ function applyV10(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 10 WHERE id = 1;
+  `);
+}
+
+/**
+ * Topic stream: a source-agnostic, rebuildable derived layer for the topic
+ * river (Stage 1 = per-visit rows, browsing adapter only). Raw sources stay the
+ * source of truth. `payload` (JSON) carries source-specific fields (browsing:
+ * host/url/title/transition) so git/shell sources can populate the same table
+ * later without a schema change.
+ */
+function applyV45(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS topic_stream (
+      source TEXT NOT NULL,
+      profile TEXT NOT NULL,
+      source_ref TEXT NOT NULL,
+      category TEXT NOT NULL,
+      calendar_day TEXT NOT NULL,
+      event_time INTEGER NOT NULL,
+      weight INTEGER NOT NULL DEFAULT 1,
+      payload TEXT,
+      inserted_at TEXT NOT NULL,
+      PRIMARY KEY (source, profile, source_ref)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_topic_stream_scope_cat_day
+      ON topic_stream(source, profile, category, calendar_day);
+    CREATE INDEX IF NOT EXISTS idx_topic_stream_scope_day
+      ON topic_stream(source, profile, calendar_day);
+
+    CREATE TABLE IF NOT EXISTS topic_stream_state (
+      source TEXT NOT NULL,
+      profile TEXT NOT NULL,
+      rule_version TEXT NOT NULL,
+      last_rebuilt_at TEXT,
+      last_error TEXT,
+      source_event_count INTEGER NOT NULL DEFAULT 0,
+      derived_event_count INTEGER NOT NULL DEFAULT 0,
+      last_rebuild_duration_ms INTEGER,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source, profile)
+    );
+
+    UPDATE meta_schema SET version = 45 WHERE id = 1;
+  `);
+}
+
+/**
+ * Topic stream Stage 2: session id on each derived row. The rebuild segments
+ * visits into research sessions (from_visit chains + time gap) and labels each
+ * row with its session's anchor category. Rebuildable, so ADD COLUMN + next
+ * rebuild backfills it.
+ */
+function applyV46(db: Database.Database): void {
+  db.exec(`
+    ALTER TABLE topic_stream ADD COLUMN session_id TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_topic_stream_session
+      ON topic_stream(source, profile, session_id);
+
+    UPDATE meta_schema SET version = 46 WHERE id = 1;
   `);
 }
 

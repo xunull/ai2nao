@@ -28,6 +28,7 @@ import {
 } from "./chromeHistory/paths.js";
 import { syncChromeHistory } from "./chromeHistory/sync.js";
 import { rebuildChromeHistoryVisitDomains } from "./chromeHistory/domainPivot.js";
+import { rebuildChromeTopicStream, rebuildGitTopicStream } from "./topicStream/rebuild.js";
 import { loadGithubToken } from "./github/config.js";
 import { syncGithub } from "./github/sync.js";
 import { redactAuth } from "./github/fetcher.js";
@@ -567,6 +568,59 @@ chromeHistoryDomainsCmd
         console.error(
           `Chrome history domain rebuild [${profile}]: ${result.ok ? "ok" : "failed"} (${result.derivedVisitCount}/${result.sourceVisitCount} visits, ${result.durationMs}ms).`
         );
+        if (result.error) console.error(`error: ${result.error}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const topicsCmd = program
+  .command("topics")
+  .description(
+    "Topic stream: rebuild the per-visit browsing topic river derived layer (Stage 1)"
+  );
+
+topicsCmd
+  .command("rebuild")
+  .description("Rebuild the topic stream for one source (chrome | git)")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--source <name>", "topic source: chrome | git", "chrome")
+  .option("--profile <name>", "Chrome profile folder name (chrome only)", "Default")
+  .option("--json", "print machine-readable JSON", false)
+  .action((opts: { db: string; source: string; profile: string; json: boolean }) => {
+    const source = opts.source.trim() || "chrome";
+    if (source !== "chrome" && source !== "git") {
+      console.error(`topics rebuild: unknown source '${source}' (use chrome | git).`);
+      process.exitCode = 1;
+      return;
+    }
+    const profile = opts.profile.trim() || "Default";
+    const db = openDatabase(opts.db);
+    try {
+      const result =
+        source === "git" ? rebuildGitTopicStream(db) : rebuildChromeTopicStream(db, profile);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: result.ok, result }, null, 2));
+      } else {
+        console.error(
+          `Topic stream rebuild [${source}/${result.profile}]: ${result.ok ? "ok" : "failed"} (${result.derivedCount}/${result.sourceCount} kept, ${result.durationMs}ms, rules ${result.ruleVersion}).`
+        );
+        const d = result.diagnostic;
+        if (d) {
+          console.error(`  其他 share: ${(d.other_share * 100).toFixed(1)}%  (kept ${d.total_kept} / source ${d.total_source}, non-web dropped ${d.filtered_non_web})`);
+          const cats = Object.entries(d.category_counts).sort((a, b) => b[1] - a[1]);
+          for (const [name, count] of cats) console.error(`    ${name}: ${count}`);
+          const filtered = Object.entries(d.filtered_transition).sort((a, b) => b[1] - a[1]);
+          if (filtered.length) {
+            console.error(`  filtered transitions: ${filtered.map(([k, v]) => `${k}=${v}`).join(", ")}`);
+          }
+          if (d.top_unmatched_domains.length) {
+            console.error(`  top unmatched domains (→其他):`);
+            for (const u of d.top_unmatched_domains) console.error(`    ${u.domain}: ${u.count}`);
+          }
+        }
         if (result.error) console.error(`error: ${result.error}`);
       }
       process.exitCode = result.ok ? 0 : 1;

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { defaultChromeHistoryPath } from "../chromeHistory/paths.js";
 import { rebuildChromeHistoryVisitDomains } from "../chromeHistory/domainPivot.js";
+import { rebuildChromeTopicStream, rebuildGitTopicStream } from "../topicStream/rebuild.js";
 import { syncChromeHistory } from "../chromeHistory/sync.js";
 import { defaultDownloadRoots } from "../downloads/roots.js";
 import { scanDownloads } from "../downloads/scan.js";
@@ -167,6 +168,40 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
       run: (ctx) => {
         const profile = stringConfig(ctx.config.profile) ?? "Default";
         const result = rebuildChromeHistoryVisitDomains(ctx.db, profile);
+        return Promise.resolve({
+          status: result.ok ? "success" : "failed",
+          summary: result,
+          errorSummary: result.error ?? null,
+        });
+      },
+    },
+    {
+      key: "topics.chrome.rebuild",
+      label: "浏览主题河流重建",
+      description: "重建 topic_stream 浏览主题河流派生表(会话切分 + 主题分类)。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      defaultConfig: { profile: "Default" },
+      run: (ctx) => {
+        const profile = stringConfig(ctx.config.profile) ?? "Default";
+        const result = rebuildChromeTopicStream(ctx.db, profile);
+        return Promise.resolve({
+          status: result.ok ? "success" : "failed",
+          summary: result,
+          errorSummary: result.error ?? null,
+        });
+      },
+    },
+    {
+      key: "topics.git.rebuild",
+      label: "提交主题河流重建",
+      description: "重建 topic_stream 的 git 提交河流派生层(按 repo 出带)。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: (ctx) => {
+        const result = rebuildGitTopicStream(ctx.db);
         return Promise.resolve({
           status: result.ok ? "success" : "failed",
           summary: result,

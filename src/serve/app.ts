@@ -25,6 +25,7 @@ import {
 } from "../downloads/queries.js";
 import { scanDownloads } from "../downloads/scan.js";
 import { registerChromeHistoryRoutes } from "../chromeHistory/routes.js";
+import { registerTopicStreamRoutes } from "../topicStream/routes.js";
 import {
   createBashApprovalStore,
   createSqliteBashPermissionRuleStore,
@@ -277,6 +278,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerLmStudioRoutes(app, db);
   registerSoftwareRoutes(app, db);
   registerChromeHistoryRoutes(app, db);
+  registerTopicStreamRoutes(app, db);
   registerVscodeRoutes(app, db);
   registerAtuinDirectoryActivityRoutes(app, db, atuin);
   registerWorkDashboardRoutes(app, db);
