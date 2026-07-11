@@ -22,6 +22,9 @@ const ChromeHistory = lazy(() =>
 const ChromeHistoryDomains = lazy(() =>
   import("./pages/ChromeHistoryDomains").then((m) => ({ default: m.ChromeHistoryDomains }))
 );
+const TopicRiver = lazy(() =>
+  import("./pages/TopicRiver").then((m) => ({ default: m.TopicRiver }))
+);
 const CherryStudioHistory = lazy(() =>
   import("./pages/CherryStudioHistory").then((m) => ({ default: m.CherryStudioHistory }))
 );
@@ -147,6 +150,7 @@ export function App() {
           <Route path="/dashboard/project-output" element={<ProjectOutput />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/dashboard/cosmos" element={<Cosmos />} />
+          <Route path="/topics/river" element={<TopicRiver />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/agent-messages" element={<AgentMessages />} />
           <Route path="/ai-rhythm" element={<AiRhythm />} />

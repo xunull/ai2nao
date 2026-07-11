@@ -44,6 +44,7 @@ import {
   SquareTerminal,
   Tags,
   Terminal,
+  Waves,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -85,6 +86,7 @@ const navGroups: NavGroup[] = [
       { to: "/dashboard/project-output", label: "产出效率", icon: Gauge },
       { to: "/work-recap", label: "工作回看", icon: GitCommit },
       { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
+      { to: "/topics/river", label: "主题河流", icon: Waves },
       { to: "/providers", label: "外部平台", icon: Plug },
       { to: "/agent-messages", label: "对话搜索", icon: Search },
       { to: "/ai-rhythm", label: "AI 节律", icon: CalendarClock },
