@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { Page } from "../components/Page";
 import { exportElementToPng } from "../util/exportPng";
@@ -113,6 +113,60 @@ function bandPath(top: Pt[], bottom: Pt[]): string {
 }
 
 /** Stable band order: by total desc, but 其他 always last (bottom of the stack). */
+type TopicSource = "chrome" | "git" | "conversation";
+
+const SOURCE_META: Record<
+  TopicSource,
+  { title: string; subtitle: string; index: string; hint: string; empty: string }
+> = {
+  chrome: {
+    title: "浏览主题河流",
+    subtitle: "按主题类目看浏览注意力随时间的流动",
+    index: "类目",
+    hint: "点击色带某段 → 看那段时间该主题下访问过的页面。",
+    empty: "该主题在这段时间没有页面。",
+  },
+  git: {
+    title: "git 提交河流",
+    subtitle: "按 repo 看提交随时间的流动",
+    index: "仓库",
+    hint: "点击色带某段 → 看那段时间该 repo 的提交。",
+    empty: "该 repo 在这段时间没有提交。",
+  },
+  conversation: {
+    title: "对话主题河流",
+    subtitle: "按主题看你跟 AI 的对话注意力随时间的流动",
+    index: "主题",
+    hint: "点击色带某段 → 看那段时间该主题下的会话。",
+    empty: "该主题在这段时间没有会话。",
+  },
+};
+
+/**
+ * In-app session-detail link for a conversation drilldown row.
+ * source_ref = `${chat_source}:${source_session_id}`. codex/opencode ids map
+ * straight to their session page; claude's id is itself `${projectId}:${uuid}`
+ * and its page needs projectId as a query param.
+ */
+function sessionDetailPath(sourceRef: string): string | null {
+  const idx = sourceRef.indexOf(":");
+  if (idx < 0) return null;
+  const chatSource = sourceRef.slice(0, idx);
+  const sid = sourceRef.slice(idx + 1);
+  if (!sid) return null;
+  if (chatSource === "codex") return `/codex-history/s/${encodeURIComponent(sid)}`;
+  if (chatSource === "opencode") return `/opencode-history/s/${encodeURIComponent(sid)}`;
+  if (chatSource === "claude") {
+    const cidx = sid.indexOf(":");
+    if (cidx < 0) return null;
+    const projectId = sid.slice(0, cidx);
+    const sessionUuid = sid.slice(cidx + 1);
+    if (!projectId || !sessionUuid) return null;
+    return `/claude-code-history/s/${encodeURIComponent(sessionUuid)}?projectId=${encodeURIComponent(projectId)}`;
+  }
+  return null;
+}
+
 function orderBands(ys: string[], cells: number[][]): { name: string; row: number[]; total: number }[] {
   const bands = ys.map((name, i) => ({
     name,
@@ -337,9 +391,12 @@ export function TopicRiver() {
   const to = params.get("to") || defaultTo();
   const cat = params.get("cat");
   const bucket = params.get("bucket");
-  const source = params.get("source") === "git" ? "git" : "chrome";
-  const profile = source === "git" ? "-" : params.get("profile") || "Default";
+  const sourceParam = params.get("source");
+  const source: TopicSource =
+    sourceParam === "git" ? "git" : sourceParam === "conversation" ? "conversation" : "chrome";
+  const profile = source === "chrome" ? params.get("profile") || "Default" : "-";
   const rebuildCmd = `node dist/cli.js topics rebuild --source ${source}`;
+  const meta = SOURCE_META[source];
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
@@ -358,8 +415,9 @@ export function TopicRiver() {
   };
 
   const categoriesQuery = useQuery({
-    queryKey: ["topics-categories"],
-    queryFn: ({ signal }) => apiGet<CategoriesRes>("/api/topics/categories", { signal }),
+    queryKey: ["topics-categories", source],
+    queryFn: ({ signal }) =>
+      apiGet<CategoriesRes>(`/api/topics/categories?source=${source}`, { signal }),
   });
 
   const streamQuery = useQuery({
@@ -412,7 +470,7 @@ export function TopicRiver() {
     </button>
   );
 
-  const sourceBtn = (s: "chrome" | "git", label: string) => (
+  const sourceBtn = (s: TopicSource, label: string) => (
     <button
       type="button"
       onClick={() => {
@@ -435,6 +493,7 @@ export function TopicRiver() {
       <div className="inline-flex overflow-hidden rounded border border-[var(--border)]">
         {sourceBtn("chrome", "浏览主题")}
         {sourceBtn("git", "git 提交")}
+        {sourceBtn("conversation", "对话主题")}
       </div>
       <div className="inline-flex overflow-hidden rounded border border-[var(--border)]">
         {grainBtn("day", "日")}
@@ -488,12 +547,8 @@ export function TopicRiver() {
 
   return (
     <Page
-      title={source === "git" ? "git 提交河流" : "浏览主题河流"}
-      subtitle={
-        source === "git"
-          ? "按 repo 看提交随时间的流动"
-          : "按主题类目看浏览注意力随时间的流动"
-      }
+      title={meta.title}
+      subtitle={meta.subtitle}
       actions={actions}
       toolbar={toolbar}
     >
@@ -547,7 +602,7 @@ export function TopicRiver() {
         <div className="grid grid-cols-[360px_minmax(0,1fr)] items-start gap-6">
           <div className="rounded border border-[var(--border)]">
             <div className="border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]">
-              {source === "git" ? "仓库" : "类目"} · 点击可高亮
+              {meta.index} · 点击可高亮
             </div>
             <ul>
               {indexRows.map((r) => {
@@ -599,11 +654,7 @@ export function TopicRiver() {
                 grain={grain}
               />
             ) : (
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                {source === "git"
-                  ? "点击色带某段 → 看那段时间该 repo 的提交。"
-                  : "点击色带某段 → 看那段时间该主题下访问过的页面。"}
-              </p>
+              <p className="mt-2 text-xs text-[var(--muted)]">{meta.hint}</p>
             )}
           </div>
         </div>
@@ -667,29 +718,48 @@ function Drilldown({
         </div>
       ) : items.length === 0 ? (
         <p className="px-3 py-6 text-center text-sm text-[var(--muted)]">
-          {source === "git" ? "该 repo 在这段时间没有提交。" : "该主题在这段时间没有页面。"}
+          {(SOURCE_META[source as TopicSource] ?? SOURCE_META.chrome).empty}
         </p>
       ) : (
         <ul className="divide-y divide-[var(--border)]">
-          {items.map((r) => (
-            <li key={r.source_ref} className="px-3 py-1.5 text-sm">
-              <a
-                href={r.url ?? undefined}
-                target="_blank"
-                rel="noreferrer"
-                className="block truncate text-[var(--accent)] hover:underline"
-                title={r.url ?? undefined}
-              >
-                {r.title?.trim() || r.url}
-              </a>
-              <div className="flex gap-2 text-xs text-[var(--muted)]">
-                <span className="truncate">{r.host}</span>
-                <span className="ml-auto shrink-0 tabular-nums">
-                  {new Date(r.event_time_unix_ms).toLocaleString()}
-                </span>
-              </div>
-            </li>
-          ))}
+          {items.map((r) => {
+            const convoPath = source === "conversation" ? sessionDetailPath(r.source_ref) : null;
+            return (
+              <li key={r.source_ref} className="px-3 py-1.5 text-sm">
+                {source === "conversation" ? (
+                  convoPath ? (
+                    <Link
+                      to={convoPath}
+                      className="block truncate text-[var(--accent)] hover:underline"
+                      title={r.title ?? undefined}
+                    >
+                      {r.title?.trim() || "(会话)"}
+                    </Link>
+                  ) : (
+                    <span className="block truncate" title={r.title ?? undefined}>
+                      {r.title?.trim() || "(会话)"}
+                    </span>
+                  )
+                ) : (
+                  <a
+                    href={r.url ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block truncate text-[var(--accent)] hover:underline"
+                    title={r.url ?? undefined}
+                  >
+                    {r.title?.trim() || r.url}
+                  </a>
+                )}
+                <div className="flex gap-2 text-xs text-[var(--muted)]">
+                  <span className="truncate">{r.host}</span>
+                  <span className="ml-auto shrink-0 tabular-nums">
+                    {new Date(r.event_time_unix_ms).toLocaleString()}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       {q.hasNextPage ? (

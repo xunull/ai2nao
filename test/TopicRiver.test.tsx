@@ -143,4 +143,37 @@ describe("TopicRiver page", () => {
       );
     });
   });
+
+  it("switches source to conversation: retitles, relabels index 主题, fetches source=conversation&profile=-", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/topics/categories")) return CATEGORIES;
+      if (url.includes("/api/topics/stream")) {
+        return url.includes("source=conversation")
+          ? streamRes({ source: "conversation", ys: ["DNS", "其他"], built: true })
+          : streamRes({ source: "chrome", ys: ["社区", "其他"], built: true });
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByText("浏览主题河流")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "对话主题" }));
+
+    expect(await screen.findByText("对话主题河流")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /DNS/ })).toBeInTheDocument();
+    expect(screen.getByText("主题 · 点击可高亮")).toBeInTheDocument();
+
+    await waitFor(() => {
+      const streamUrls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes("/api/topics/stream?"));
+      expect(
+        streamUrls.some((u) => u.includes("source=conversation") && u.includes("profile=-"))
+      ).toBe(true);
+    });
+  });
 });
