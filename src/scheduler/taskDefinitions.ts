@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import { defaultChromeHistoryPath } from "../chromeHistory/paths.js";
 import { rebuildChromeHistoryVisitDomains } from "../chromeHistory/domainPivot.js";
 import { rebuildChromeTopicStream, rebuildGitTopicStream } from "../topicStream/rebuild.js";
+import { rebuildConversationTopicStream } from "../topicStream/conversation.js";
+import { llmClusterNamer } from "../topicStream/conversationNaming.js";
 import { syncChromeHistory } from "../chromeHistory/sync.js";
 import { defaultDownloadRoots } from "../downloads/roots.js";
 import { scanDownloads } from "../downloads/scan.js";
@@ -207,6 +209,22 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           summary: result,
           errorSummary: result.error ?? null,
         });
+      },
+    },
+    {
+      key: "topics.conversation.rebuild",
+      label: "对话主题河流重建",
+      description: "重建 topic_stream 的对话河流派生层(清洗用户消息 embedding + 冻结码本聚类)。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const result = await rebuildConversationTopicStream(ctx.db, { namer: llmClusterNamer });
+        return {
+          status: result.ok ? "success" : "failed",
+          summary: result,
+          errorSummary: result.error ?? null,
+        };
       },
     },
     {

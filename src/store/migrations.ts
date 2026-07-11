@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 46;
+const CURRENT_VERSION = 47;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -57,6 +57,7 @@ export function migrate(db: Database.Database): void {
     applyV44(db);
     applyV45(db);
     applyV46(db);
+    applyV47(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -109,6 +110,7 @@ export function migrate(db: Database.Database): void {
   if (v < 44) applyV44(db);
   if (v < 45) applyV45(db);
   if (v < 46) applyV46(db);
+  if (v < 47) applyV47(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -789,6 +791,44 @@ function applyV46(db: Database.Database): void {
       ON topic_stream(source, profile, session_id);
 
     UPDATE meta_schema SET version = 46 WHERE id = 1;
+  `);
+}
+
+/**
+ * Topic stream Stage 3: conversation adapter (source-agnostic topic engine, 3rd
+ * adapter). `topic_codebook` = frozen learned clusters (centroid + LLM/TF-IDF
+ * label) keyed by rule_version (`cluster-vN`); new sessions assign to the nearest
+ * frozen centroid. `topic_conversation_vectors` caches per-session embeddings of
+ * cleaned user messages (keyed by embed_key = cleaner+embedder id) so a rebuild
+ * doesn't re-embed. Design: quincy-feat-topic-river-engine-design-20260711.
+ */
+function applyV47(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS topic_codebook (
+      rule_version TEXT NOT NULL,
+      cluster_id INTEGER NOT NULL,
+      centroid BLOB NOT NULL,
+      dim INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      member_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (rule_version, cluster_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS topic_conversation_vectors (
+      source TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      event_time INTEGER NOT NULL,
+      msg_count INTEGER NOT NULL DEFAULT 0,
+      text_sample TEXT,
+      vector BLOB NOT NULL,
+      dim INTEGER NOT NULL,
+      embed_key TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source, session_id)
+    );
+
+    UPDATE meta_schema SET version = 47 WHERE id = 1;
   `);
 }
 

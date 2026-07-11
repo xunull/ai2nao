@@ -29,6 +29,8 @@ import {
 import { syncChromeHistory } from "./chromeHistory/sync.js";
 import { rebuildChromeHistoryVisitDomains } from "./chromeHistory/domainPivot.js";
 import { rebuildChromeTopicStream, rebuildGitTopicStream } from "./topicStream/rebuild.js";
+import { rebuildConversationTopicStream } from "./topicStream/conversation.js";
+import { llmClusterNamer } from "./topicStream/conversationNaming.js";
 import { loadGithubToken } from "./github/config.js";
 import { syncGithub } from "./github/sync.js";
 import { redactAuth } from "./github/fetcher.js";
@@ -584,15 +586,17 @@ const topicsCmd = program
 
 topicsCmd
   .command("rebuild")
-  .description("Rebuild the topic stream for one source (chrome | git)")
+  .description("Rebuild the topic stream for one source (chrome | git | conversation)")
   .option("--db <path>", "SQLite database path", defaultDbPath())
-  .option("--source <name>", "topic source: chrome | git", "chrome")
+  .option("--source <name>", "topic source: chrome | git | conversation", "chrome")
   .option("--profile <name>", "Chrome profile folder name (chrome only)", "Default")
+  .option("--recluster", "conversation only: re-derive the codebook (bump clusters)", false)
+  .option("--k <n>", "conversation only: cluster count for --recluster (default 12)")
   .option("--json", "print machine-readable JSON", false)
-  .action((opts: { db: string; source: string; profile: string; json: boolean }) => {
+  .action(async (opts: { db: string; source: string; profile: string; recluster: boolean; k?: string; json: boolean }) => {
     const source = opts.source.trim() || "chrome";
-    if (source !== "chrome" && source !== "git") {
-      console.error(`topics rebuild: unknown source '${source}' (use chrome | git).`);
+    if (source !== "chrome" && source !== "git" && source !== "conversation") {
+      console.error(`topics rebuild: unknown source '${source}' (use chrome | git | conversation).`);
       process.exitCode = 1;
       return;
     }
@@ -600,7 +604,15 @@ topicsCmd
     const db = openDatabase(opts.db);
     try {
       const result =
-        source === "git" ? rebuildGitTopicStream(db) : rebuildChromeTopicStream(db, profile);
+        source === "git"
+          ? rebuildGitTopicStream(db)
+          : source === "conversation"
+            ? await rebuildConversationTopicStream(db, {
+                recluster: opts.recluster,
+                namer: llmClusterNamer,
+                k: opts.k ? Math.max(2, parseInt(opts.k, 10) || 12) : undefined,
+              })
+            : rebuildChromeTopicStream(db, profile);
       if (opts.json) {
         console.log(JSON.stringify({ ok: result.ok, result }, null, 2));
       } else {

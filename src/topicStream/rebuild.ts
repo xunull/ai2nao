@@ -24,7 +24,18 @@ const GIT_RULE_VERSION = "git-repo-v1";
 /** Number of top repos kept as their own bands; the rest fold into 其他. */
 const GIT_TOP_N = 12;
 
-type TopicStreamEvent = {
+/** Conversation adapter (3rd source): AI-chat topic river from cleaned user messages. */
+export const CONVERSATION_SOURCE = "conversation";
+/** conversation has no per-profile concept; use the no-profile convention. */
+export const CONVERSATION_PROFILE = "-";
+/**
+ * Active conversation codebook version. `cluster-vN` — bump (via --recluster on
+ * a new N) reclusters and reshuffles bands; otherwise new sessions assign to the
+ * frozen centroids of this version and bands stay stable across rebuilds.
+ */
+export const CONVERSATION_RULE_VERSION = "cluster-v1";
+
+export type TopicStreamEvent = {
   sourceRef: string;
   sessionId: string | null;
   category: string;
@@ -89,7 +100,7 @@ type ChromeVisitRow = {
   visit_time: number;
 };
 
-function nowIso(): string {
+export function nowIso(): string {
   return new Date().toISOString();
 }
 
@@ -100,7 +111,7 @@ function chromeSourceCount(db: Database.Database, profile: string): number {
   return row.c;
 }
 
-function derivedCount(db: Database.Database, source: string, profile: string): number {
+export function derivedCount(db: Database.Database, source: string, profile: string): number {
   const row = db
     .prepare(`SELECT COUNT(*) AS c FROM topic_stream WHERE source = ? AND profile = ?`)
     .get(source, profile) as { c: number };
@@ -112,8 +123,22 @@ function gitSourceCount(db: Database.Database): number {
   return row.c;
 }
 
+/** Eligible conversation sessions = distinct (source, session) with human messages. */
+function conversationSourceCount(db: Database.Database): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM (
+         SELECT source, source_session_id FROM agent_user_messages
+         WHERE is_human = 1 AND source IN ('claude', 'codex', 'opencode')
+         GROUP BY source, source_session_id
+       )`
+    )
+    .get() as { c: number };
+  return row.c;
+}
+
 /** Local calendar day `YYYY-MM-DD` from an ISO/UTC timestamp (matches chrome's local day). */
-function localDayFromIso(iso: string): string {
+export function localDayFromIso(iso: string): string {
   const d = new Date(iso);
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, "0");
@@ -251,7 +276,7 @@ function buildChromeTopicEvents(
   };
 }
 
-function upsertState(
+export function upsertState(
   db: Database.Database,
   source: string,
   profile: string,
@@ -292,7 +317,7 @@ function upsertState(
 }
 
 /** Shared: clear + reinsert one (source, profile) slice + upsert freshness, in one txn. */
-function persistTopicStream(
+export function persistTopicStream(
   db: Database.Database,
   args: {
     source: string;
@@ -622,6 +647,8 @@ export function getTopicStreamStatus(
   let ruleVersion: string;
   if (source === GIT_SOURCE) {
     ruleVersion = GIT_RULE_VERSION;
+  } else if (source === CONVERSATION_SOURCE) {
+    ruleVersion = CONVERSATION_RULE_VERSION;
   } else {
     const cfg = readTopicStreamConfig(configPath);
     ruleVersion = cfg.ok ? cfg.hash : CONFIG_ERROR_VERSION;
@@ -631,7 +658,9 @@ export function getTopicStreamStatus(
       ? chromeSourceCount(db, profile)
       : source === GIT_SOURCE
         ? gitSourceCount(db)
-        : 0;
+        : source === CONVERSATION_SOURCE
+          ? conversationSourceCount(db)
+          : 0;
   const currentDerivedCount = derivedCount(db, source, profile);
   const staleReasons: string[] = [];
   if (!state) staleReasons.push("not_built");

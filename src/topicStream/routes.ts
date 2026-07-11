@@ -3,7 +3,8 @@ import type Database from "better-sqlite3";
 import { taxonomyLegend } from "./classify.js";
 import { readTopicStreamConfig } from "./config.js";
 import { getTopicStreamDrilldown, getTopicStreamMatrix, type TopicGrain } from "./queries.js";
-import { CHROME_SOURCE, GIT_SOURCE, getTopicStreamStatus } from "./rebuild.js";
+import { CHROME_SOURCE, GIT_SOURCE, CONVERSATION_SOURCE, getTopicStreamStatus } from "./rebuild.js";
+import { conversationLegend } from "./conversation.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
@@ -16,11 +17,11 @@ function profileOf(c: Ctx): string {
   return p.length > 0 ? p : "Default";
 }
 
-/** Topic sources: chrome (browsing) and git (commits). Reject anything else loudly. */
+/** Topic sources: chrome (browsing), git (commits), conversation (AI chats). */
 function sourceOf(c: Ctx): string {
   const s = (c.req.query("source") ?? CHROME_SOURCE).trim() || CHROME_SOURCE;
-  if (s !== CHROME_SOURCE && s !== GIT_SOURCE) {
-    throw new Error(`invalid source '${s}' (use chrome | git)`);
+  if (s !== CHROME_SOURCE && s !== GIT_SOURCE && s !== CONVERSATION_SOURCE) {
+    throw new Error(`invalid source '${s}' (use chrome | git | conversation)`);
   }
   return s;
 }
@@ -105,20 +106,32 @@ export function registerTopicStreamRoutes(app: Hono, db: Database.Database): voi
   });
 
   app.get("/api/topics/categories", (c) => {
-    const cfg = readTopicStreamConfig();
-    if (!cfg.ok) {
+    try {
+      const source = sourceOf(c);
+      // Conversation bands are the frozen codebook labels; color keyed by cluster_id
+      // (stable, thickness-independent). chrome/git keep the taxonomy legend.
+      if (source === CONVERSATION_SOURCE) {
+        return c.json({ configOk: true, source, categories: conversationLegend(db) });
+      }
+      const cfg = readTopicStreamConfig();
+      if (!cfg.ok) {
+        return c.json({
+          configOk: false,
+          source,
+          configPath: cfg.path,
+          issues: cfg.issues,
+          categories: taxonomyLegend(),
+        });
+      }
       return c.json({
-        configOk: false,
+        configOk: true,
+        source,
         configPath: cfg.path,
-        issues: cfg.issues,
-        categories: taxonomyLegend(),
+        configExists: cfg.exists,
+        categories: taxonomyLegend(cfg.categories),
       });
+    } catch (e) {
+      return jsonErr(statusCode(e), String(e));
     }
-    return c.json({
-      configOk: true,
-      configPath: cfg.path,
-      configExists: cfg.exists,
-      categories: taxonomyLegend(cfg.categories),
-    });
   });
 }
