@@ -95,11 +95,14 @@ export type PromptOutput = {
   redactedKinds: string[];
 };
 
-const SYSTEM_PROMPT = `You summarize a developer's recent commits across multiple local git repositories.
+const SYSTEM_PROMPT = `You write a developer's periodic work recap from multiple local signals: git commits, AI-assistant token spend/cost, and topic activity (what they browsed, asked AI, and committed — unified as topics).
 You produce strict JSON only, matching the schema in the user message.
-Never invent project names that are not in the provided facts.
-Lean toward humble inference language ("looks like", "appears to") in summary; never assert.
-If totalCommits is small or signal is sparse, set workMode to "low_signal" and write a short factual summary.`;
+Lead the narrative with cost + this window's top topics (the reliable signals); commits are the "shipped" dimension.
+A window can be commit-sparse yet research-heavy: spend + topics but few commits = "explore", not low_signal.
+Cost coverage may be partial — when the facts say so, hedge ("至少 $Z,部分会话未计入"); never overstate a cost flagged partial.
+git commits and git-source topics are the SAME activity seen two ways; do not double-count them as separate work.
+Never invent projects, topics, or numbers not in the provided facts. Lean toward humble language ("看起来", "appears"); never assert.
+Only if commits, token, AND topic signal are all absent/empty: set workMode to "low_signal" and write a short factual summary.`;
 
 const SCHEMA_DESCRIPTION = JSON.stringify(
   {
@@ -110,11 +113,49 @@ const SCHEMA_DESCRIPTION = JSON.stringify(
     fragmentation: "low|med|high",
     degraded: "boolean (set true only if you have to abandon inference)",
     degradeReason:
-      "null|sparse_signal|text_fact_conflict (use sparse_signal when totalCommits<3 or projects all show 1 commit; null otherwise)",
+      "null|sparse_signal|text_fact_conflict (use sparse_signal only when commits AND token AND topic signal are all absent/empty; null otherwise)",
   },
   null,
   2
 );
+
+function factStatusLabel(status: string): string {
+  return status === "absent"
+    ? "source not available"
+    : status === "empty"
+      ? "no activity this window"
+      : status === "error"
+        ? "read failed"
+        : "ok";
+}
+
+/** Compact token/cost line for the prompt (with a coverage hedge when partial). */
+function renderTokenFacts(g: WorkRecapFacts["tokenFacts"]): string {
+  if (g.status !== "ok" || !g.data) return `Token/cost: (${factStatusLabel(g.status)})`;
+  const d = g.data;
+  const hedge =
+    d.coverage === "full"
+      ? ""
+      : ` [coverage=${d.coverage}${d.unpricedTokenCount ? `, ${d.unpricedTokenCount} tokens unpriced` : ""} — state cost as a floor, not exact]`;
+  return `Token/cost: ~$${d.costUsd.toFixed(2)}${hedge}; ${d.headlineTokens.toLocaleString()} tokens; dominant=${d.dominantProvider} (claude ${(d.claudeShare * 100).toFixed(0)}% / codex ${(d.codexShare * 100).toFixed(0)}%); price snapshot ${d.priceSnapshotDate}`;
+}
+
+/** Per-source top topics + gated drift. Chrome is de-weighted (generic browsing). */
+function renderTopicFacts(g: WorkRecapFacts["topicDrift"]): string {
+  if (g.status !== "ok" || !g.data) return `Topics: (${factStatusLabel(g.status)})`;
+  const lines = g.data.bySource.map(
+    (s) =>
+      `  ${s.source} (${s.events} ev): ${s.top.map((t) => `${t.name} ${(t.share * 100).toFixed(0)}%`).join(", ") || "(none above noise)"}`
+  );
+  const drift = g.data.drift?.length
+    ? "  drift: " + g.data.drift.map((d) => `${d.source} ${d.from}→${d.to}`).join("; ")
+    : "  drift: (none / below threshold — do not narrate a shift)";
+  return [
+    "Topics this window (git+conversation are dev-meaningful; chrome de-weighted):",
+    ...lines,
+    drift,
+  ].join("\n");
+}
 
 /**
  * Builds the prompt with hard token/char budgets enforced. Commits are
@@ -210,6 +251,10 @@ export function buildPrompt(input: PromptInput): PromptOutput {
     "",
     "Facts:",
     factsHeader,
+    "",
+    renderTokenFacts(facts.tokenFacts),
+    "",
+    renderTopicFacts(facts.topicDrift),
     "",
     "Projects (top by commit count):",
     projectSection || "(no commits in window)",

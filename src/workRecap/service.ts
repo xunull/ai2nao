@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { execGitSync } from "../git/exec.js";
 import type { LlmChatConfig } from "../llmChat/config.js";
 import { computeFacts, isSparseFacts } from "./facts.js";
+import { gatherTokenFacts, gatherTopicDriftFacts } from "./multiSourceFacts.js";
 import {
   WorkRecapLlmError,
   callLlm,
@@ -126,6 +127,11 @@ export async function generateRecap(
     scanTruncatedReason,
     scanDiagnostics: scan.diagnostics,
   });
+
+  // v2 multi-source facts (own db + window). Each degrades independently and
+  // never throws, so they can't take down the commit facts / the whole recap.
+  facts.tokenFacts = gatherTokenFacts(runtime.db, since, now);
+  facts.topicDrift = gatherTopicDriftFacts(runtime.db, since, now);
 
   let inference: WorkRecapInference;
 

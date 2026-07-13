@@ -147,7 +147,7 @@ function safeMonthRange(
   }
 }
 
-function enumerateAndAggregate(
+export function enumerateAndAggregate(
   db: Database.Database,
   from: Date,
   to: Date,

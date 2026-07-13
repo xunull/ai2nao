@@ -164,6 +164,8 @@ export function registerWorkRecapRoutes(
             scanTruncated: false,
             scanTruncatedReason: null,
             diagnostics: [],
+            tokenFacts: { status: "absent" },
+            topicDrift: { status: "absent" },
           },
           inference: {
             summary: "",

@@ -110,13 +110,24 @@ export function computeFacts(args: ComputeFactsArgs): WorkRecapFacts {
     scanTruncated: args.scanTruncated,
     scanTruncatedReason: args.scanTruncatedReason,
     diagnostics: args.scanDiagnostics,
+    // Defaults; the service replaces these with gathered multi-source facts.
+    tokenFacts: { status: "absent" },
+    topicDrift: { status: "absent" },
   };
 }
 
 /** Heuristic threshold below which we mark the inference layer as low_signal. */
 export const SPARSE_SIGNAL_COMMIT_THRESHOLD = 3;
 
-/** Pure helper for tests + prompt to detect sparse-signal windows. */
+/**
+ * Sparse = not enough signal to narrate. Commit-sparse alone is NOT sparse when
+ * a multi-source fact group has data — the "researched/spent but didn't commit
+ * (explore)" window is exactly the story v2 exists to tell. Only truly-empty
+ * windows (few commits AND no token AND no topic signal) stay low_signal.
+ */
 export function isSparseFacts(facts: WorkRecapFacts): boolean {
-  return facts.totalCommits < SPARSE_SIGNAL_COMMIT_THRESHOLD;
+  if (facts.totalCommits >= SPARSE_SIGNAL_COMMIT_THRESHOLD) return false;
+  if (facts.tokenFacts.status === "ok") return false;
+  if (facts.topicDrift.status === "ok") return false;
+  return true;
 }

@@ -94,6 +94,50 @@ export type WorkRecapDailyBucket = {
   commitCount: number;
 };
 
+/** Degrade state of a v2 multi-source fact group (distinct from a bare null). */
+export type WorkRecapFactStatus = "ok" | "absent" | "empty" | "error";
+
+export type WorkRecapFactGroup<T> = {
+  status: WorkRecapFactStatus;
+  data?: T;
+  /** Present only when status = "error". */
+  message?: string;
+};
+
+/** Token/cost facts for the window (headline-caliber tokens + priced cost + coverage). */
+export type WorkRecapTokenFacts = {
+  costUsd: number;
+  coverage: "full" | "partial" | "unknown";
+  unpricedTokenCount: number;
+  priceSnapshotDate: string;
+  /** input+output headline tokens (cache / reasoning excluded). */
+  headlineTokens: number;
+  dominantProvider: "claude" | "codex" | "minimax" | "none";
+  claudeShare: number;
+  codexShare: number;
+};
+
+export type WorkRecapTopicShare = { name: string; count: number; share: number };
+
+export type WorkRecapTopicSourceTop = {
+  source: "chrome" | "git" | "conversation";
+  events: number;
+  top: WorkRecapTopicShare[];
+};
+
+export type WorkRecapTopicDriftItem = {
+  source: "chrome" | "git" | "conversation";
+  from: string;
+  to: string;
+};
+
+/** Top topics per source (the reliable narrative spine) + optional gated drift. */
+export type WorkRecapTopicFacts = {
+  bySource: WorkRecapTopicSourceTop[];
+  /** null when no source cleared the volume/bucket threshold (weekly grain is noisy). */
+  drift: WorkRecapTopicDriftItem[] | null;
+};
+
 export type WorkRecapFacts = {
   windowKey: WorkRecapWindow;
   windowStart: string; // ISO
@@ -112,6 +156,10 @@ export type WorkRecapFacts = {
   scanTruncatedReason: WorkRecapDegradeReason | null;
   /** Per-repo errors encountered during scan. */
   diagnostics: WorkRecapDiagnostic[];
+  /** v2 multi-source: token/cost facts (status-gated, degrades independently). */
+  tokenFacts: WorkRecapFactGroup<WorkRecapTokenFacts>;
+  /** v2 multi-source: per-source top topics + gated drift (status-gated). */
+  topicDrift: WorkRecapFactGroup<WorkRecapTopicFacts>;
 };
 
 export type WorkRecapDiagnostic = {
@@ -195,7 +243,12 @@ export type WorkRecapCommit = {
 };
 
 /** Current prompt version. Bump when prompt template OR schema changes. */
-export const WORK_RECAP_PROMPT_VERSION = "work-recap@v1";
+export const WORK_RECAP_PROMPT_VERSION = "work-recap@v2";
+
+/** Top topics kept per source in the topic-drift facts (narrative spine). */
+export const WORK_RECAP_TOPIC_TOP_N = 5;
+/** Drift is noisy on small N (weekly dev topics run 6–26 events). Gate it. */
+export const WORK_RECAP_DRIFT_MIN_EVENTS = 30;
 
 /** Per-repo `git log --max-count` (F8 decision). */
 export const WORK_RECAP_PER_REPO_COMMIT_CAP = 500;
@@ -203,8 +256,12 @@ export const WORK_RECAP_PER_REPO_COMMIT_CAP = 500;
 /** Global scan budget (git log phase only, excludes LLM call). */
 export const WORK_RECAP_SCAN_TIMEOUT_MS = 10_000;
 
-/** LLM call timeout (F9 decision; mirrors src/dailySummary/llm.ts). */
-export const WORK_RECAP_LLM_TIMEOUT_MS = 30_000;
+/**
+ * LLM call timeout. 60s (was 30s): reasoning models (deepseek-reasoner) spend
+ * real time reasoning before emitting the JSON, and the v2 multi-source prompt
+ * is longer; 30s timed out mid-reason and degraded to the commit-only fallback.
+ */
+export const WORK_RECAP_LLM_TIMEOUT_MS = 60_000;
 
 /** Concurrent git log calls cap (F8/F9 / D1 decision). */
 export const WORK_RECAP_CONCURRENCY = 8;
