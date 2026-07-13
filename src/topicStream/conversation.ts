@@ -8,6 +8,7 @@ import {
 import { readRagConfig } from "../rag/config.js";
 import type { RagConfigV1 } from "../rag/types.js";
 import { stripControlTags } from "../workCosmos/summarize.js";
+import { scrubPaths } from "../util/scrub.js";
 import { OTHER_CATEGORY, OTHER_COLOR } from "./classify.js";
 import {
   CONVERSATION_SOURCE,
@@ -105,10 +106,9 @@ export function isInjectedNoise(text: string): boolean {
   );
 }
 
-/** Strip real home paths so nothing leaks into labels or payloads (public repo). */
-export function scrubPaths(s: string): string {
-  return (s ?? "").replace(/\/(Users|home)\/[^/\s]+/g, "/$1/*");
-}
+// Hoisted to src/util/scrub.ts so the notify/push layer can share it (a webhook
+// payload must never carry a real home path either). Re-exported for existing callers.
+export { scrubPaths };
 
 function l2normalize(v: Float32Array): Float32Array {
   let norm = 0;

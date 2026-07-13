@@ -4,6 +4,7 @@ import { rebuildChromeHistoryVisitDomains } from "../chromeHistory/domainPivot.j
 import { rebuildChromeTopicStream, rebuildGitTopicStream } from "../topicStream/rebuild.js";
 import { rebuildConversationTopicStream } from "../topicStream/conversation.js";
 import { llmClusterNamer } from "../topicStream/conversationNaming.js";
+import { runRecapPushTick } from "../workRecap/pushTick.js";
 import { syncChromeHistory } from "../chromeHistory/sync.js";
 import { defaultDownloadRoots } from "../downloads/roots.js";
 import { scanDownloads } from "../downloads/scan.js";
@@ -209,6 +210,27 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           summary: result,
           errorSummary: result.error ?? null,
         });
+      },
+    },
+    {
+      key: "recap.push.tick",
+      label: "工作回看定时推送",
+      description:
+        "日历守卫:日报(每晚)/周报(每周一)到点且未发过则生成 work-recap 并推送飞书。" +
+        "scheduler 是间隔式的,所以这个任务每 10 分钟跑一次、自己判断是否到点(漏了会补发)。" +
+        "注意:命中时会做一次 git 扫描 + LLM 调用,约阻塞 scheduler 70 秒(每天最多两次)。" +
+        "未配置 ~/.ai2nao/notify.json 时安静跳过。",
+      category: "derived",
+      defaultIntervalSeconds: 10 * 60,
+      sensitivity: "high",
+      run: async (ctx) => {
+        const outcomes = await runRecapPushTick(ctx.db);
+        const failed = outcomes.find((o) => o.action === "failed");
+        return {
+          status: failed ? "failed" : "success",
+          summary: { outcomes },
+          errorSummary: failed ? `${failed.kind}: ${failed.reason ?? "failed"}` : null,
+        };
       },
     },
     {
