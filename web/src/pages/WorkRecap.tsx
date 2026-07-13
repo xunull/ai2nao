@@ -44,6 +44,23 @@ type Diagnostic = {
   repo?: string;
 };
 
+type FactStatus = "ok" | "absent" | "empty" | "error";
+type FactGroup<T> = { status: FactStatus; data?: T; message?: string };
+type TokenFacts = {
+  costUsd: number;
+  coverage: "full" | "partial" | "unknown";
+  unpricedTokenCount: number;
+  priceSnapshotDate: string;
+  headlineTokens: number;
+  dominantProvider: string;
+  claudeShare: number;
+  codexShare: number;
+};
+type TopicShare = { name: string; count: number; share: number };
+type TopicSourceTop = { source: "chrome" | "git" | "conversation"; events: number; top: TopicShare[] };
+type TopicDriftItem = { source: string; from: string; to: string };
+type TopicFacts = { bySource: TopicSourceTop[]; drift: TopicDriftItem[] | null };
+
 type WorkRecapFacts = {
   windowKey: WorkRecapWindow;
   windowStart: string;
@@ -59,6 +76,27 @@ type WorkRecapFacts = {
   scanTruncated: boolean;
   scanTruncatedReason: DegradeReason | null;
   diagnostics: Diagnostic[];
+  // v2 multi-source (absent on runs generated before work-recap@v2).
+  tokenFacts?: FactGroup<TokenFacts>;
+  topicDrift?: FactGroup<TopicFacts>;
+};
+
+const FACT_STATUS_LABEL: Record<FactStatus, string> = {
+  ok: "",
+  absent: "无此来源数据",
+  empty: "本窗口无活动",
+  error: "读取失败",
+};
+const TOPIC_SOURCE_LABEL: Record<string, string> = {
+  chrome: "浏览",
+  git: "提交",
+  conversation: "对话",
+};
+const PROVIDER_LABEL: Record<string, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  minimax: "MiniMax",
+  none: "—",
 };
 
 type WorkRecapInference = {
@@ -298,6 +336,63 @@ function RecapCard({ run }: { run: WorkRecapRun }) {
           </div>
         </div>
       </section>
+
+      {facts.tokenFacts && (
+        <section className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+              成本 / Token
+            </h3>
+            {facts.tokenFacts.status === "ok" && facts.tokenFacts.data ? (
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="text-[var(--fg)]">
+                  成本 <span className="font-semibold tabular-nums">${facts.tokenFacts.data.costUsd.toFixed(2)}</span>
+                  {facts.tokenFacts.data.coverage !== "full" && (
+                    <span className="ml-1 text-amber-700">(至少,覆盖 {facts.tokenFacts.data.coverage})</span>
+                  )}
+                </div>
+                <div className="text-[var(--fg-muted)] tabular-nums">
+                  {facts.tokenFacts.data.headlineTokens.toLocaleString()} token(不含缓存) · 主力{" "}
+                  {PROVIDER_LABEL[facts.tokenFacts.data.dominantProvider] ?? facts.tokenFacts.data.dominantProvider}{" "}
+                  {(facts.tokenFacts.data.claudeShare * 100).toFixed(0)}%/{(facts.tokenFacts.data.codexShare * 100).toFixed(0)}%
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--fg-muted)]">{FACT_STATUS_LABEL[facts.tokenFacts.status]}</p>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">
+              本周主题(浏览+对话+提交)
+            </h3>
+            {facts.topicDrift?.status === "ok" && facts.topicDrift.data ? (
+              <ul className="mt-2 space-y-1 text-xs">
+                {facts.topicDrift.data.bySource.map((s) => (
+                  <li key={s.source}>
+                    <span className="font-medium text-[var(--fg)]">{TOPIC_SOURCE_LABEL[s.source] ?? s.source}</span>{" "}
+                    <span className="text-[var(--fg-muted)]">
+                      {s.top.slice(0, 3).map((t) => `${t.name} ${(t.share * 100).toFixed(0)}%`).join(" · ") || "—"}
+                    </span>
+                  </li>
+                ))}
+                {facts.topicDrift.data.drift && facts.topicDrift.data.drift.length > 0 && (
+                  <li className="text-[var(--fg-muted)]">
+                    漂移:
+                    {facts.topicDrift.data.drift
+                      .map((d) => `${TOPIC_SOURCE_LABEL[d.source] ?? d.source} ${d.from}→${d.to}`)
+                      .join("; ")}
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--fg-muted)]">
+                {FACT_STATUS_LABEL[facts.topicDrift?.status ?? "absent"]}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       {inference.nextUp.length > 0 && (
         <section className="mt-4">
