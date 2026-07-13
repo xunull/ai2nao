@@ -15,15 +15,31 @@
  * degrade (sparse signal, LLM timeout, malformed JSON). UI never blends them.
  */
 
+/**
+ * Rolling windows ("last N×24h from now") + calendar windows.
+ * `today`     = 本地今天 00:00 → now
+ * `last-week` = 上周一 00:00 → 本周一 00:00(半开区间,含上周日整天)
+ * Calendar windows exist so a scheduled report can have a fixed, closed period
+ * (a rolling 7d spans two natural weeks). See resolveWindow() in window.ts.
+ */
 export const WORK_RECAP_WINDOWS = [
   "1d",
   "3d",
   "7d",
   "14d",
   "30d",
+  "today",
+  "last-week",
 ] as const;
 
 export type WorkRecapWindow = (typeof WORK_RECAP_WINDOWS)[number];
+
+/** Calendar (fixed-period) windows — resolved by date boundaries, not now-Nd. */
+export const CALENDAR_WINDOWS = ["today", "last-week"] as const;
+
+export function isCalendarWindow(w: WorkRecapWindow): boolean {
+  return (CALENDAR_WINDOWS as readonly string[]).includes(w);
+}
 
 export type WorkRecapWorkMode =
   | "build"
@@ -243,7 +259,7 @@ export type WorkRecapCommit = {
 };
 
 /** Current prompt version. Bump when prompt template OR schema changes. */
-export const WORK_RECAP_PROMPT_VERSION = "work-recap@v2";
+export const WORK_RECAP_PROMPT_VERSION = "work-recap@v3";
 
 /** Top topics kept per source in the topic-drift facts (narrative spine). */
 export const WORK_RECAP_TOPIC_TOP_N = 5;
@@ -277,6 +293,11 @@ export const WORK_RECAP_PROMPT_BUDGET = {
   totalCharsCap: 12_000,
 } as const;
 
+/**
+ * Nominal span in days. Rolling windows use this to compute `now - Nd`.
+ * Calendar windows return their nominal length (used only for prompt copy —
+ * their real bounds come from resolveWindow()).
+ */
 export function windowToDays(window: WorkRecapWindow): number {
   switch (window) {
     case "1d":
@@ -289,6 +310,10 @@ export function windowToDays(window: WorkRecapWindow): number {
       return 14;
     case "30d":
       return 30;
+    case "today":
+      return 1;
+    case "last-week":
+      return 7;
   }
 }
 

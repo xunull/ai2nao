@@ -9,6 +9,12 @@ import {
   runResponseToJson,
 } from "./json.js";
 import {
+  __resetInflightForTests,
+  clearInflight,
+  getInflight,
+  setInflight,
+} from "./inflight.js";
+import {
   getLatestRecapRunByWindow,
   listRecapRunsByWindow,
 } from "./queries.js";
@@ -49,23 +55,18 @@ function parseLimit(raw: string | undefined): number | undefined {
 }
 
 /**
- * In-flight tracker: module-scoped Map<windowKey, {startedAt, promise}>.
- * A second POST for the same window while one is running returns 409 with
- * the original startedAt, instead of issuing a second LLM call (F3 fix).
- *
- * Tracker is per-process; not durable across restarts (acceptable: a
- * crashed generate cannot be in-flight anyway).
+ * In-flight tracking now lives in `./inflight.js` so the scheduled push task
+ * shares the same guard as this HTTP route (otherwise the 21:00 tick and a
+ * manual 「生成」 click would both issue an LLM call for the same window).
+ * A second POST for the same window while one is running still returns 409.
  */
-type Inflight = {
-  startedAt: Date;
-  promise: Promise<WorkRecapRun>;
+const inflight = {
+  get: getInflight,
+  set: setInflight,
+  delete: clearInflight,
 };
 
-const inflight = new Map<WorkRecapWindow, Inflight>();
-
-export function __resetInflightForTests(): void {
-  inflight.clear();
-}
+export { __resetInflightForTests };
 
 export type RegisterWorkRecapOptions = {
   /** Override runtime construction (tests inject mock LLM + clock). */

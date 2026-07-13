@@ -138,7 +138,7 @@ describe("work-recap v2 — gatherTokenFacts", () => {
 
 describe("work-recap v2 — buildPrompt", () => {
   it("prompt is version v2, includes token+topic facts before projects, hedges partial coverage, and suppresses null drift", () => {
-    expect(PROMPT_VERSION).toBe("work-recap@v2");
+    expect(PROMPT_VERSION).toBe("work-recap@v3");
     const f = baseFacts();
     f.tokenFacts = {
       status: "ok",

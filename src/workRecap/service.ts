@@ -18,13 +18,14 @@ import {
 import { scanCommits } from "./scan.js";
 import {
   WORK_RECAP_RETENTION_PER_WINDOW,
+  isCalendarWindow,
   type WorkRecapDegradeReason,
   type WorkRecapEmptyResponse,
   type WorkRecapInference,
   type WorkRecapRun,
   type WorkRecapWindow,
-  windowToDays,
 } from "./types.js";
+import { resolveWindow } from "./window.js";
 
 export type WorkRecapRuntime = {
   db: Database.Database;
@@ -104,12 +105,17 @@ export async function generateRecap(
   const authorEmail = runtime.authorEmail ?? resolveAuthor() ?? "unknown";
 
   const now = runtime.now ? runtime.now() : new Date();
-  const since = new Date(now.getTime() - windowToDays(windowKey) * 86_400_000);
+  // Half-open [start, end). Rolling windows end at `now`; calendar windows
+  // (today / last-week) have fixed date bounds — see window.ts.
+  const { start: since, end } = resolveWindow(windowKey, now);
 
   const scan = await scanCommits({
     repoPaths,
     authorEmail,
     since,
+    // Only calendar windows need an upper bound; rolling ones end at now, and
+    // passing --until there would change existing behaviour for no gain.
+    until: isCalendarWindow(windowKey) ? end : undefined,
     timeoutMs: runtime.scanTimeoutMs,
   });
 
@@ -119,7 +125,7 @@ export async function generateRecap(
     commits: scan.commits,
     windowKey,
     windowStart: since,
-    windowEnd: now,
+    windowEnd: end,
     authorEmail,
     reposScanned: scan.reposScanned,
     reposTotal: scan.reposTotal,
@@ -130,8 +136,8 @@ export async function generateRecap(
 
   // v2 multi-source facts (own db + window). Each degrades independently and
   // never throws, so they can't take down the commit facts / the whole recap.
-  facts.tokenFacts = gatherTokenFacts(runtime.db, since, now);
-  facts.topicDrift = gatherTopicDriftFacts(runtime.db, since, now);
+  facts.tokenFacts = gatherTokenFacts(runtime.db, since, end);
+  facts.topicDrift = gatherTopicDriftFacts(runtime.db, since, end);
 
   let inference: WorkRecapInference;
 

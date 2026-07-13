@@ -34,6 +34,76 @@ function makeRepo(commits: { msg: string; date: string; email?: string }[]): str
   return dir;
 }
 
+/**
+ * `--until` guards the calendar windows (today / last-week). Without it a
+ * `last-week` recap would log through *now* and silently swallow this week.
+ */
+describe("scanSingleRepo --until (calendar-window upper bound)", () => {
+  it("excludes commits after the window end, keeps the ones inside", async () => {
+    const dir = makeRepo([
+      { msg: "feat: before window", date: "2026-07-01T10:00:00Z" },
+      { msg: "feat: inside window", date: "2026-07-08T10:00:00Z" },
+      { msg: "feat: after window", date: "2026-07-14T10:00:00Z" },
+    ]);
+    const { commits } = await scanSingleRepo({
+      cwd: dir,
+      authorEmail: TEST_EMAIL,
+      since: new Date("2026-07-06T00:00:00Z"), // 上周一
+      until: new Date("2026-07-13T00:00:00Z"), // 本周一(排他上界)
+    });
+    const subjects = commits.map((c) => c.subject);
+    expect(subjects).toEqual(["feat: inside window"]);
+    expect(subjects).not.toContain("feat: after window");
+    expect(subjects).not.toContain("feat: before window");
+  });
+
+  it("without --until, the window end is ignored (regression guard for the bug it fixes)", async () => {
+    const dir = makeRepo([
+      { msg: "feat: inside window", date: "2026-07-08T10:00:00Z" },
+      { msg: "feat: after window", date: "2026-07-14T10:00:00Z" },
+    ]);
+    const { commits } = await scanSingleRepo({
+      cwd: dir,
+      authorEmail: TEST_EMAIL,
+      since: new Date("2026-07-06T00:00:00Z"),
+      // no until → git logs through HEAD, so "after window" leaks in
+    });
+    expect(commits.map((c) => c.subject)).toContain("feat: after window");
+  });
+
+  it("--max-count takes NEWEST first, so without --until a busy repo drops the window entirely", async () => {
+    // 3 commits after the window + 1 inside. With maxCount=2 and no --until,
+    // git returns the 2 newest — both out of window — and last week vanishes.
+    const commitsSpec = [
+      { msg: "feat: inside window", date: "2026-07-08T10:00:00Z" },
+      { msg: "chore: after 1", date: "2026-07-14T10:00:00Z" },
+      { msg: "chore: after 2", date: "2026-07-15T10:00:00Z" },
+      { msg: "chore: after 3", date: "2026-07-16T10:00:00Z" },
+    ];
+    const since = new Date("2026-07-06T00:00:00Z");
+    const until = new Date("2026-07-13T00:00:00Z");
+
+    const dirA = makeRepo(commitsSpec);
+    const bad = await scanSingleRepo({
+      cwd: dirA,
+      authorEmail: TEST_EMAIL,
+      since,
+      maxCount: 2, // no until → cap eaten by out-of-window commits
+    });
+    expect(bad.commits.map((c) => c.subject)).not.toContain("feat: inside window");
+
+    const dirB = makeRepo(commitsSpec);
+    const good = await scanSingleRepo({
+      cwd: dirB,
+      authorEmail: TEST_EMAIL,
+      since,
+      until, // with until → the cap only ever sees in-window commits
+      maxCount: 2,
+    });
+    expect(good.commits.map((c) => c.subject)).toEqual(["feat: inside window"]);
+  });
+});
+
 describe("classifyCommitKind", () => {
   it("classifies conventional-commit prefixes", () => {
     expect(classifyCommitKind("feat: add login")).toBe("feat");

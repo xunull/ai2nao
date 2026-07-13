@@ -91,6 +91,14 @@ export type ScanRepoArgs = {
   cwd: string;
   authorEmail: string;
   since: Date;
+  /**
+   * Upper bound of the window. Required for calendar windows (`last-week`):
+   * without it git logs through *now*, so last week's recap would silently
+   * include this week — and since `--max-count` takes the NEWEST commits first,
+   * a busy repo could spend the whole cap on out-of-window commits and drop
+   * last week's entirely. Omit for rolling windows (they end at now).
+   */
+  until?: Date;
   signal?: AbortSignal;
   /** Override `--max-count` (default WORK_RECAP_PER_REPO_COMMIT_CAP). */
   maxCount?: number;
@@ -115,6 +123,7 @@ export async function scanSingleRepo(
     [
       "log",
       `--since=${args.since.toISOString()}`,
+      ...(args.until ? [`--until=${args.until.toISOString()}`] : []),
       `--author=${args.authorEmail}`,
       "--use-mailmap",
       `--max-count=${maxCount}`,
@@ -132,6 +141,8 @@ export type ScanCommitsArgs = {
   repoPaths: string[];
   authorEmail: string;
   since: Date;
+  /** Upper window bound (calendar windows). See ScanRepoArgs.until. */
+  until?: Date;
   /** Override total scan timeout (default WORK_RECAP_SCAN_TIMEOUT_MS). */
   timeoutMs?: number;
   /** Override concurrency (default WORK_RECAP_CONCURRENCY). */
@@ -189,6 +200,7 @@ export async function scanCommits(
           if (controller.signal.aborted) return;
           try {
             const { commits: rc, capHit } = await scanSingleRepo({
+              until: args.until,
               cwd,
               authorEmail: args.authorEmail,
               since: args.since,

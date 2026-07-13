@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 47;
+const CURRENT_VERSION = 48;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -58,6 +58,7 @@ export function migrate(db: Database.Database): void {
     applyV45(db);
     applyV46(db);
     applyV47(db);
+    applyV48(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -111,6 +112,7 @@ export function migrate(db: Database.Database): void {
   if (v < 45) applyV45(db);
   if (v < 46) applyV46(db);
   if (v < 47) applyV47(db);
+  if (v < 48) applyV48(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -829,6 +831,63 @@ function applyV47(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 47 WHERE id = 1;
+  `);
+}
+
+/**
+ * v48 — 定时报告体系:自然日/自然周窗口 + 飞书推送记账。
+ *
+ * (a) `work_recap_runs.window_key` 原 CHECK 只允许 5 个滚动窗口。SQLite 无法
+ *     ALTER 一个 CHECK,所以必须整表重建才能容纳日历窗口 today / last-week。
+ * (b) `recap_push_log`:PK (kind, period_key) 保证「至多成功送达一次」。
+ *     status='sent' 才算已发;failed 行仍占 PK,重试走 UPSERT + attempts 上限。
+ * 设计:quincy-...-design-20260713(office-hours,读代码审阅后修订)。
+ */
+function applyV48(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE work_recap_runs_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      window_key TEXT NOT NULL CHECK (
+        window_key IN ('1d', '3d', '7d', '14d', '30d', 'today', 'last-week')
+      ),
+      generated_at TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      facts_json TEXT NOT NULL,
+      inference_json TEXT NOT NULL,
+      degraded INTEGER NOT NULL DEFAULT 0,
+      degrade_reason TEXT
+    );
+
+    INSERT INTO work_recap_runs_new
+      (id, window_key, generated_at, model, prompt_version,
+       facts_json, inference_json, degraded, degrade_reason)
+    SELECT id, window_key, generated_at, model, prompt_version,
+           facts_json, inference_json, degraded, degrade_reason
+      FROM work_recap_runs;
+
+    DROP TABLE work_recap_runs;
+    ALTER TABLE work_recap_runs_new RENAME TO work_recap_runs;
+
+    CREATE INDEX IF NOT EXISTS idx_work_recap_runs_window_time
+      ON work_recap_runs(window_key, generated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS recap_push_log (
+      kind TEXT NOT NULL CHECK (kind IN ('daily', 'weekly')),
+      period_key TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      sent_at TEXT,
+      run_id INTEGER,
+      status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped')),
+      reason TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lateness_ms INTEGER,
+      error TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (kind, period_key)
+    );
+
+    UPDATE meta_schema SET version = 48 WHERE id = 1;
   `);
 }
 
