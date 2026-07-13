@@ -6,9 +6,14 @@ import { RefreshCw } from "lucide-react";
 import { apiGet } from "../api";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
-type WorkRecapWindow = "1d" | "3d" | "7d" | "14d" | "30d";
+// Rolling windows ("过去 N×24 小时") + calendar windows (固定自然周期).
+// `today` / `last-week` exist so a scheduled report has a closed, fixed period —
+// a rolling 7d spans two natural weeks. Mirrors src/workRecap/types.ts.
+type WorkRecapWindow = "1d" | "3d" | "7d" | "14d" | "30d" | "today" | "last-week";
 
 const WINDOWS: { value: WorkRecapWindow; label: string }[] = [
+  { value: "today", label: "今天(自然日)" },
+  { value: "last-week", label: "上周(自然周)" },
   { value: "1d", label: "1 天" },
   { value: "3d", label: "3 天" },
   { value: "7d", label: "1 周" },
