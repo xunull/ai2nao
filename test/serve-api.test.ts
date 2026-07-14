@@ -372,7 +372,14 @@ describe("Hono read-only API", () => {
         },
       });
 
-      const dateStr = new Date().toISOString().slice(0, 10);
+      // LOCAL day, not `toISOString()` (which is UTC). The atuin rows above are
+      // stamped with Date.now() and the summary filters by local day, so east of
+      // UTC this test asked for *yesterday* every night between local midnight
+      // and UTC midnight — 8 hours a day in UTC+8 — and matched zero rows.
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+        now.getDate()
+      ).padStart(2, "0")}`;
       const first = await app.request("http://x/api/daily-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
