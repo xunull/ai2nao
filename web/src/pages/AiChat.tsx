@@ -984,12 +984,10 @@ export function AiChat() {
           <section className="min-h-0 flex-1 p-4" data-testid="ai-chat-thread-shell">
             {disabled ? (
               <div className="flex h-full flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white px-6 text-center text-sm text-neutral-600">
-                <div>请先配置本机 LLM，再开始对话。</div>
-                {cfg?.configPath ? (
-                  <div className="mt-2 max-w-[720px] break-all text-xs text-neutral-500">
-                    当前读取：{cfg.configPath}
-                  </div>
-                ) : null}
+                <div>请先配置 LLM，再开始对话。</div>
+                <div className="mt-2 max-w-[720px] text-xs text-neutral-500">
+                  在「设置 → AI 与模型」里填服务商、模型与 API Key。
+                </div>
               </div>
             ) : activeSessionId ? (
               <AiChatRenderBoundary resetKey={activeSessionId} onError={setChatErr}>

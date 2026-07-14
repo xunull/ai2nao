@@ -23,7 +23,12 @@ export function SyncStateBanner({ token, sync, counts }: Props) {
           </span>
         ) : (
           <span className="rounded bg-emerald-50 text-emerald-900 px-2 py-0.5 text-xs">
-            token: {token.source === "env" ? "GITHUB_TOKEN" : token.configPath}
+            token:{" "}
+            {token.source === "env"
+              ? "GITHUB_TOKEN"
+              : token.source === "db"
+                ? "设置页"
+                : token.configPath}
           </span>
         )}
         <span className="text-[var(--muted)]">

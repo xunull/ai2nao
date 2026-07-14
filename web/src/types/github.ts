@@ -2,7 +2,7 @@
 
 export type GhTokenStatus = {
   configured: boolean;
-  source: "env" | "file" | null;
+  source: "env" | "db" | "file" | null;
   configPath: string;
   envVar: "GITHUB_TOKEN";
   insecureFilePermissions: boolean;

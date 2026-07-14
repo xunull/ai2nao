@@ -60,6 +60,10 @@ export type LlmChatStatus = {
   /** Host only, for debugging (no path, no key). */
   baseHost: string | null;
   configPath: string;
+  /** Where the config actually came from. Without this the UI would keep naming
+   * llm-chat.json after migration renamed it — pointing the user at a file that
+   * no longer exists. */
+  source: "db" | "file" | null;
 };
 
 function configPathFromEnv(): string {
@@ -194,13 +198,16 @@ export function llmChatStatus(): LlmChatStatus {
       model: null,
       baseHost: null,
       configPath,
+      source: null,
     };
   }
+  const stored = getCredentialRaw("llm-chat");
   return {
     configured: true,
     provider: cfg.provider,
     model: cfg.model,
     baseHost: baseHostFromUrl(cfg.baseURL),
     configPath,
+    source: stored && parseLlmChatConfigJson(stored) ? "db" : "file",
   };
 }

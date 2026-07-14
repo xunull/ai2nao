@@ -4,6 +4,8 @@ export type LlmChatStatus = {
   model: string | null;
   baseHost: string | null;
   configPath: string;
+  /** "db" once the config lives in config.db; "file" while still on the legacy JSON. */
+  source: "db" | "file" | null;
 };
 
 export type RagStatus = {
