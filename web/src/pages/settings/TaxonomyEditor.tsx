@@ -61,6 +61,15 @@ export function TaxonomyEditor() {
   const gapMinutes = gap ?? String(q.data?.gapMinutes ?? 30);
   const dirty = draft !== null || gap !== null;
 
+  /**
+   * While the taxonomy still comes from config.json (or the built-ins), saving is
+   * itself the meaningful action — it takes the config over into settings — so the
+   * button must be live even with nothing edited. Gating it on `dirty` alone made
+   * the one path a file-using user actually needs unreachable.
+   */
+  const managedHere = q.data?.source === "db";
+  const canSave = dirty || !managedHere;
+
   const save = useMutation({
     mutationFn: () =>
       apiPatch<TaxonomyRes>("/api/topics/taxonomy", {
@@ -305,10 +314,10 @@ export function TaxonomyEditor() {
         <button
           type="button"
           onClick={() => save.mutate()}
-          disabled={!dirty || save.isPending}
+          disabled={!canSave || save.isPending}
           className="h-8 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
         >
-          {save.isPending ? "保存中…" : "保存"}
+          {save.isPending ? "保存中…" : managedHere ? "保存" : "接管配置"}
         </button>
       </div>
 

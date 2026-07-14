@@ -71,7 +71,9 @@ describe("TaxonomyEditor", () => {
           sent.push(JSON.parse(String(init.body)));
           return json(payload({ source: "db" }));
         }
-        return json(payload());
+        // Already owned by settings, so the button reads 保存 (before takeover it
+        // reads 接管配置 — same payload either way).
+        return json(payload({ source: "db" }));
       })
     );
     const user = userEvent.setup();
@@ -106,8 +108,19 @@ describe("TaxonomyEditor", () => {
     expect(screen.getByLabelText("规则值")).toHaveValue("react.dev");
   });
 
-  it("the save button stays disabled until something actually changes", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json(payload())));
+  it("while the config still lives in the file, saving is live with no edits — it IS the takeover", async () => {
+    // Gating this on "has the user edited something" made the one action a
+    // file-using user actually needs unreachable: they open the page, everything
+    // is correct already, and the only button is greyed out.
+    vi.stubGlobal("fetch", vi.fn(async () => json(payload({ source: "file" }))));
+    renderEditor();
+
+    const btn = await screen.findByRole("button", { name: "接管配置" });
+    expect(btn).toBeEnabled();
+  });
+
+  it("once settings owns it, the save button waits for an actual change", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(payload({ source: "db" }))));
     const user = userEvent.setup();
     renderEditor();
 
