@@ -160,19 +160,35 @@ export function parseRagEmbeddingJson(raw: string): RagConfigV1["embedding"] | n
 }
 
 /**
- * Overlay the `embedding` block from config.db over the one in rag.json.
+ * Merge the stored embedding credential into a file-derived config.
  *
- * rag.json is the ONE config file that keeps living: it also holds corpusRoots /
- * includeExtensions / vectorStore, which are not credentials and have no reason
- * to move. So only the embedding block (which carries the API key) is managed in
- * settings, and it out-ranks whatever the file still says.
+ * It fills in the API KEY and nothing else. Replacing the whole `embedding`
+ * block (the original shape here) meant the stored `model` silently out-ranked
+ * the file's — so `rag ingest --config other.json` would embed with a different
+ * model than the file asked for, and hand-editing `embedding.model` in rag.json
+ * became a no-op. The embedding model fixes the vector space and its dimension;
+ * `markVectorSync` (rag/meta.ts) only RECORDS the model, nothing rejects a
+ * mismatch, so a silently-swapped model produces an index that is quietly
+ * garbage. baseURL and model stay whatever the config says; only the secret,
+ * which the file is no longer allowed to hold, comes from the store.
  */
-function overlayStoredEmbedding(cfg: RagConfigV1): RagConfigV1 {
-  const stored = getCredentialRaw("rag-embedding");
-  if (!stored) return cfg;
-  const embedding = parseRagEmbeddingJson(stored);
-  if (!embedding) return cfg;
-  return { ...cfg, embedding };
+function mergeStoredEmbedding(cfg: RagConfigV1): RagConfigV1 {
+  const stored = (() => {
+    const raw = getCredentialRaw("rag-embedding");
+    return raw ? parseRagEmbeddingJson(raw) : null;
+  })();
+  const fileEmb = cfg.embedding;
+
+  // No embedding block in the config at all — the stored one IS the config. This
+  // is the path for someone who configured embedding only in the settings page.
+  if (!fileEmb?.enabled) {
+    return stored ? { ...cfg, embedding: stored } : cfg;
+  }
+  // The config declares its own embedding: model and baseURL are its business.
+  // Only the key — which the file is no longer allowed to hold — comes from the
+  // store, and only when the config didn't supply one.
+  if (fileEmb.apiKey || !stored?.apiKey) return cfg;
+  return { ...cfg, embedding: { ...fileEmb, apiKey: stored.apiKey } };
 }
 
 export function readRagConfig(): RagConfigV1 | null {
@@ -184,13 +200,21 @@ export function readRagConfig(): RagConfigV1 | null {
     const raw = readFileSync(path, "utf8");
     const cfg = parseRagConfigJson(raw);
     if (!cfg) return null;
-    return overlayStoredEmbedding(mergeEnvCorpusRoot(cfg));
+    return mergeStoredEmbedding(mergeEnvCorpusRoot(cfg));
   } catch {
     return null;
   }
 }
 
-/** Read a specific `rag.json` (e.g. `ai2nao rag ingest --config ./rag.json`). */
+/**
+ * Read a specific `rag.json` (`ai2nao rag ingest --config ./rag.json`).
+ *
+ * The stored embedding KEY is merged in here too. `--config` means "use this
+ * corpus config", not "forget the key I saved" — and since the key is no longer
+ * allowed to live in the file, skipping the store left this path with no key at
+ * all: it fell through to the literal `"local-no-key"` placeholder
+ * (rag/embeddings.ts) and got a 401 whose message pointed nowhere near the cause.
+ */
 export function readRagConfigFile(path: string): RagConfigV1 | null {
   const p = resolve(path.trim());
   if (!existsSync(p)) {
@@ -200,7 +224,7 @@ export function readRagConfigFile(path: string): RagConfigV1 | null {
     const raw = readFileSync(p, "utf8");
     const cfg = parseRagConfigJson(raw);
     if (!cfg) return null;
-    return mergeEnvCorpusRoot(cfg);
+    return mergeStoredEmbedding(mergeEnvCorpusRoot(cfg));
   } catch {
     return null;
   }
