@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defaultLlmChatConfigPath } from "../config.js";
+import { getCredentialRaw } from "../settings/store.js";
 import { llmChatLog } from "./log.js";
 
 export type LlmChatProvider =
@@ -131,7 +132,24 @@ export function parseLlmChatConfigJson(raw: string): LlmChatConfig | null {
   return null;
 }
 
+/**
+ * Config source, in order: config.db → JSON file. (The API-key ENV fallback
+ * lives downstream in model.ts as `cfg.apiKey || env`, so it is deliberately
+ * NOT consulted here — moving it would silently change precedence.)
+ */
 export function readLlmChatConfig(): LlmChatConfig | null {
+  const stored = getCredentialRaw("llm-chat");
+  if (stored) {
+    const cfg = parseLlmChatConfigJson(stored);
+    if (cfg) {
+      llmChatLog.debug("config loaded from config.db", {
+        provider: cfg.provider,
+        model: cfg.model,
+      });
+      return cfg;
+    }
+    llmChatLog.warn("config.db holds an invalid llm-chat value; falling back to file");
+  }
   const path = configPathFromEnv();
   if (!existsSync(path)) {
     llmChatLog.debug("config file missing", path);

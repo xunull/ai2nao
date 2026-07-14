@@ -65,6 +65,7 @@ import {
   getDirectoryActivityStatus,
   rebuildDirectoryActivity,
 } from "./atuin/directoryActivity/index.js";
+import { migrateCredentials } from "./settings/migrate.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -1312,6 +1313,11 @@ program
         process.exitCode = 1;
         return;
       }
+
+      // Move credentials out of the JSON files and out of index.db's plaintext
+      // api_key column, into config.db (0600). Runs every boot, does real work
+      // once, and degrades to "keep reading the files" if anything goes wrong.
+      migrateCredentials(db);
 
       let atuin: { db: ReturnType<typeof openReadOnlyDatabase>; path: string } | undefined;
       let dailySummary:

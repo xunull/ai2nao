@@ -10,18 +10,21 @@ import {
   getScanConcurrency,
   setScanConcurrency,
 } from "../appConfig/index.js";
+import { githubTokenStatus } from "../github/config.js";
 import {
-  deleteGithubConfig,
-  githubTokenStatus,
-  writeGithubConfig,
-} from "../github/config.js";
+  allCredentialDtos,
+  clearCredential,
+  CredentialPatchError,
+  isCredentialName,
+  patchCredential,
+} from "../settings/credentialApi.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
 }
 
 /** Narrow secret DTO — only set/source, NEVER the token or the local file path. */
-function githubDto(): { set: boolean; source: "env" | "file" | null } {
+function githubDto(): { set: boolean; source: "env" | "db" | "file" | null } {
   const s = githubTokenStatus();
   return { set: s.configured, source: s.source };
 }
@@ -37,7 +40,10 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     scanMaxDepth: getScanMaxDepth(db),
     scanMaxDocs: getScanMaxDocs(db),
     scanConcurrency: getScanConcurrency(db),
+    // Kept for the shipped GitHub section of the settings page; `credentials`
+    // below is the general form and includes github too.
     github: githubDto(),
+    credentials: allCredentialDtos(),
   });
 
   app.get("/api/settings", (c) => c.json(settingsDto()));
@@ -81,34 +87,45 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     return c.json(settingsDto());
   });
 
-  // PATCH /api/settings/secret/github { token } — write the 0600 token file.
-  app.patch("/api/settings/secret/github", async (c) => {
+  // PATCH /api/settings/secret/:name — partial update, merged over the stored
+  // value. An absent field KEEPS its current value, so a form that shows a
+  // masked key and posts back only `model` cannot wipe the key. `null` clears a
+  // field. The shipped `/secret/github { token }` call is just this route.
+  app.patch("/api/settings/secret/:name", async (c) => {
+    const name = c.req.param("name");
+    if (!isCredentialName(name)) return jsonErr(404, "unknown credential");
+
     let body: unknown;
     try {
       body = await c.req.json();
     } catch {
       return jsonErr(400, "invalid JSON body");
     }
-    const token = (body as { token?: unknown })?.token;
-    if (typeof token !== "string" || token.trim() === "") {
-      return jsonErr(400, "token is required");
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return jsonErr(400, "body must be an object");
     }
+
     try {
-      writeGithubConfig({ token: token.trim() });
-    } catch {
-      // Generic error — the raw fs error would leak the absolute config path.
-      return jsonErr(500, "failed to write token");
+      const dto = patchCredential(name, body as Record<string, unknown>);
+      return c.json({ credential: dto, github: githubDto() });
+    } catch (e) {
+      if (e instanceof CredentialPatchError) return jsonErr(400, e.message);
+      // Generic — a raw error would leak the absolute config.db path.
+      return jsonErr(500, "failed to save credential");
     }
-    return c.json({ github: githubDto() });
   });
 
-  // DELETE the token file. Env var (if set) still wins, so set may stay true.
-  app.delete("/api/settings/secret/github", (c) => {
+  // DELETE /api/settings/secret/:name — forget the stored value. A legacy file
+  // or an env var may still supply it; the returned `source` says so rather than
+  // claiming the feature is off.
+  app.delete("/api/settings/secret/:name", (c) => {
+    const name = c.req.param("name");
+    if (!isCredentialName(name)) return jsonErr(404, "unknown credential");
     try {
-      deleteGithubConfig();
+      const dto = clearCredential(name);
+      return c.json({ credential: dto, github: githubDto() });
     } catch {
-      return jsonErr(500, "failed to delete token");
+      return jsonErr(500, "failed to delete credential");
     }
-    return c.json({ github: githubDto() });
   });
 }

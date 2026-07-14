@@ -95,6 +95,20 @@ export function defaultRagDbPath(): string {
   return `${home}/.ai2nao/rag.db`;
 }
 
+/**
+ * Credentials DB (`~/.ai2nao/config.db`, 0600).
+ *
+ * Deliberately NOT index.db: that one is hundreds of MB of scanned history, so
+ * you can't exclude it from Time Machine / Dropbox without losing your data.
+ * A few-KB config.db can be excluded on its own. (0600 only stops other Unix
+ * users on this machine — backup daemons run as you.)
+ */
+export function defaultConfigDbPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return ".ai2nao/config.db";
+  return `${home}/.ai2nao/config.db`;
+}
+
 /** Local LanceDB directory for optional RAG vector recall. */
 export function defaultRagVectorDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";

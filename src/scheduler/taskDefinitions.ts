@@ -15,7 +15,7 @@ import { refreshClaudeTokenUsage } from "../claudeTokenUsage/refresh.js";
 import { refreshCodexTokenUsage } from "../codexTokenUsage/refresh.js";
 import { syncModelPrices } from "../cost/modelsDevSync.js";
 import { syncEnabledProviders } from "../providers/sync.js";
-import { getProviderConfig } from "../providers/store.js";
+import { getProviderConfig, providerApiKey } from "../providers/store.js";
 import { refreshMinimaxTokenUsage } from "../minimaxTokenUsage/refresh.js";
 import { ingestOpencodeUserMessages } from "../agentUserMessages/opencodeIngest.js";
 import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
@@ -456,7 +456,7 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
             errorSummary: null,
           };
         }
-        const apiKey = cfg.api_key?.trim();
+        const apiKey = providerApiKey(ctx.db, "minimax");
         if (!apiKey) {
           return {
             status: "failed",

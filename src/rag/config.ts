@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defaultRagConfigPath } from "../config.js";
 import { expandUserPath } from "../path/expandUserPath.js";
+import { getCredentialRaw } from "../settings/store.js";
 import type { RagConfigV1 } from "./types.js";
 
 function configPathFromEnv(): string {
@@ -125,6 +126,55 @@ function mergeEnvCorpusRoot(cfg: RagConfigV1): RagConfigV1 {
   return { ...cfg, corpusRoots: [...cfg.corpusRoots, r] };
 }
 
+/**
+ * The `embedding` block of rag.json, parsed on its own so it can be stored as a
+ * credential. Mirrors the checks `parseRagConfigJson` applies to that block, so
+ * a value accepted here is one that function would also accept.
+ */
+export function parseRagEmbeddingJson(raw: string): RagConfigV1["embedding"] | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(data)) return null;
+  if (data.enabled !== true) return null;
+  const baseURL = typeof data.baseURL === "string" ? data.baseURL.trim() : "";
+  const model = typeof data.model === "string" ? data.model.trim() : "";
+  if (!baseURL || !model) return null;
+  const apiKey =
+    typeof data.apiKey === "string" && data.apiKey.trim() ? data.apiKey.trim() : undefined;
+  const rawBatch = data.maxBatchSize;
+  const maxBatchSize =
+    typeof rawBatch === "number" && Number.isFinite(rawBatch) && rawBatch >= 1
+      ? Math.min(Math.floor(rawBatch), 2048)
+      : undefined;
+  return {
+    enabled: true,
+    baseURL,
+    model,
+    apiKey,
+    ...(maxBatchSize !== undefined ? { maxBatchSize } : {}),
+  };
+}
+
+/**
+ * Overlay the `embedding` block from config.db over the one in rag.json.
+ *
+ * rag.json is the ONE config file that keeps living: it also holds corpusRoots /
+ * includeExtensions / vectorStore, which are not credentials and have no reason
+ * to move. So only the embedding block (which carries the API key) is managed in
+ * settings, and it out-ranks whatever the file still says.
+ */
+function overlayStoredEmbedding(cfg: RagConfigV1): RagConfigV1 {
+  const stored = getCredentialRaw("rag-embedding");
+  if (!stored) return cfg;
+  const embedding = parseRagEmbeddingJson(stored);
+  if (!embedding) return cfg;
+  return { ...cfg, embedding };
+}
+
 export function readRagConfig(): RagConfigV1 | null {
   const path = configPathFromEnv();
   if (!existsSync(path)) {
@@ -134,7 +184,7 @@ export function readRagConfig(): RagConfigV1 | null {
     const raw = readFileSync(path, "utf8");
     const cfg = parseRagConfigJson(raw);
     if (!cfg) return null;
-    return mergeEnvCorpusRoot(cfg);
+    return overlayStoredEmbedding(mergeEnvCorpusRoot(cfg));
   } catch {
     return null;
   }

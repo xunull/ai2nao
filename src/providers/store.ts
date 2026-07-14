@@ -1,6 +1,40 @@
 import type Database from "better-sqlite3";
+import {
+  type CredentialName,
+  deleteCredential,
+  getCredentialRaw,
+  setCredentialRaw,
+} from "../settings/store.js";
 import { listProviderSources } from "./registry.js";
 import type { ProviderSnapshotItem } from "./types.js";
+
+/**
+ * Providers whose key has moved OUT of `provider_config.api_key` and into
+ * config.db. The column stays (old rows still read from it as a fallback until
+ * migration runs) but nothing writes to it any more: index.db is hundreds of MB
+ * of scanned history that you can't exclude from a backup daemon, so a plaintext
+ * key has no business living there.
+ */
+const CREDENTIAL_PROVIDERS: Record<string, CredentialName> = { minimax: "minimax" };
+
+/** The key actually in effect: config.db first, then the legacy index.db column. */
+export function providerApiKey(db: Database.Database, provider: string): string | null {
+  const slot = CREDENTIAL_PROVIDERS[provider];
+  if (slot) {
+    const raw = getCredentialRaw(slot);
+    if (raw) {
+      try {
+        const key = (JSON.parse(raw) as { apiKey?: unknown }).apiKey;
+        if (typeof key === "string" && key.trim()) return key.trim();
+      } catch {
+        /* fall through to the legacy column */
+      }
+    }
+  }
+  const row = getProviderConfig(db, provider);
+  const legacy = row?.api_key?.trim();
+  return legacy ? legacy : null;
+}
 
 export type ProviderConfigRow = {
   provider: string;
@@ -85,8 +119,24 @@ export function setProviderConfig(
       : patch.historyEnabled
         ? 1
         : 0;
-  const apiKey =
-    patch.apiKey === undefined ? (existing?.api_key ?? null) : patch.apiKey || null;
+  // The key goes to config.db, never back into this column. `undefined` means
+  // "not part of this patch" (leave it alone); an empty string clears it.
+  const slot = CREDENTIAL_PROVIDERS[provider];
+  if (slot && patch.apiKey !== undefined) {
+    const key = patch.apiKey.trim();
+    if (key) setCredentialRaw(slot, JSON.stringify({ apiKey: key }));
+    else deleteCredential(slot);
+  }
+  const apiKey = slot
+    ? // Clear the legacy column only once this patch has actually stored the key
+      // elsewhere. Nulling it on an unrelated patch (a mere `enabled` toggle)
+      // would destroy a key that migration hasn't copied out yet.
+      patch.apiKey !== undefined
+      ? null
+      : (existing?.api_key ?? null)
+    : patch.apiKey === undefined
+      ? (existing?.api_key ?? null)
+      : patch.apiKey || null;
   db.prepare(
     `INSERT INTO provider_config (provider, enabled, history_enabled, api_key, updated_at)
      VALUES (@provider, @enabled, @history_enabled, @api_key, @updated_at)
@@ -172,7 +222,7 @@ export function listProviders(db: Database.Database): ProviderView[] {
       label: s.label,
       enabled: !!cfg?.enabled,
       historyEnabled: !!cfg?.history_enabled,
-      hasKey: !!cfg?.api_key,
+      hasKey: providerApiKey(db, s.id) !== null,
       lastSyncAt: cfg?.last_sync_at ?? null,
       lastStatus: cfg?.last_status ?? null,
       lastError: cfg?.last_error ?? null,

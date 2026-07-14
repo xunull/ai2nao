@@ -4,6 +4,7 @@ import type { ProviderUsageSource } from "./types.js";
 import {
   ensureProviderConfigs,
   getProviderConfig,
+  providerApiKey,
   recordSyncResult,
   replaceProviderUsage,
 } from "./store.js";
@@ -33,7 +34,7 @@ export async function syncProvider(
 
   const cfg = getProviderConfig(db, providerId);
   if (!cfg?.enabled) return { provider: providerId, status: "skipped", itemCount: 0 };
-  const apiKey = cfg.api_key?.trim();
+  const apiKey = providerApiKey(db, providerId);
   if (!apiKey) {
     const at = nowIso();
     recordSyncResult(db, providerId, "failed", "未配置 API key", at);

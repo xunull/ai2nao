@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { defaultGithubConfigPath } from "../config.js";
+import { getCredentialRaw } from "../settings/store.js";
 
 /**
  * On-disk shape of `~/.ai2nao/github.json`. Only `token` is required; the
@@ -31,10 +32,11 @@ export type GithubConfig = {
  */
 export type GithubTokenStatus = {
   configured: boolean;
-  source: "env" | "file" | null;
+  source: "env" | "db" | "file" | null;
   configPath: string;
   envVar: "GITHUB_TOKEN";
-  /** True when the file exists but its mode allows group/other read. */
+  /** True when the LEGACY file exists and its mode allows group/other read.
+   * Always false once the token lives in config.db (which is created 0600). */
   insecureFilePermissions: boolean;
 };
 
@@ -94,7 +96,7 @@ function isGroupOrOtherReadable(path: string): boolean {
  */
 export function loadGithubToken(): {
   token: string;
-  source: "env" | "file";
+  source: "env" | "db" | "file";
   config: GithubConfig;
 } | null {
   const envToken = (process.env[ENV_VAR] ?? "").trim();
@@ -104,6 +106,11 @@ export function loadGithubToken(): {
       source: "env",
       config: { token: envToken },
     };
+  }
+  const stored = getCredentialRaw("github");
+  if (stored) {
+    const cfg = parseGithubConfigJson(stored);
+    if (cfg) return { token: cfg.token, source: "db", config: cfg };
   }
   const path = configPathFromEnv();
   if (!existsSync(path)) return null;
@@ -175,6 +182,16 @@ export function githubTokenStatus(): GithubTokenStatus {
       configPath,
       envVar: ENV_VAR,
       insecureFilePermissions: false,
+    };
+  }
+  const stored = getCredentialRaw("github");
+  if (stored && parseGithubConfigJson(stored)) {
+    return {
+      configured: true,
+      source: "db",
+      configPath,
+      envVar: ENV_VAR,
+      insecureFilePermissions: false, // config.db is created 0600
     };
   }
   const fileExists = existsSync(configPath);

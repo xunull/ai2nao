@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { resolve } from "node:path";
+import { getCredentialRaw } from "../settings/store.js";
 
 /**
  * Outbound notification config — `~/.ai2nao/notify.json` (0600).
@@ -28,7 +30,12 @@ export const DEFAULT_DAILY_HOUR = 21;
 export const DEFAULT_WEEKLY_HOUR = 9;
 export const DEFAULT_WEEKLY_WEEKDAY = 1; // Monday
 
+/** `AI2NAO_NOTIFY_CONFIG` overrides the location, matching the other configs —
+ * it is also what keeps tests (and the credential migration, which RENAMES what
+ * it finds) away from the developer's real notify.json. */
 export function defaultNotifyConfigPath(): string {
+  const override = (process.env.AI2NAO_NOTIFY_CONFIG ?? "").trim();
+  if (override) return resolve(override);
   const home = homedir();
   if (!home) return ".ai2nao/notify.json";
   return `${home}/.ai2nao/notify.json`;
@@ -83,8 +90,22 @@ export function parseNotifyConfigJson(raw: string): NotifyConfig | null {
   };
 }
 
-/** null when absent / unreadable / no webhook — caller treats that as "feature off". */
-export function readNotifyConfig(path = defaultNotifyConfigPath()): NotifyConfig | null {
+/**
+ * null when absent / unreadable / no webhook — caller treats that as "feature off".
+ *
+ * Source order: config.db → `~/.ai2nao/notify.json`. Passing an explicit `path`
+ * reads THAT file and skips config.db — it is the injection seam tests rely on,
+ * so the db must not be able to out-rank it.
+ */
+export function readNotifyConfig(explicitPath?: string): NotifyConfig | null {
+  if (explicitPath === undefined) {
+    const stored = getCredentialRaw("feishu");
+    if (stored) {
+      const cfg = parseNotifyConfigJson(stored);
+      if (cfg) return cfg;
+    }
+  }
+  const path = explicitPath ?? defaultNotifyConfigPath();
   if (!existsSync(path)) return null;
   if (isGroupOrOtherReadable(path)) {
     console.error(

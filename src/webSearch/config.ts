@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defaultWebSearchConfigPath } from "../config.js";
+import { getCredentialRaw } from "../settings/store.js";
 import type { WebSearchConfig, WebSearchProviderCapabilities, WebSearchStatus } from "./types.js";
 
 export const WEB_SEARCH_CAPABILITIES: WebSearchProviderCapabilities = {
@@ -79,9 +80,14 @@ export function readWebSearchConfigFile(path: string): WebSearchConfigFile | nul
   }
 }
 
+/** Source order: BRAVE_SEARCH_API_KEY env → config.db → JSON file (env-first is
+ * how this reader has always behaved; moving the db in front of it would change
+ * precedence, so it goes second). */
 export function readWebSearchConfig(env: NodeJS.ProcessEnv = process.env): WebSearchConfig {
   const configPath = configPathFromEnv(env);
-  const fileConfig = readWebSearchConfigFile(configPath);
+  const stored = getCredentialRaw("web-search");
+  const fileConfig =
+    (stored ? parseWebSearchConfigJson(stored) : null) ?? readWebSearchConfigFile(configPath);
   const apiKey = env.BRAVE_SEARCH_API_KEY?.trim() || fileConfig?.apiKey || null;
   const maxResults = fileConfig?.maxResults ?? DEFAULT_WEB_SEARCH_CONFIG.maxResults;
   const defaultResults = Math.min(
