@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { chromeHistoryUrlIdentity } from "../chromeHistory/domain.js";
 import { chromeWebkitUsToUnixMs } from "../chromeHistory/time.js";
 import { OTHER_CATEGORY, classifyIdentity, type TopicCategory } from "./classify.js";
-import { readTopicStreamConfig } from "./config.js";
+import { resolveTopicStreamConfig } from "./config.js";
 import { sessionize } from "./sessionize.js";
 import { coreTransition, isNoiseVisit } from "./transition.js";
 
@@ -385,7 +385,7 @@ export function rebuildChromeTopicStream(
   const started = Date.now();
   const updatedAt = nowIso();
 
-  const cfg = readTopicStreamConfig(configPath);
+  const cfg = resolveTopicStreamConfig(db, configPath);
   if (!cfg.ok) {
     // Invalid taxonomy config: do NOT touch existing rows (Atuin-style). Record
     // the error so the UI can show config_error and keep old analytics.
@@ -650,7 +650,7 @@ export function getTopicStreamStatus(
   } else if (source === CONVERSATION_SOURCE) {
     ruleVersion = CONVERSATION_RULE_VERSION;
   } else {
-    const cfg = readTopicStreamConfig(configPath);
+    const cfg = resolveTopicStreamConfig(db, configPath);
     ruleVersion = cfg.ok ? cfg.hash : CONFIG_ERROR_VERSION;
   }
   const currentSourceCount =

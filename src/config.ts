@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 /** Default relative manifest paths to index (repo root–relative). */
 export const DEFAULT_MANIFEST_RELS = [
   "README.md",
@@ -46,8 +47,16 @@ export function defaultDailySummaryDbPath(): string {
   return `${home}/.ai2nao/daily-summary.db`;
 }
 
-/** Global ai2nao JSON config (`~/.ai2nao/config.json`). */
+/**
+ * Global ai2nao JSON config (`~/.ai2nao/config.json`) — the topic taxonomy.
+ *
+ * `AI2NAO_CONFIG` overrides the location, matching every other config file. It
+ * was the one without an override, which meant any test touching the taxonomy
+ * routes silently read the DEVELOPER's real, hand-tuned config.json.
+ */
 export function defaultAi2naoConfigPath(): string {
+  const override = (process.env.AI2NAO_CONFIG ?? "").trim();
+  if (override) return resolve(override);
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   if (!home) return ".ai2nao/config.json";
   return `${home}/.ai2nao/config.json`;

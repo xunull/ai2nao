@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { defaultAi2naoConfigPath } from "../config.js";
+import type Database from "better-sqlite3";
+import { getTopicTaxonomy } from "../appConfig/index.js";
 import {
   DEFAULT_TAXONOMY,
   OTHER_CATEGORY,
@@ -236,5 +238,44 @@ export function readTopicStreamConfig(
     categories: parsed.categories,
     gapMinutes: parsed.gapMinutes,
     hash: configHash(parsed.categories, parsed.gapMinutes),
+  };
+}
+
+/**
+ * The taxonomy actually in effect: app_config (settings page) → config.json →
+ * built-ins.
+ *
+ * config.json is never renamed or rewritten. It stays a working fallback, so a
+ * user who has always hand-edited it keeps working untouched, and a bad row in
+ * app_config degrades to the file instead of silently resetting the taxonomy to
+ * the defaults — which is exactly what `readTopicStreamConfig` does when the
+ * file goes missing (see its `exists: false` branch), and why nothing here
+ * deletes it.
+ *
+ * `hash` feeds `rule_version` on topic_stream rows, so editing the taxonomy makes
+ * the topic river report `rule_version_mismatch` ("分类词表已更新,需要重建") on its
+ * own. No extra plumbing needed.
+ */
+export function resolveTopicStreamConfig(
+  db: Database.Database,
+  configPath = defaultAi2naoConfigPath()
+): TopicStreamConfigResult {
+  const stored = getTopicTaxonomy(db);
+  if (!stored) return readTopicStreamConfig(configPath);
+
+  // Same merge as the file path: the user's categories first (their rules win
+  // ties), then every built-in whose name they did not reuse.
+  const userNames = new Set(stored.categories.map((c) => c.name));
+  const effective = [
+    ...stored.categories,
+    ...DEFAULT_TAXONOMY.filter((d) => !userNames.has(d.name)),
+  ];
+  return {
+    ok: true,
+    path: configPath,
+    exists: true,
+    categories: effective,
+    gapMinutes: stored.gapMinutes,
+    hash: configHash(effective, stored.gapMinutes),
   };
 }

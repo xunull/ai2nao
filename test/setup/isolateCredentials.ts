@@ -29,6 +29,9 @@ import { beforeEach } from "vitest";
 const dir = mkdtempSync(join(tmpdir(), "ai2nao-cfg-"));
 
 process.env.AI2NAO_CONFIG_DB = join(dir, "config.db");
+// config.json holds the topic taxonomy — the thing a user hand-tunes for hours.
+// Without this, the taxonomy routes read the developer's real one.
+process.env.AI2NAO_CONFIG = join(dir, "config.json");
 process.env.AI2NAO_GITHUB_CONFIG = join(dir, "github.json");
 process.env.AI2NAO_LLM_CHAT_CONFIG = join(dir, "llm-chat.json");
 process.env.AI2NAO_WEB_SEARCH_CONFIG = join(dir, "web-search.json");

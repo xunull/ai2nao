@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Bell, Bot, Database, Folder, Plus, Sliders, X } from "lucide-react";
+import { Bell, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch } from "../api";
+import { TaxonomyEditor } from "./settings/TaxonomyEditor";
 
 /** Where a credential is actually coming from — mirrors the server's precedence. */
 type CredSource = "env" | "db" | "file" | null;
@@ -31,6 +32,7 @@ function shortErr(e: unknown): string {
 
 const CATEGORIES = [
   { id: "general", label: "通用", icon: Sliders },
+  { id: "topics", label: "主题分类", icon: Layers },
   { id: "ai", label: "AI 与模型", icon: Bot },
   { id: "sources", label: "数据源", icon: Database },
   { id: "notify", label: "通知", icon: Bell },
@@ -103,6 +105,15 @@ export function Settings() {
                 concurrency={q.data.scanConcurrency}
                 onChanged={refresh}
               />
+            )}
+
+            {active === "topics" && (
+              <Section
+                title="主题分类"
+                hint="主题河流的分类词表。你的分类排在前面，没被你重名的内置分类会自动补上 —— 所以只需要写你的增量。"
+              >
+                <TaxonomyEditor />
+              </Section>
             )}
 
             {active === "ai" && (
