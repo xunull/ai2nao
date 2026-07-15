@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defaultRagConfigPath } from "../config.js";
 import { expandUserPath } from "../path/expandUserPath.js";
-import { getCredentialRaw } from "../settings/store.js";
+import { getCredentialRaw, getSettingRaw } from "../settings/store.js";
 import type { RagConfigV1 } from "./types.js";
 
 function configPathFromEnv(): string {
@@ -24,15 +24,13 @@ function normalizeIncludeExtension(s: string): string | null {
   return `.${t}`;
 }
 
-export function parseRagConfigJson(raw: string): RagConfigV1 | null {
-  let data: unknown;
-  try {
-    data = JSON.parse(raw) as unknown;
-  } catch {
-    return null;
-  }
-  if (!isRecord(data)) return null;
-  if (data.version !== 1) return null;
+/** The non-embedding half of a rag config: corpus roots, filters, vector store.
+ * Shared by `parseRagConfigJson` (whole file) and `parseRagCorpusJson` (the
+ * db-stored setting) so the two never drift. Returns null when corpusRoots is
+ * missing/empty — a corpus config with no roots is not a config. */
+type CorpusFields = Omit<RagConfigV1, "version" | "embedding">;
+
+function parseCorpusFields(data: Record<string, unknown>): CorpusFields | null {
   const rootsRaw = data.corpusRoots;
   if (!Array.isArray(rootsRaw) || rootsRaw.length === 0) return null;
   const corpusRoots: string[] = [];
@@ -59,6 +57,51 @@ export function parseRagConfigJson(raw: string): RagConfigV1 | null {
     typeof data.respectDefaultExcludes === "boolean"
       ? data.respectDefaultExcludes
       : true;
+
+  let vectorStore: RagConfigV1["vectorStore"];
+  if (isRecord(data.vectorStore)) {
+    const provider = data.vectorStore.provider;
+    if (provider === "none") {
+      vectorStore = { provider: "none" };
+    } else if (provider === "lancedb") {
+      const rawPath = data.vectorStore.path;
+      vectorStore = {
+        provider: "lancedb",
+        ...(typeof rawPath === "string" && rawPath.trim()
+          ? { path: expandUserPath(rawPath.trim()) }
+          : {}),
+      };
+    }
+  }
+
+  return { corpusRoots, includeExtensions, maxFileBytes, respectDefaultExcludes, vectorStore };
+}
+
+/** Parse the db-stored `rag-corpus` setting (corpus fields only, no embedding). */
+export function parseRagCorpusJson(raw: string): RagConfigV1 | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(data)) return null;
+  const corpus = parseCorpusFields(data);
+  if (!corpus) return null;
+  return { version: 1, ...corpus, embedding: undefined };
+}
+
+export function parseRagConfigJson(raw: string): RagConfigV1 | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(data)) return null;
+  if (data.version !== 1) return null;
+  const corpus = parseCorpusFields(data);
+  if (!corpus) return null;
 
   let embedding: RagConfigV1["embedding"];
   if (isRecord(data.embedding) && data.embedding.enabled === true) {
@@ -87,31 +130,7 @@ export function parseRagConfigJson(raw: string): RagConfigV1 | null {
     /* 若 embedding 写了一半（缺 baseURL/model），不再整表解析失败，只当作未启用 embedding */
   }
 
-  let vectorStore: RagConfigV1["vectorStore"];
-  if (isRecord(data.vectorStore)) {
-    const provider = data.vectorStore.provider;
-    if (provider === "none") {
-      vectorStore = { provider: "none" };
-    } else if (provider === "lancedb") {
-      const rawPath = data.vectorStore.path;
-      vectorStore = {
-        provider: "lancedb",
-        ...(typeof rawPath === "string" && rawPath.trim()
-          ? { path: expandUserPath(rawPath.trim()) }
-          : {}),
-      };
-    }
-  }
-
-  return {
-    version: 1,
-    corpusRoots,
-    includeExtensions,
-    maxFileBytes,
-    respectDefaultExcludes,
-    embedding,
-    vectorStore,
-  };
+  return { version: 1, ...corpus, embedding };
 }
 
 /**
@@ -191,19 +210,57 @@ function mergeStoredEmbedding(cfg: RagConfigV1): RagConfigV1 {
   return { ...cfg, embedding: { ...fileEmb, apiKey: stored.apiKey } };
 }
 
-export function readRagConfig(): RagConfigV1 | null {
+/** The corpus config from rag.json, or null when the file is absent/invalid. */
+function readRagFileConfig(): RagConfigV1 | null {
   const path = configPathFromEnv();
-  if (!existsSync(path)) {
-    return null;
-  }
+  if (!existsSync(path)) return null;
   try {
-    const raw = readFileSync(path, "utf8");
-    const cfg = parseRagConfigJson(raw);
-    if (!cfg) return null;
-    return mergeStoredEmbedding(mergeEnvCorpusRoot(cfg));
+    return parseRagConfigJson(readFileSync(path, "utf8"));
   } catch {
     return null;
   }
+}
+
+/** The file's corpus, embedding stripped — the settings-page fallback view when
+ * no db `rag-corpus` row exists yet. */
+export function readRagFileCorpus(): RagConfigV1 | null {
+  const cfg = readRagFileConfig();
+  return cfg ? { ...cfg, embedding: undefined } : null;
+}
+
+/**
+ * The corpus config actually in effect: config.db → rag.json. Mirrors
+ * `getTopicTaxonomy`'s precedence exactly — db wins, the file is the fallback,
+ * and a CORRUPT db row falls through to the file rather than wiping RAG. (The
+ * original shape here read the file FIRST and let the db only overlay, which
+ * meant a machine with no rag.json could never turn RAG on from the settings
+ * page — the db could never be authoritative.)
+ *
+ * The file's embedding block (model/baseURL) rides along regardless of where the
+ * corpus came from; `mergeStoredEmbedding` then supplies the key.
+ */
+function resolveRagCorpus(): RagConfigV1 | null {
+  const storedRaw = getSettingRaw("rag-corpus");
+  const fileCfg = readRagFileConfig();
+  if (storedRaw) {
+    const corpus = parseRagCorpusJson(storedRaw);
+    if (corpus) return { ...corpus, embedding: fileCfg?.embedding };
+    // corrupt stored row → don't take RAG down, use the file
+  }
+  return fileCfg;
+}
+
+/**
+ * Effective RAG config: db-or-file corpus → append env root → fill embedding key.
+ *
+ * Order is load-bearing. `mergeEnvCorpusRoot` APPENDS `AI2NAO_RAG_CORPUS_ROOT`,
+ * so it must run AFTER the corpus is resolved — running it before a db overlay
+ * that replaces `corpusRoots` wholesale would silently drop the env root.
+ */
+export function readRagConfig(): RagConfigV1 | null {
+  const cfg = resolveRagCorpus();
+  if (!cfg) return null;
+  return mergeStoredEmbedding(mergeEnvCorpusRoot(cfg));
 }
 
 /**
@@ -256,6 +313,6 @@ export function effectiveCorpusRoots(
   return {
     roots: [],
     error:
-      "No corpus roots. Add corpusRoots to ~/.ai2nao/rag.json, or pass --root <path>, or set AI2NAO_RAG_CORPUS_ROOT.",
+      "No corpus roots. Add them in 设置 → RAG 知识库, or pass --root <path>, or set AI2NAO_RAG_CORPUS_ROOT (~/.ai2nao/rag.json also still works).",
   };
 }

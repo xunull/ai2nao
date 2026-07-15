@@ -40,8 +40,32 @@ export const CREDENTIAL_NAMES: readonly CredentialName[] = [
   "minimax",
 ] as const;
 
+/**
+ * Names of non-secret settings kept in config.db.
+ *
+ * A setting and a credential are stored identically — one opaque JSON blob per
+ * name — and share every access path (parse, merge-patch, mask rejection). The
+ * ONLY difference is that a setting has no secret fields to redact, so it can be
+ * shown back to the UI verbatim. They live in separate tables purely so the
+ * table name doesn't lie: nobody wants to find `corpusRoots` inside a table
+ * called `credential`. (Renaming `credential` itself was rejected — config.db
+ * has no migration runner, so a rename would orphan every stored key.)
+ */
+export type SettingName = "rag-corpus";
+
+export const SETTING_NAMES: readonly SettingName[] = ["rag-corpus"] as const;
+
+/** The two entry tables, keyed by a closed enum — never an interpolated string. */
+const ENTRY_TABLE = { credential: "credential", setting: "setting" } as const;
+type EntryTable = keyof typeof ENTRY_TABLE;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS credential (
+  name       TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL CHECK (json_valid(value_json)),
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS setting (
   name       TEXT PRIMARY KEY,
   value_json TEXT NOT NULL CHECK (json_valid(value_json)),
   updated_at TEXT NOT NULL
@@ -118,13 +142,14 @@ function db(): Database.Database | null {
   return handle;
 }
 
-/** Raw JSON string for a credential, or null when unset / store unavailable. */
-export function getCredentialRaw(name: CredentialName): string | null {
+// ---- generic entry accessors (credential + setting share one implementation) ----
+
+function getRaw(table: EntryTable, name: string): string | null {
   const d = db();
   if (!d) return null;
   try {
     const row = d
-      .prepare("SELECT value_json FROM credential WHERE name = ?")
+      .prepare(`SELECT value_json FROM ${ENTRY_TABLE[table]} WHERE name = ?`)
       .get(name) as { value_json: string } | undefined;
     return row?.value_json ?? null;
   } catch {
@@ -132,20 +157,46 @@ export function getCredentialRaw(name: CredentialName): string | null {
   }
 }
 
-/** Throws if the store is unavailable — a failed write must never look like a success. */
-export function setCredentialRaw(name: CredentialName, valueJson: string): void {
+function setRaw(table: EntryTable, name: string, valueJson: string): void {
   const d = db();
-  if (!d) throw new Error("credential store unavailable");
+  if (!d) throw new Error("config store unavailable");
   d.prepare(
-    `INSERT INTO credential (name, value_json, updated_at) VALUES (?, ?, datetime('now'))
+    `INSERT INTO ${ENTRY_TABLE[table]} (name, value_json, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(name) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`
   ).run(name, valueJson);
 }
 
-export function deleteCredential(name: CredentialName): void {
+function deleteRaw(table: EntryTable, name: string): void {
   const d = db();
   if (!d) return;
-  d.prepare("DELETE FROM credential WHERE name = ?").run(name);
+  d.prepare(`DELETE FROM ${ENTRY_TABLE[table]} WHERE name = ?`).run(name);
+}
+
+/** Raw JSON string for a credential, or null when unset / store unavailable. */
+export function getCredentialRaw(name: CredentialName): string | null {
+  return getRaw("credential", name);
+}
+
+/** Throws if the store is unavailable — a failed write must never look like a success. */
+export function setCredentialRaw(name: CredentialName, valueJson: string): void {
+  setRaw("credential", name, valueJson);
+}
+
+export function deleteCredential(name: CredentialName): void {
+  deleteRaw("credential", name);
+}
+
+/** Raw JSON string for a setting, or null when unset / store unavailable. */
+export function getSettingRaw(name: SettingName): string | null {
+  return getRaw("setting", name);
+}
+
+export function setSettingRaw(name: SettingName, valueJson: string): void {
+  setRaw("setting", name, valueJson);
+}
+
+export function deleteSetting(name: SettingName): void {
+  deleteRaw("setting", name);
 }
 
 export function getConfigMeta(key: string): string | null {

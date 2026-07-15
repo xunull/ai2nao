@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRagConfigJson, readRagConfig, readRagConfigFile } from "../src/rag/config.js";
-import { resetSettingsForTest, setCredentialRaw } from "../src/settings/store.js";
+import { parseRagConfigJson, parseRagCorpusJson, readRagConfig, readRagConfigFile } from "../src/rag/config.js";
+import { resetSettingsForTest, setCredentialRaw, setSettingRaw } from "../src/settings/store.js";
 
 describe("parseRagConfigJson", () => {
   it("accepts includeExtensions without a leading dot (e.g. md → .md)", () => {
@@ -127,5 +127,95 @@ describe("embedding key from config.db (regressions)", () => {
       JSON.stringify(withEmbedding({ enabled: true, baseURL: "https://f/v1", model: "m", apiKey: "sk-file" }))
     );
     expect(readRagConfig()?.embedding?.apiKey).toBe("sk-file");
+  });
+});
+
+describe("corpus precedence: db-first, file-fallback (mirrors getTopicTaxonomy)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "ai2nao-ragcorp-"));
+    process.env.AI2NAO_CONFIG_DB = join(dir, "config.db");
+    process.env.AI2NAO_RAG_CONFIG = join(dir, "rag.json");
+    delete process.env.AI2NAO_RAG_CORPUS_ROOT;
+    resetSettingsForTest();
+  });
+  afterEach(() => {
+    delete process.env.AI2NAO_RAG_CORPUS_ROOT;
+    resetSettingsForTest();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const RAG_JSON = () => join(dir, "rag.json");
+  const storeCorpus = (v: Record<string, unknown>) => setSettingRaw("rag-corpus", JSON.stringify(v));
+
+  it("db corpus wins over the file", () => {
+    writeFileSync(RAG_JSON(), JSON.stringify({ version: 1, corpusRoots: ["/from/file"] }));
+    storeCorpus({ corpusRoots: ["/from/db"], maxFileBytes: 123456 });
+
+    const cfg = readRagConfig();
+    expect(cfg?.corpusRoots).toEqual(["/from/db"]);
+    expect(cfg?.maxFileBytes).toBe(123456);
+  });
+
+  it("NEW MACHINE: no rag.json, corpus only in db → RAG is still configured (the whole point of db-first)", () => {
+    // The original file-first shape returned null here and RAG could never turn on.
+    storeCorpus({ corpusRoots: ["/only/in/db"] });
+    const cfg = readRagConfig();
+    expect(cfg).not.toBeNull();
+    expect(cfg?.corpusRoots).toEqual(["/only/in/db"]);
+  });
+
+  it("a corrupt db corpus row falls through to the file, it does NOT wipe RAG", () => {
+    writeFileSync(RAG_JSON(), JSON.stringify({ version: 1, corpusRoots: ["/from/file"] }));
+    setSettingRaw("rag-corpus", JSON.stringify({ corpusRoots: [] })); // empty roots = invalid
+    expect(readRagConfig()?.corpusRoots).toEqual(["/from/file"]);
+  });
+
+  it("neither db nor file → null (nothing configured)", () => {
+    expect(readRagConfig()).toBeNull();
+  });
+
+  it("ORDERING: the env root is appended AFTER the db corpus overlay, not wiped by it", () => {
+    process.env.AI2NAO_RAG_CORPUS_ROOT = "/env/root";
+    storeCorpus({ corpusRoots: ["/db/root"] });
+    // If mergeEnv ran before the db overlay, /env/root would be gone.
+    expect(readRagConfig()?.corpusRoots).toEqual(["/db/root", "/env/root"]);
+  });
+
+  it("db corpus keeps the file's embedding block (model/baseURL); the key comes from the store", () => {
+    writeFileSync(
+      RAG_JSON(),
+      JSON.stringify({
+        version: 1,
+        corpusRoots: ["/from/file"],
+        embedding: { enabled: true, baseURL: "https://file/v1", model: "file-model" },
+      })
+    );
+    storeCorpus({ corpusRoots: ["/from/db"] });
+    setCredentialRaw(
+      "rag-embedding",
+      JSON.stringify({ enabled: true, baseURL: "https://file/v1", model: "file-model", apiKey: "sk-stored" })
+    );
+
+    const cfg = readRagConfig();
+    expect(cfg?.corpusRoots).toEqual(["/from/db"]); // corpus from db
+    expect(cfg?.embedding?.model).toBe("file-model"); // embedding model from file
+    expect(cfg?.embedding?.apiKey).toBe("sk-stored"); // key from store
+  });
+});
+
+describe("parseRagCorpusJson", () => {
+  it("parses corpus fields and leaves embedding undefined", () => {
+    const cfg = parseRagCorpusJson(JSON.stringify({ corpusRoots: ["/a"], maxFileBytes: 999 }));
+    expect(cfg?.corpusRoots).toEqual(["/a"]);
+    expect(cfg?.embedding).toBeUndefined();
+    expect(cfg?.version).toBe(1);
+  });
+
+  it("rejects empty/absent corpusRoots (a corpus with no roots is not a config)", () => {
+    expect(parseRagCorpusJson(JSON.stringify({ corpusRoots: [] }))).toBeNull();
+    expect(parseRagCorpusJson(JSON.stringify({ maxFileBytes: 1 }))).toBeNull();
+    expect(parseRagCorpusJson("not json")).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
 import type Database from "better-sqlite3";
 import { defaultRagConfigPath } from "../config.js";
+import { readRagFileCorpus } from "../rag/config.js";
 import { CREDENTIAL_SPECS } from "./schema.js";
 import { CREDENTIAL_NAMES, type CredentialName, configDb } from "./store.js";
 
@@ -156,4 +157,64 @@ export function migrateCredentials(indexDb: Database.Database | null): Migration
 
   console.error(`ai2nao: moved ${migrated.length} credential(s) into config.db (0600).`);
   return { migrated, skipped: false };
+}
+
+/**
+ * The corpus half of rag.json (roots, filters, vector store) into the `setting`
+ * table. Runs once, tracked by its OWN marker.
+ *
+ * It must NOT reuse `config.migratedAt`: that marker is already set on every
+ * machine the credential migration touched (this dev's included), so the shared
+ * guard would short-circuit and this import would never run for existing users.
+ *
+ * Two more properties, both load-bearing:
+ * - rag.json is NEVER renamed. Unlike the credential files it stays the live
+ *   fallback (readRagConfig reads db → file), so retiring it would be wrong.
+ * - The marker is written even when there was nothing to import. Otherwise a
+ *   machine with no rag.json would re-run every startup and, worse, re-import
+ *   the file's roots on top of whatever the user had since edited in the UI.
+ */
+const RAG_MARKER_KEY = "config.ragSettingsMigratedAt";
+
+export function migrateRagSettings(): { migrated: boolean; skipped: boolean } {
+  const cfg = configDb();
+  if (!cfg) return { migrated: false, skipped: true };
+
+  const run = cfg.transaction((): boolean => {
+    const marker = cfg
+      .prepare("SELECT value FROM config_meta WHERE key = ?")
+      .get(RAG_MARKER_KEY) as { value: string } | undefined;
+    if (marker) return false;
+
+    // readRagFileCorpus honours AI2NAO_RAG_CONFIG and strips embedding.
+    const corpus = readRagFileCorpus();
+    let imported = false;
+    if (corpus) {
+      const { version: _v, embedding: _e, ...corpusOnly } = corpus;
+      cfg
+        .prepare(
+          `INSERT INTO setting (name, value_json, updated_at) VALUES ('rag-corpus', ?, datetime('now'))
+           ON CONFLICT(name) DO NOTHING`
+        )
+        .run(JSON.stringify(corpusOnly));
+      imported = true;
+    }
+    // Marker written unconditionally — see the "nothing to import" note above.
+    cfg
+      .prepare("INSERT INTO config_meta (key, value) VALUES (?, datetime('now'))")
+      .run(RAG_MARKER_KEY);
+    return imported;
+  });
+
+  try {
+    const migrated = run.immediate();
+    if (migrated) console.error("ai2nao: moved RAG corpus settings into config.db.");
+    return { migrated, skipped: !migrated };
+  } catch (e) {
+    console.error(
+      `warning: RAG settings migration failed (${e instanceof Error ? e.message : String(e)}); ` +
+        `continuing to read rag.json.`
+    );
+    return { migrated: false, skipped: true };
+  }
 }

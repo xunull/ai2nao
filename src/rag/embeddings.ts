@@ -3,6 +3,16 @@ import { readLlmChatConfig, type LlmChatConfig } from "../llmChat/config.js";
 
 export type EmbeddingResult = { dim: number; vector: Float32Array };
 
+/** localhost / 127.x / ::1 — a runtime that legitimately needs no API key. */
+function isLocalEndpoint(baseURL: string): boolean {
+  try {
+    const h = new URL(baseURL).hostname.toLowerCase();
+    return h === "localhost" || h === "::1" || h === "0.0.0.0" || /^127\./.test(h);
+  } catch {
+    return false;
+  }
+}
+
 function embeddingFallbackFromLlmConfig(llm: LlmChatConfig | null): {
   baseURL: string;
   apiKey?: string;
@@ -30,12 +40,22 @@ export async function fetchEmbedding(
   if (!baseURL) {
     throw new Error("embedding baseURL missing (set in rag.json or llm-chat.json)");
   }
-  const apiKey =
+  const resolvedKey =
     emb.apiKey?.trim() ||
     llmFallback.apiKey?.trim() ||
     process.env.AI2NAO_LLM_API_KEY?.trim() ||
     process.env.OPENAI_API_KEY?.trim() ||
-    "local-no-key";
+    null;
+  // Local runtimes (LM Studio, Ollama) legitimately need no key, so a missing
+  // one is fine there. A REMOTE endpoint with no key used to fall through to the
+  // literal "local-no-key" and come back 401 — a failure that pointed nowhere
+  // near the real cause. Fail loud instead, naming where to fix it.
+  if (!resolvedKey && !isLocalEndpoint(baseURL)) {
+    throw new Error(
+      `embedding API key missing for ${baseURL}. Set it in 设置 → RAG 知识库 (or AI2NAO_LLM_API_KEY).`
+    );
+  }
+  const apiKey = resolvedKey ?? "local-no-key";
   const url = baseURL.includes("/v1")
     ? `${baseURL}/embeddings`
     : `${baseURL}/v1/embeddings`;

@@ -84,3 +84,45 @@ describe("RAG embeddings", () => {
     );
   });
 });
+
+describe("missing-key error clarity (T12)", () => {
+  it("REMOTE endpoint with no key → clear error naming the settings page (not a 401)", async () => {
+    readLlmChatConfigMock.mockReturnValue(null);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const savedLlm = process.env.AI2NAO_LLM_API_KEY;
+    const savedOpenai = process.env.OPENAI_API_KEY;
+    delete process.env.AI2NAO_LLM_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      await expect(fetchEmbedding("hi", ragConfig("https://dashscope.aliyuncs.com/compatible-mode/v1"))).rejects.toThrow(
+        /RAG 知识库/
+      );
+      // It must fail BEFORE any network call — no misleading 401.
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (savedLlm !== undefined) process.env.AI2NAO_LLM_API_KEY = savedLlm;
+      if (savedOpenai !== undefined) process.env.OPENAI_API_KEY = savedOpenai;
+    }
+  });
+
+  it("LOCAL endpoint with no key → proceeds (LM Studio / Ollama need none)", async () => {
+    readLlmChatConfigMock.mockReturnValue(null);
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const savedLlm = process.env.AI2NAO_LLM_API_KEY;
+    const savedOpenai = process.env.OPENAI_API_KEY;
+    delete process.env.AI2NAO_LLM_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const result = await fetchEmbedding("hi", ragConfig("http://localhost:1234/v1"));
+      expect(result.dim).toBe(2);
+      expect(fetchMock).toHaveBeenCalled();
+    } finally {
+      if (savedLlm !== undefined) process.env.AI2NAO_LLM_API_KEY = savedLlm;
+      if (savedOpenai !== undefined) process.env.OPENAI_API_KEY = savedOpenai;
+    }
+  });
+});

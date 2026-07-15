@@ -65,7 +65,7 @@ import {
   getDirectoryActivityStatus,
   rebuildDirectoryActivity,
 } from "./atuin/directoryActivity/index.js";
-import { migrateCredentials } from "./settings/migrate.js";
+import { migrateCredentials, migrateRagSettings } from "./settings/migrate.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
@@ -1318,6 +1318,8 @@ program
       // api_key column, into config.db (0600). Runs every boot, does real work
       // once, and degrades to "keep reading the files" if anything goes wrong.
       migrateCredentials(db);
+      // Same for the non-secret RAG corpus settings (own marker, rag.json kept).
+      migrateRagSettings();
 
       let atuin: { db: ReturnType<typeof openReadOnlyDatabase>; path: string } | undefined;
       let dailySummary:

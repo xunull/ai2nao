@@ -1,4 +1,5 @@
 {
+  "_comment": "This file still works, but 设置 → RAG 知识库 is the preferred place to manage corpus roots and the embedding key. The UI stores them in ~/.ai2nao/config.db (0600) and out-ranks this file. Keeping the key here is fine but no longer required.",
   "version": 1,
   "corpusRoots": ["/path/to/notes", "/path/to/second-vault"],
   "includeExtensions": [".md", ".mdx", ".txt"],

@@ -18,6 +18,12 @@ import {
   isCredentialName,
   patchCredential,
 } from "../settings/credentialApi.js";
+import {
+  allSettingDtos,
+  clearSetting,
+  isSettingName,
+  patchSetting,
+} from "../settings/settingApi.js";
 
 function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
@@ -44,6 +50,9 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     // below is the general form and includes github too.
     github: githubDto(),
     credentials: allCredentialDtos(),
+    // Non-secret settings (rag corpus). Same shape as credentials but `values`
+    // is returned verbatim — nothing to redact.
+    settings: allSettingDtos(),
   });
 
   app.get("/api/settings", (c) => c.json(settingsDto()));
@@ -126,6 +135,41 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
       return c.json({ credential: dto, github: githubDto() });
     } catch {
       return jsonErr(500, "failed to delete credential");
+    }
+  });
+
+  // PATCH /api/settings/setting/:name — non-secret settings (rag-corpus).
+  // Same merge semantics as /secret/:name; corpusRoots is existence-validated.
+  // PATCH not PUT: PUT is absent from the CORS allowMethods list.
+  app.patch("/api/settings/setting/:name", async (c) => {
+    const name = c.req.param("name");
+    if (!isSettingName(name)) return jsonErr(404, "unknown setting");
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return jsonErr(400, "invalid JSON body");
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return jsonErr(400, "body must be an object");
+    }
+    try {
+      return c.json({ setting: patchSetting(name, body as Record<string, unknown>) });
+    } catch (e) {
+      if (e instanceof CredentialPatchError) return jsonErr(400, e.message);
+      return jsonErr(500, "failed to save setting");
+    }
+  });
+
+  // DELETE /api/settings/setting/:name — forget the stored setting; rag.json (if
+  // present) still applies, and the returned `source` says so.
+  app.delete("/api/settings/setting/:name", (c) => {
+    const name = c.req.param("name");
+    if (!isSettingName(name)) return jsonErr(404, "unknown setting");
+    try {
+      return c.json({ setting: clearSetting(name) });
+    } catch {
+      return jsonErr(500, "failed to delete setting");
     }
   });
 }
