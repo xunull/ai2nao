@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Bell, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
+import { Bell, BookOpen, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch } from "../api";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
+import { RagCorpusSection } from "./settings/RagCorpusSection";
 
 /** Where a credential is actually coming from — mirrors the server's precedence. */
 type CredSource = "env" | "db" | "file" | null;
@@ -17,6 +18,15 @@ type Credential = {
 
 type CredName = "llm-chat" | "rag-embedding" | "web-search" | "github" | "feishu" | "minimax";
 
+/** A non-secret setting — same shape as Credential but `values` comes back
+ * verbatim (nothing to redact). */
+type Setting = {
+  set: boolean;
+  source: "db" | "file" | null;
+  label: string;
+  values: Record<string, unknown> | null;
+};
+
 type SettingsRes = {
   scanRoots: string[];
   scanMaxDepth: number;
@@ -24,6 +34,7 @@ type SettingsRes = {
   scanConcurrency: number;
   github: { set: boolean; source: CredSource };
   credentials: Record<CredName, Credential>;
+  settings: { "rag-corpus": Setting };
 };
 
 function shortErr(e: unknown): string {
@@ -34,6 +45,7 @@ const CATEGORIES = [
   { id: "general", label: "通用", icon: Sliders },
   { id: "topics", label: "主题分类", icon: Layers },
   { id: "ai", label: "AI 与模型", icon: Bot },
+  { id: "rag", label: "RAG 知识库", icon: BookOpen },
   { id: "sources", label: "数据源", icon: Database },
   { id: "notify", label: "通知", icon: Bell },
 ] as const;
@@ -120,21 +132,31 @@ export function Settings() {
               <LlmChatSection cred={q.data.credentials["llm-chat"]} onChanged={refresh} />
             )}
 
-            {active === "sources" && (
+            {active === "rag" && (
               <>
-                <GithubTokenSection cred={q.data.credentials.github} onChanged={refresh} />
-                <WebSearchSection cred={q.data.credentials["web-search"]} onChanged={refresh} />
+                {/* RAG's embedding form lives here now, MOVED (not copied) from
+                    数据源 — two forms PATCHing the same rag-embedding credential
+                    would fight. */}
                 <RagEmbeddingSection
                   cred={q.data.credentials["rag-embedding"]}
                   onChanged={refresh}
                 />
-                {/* A footnote, not a form: MiniMax's key is edited on the
-                    「外部平台」page (which now writes to the same config.db).
-                    Giving it a full card would push this category past one
-                    screen for no reason. */}
+                <RagCorpusSection setting={q.data.settings["rag-corpus"]} onChanged={refresh} />
+              </>
+            )}
+
+            {active === "sources" && (
+              <>
+                <GithubTokenSection cred={q.data.credentials.github} onChanged={refresh} />
+                <WebSearchSection cred={q.data.credentials["web-search"]} onChanged={refresh} />
+                {/* Footnotes, not forms: these credentials are edited elsewhere,
+                    and a full card each would push this category past one screen. */}
                 <p className="px-1 text-xs text-[var(--muted)]">
                   MiniMax：{q.data.credentials.minimax.set ? "已配置 API key" : "未配置"} · 在
                   「外部平台」页管理（同样存进 config.db）
+                </p>
+                <p className="px-1 text-xs text-[var(--muted)]">
+                  RAG 向量化与语料库移到了左边「RAG 知识库」分类。
                 </p>
               </>
             )}
@@ -448,7 +470,7 @@ function RagEmbeddingSection({ cred, onChanged }: { cred: Credential; onChanged:
   return (
     <Section
       title="RAG 向量化"
-      hint="语料根目录仍在 ~/.ai2nao/rag.json —— 那不是密钥，没必要搬。这里只管 embedding。"
+      hint="向量化用的模型与 API Key。语料根目录在下面「语料库」里管。"
     >
       <div className="mb-3">
         <SourceBadge cred={cred} />

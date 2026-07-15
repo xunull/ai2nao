@@ -41,6 +41,9 @@ function settingsPayload(over: Record<string, Partial<Cred>> = {}) {
       feishu: cred(over.feishu),
       minimax: cred(over.minimax),
     },
+    settings: {
+      "rag-corpus": { set: false, source: null, label: "RAG 语料", values: null },
+    },
   };
 }
 
