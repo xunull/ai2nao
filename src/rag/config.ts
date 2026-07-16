@@ -179,17 +179,15 @@ export function parseRagEmbeddingJson(raw: string): RagConfigV1["embedding"] | n
 }
 
 /**
- * Merge the stored embedding credential into a file-derived config.
+ * The `--config <file>` path only. The named file is authoritative for the
+ * embedding — its model/baseURL win — and the store lends ONLY the API key, and
+ * only when the file's block has none (the key is no longer allowed in the file).
  *
- * It fills in the API KEY and nothing else. Replacing the whole `embedding`
- * block (the original shape here) meant the stored `model` silently out-ranked
- * the file's — so `rag ingest --config other.json` would embed with a different
- * model than the file asked for, and hand-editing `embedding.model` in rag.json
- * became a no-op. The embedding model fixes the vector space and its dimension;
- * `markVectorSync` (rag/meta.ts) only RECORDS the model, nothing rejects a
- * mismatch, so a silently-swapped model produces an index that is quietly
- * garbage. baseURL and model stay whatever the config says; only the secret,
- * which the file is no longer allowed to hold, comes from the store.
+ * This differs from the default path on purpose: `--config` means "use this
+ * file". Overriding the file's model with the db's would change the vector space
+ * silently (`markVectorSync` in rag/meta.ts records the model but rejects no
+ * mismatch → a quietly-garbage index). The default path, by contrast, takes the
+ * embedding wholly from db — see `resolveStoredEmbedding`.
  */
 function mergeStoredEmbedding(cfg: RagConfigV1): RagConfigV1 {
   const stored = (() => {
@@ -229,38 +227,46 @@ export function readRagFileCorpus(): RagConfigV1 | null {
 }
 
 /**
- * The corpus config actually in effect: config.db → rag.json. Mirrors
- * `getTopicTaxonomy`'s precedence exactly — db wins, the file is the fallback,
- * and a CORRUPT db row falls through to the file rather than wiping RAG. (The
- * original shape here read the file FIRST and let the db only overlay, which
- * meant a machine with no rag.json could never turn RAG on from the settings
- * page — the db could never be authoritative.)
- *
- * The file's embedding block (model/baseURL) rides along regardless of where the
- * corpus came from; `mergeStoredEmbedding` then supplies the key.
+ * The corpus config in effect: config.db → rag.json, WHOLE, never field-mixed.
+ * db wins entirely; the file is read only when db has no `rag-corpus` row (or it
+ * is corrupt — then the file is the safety net rather than a wiped RAG).
  */
 function resolveRagCorpus(): RagConfigV1 | null {
   const storedRaw = getSettingRaw("rag-corpus");
-  const fileCfg = readRagFileConfig();
   if (storedRaw) {
     const corpus = parseRagCorpusJson(storedRaw);
-    if (corpus) return { ...corpus, embedding: fileCfg?.embedding };
-    // corrupt stored row → don't take RAG down, use the file
+    if (corpus) return corpus; // embedding stays undefined; resolved separately
+    // corrupt stored row → fall through to the file rather than take RAG down
   }
-  return fileCfg;
+  return readRagFileConfig();
 }
 
 /**
- * Effective RAG config: db-or-file corpus → append env root → fill embedding key.
+ * The embedding config in effect for the DEFAULT path: the db `rag-embedding`
+ * credential, WHOLE (model + baseURL + key). The file's embedding block is used
+ * only when db has no credential. No field-level mixing — that split ("model
+ * from the file, key from db") was the source of the "以什么为准" confusion.
+ */
+function resolveStoredEmbedding(fileEmbedding: RagConfigV1["embedding"]): RagConfigV1["embedding"] {
+  const raw = getCredentialRaw("rag-embedding");
+  const stored = raw ? parseRagEmbeddingJson(raw) : null;
+  return stored ?? fileEmbedding;
+}
+
+/**
+ * Effective RAG config for the default (no `--config`) path. ONE source of
+ * truth: config.db. corpus and embedding each come wholly from the db when the
+ * db has them; rag.json is touched only for the parts the db lacks. So on a
+ * machine whose db holds both, rag.json is never read.
  *
- * Order is load-bearing. `mergeEnvCorpusRoot` APPENDS `AI2NAO_RAG_CORPUS_ROOT`,
- * so it must run AFTER the corpus is resolved — running it before a db overlay
- * that replaces `corpusRoots` wholesale would silently drop the env root.
+ * `mergeEnvCorpusRoot` APPENDS `AI2NAO_RAG_CORPUS_ROOT`, so it runs AFTER the
+ * corpus is resolved — appending before a wholesale db corpus would drop it.
  */
 export function readRagConfig(): RagConfigV1 | null {
-  const cfg = resolveRagCorpus();
-  if (!cfg) return null;
-  return mergeStoredEmbedding(mergeEnvCorpusRoot(cfg));
+  const corpus = resolveRagCorpus();
+  if (!corpus) return null;
+  const withEnv = mergeEnvCorpusRoot(corpus);
+  return { ...withEnv, embedding: resolveStoredEmbedding(withEnv.embedding) };
 }
 
 /**

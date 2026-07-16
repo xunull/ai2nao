@@ -81,31 +81,34 @@ describe("embedding key from config.db (regressions)", () => {
     expect(cfg?.embedding?.apiKey).toBe("sk-stored");
   });
 
-  it("REGRESSION: the stored key does NOT override the config's model or baseURL", () => {
-    // A silently-swapped embedding model changes the vector space; nothing in the
-    // index rejects the mismatch, so the result is quietly-garbage vectors.
+  it("DEFAULT path: db embedding is authoritative WHOLE — model, baseURL and key all from db", () => {
+    // One source of truth. When the db has the credential, the file's embedding
+    // block is not consulted at all — no "model from file, key from db" split.
     writeFileSync(
       RAG_JSON(),
       JSON.stringify(withEmbedding({ enabled: true, baseURL: "https://file.example.com/v1", model: "file-model" }))
     );
     storeEmbedding({ enabled: true, baseURL: "https://db.example.com/v1", model: "db-model", apiKey: "sk-stored" });
 
-    for (const cfg of [readRagConfig(), readRagConfigFile(RAG_JSON())]) {
-      expect(cfg?.embedding?.model).toBe("file-model");
-      expect(cfg?.embedding?.baseURL).toBe("https://file.example.com/v1");
-      expect(cfg?.embedding?.apiKey).toBe("sk-stored"); // only the secret comes from the store
-    }
+    const cfg = readRagConfig();
+    expect(cfg?.embedding?.model).toBe("db-model");
+    expect(cfg?.embedding?.baseURL).toBe("https://db.example.com/v1");
+    expect(cfg?.embedding?.apiKey).toBe("sk-stored");
   });
 
-  it("a key written in the config file wins over the stored one (explicit beats implicit)", () => {
+  it("--config path: the NAMED file's model/baseURL win; db lends only the key", () => {
+    // `--config <file>` means "use this file". Overriding its model with the db's
+    // would silently change the vector space of the resulting index.
     writeFileSync(
       RAG_JSON(),
-      JSON.stringify(
-        withEmbedding({ enabled: true, baseURL: "https://api.example.com/v1", model: "emb-1", apiKey: "sk-from-file" })
-      )
+      JSON.stringify(withEmbedding({ enabled: true, baseURL: "https://file.example.com/v1", model: "file-model" }))
     );
-    storeEmbedding({ enabled: true, baseURL: "https://api.example.com/v1", model: "emb-1", apiKey: "sk-stored" });
-    expect(readRagConfig()?.embedding?.apiKey).toBe("sk-from-file");
+    storeEmbedding({ enabled: true, baseURL: "https://db.example.com/v1", model: "db-model", apiKey: "sk-stored" });
+
+    const cfg = readRagConfigFile(RAG_JSON());
+    expect(cfg?.embedding?.model).toBe("file-model");
+    expect(cfg?.embedding?.baseURL).toBe("https://file.example.com/v1");
+    expect(cfg?.embedding?.apiKey).toBe("sk-stored"); // key borrowed from db
   });
 
   it("no embedding block in the file → the stored block IS the config (settings-page-only setup)", () => {
@@ -183,7 +186,9 @@ describe("corpus precedence: db-first, file-fallback (mirrors getTopicTaxonomy)"
     expect(readRagConfig()?.corpusRoots).toEqual(["/db/root", "/env/root"]);
   });
 
-  it("db corpus keeps the file's embedding block (model/baseURL); the key comes from the store", () => {
+  it("ONE SOURCE OF TRUTH: when db has both, the file is not read for corpus OR embedding", () => {
+    // The file says something different for every field; if any of it leaked into
+    // the effective config, the assertions below would catch it.
     writeFileSync(
       RAG_JSON(),
       JSON.stringify({
@@ -195,13 +200,14 @@ describe("corpus precedence: db-first, file-fallback (mirrors getTopicTaxonomy)"
     storeCorpus({ corpusRoots: ["/from/db"] });
     setCredentialRaw(
       "rag-embedding",
-      JSON.stringify({ enabled: true, baseURL: "https://file/v1", model: "file-model", apiKey: "sk-stored" })
+      JSON.stringify({ enabled: true, baseURL: "https://db/v1", model: "db-model", apiKey: "sk-stored" })
     );
 
     const cfg = readRagConfig();
     expect(cfg?.corpusRoots).toEqual(["/from/db"]); // corpus from db
-    expect(cfg?.embedding?.model).toBe("file-model"); // embedding model from file
-    expect(cfg?.embedding?.apiKey).toBe("sk-stored"); // key from store
+    expect(cfg?.embedding?.model).toBe("db-model"); // embedding wholly from db
+    expect(cfg?.embedding?.baseURL).toBe("https://db/v1");
+    expect(cfg?.embedding?.apiKey).toBe("sk-stored");
   });
 });
 
