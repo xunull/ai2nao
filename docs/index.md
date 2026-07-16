@@ -32,4 +32,7 @@ features:
   - title: 调度与运维
     details: Scheduler、每日摘要、工作复盘、package scripts 说明。
     link: /scheduler-design
+  - title: 配置与设置
+    details: 配置读取优先级——config.db vs 老 JSON 文件，谁为准、何时回落、两个 env 例外。
+    link: /config-precedence
 ---
