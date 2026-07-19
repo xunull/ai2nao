@@ -4,6 +4,9 @@ import { homedir } from "node:os";
 import { Command } from "commander";
 import { join, resolve } from "node:path";
 import { openDailySummaryCacheDatabase } from "./dailySummary/cache.js";
+import { buildDailySummaryLlmConfig } from "./dailySummary/llm.js";
+import type { DailySummaryRuntimeOptions } from "./dailySummary/service.js";
+import { readLlmChatConfig } from "./llmChat/config.js";
 import {
   defaultDailySummaryDbPath,
   defaultDbPath,
@@ -1271,14 +1274,6 @@ program
     defaultDailySummaryDbPath()
   )
   .option(
-    "--llm-base-url <url>",
-    "OpenAI-compatible local LLM base URL (or AI2NAO_LLM_BASE_URL)"
-  )
-  .option(
-    "--llm-model <name>",
-    "local LLM model name (or AI2NAO_LLM_MODEL)"
-  )
-  .option(
     "--llm-timeout-ms <ms>",
     "daily summary LLM timeout in milliseconds",
     process.env.AI2NAO_LLM_TIMEOUT_MS ?? "30000"
@@ -1297,8 +1292,6 @@ program
       atuinDb?: string;
       dailySummary: boolean;
       dailySummaryDb: string;
-      llmBaseUrl?: string;
-      llmModel?: string;
       llmTimeoutMs: string;
       ragDb: string;
     }) => {
@@ -1325,15 +1318,7 @@ program
       let dailySummary:
         | {
             cacheDb: ReturnType<typeof openDailySummaryCacheDatabase>;
-            runtime: {
-              enabled: boolean;
-              cacheDbPath: string;
-              llm: {
-                baseUrl: string | null;
-                model: string | null;
-                timeoutMs: number;
-              };
-            };
+            runtime: DailySummaryRuntimeOptions;
           }
         | undefined;
       const explicitAtuin = opts.atuinDb?.trim();
@@ -1359,10 +1344,6 @@ program
 
       if (opts.dailySummary) {
         const cacheDbPath = resolve(opts.dailySummaryDb);
-        const llmBaseUrl =
-          opts.llmBaseUrl?.trim() || process.env.AI2NAO_LLM_BASE_URL || null;
-        const llmModel =
-          opts.llmModel?.trim() || process.env.AI2NAO_LLM_MODEL || null;
         const llmTimeoutMs = Math.max(
           1_000,
           parseInt(opts.llmTimeoutMs, 10) || 30_000
@@ -1372,11 +1353,9 @@ program
           runtime: {
             enabled: true,
             cacheDbPath,
-            llm: {
-              baseUrl: llmBaseUrl,
-              model: llmModel,
-              timeoutMs: llmTimeoutMs,
-            },
+            // 复用 llm-chat(设置 → AI 与模型)。serve 路由每次请求会再现读一次,
+            // 设置页改动无需重启即可生效;这里启动时读一次仅用于下面的就绪日志。
+            llm: buildDailySummaryLlmConfig(readLlmChatConfig(), llmTimeoutMs),
           },
         };
       }
@@ -1424,7 +1403,7 @@ program
         );
         if (!dailySummary.runtime.llm.baseUrl || !dailySummary.runtime.llm.model) {
           console.error(
-            "Daily summary LLM not fully configured. Requests will degrade to factual recap until --llm-base-url and --llm-model (or env vars) are provided."
+            "Daily summary LLM not configured. Requests will degrade to factual recap until you set the chat model in 设置 → AI 与模型 (llm-chat)."
           );
         }
       }

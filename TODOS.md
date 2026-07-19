@@ -99,7 +99,7 @@ Why: 当前功能已经能跑，但使用知识主要散落在对话里。文档
 
 Pros:
 - 新旧自己都能更快上手，不用翻聊天记录
-- 把 `--daily-summary`、`--llm-base-url`、`--llm-model` 这些入口正式化
+- 把 `--daily-summary` 入口和模型配置方式说清楚（每日摘要已改为复用 llm-chat「设置 → AI 与模型」，`--llm-base-url`/`--llm-model` 已移除）
 - 降低“为什么只出了 factual recap”这类误解
 
 Cons:

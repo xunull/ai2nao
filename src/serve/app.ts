@@ -15,6 +15,8 @@ import {
   getDailySummaryStatus,
   type DailySummaryRuntimeOptions,
 } from "../dailySummary/service.js";
+import { buildDailySummaryLlmConfig } from "../dailySummary/llm.js";
+import { readLlmChatConfig } from "../llmChat/config.js";
 import {
   defaultDownloadRoots,
   isDownloadsIndexingSupported,
@@ -424,7 +426,14 @@ export function createApp(opts: ServeOptions): Hono {
         cacheDbPath: null,
       });
     }
-    return c.json(getDailySummaryStatus(dailySummary.runtime));
+    const runtime: DailySummaryRuntimeOptions = {
+      ...dailySummary.runtime,
+      llm: buildDailySummaryLlmConfig(
+        readLlmChatConfig(),
+        dailySummary.runtime.llm.timeoutMs
+      ),
+    };
+    return c.json(getDailySummaryStatus(runtime));
   });
 
   app.post("/api/daily-summary", async (c) => {
@@ -444,13 +453,22 @@ export function createApp(opts: ServeOptions): Hono {
       }
 
       const entries = listAtuinHistoryForDay(atuin.db, date);
+      const runtime: DailySummaryRuntimeOptions = {
+        ...dailySummary.runtime,
+        llm: buildDailySummaryLlmConfig(
+          readLlmChatConfig(),
+          dailySummary.runtime.llm.timeoutMs,
+          // fetchImpl is a test-injection seam only; production runtime carries none.
+          dailySummary.runtime.llm.fetchImpl
+        ),
+      };
       const payload = await generateDailySummary({
         date,
         refresh: body.refresh === true,
         indexDb: db,
         atuinEntries: entries,
         cacheDb: dailySummary.cacheDb,
-        runtime: dailySummary.runtime,
+        runtime,
       });
       return c.json(payload);
     } catch (e) {

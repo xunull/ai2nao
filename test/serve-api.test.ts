@@ -8,6 +8,10 @@ import { ingestCorpus } from "../src/rag/ingest.js";
 import { openRagDatabase } from "../src/rag/open.js";
 import type { RagConfigV1 } from "../src/rag/types.js";
 import { createApp } from "../src/serve/app.js";
+import {
+  deleteCredential,
+  setCredentialRaw,
+} from "../src/settings/store.js";
 import { openDatabase, openReadOnlyDatabase } from "../src/store/open.js";
 import { runScan } from "../src/scan/runScan.js";
 import { chromeWebkitUsToUnixMs } from "../src/chromeHistory/time.js";
@@ -331,6 +335,16 @@ describe("Hono read-only API", () => {
     const atuinDb = openReadOnlyDatabase(atuinPath);
     const cacheDb = openDailySummaryCacheDatabase(join(base, "daily-summary.db"));
     let llmCalls = 0;
+    // Daily summary now reads the chat model from llm-chat (设置 → AI 与模型),
+    // like workRecap — not from a per-request baseUrl. Configure it here.
+    setCredentialRaw(
+      "llm-chat",
+      JSON.stringify({
+        provider: "openai-compatible",
+        model: "fake-model",
+        baseURL: "http://llm.test/v1",
+      })
+    );
     try {
       const app = createApp({
         db,
@@ -340,9 +354,12 @@ describe("Hono read-only API", () => {
           runtime: {
             enabled: true,
             cacheDbPath: join(base, "daily-summary.db"),
+            // baseUrl/model/apiKey now come from llm-chat (set above); the route
+            // ignores these and only honors timeoutMs + the fetchImpl test seam.
             llm: {
-              baseUrl: "http://llm.test/v1",
-              model: "fake-model",
+              baseUrl: null,
+              model: null,
+              apiKey: null,
               timeoutMs: 1_000,
               fetchImpl: async () => {
                 llmCalls += 1;
@@ -411,6 +428,7 @@ describe("Hono read-only API", () => {
       expect(secondJson.meta.fromCache).toBe(true);
       expect(llmCalls).toBe(1);
     } finally {
+      deleteCredential("llm-chat");
       cacheDb.close();
       atuinDb.close();
       db.close();

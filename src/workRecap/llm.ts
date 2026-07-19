@@ -1,5 +1,9 @@
 import type { LlmChatConfig } from "../llmChat/config.js";
 import {
+  chatCompletionsUrl,
+  resolveLlmChatApiKey,
+} from "../llmChat/chatCompletions.js";
+import {
   WORK_RECAP_LLM_TIMEOUT_MS,
   type WorkRecapDegradeReason,
   type WorkRecapFacts,
@@ -46,48 +50,6 @@ type LlmRawResponse = {
   degraded?: unknown;
   degradeReason?: unknown;
 };
-
-function providerApiKeyEnv(provider: LlmChatConfig["provider"]): string | null {
-  switch (provider) {
-    case "deepseek":
-      return "DEEPSEEK_API_KEY";
-    case "moonshotai":
-      return "MOONSHOT_API_KEY";
-    case "alibaba":
-      return "ALIBABA_API_KEY";
-    case "openai":
-      return "OPENAI_API_KEY";
-    case "openai-compatible":
-      return null;
-  }
-}
-
-function resolveApiKey(cfg: LlmChatConfig): string | null {
-  if (cfg.apiKey?.trim()) return cfg.apiKey.trim();
-  const envKey = providerApiKeyEnv(cfg.provider);
-  if (envKey) {
-    const provider = process.env[envKey]?.trim();
-    if (provider) return provider;
-  }
-  const shared = process.env.AI2NAO_LLM_API_KEY?.trim();
-  if (shared) return shared;
-  if (cfg.provider === "openai-compatible") return "local-no-key";
-  return null;
-}
-
-function isOpenAiCompatBase(url: string): boolean {
-  return /\/v\d+\/?$/.test(url) || url.endsWith("/openai/v1");
-}
-
-function chatCompletionsUrl(baseURL: string): string {
-  const trimmed = baseURL.replace(/\/$/, "");
-  if (isOpenAiCompatBase(trimmed)) {
-    return `${trimmed}/chat/completions`;
-  }
-  // DeepSeek base URL doesn't include /v1 by convention; append both `/v1`
-  // and `/chat/completions` to land on the right endpoint.
-  return `${trimmed}/v1/chat/completions`;
-}
 
 function asNonEmptyTrimmedString(x: unknown, max = 4096): string | null {
   if (typeof x !== "string") return null;
@@ -216,7 +178,7 @@ export type CallLlmArgs = {
  * setTimeout + clearTimeout in finally).
  */
 export async function callLlm(args: CallLlmArgs): Promise<WorkRecapInference> {
-  const apiKey = resolveApiKey(args.config);
+  const apiKey = resolveLlmChatApiKey(args.config);
   if (!apiKey) {
     throw new WorkRecapLlmError(
       "llm_unavailable",

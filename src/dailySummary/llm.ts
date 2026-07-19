@@ -1,3 +1,8 @@
+import type { LlmChatConfig } from "../llmChat/config.js";
+import {
+  chatCompletionsUrl,
+  resolveLlmChatApiKey,
+} from "../llmChat/chatCompletions.js";
 import type {
   DailySummaryDegradeReason,
   DailySummaryFacts,
@@ -7,9 +12,29 @@ import type {
 export type DailySummaryLlmConfig = {
   baseUrl: string | null;
   model: string | null;
+  apiKey: string | null;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
 };
+
+/**
+ * 从 llm-chat 配置(设置 → AI 与模型)构造每日摘要要用的 LLM config。
+ * 每日摘要与工作复盘共用同一份 llm-chat —— 之前它走 `--llm-base-url`/`--llm-model`
+ * 命令行/env 是条没并进设置中心的老路,已收编。
+ */
+export function buildDailySummaryLlmConfig(
+  cfg: LlmChatConfig | null,
+  timeoutMs: number,
+  fetchImpl?: typeof fetch
+): DailySummaryLlmConfig {
+  return {
+    baseUrl: cfg?.baseURL ?? null,
+    model: cfg?.model ?? null,
+    apiKey: cfg ? resolveLlmChatApiKey(cfg) : null,
+    timeoutMs,
+    ...(fetchImpl ? { fetchImpl } : {}),
+  };
+}
 
 export type DailySummaryLlmResult = {
   summary: string;
@@ -129,10 +154,11 @@ export async function generateDailySummaryText(
   const fetchImpl = config.fetchImpl ?? fetch;
 
   try {
-    const response = await fetchImpl(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const response = await fetchImpl(chatCompletionsUrl(config.baseUrl), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       },
       body: JSON.stringify({
         model: config.model,
