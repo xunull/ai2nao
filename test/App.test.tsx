@@ -478,7 +478,7 @@ describe("Layout navigation", () => {
       { label: "工作台", links: ["最近工作", "Token 排行", "Token 趋势", "工作回看", "对话宇宙"] },
       {
         label: "本机资产",
-        links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "Atuin", "Atuin 目录"],
+        links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "AI 工具清单", "Atuin", "Atuin 目录"],
       },
       { label: "浏览器", links: ["Chrome 历史", "Chrome 域名", "Chrome 下载"] },
       { label: "AI 记录", links: ["Cherry 对话", "Cursor 对话", "Claude", "Codex"] },

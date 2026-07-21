@@ -28,6 +28,7 @@ import { resolveScanRoots } from "../scan/roots.js";
 import { getScanMaxDepth, getScanMaxDocs, getScanConcurrency } from "../appConfig/index.js";
 import { syncBrewPackages } from "../software/brew/sync.js";
 import { syncMacApps } from "../software/macApps/sync.js";
+import { scanAiTools } from "../aiTools/scan.js";
 import { syncVscodeRecent } from "../vscode/sync.js";
 import type {
   ScheduledTaskDefinition,
@@ -108,6 +109,16 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
         Promise.resolve(
           inventoryResult(syncLmStudioModels(ctx.db, { root: stringConfig(ctx.config.root) }))
         ),
+    },
+    {
+      key: "ai_tools.scan",
+      label: "AI 工具清单扫描",
+      description:
+        "从 mac_apps/brew 识别 AI 工具 + PATH 探测 CLI/运行时,写入 ai_tools。派生任务,应排在软件扫描之后。",
+      category: "local_inventory",
+      defaultIntervalSeconds: sixHours,
+      sensitivity: "low",
+      run: (ctx) => Promise.resolve(inventoryResult(scanAiTools(ctx.db))),
     },
     {
       key: "vscode.recent.sync",

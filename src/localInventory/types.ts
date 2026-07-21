@@ -1,4 +1,9 @@
-export type LocalInventorySource = "mac_apps" | "brew" | "huggingface" | "lmstudio";
+export type LocalInventorySource =
+  | "mac_apps"
+  | "brew"
+  | "huggingface"
+  | "lmstudio"
+  | "ai_tools";
 
 export type SyncRunStatus = "running" | "success" | "partial" | "failed";
 

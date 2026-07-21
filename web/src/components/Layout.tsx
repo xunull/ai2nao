@@ -108,6 +108,7 @@ const navGroups: NavGroup[] = [
       { to: "/brew", label: "Homebrew", icon: Beer },
       { to: "/huggingface-models", label: "HF 模型", icon: Boxes },
       { to: "/lmstudio-models", label: "LM Studio", icon: BrainCircuit },
+      { to: "/ai-tools", label: "AI 工具清单", icon: Wrench },
       { to: "/atuin", label: "Atuin", icon: Terminal },
       { to: "/atuin/directories", label: "Atuin 目录", icon: Database },
     ],

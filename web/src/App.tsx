@@ -84,6 +84,9 @@ const HuggingFaceModels = lazy(() =>
 const LmStudioModels = lazy(() =>
   import("./pages/LmStudioModels").then((m) => ({ default: m.LmStudioModels }))
 );
+const AiTools = lazy(() =>
+  import("./pages/AiTools").then((m) => ({ default: m.AiTools }))
+);
 const MacApps = lazy(() =>
   import("./pages/MacApps").then((m) => ({ default: m.MacApps }))
 );
@@ -170,6 +173,7 @@ export function App() {
           <Route path="/brew" element={<Homebrew />} />
           <Route path="/huggingface-models" element={<HuggingFaceModels />} />
           <Route path="/lmstudio-models" element={<LmStudioModels />} />
+          <Route path="/ai-tools" element={<AiTools />} />
           <Route path="/chrome-history" element={<ChromeHistory />} />
           <Route path="/chrome-history/domains" element={<ChromeHistoryDomains />} />
           <Route path="/chrome-downloads" element={<ChromeDownloads />} />

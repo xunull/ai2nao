@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 48;
+const CURRENT_VERSION = 49;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -59,6 +59,7 @@ export function migrate(db: Database.Database): void {
     applyV46(db);
     applyV47(db);
     applyV48(db);
+    applyV49(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -113,6 +114,7 @@ export function migrate(db: Database.Database): void {
   if (v < 46) applyV46(db);
   if (v < 47) applyV47(db);
   if (v < 48) applyV48(db);
+  if (v < 49) applyV49(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2282,5 +2284,66 @@ function applyV44(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 44 WHERE id = 1;
+  `);
+}
+
+/**
+ * v49: AI 工具清单(ai_tools)。识别本机装了哪些 AI 工具(桌面 app / CLI / 本地运行时 /
+ * IDE 插件)。派生自 mac_apps / brew_packages 等现有清点表 + 盲区探测器(PATH/Ollama);
+ * evidence 用稳定标识(bundle_id / formula 名 / binary 名),**不含安装路径**(install_path
+ * 单列、可变、不进唯一键);软删除对齐 mac_apps/brew(missing_since)。展示时按 tool_key 折叠。
+ * 设计:~/.gstack/projects/xunull-ai2nao/20260720-design-ai-tools-inventory.md
+ */
+function applyV49(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_tools (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool_key      TEXT NOT NULL,
+      name          TEXT NOT NULL,
+      kind          TEXT NOT NULL,
+      vendor        TEXT,
+      detect_source TEXT NOT NULL,
+      evidence      TEXT NOT NULL,
+      version       TEXT,
+      install_path  TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at  TEXT NOT NULL,
+      missing_since TEXT,
+      inserted_at   TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      UNIQUE(tool_key, detect_source, evidence)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_tools_present
+      ON ai_tools(kind, tool_key) WHERE missing_since IS NULL;
+
+    -- 扩 local_inventory_sync_runs 的 source CHECK,加入 'ai_tools'(SQLite 改 CHECK 须重建表;
+    -- 沿用 applyV14 的 _vNN 重建套路)。
+    CREATE TABLE IF NOT EXISTS local_inventory_sync_runs_v49 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL CHECK (source IN ('mac_apps', 'brew', 'huggingface', 'lmstudio', 'ai_tools')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+      inserted INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      marked_missing INTEGER NOT NULL DEFAULT 0,
+      warnings_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+    INSERT OR IGNORE INTO local_inventory_sync_runs_v49 (
+      id, source, started_at, finished_at, status, inserted, updated,
+      marked_missing, warnings_count, error_summary, metadata_json
+    )
+    SELECT id, source, started_at, finished_at, status, inserted, updated,
+           marked_missing, warnings_count, error_summary, metadata_json
+    FROM local_inventory_sync_runs;
+    DROP TABLE local_inventory_sync_runs;
+    ALTER TABLE local_inventory_sync_runs_v49 RENAME TO local_inventory_sync_runs;
+    CREATE INDEX IF NOT EXISTS idx_local_inventory_sync_runs_source_started
+      ON local_inventory_sync_runs(source, started_at);
+
+    UPDATE meta_schema SET version = 49 WHERE id = 1;
   `);
 }
