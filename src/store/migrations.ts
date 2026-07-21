@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 49;
+const CURRENT_VERSION = 50;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");
@@ -60,6 +60,7 @@ export function migrate(db: Database.Database): void {
     applyV47(db);
     applyV48(db);
     applyV49(db);
+    applyV50(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -115,6 +116,7 @@ export function migrate(db: Database.Database): void {
   if (v < 47) applyV47(db);
   if (v < 48) applyV48(db);
   if (v < 49) applyV49(db);
+  if (v < 50) applyV50(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2345,5 +2347,45 @@ function applyV49(db: Database.Database): void {
       ON local_inventory_sync_runs(source, started_at);
 
     UPDATE meta_schema SET version = 49 WHERE id = 1;
+  `);
+}
+
+/**
+ * v50: 修 local_inventory_sync_runs 的 source CHECK —— 补 'ai_tools'。
+ *
+ * 为什么单独一版:开发中真实库先被热重载升到了 v49(那一刻的 applyV49 只建了 ai_tools 表、
+ * 尚未含 CHECK 重建;重建是稍后才补进 applyV49 的)。已到 v49 的库不会再跑 applyV49,导致
+ * CHECK 里缺 'ai_tools',ai_tools.scan 写 sync run 时报「CHECK constraint failed」。migration
+ * 一经应用即不可改,故这里独立重建一次。幂等安全:表已含 ai_tools(全新库经 applyV49 重建过)
+ * 时,再重建成同样的 CHECK 也无副作用。
+ */
+function applyV50(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS local_inventory_sync_runs_v50 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL CHECK (source IN ('mac_apps', 'brew', 'huggingface', 'lmstudio', 'ai_tools')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+      inserted INTEGER NOT NULL DEFAULT 0,
+      updated INTEGER NOT NULL DEFAULT 0,
+      marked_missing INTEGER NOT NULL DEFAULT 0,
+      warnings_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+    INSERT OR IGNORE INTO local_inventory_sync_runs_v50 (
+      id, source, started_at, finished_at, status, inserted, updated,
+      marked_missing, warnings_count, error_summary, metadata_json
+    )
+    SELECT id, source, started_at, finished_at, status, inserted, updated,
+           marked_missing, warnings_count, error_summary, metadata_json
+    FROM local_inventory_sync_runs;
+    DROP TABLE local_inventory_sync_runs;
+    ALTER TABLE local_inventory_sync_runs_v50 RENAME TO local_inventory_sync_runs;
+    CREATE INDEX IF NOT EXISTS idx_local_inventory_sync_runs_source_started
+      ON local_inventory_sync_runs(source, started_at);
+
+    UPDATE meta_schema SET version = 50 WHERE id = 1;
   `);
 }
