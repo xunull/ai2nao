@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { Command } from "commander";
 import { join, resolve } from "node:path";
@@ -70,6 +70,8 @@ import {
 } from "./atuin/directoryActivity/index.js";
 import { migrateCredentials, migrateRagSettings } from "./settings/migrate.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
+import { heatmapRhythm } from "./aiRhythm/queries.js";
+import { renderRhythmSvg } from "./cards/rhythmSvg.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
   expandPath,
@@ -268,6 +270,31 @@ huggingfaceCmd
         for (const w of result.warnings) console.error(`warning: ${w.message}`);
       }
       process.exitCode = result.ok && result.status !== "failed" ? 0 : 1;
+    } finally {
+      db.close();
+    }
+  });
+
+const cardCmd = program
+  .command("card")
+  .description("生成可嵌入的卡片(SVG)");
+
+cardCmd
+  .command("rhythm")
+  .description("生成 AI coding 作息热力图 SVG(可 commit 到公开 repo,嵌进 GitHub 主页 README)")
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option("--out <file>", "写入该文件;省略则打印到 stdout")
+  .action((opts: { db: string; out?: string }) => {
+    const db = openReadOnlyDatabase(opts.db);
+    try {
+      const svg = renderRhythmSvg(heatmapRhythm(db));
+      if (opts.out) {
+        const target = resolve(opts.out);
+        writeFileSync(target, svg, "utf8");
+        console.error(`Wrote ${target}`);
+      } else {
+        process.stdout.write(svg);
+      }
     } finally {
       db.close();
     }

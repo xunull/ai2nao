@@ -105,6 +105,7 @@ import { registerHuggingfaceRoutes } from "../huggingface/routes.js";
 import { registerRagRoutes } from "../rag/routes.js";
 import { registerSoftwareRoutes } from "../software/routes.js";
 import { registerAiToolsRoutes } from "../aiTools/routes.js";
+import { registerCardRoutes } from "../cards/routes.js";
 import { registerSchedulerRoutes } from "../scheduler/routes.js";
 import { SchedulerRuntime } from "../scheduler/runner.js";
 import { registerVscodeRoutes } from "../vscode/routes.js";
@@ -280,6 +281,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerHuggingfaceRoutes(app, db);
   registerLmStudioRoutes(app, db);
   registerAiToolsRoutes(app, db);
+  registerCardRoutes(app, db);
   registerSoftwareRoutes(app, db);
   registerChromeHistoryRoutes(app, db);
   registerTopicStreamRoutes(app, db);
