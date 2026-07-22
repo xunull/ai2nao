@@ -31,6 +31,7 @@
     "github:tags:rebuild": "tsx src/cli.ts github tags rebuild",
     "github:tags:alias:seed": "tsx src/cli.ts github tags alias seed",
     "rag:ingest": "tsx src/cli.ts rag ingest",
+    "card:rhythm": "tsx src/cli.ts card rhythm",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:e2e": "playwright test",
