@@ -19,3 +19,6 @@ graphify-out/
 # VitePress 文档站构建产物
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# ai2nao card 生成产物(make card 默认输出;发布到独立 repo,不进源码仓库)
+/rhythm.svg
