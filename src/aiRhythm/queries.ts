@@ -321,3 +321,106 @@ export function personalRecords(
     generatedAt: now.toISOString(),
   };
 }
+
+export type CalendarCell = { date: string; count: number; row: number };
+export type ActivityCalendar = {
+  /** [列][行],行 0=周日..6=周六;null=窗口外(超过今天的未来日)。 */
+  weeks: (CalendarCell | null)[][];
+  /** 月份标签:label 放在第 col 列顶上。 */
+  monthLabels: { col: number; label: string }[];
+  maxCount: number;
+  total: number;
+  activeDays: number;
+  weekCount: number;
+  generatedAt: string;
+};
+
+/** 日序号 → 'YYYY-MM-DD'(dayOrdinal 的逆;用 getUTC* 与 Date.UTC 编码对称)。 */
+function ordinalToYmd(ord: number): string {
+  const dt = new Date(ord * 86400000);
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * GitHub 贡献图式活动日历(纯函数,便于测)。列=周(周日→周六),行=星期几;每格=某一天的
+ * 消息数。窗口=最近 weeks 周,末列含今天,今天之后的未来日=null(不渲染)。
+ */
+export function buildActivityCalendar(
+  counts: Map<string, number>,
+  now: Date,
+  weeks: number
+): ActivityCalendar {
+  const todayOrd = dayOrdinal(localYmd(now));
+  const lastSunOrd = todayOrd - now.getDay(); // 本周周日(getDay:0=周日)
+  const firstSunOrd = lastSunOrd - (weeks - 1) * 7;
+
+  const weeksArr: (CalendarCell | null)[][] = [];
+  const monthLabels: { col: number; label: string }[] = [];
+  let maxCount = 0;
+  let total = 0;
+  let activeDays = 0;
+  let prevMonth = -1;
+
+  for (let col = 0; col < weeks; col++) {
+    const colSunOrd = firstSunOrd + col * 7;
+    const week: (CalendarCell | null)[] = [];
+    for (let row = 0; row < 7; row++) {
+      const ord = colSunOrd + row;
+      if (ord > todayOrd) {
+        week.push(null); // 未来日
+        continue;
+      }
+      const date = ordinalToYmd(ord);
+      const count = counts.get(date) ?? 0;
+      if (count > maxCount) maxCount = count;
+      if (count > 0) {
+        total += count;
+        activeDays++;
+      }
+      week.push({ date, count, row });
+    }
+    weeksArr.push(week);
+
+    const firstDay = week.find((c): c is CalendarCell => c !== null);
+    if (firstDay) {
+      const month = Number(firstDay.date.slice(5, 7));
+      if (month !== prevMonth) {
+        monthLabels.push({ col, label: `${month}月` });
+        prevMonth = month;
+      }
+    }
+  }
+
+  return {
+    weeks: weeksArr,
+    monthLabels,
+    maxCount,
+    total,
+    activeDays,
+    weekCount: weeks,
+    generatedAt: now.toISOString(),
+  };
+}
+
+/**
+ * 活动日历:按本地日聚合 is_human 消息数,套 buildActivityCalendar 成 GitHub 式日历。
+ * 坏时间戳守卫(date() NULL → 剔除,同热力图口径)。
+ */
+export function activityCalendar(
+  db: Database.Database,
+  opts?: { now?: Date; weeks?: number }
+): ActivityCalendar {
+  const rows = db
+    .prepare(
+      `SELECT date(event_at_utc, 'localtime') AS day, COUNT(*) AS count
+       FROM agent_user_messages
+       WHERE is_human = 1 AND date(event_at_utc, 'localtime') IS NOT NULL
+       GROUP BY day`
+    )
+    .all() as { day: string; count: number }[];
+  const counts = new Map(rows.map((r) => [r.day, r.count]));
+  return buildActivityCalendar(counts, opts?.now ?? new Date(), opts?.weeks ?? 53);
+}

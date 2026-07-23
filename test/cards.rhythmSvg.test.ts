@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RhythmHeatmap } from "../src/aiRhythm/queries.js";
-import { colorLevel, renderRhythmSvg } from "../src/cards/rhythmSvg.js";
+import { colorLevel } from "../src/cards/colorScale.js";
+import { renderRhythmSvg } from "../src/cards/rhythmSvg.js";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase } from "../src/store/open.js";
 

@@ -3,10 +3,9 @@
 # 改了 src/ 后要重新 `make link`(或 make build)才生效。详见 local-docs/npm-link.md。
 
 .DEFAULT_GOAL := help
-.PHONY: help install build build-web build-all link unlink dev test card
+.PHONY: help install build build-web build-all link unlink dev test card card-calendar
 
-# 作息卡输出路径,可覆盖:make card OUT=~/Desktop/rhythm.svg
-OUT ?= rhythm.svg
+# 卡片输出路径可覆盖:make card OUT=x.svg / make card-calendar OUT=y.svg
 
 help: ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -37,5 +36,8 @@ dev: ## 起本地服务(tsx watch,:8787)
 test: ## 跑测试(vitest run)
 	npm test
 
-card: ## 生成作息热力图 SVG(默认 rhythm.svg;make card OUT=xx.svg 指定)
-	npm run card:rhythm -- --out $(OUT)
+card: ## 生成作息热力图 SVG(默认 rhythm.svg;make card OUT=xx.svg)
+	npm run card:rhythm -- --out $(or $(OUT),rhythm.svg)
+
+card-calendar: ## 生成活动日历 SVG(GitHub 贡献图式,默认 calendar.svg)
+	npm run card:calendar -- --out $(or $(OUT),calendar.svg)

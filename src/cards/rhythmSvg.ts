@@ -11,6 +11,7 @@
  * - 只输出聚合网格 + 计数,绝不含消息内容 / 路径 / PII(设计 §6)。
  */
 import type { RhythmHeatmap } from "../aiRhythm/queries.js";
+import { LEVEL_COLORS, colorLevel } from "./colorScale.js";
 
 const PAD = 16;
 const TITLE_H = 26;
@@ -32,22 +33,10 @@ const HEIGHT = GRID_Y + GRID_H + FOOTER_H + PAD; // 215
 
 const FONT =
   '-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif';
-/** 5 档配色(GitHub 贡献图绿),index 0 = 空格。 */
-const LEVEL_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
 /** 行标签:周一…周日。 */
 const DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
 /** 按 SQLite weekday(0=周日)取中文,用于 peak 文案。 */
 const WEEKDAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
-
-/** count → 档位 0..4,基于 maxCount 的四分位。确定性、防除零。 */
-export function colorLevel(count: number, maxCount: number): number {
-  if (count <= 0 || maxCount <= 0) return 0;
-  const r = count / maxCount;
-  if (r <= 0.25) return 1;
-  if (r <= 0.5) return 2;
-  if (r <= 0.75) return 3;
-  return 4;
-}
 
 /** SQLite weekday(0=周日)→ 周一起的行号(0=周一..6=周日)。 */
 function mondayRow(weekday: number): number {
