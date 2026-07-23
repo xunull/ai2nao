@@ -33,6 +33,7 @@
     "rag:ingest": "tsx src/cli.ts rag ingest",
     "card:rhythm": "tsx src/cli.ts card rhythm",
     "card:calendar": "tsx src/cli.ts card calendar",
+    "card:bundle": "tsx src/cli.ts card bundle",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:e2e": "playwright test",

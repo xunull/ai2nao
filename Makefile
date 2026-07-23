@@ -3,9 +3,10 @@
 # 改了 src/ 后要重新 `make link`(或 make build)才生效。详见 local-docs/npm-link.md。
 
 .DEFAULT_GOAL := help
-.PHONY: help install build build-web build-all link unlink dev test card card-calendar
+.PHONY: help install build build-web build-all link unlink dev test card card-calendar card-bundle
 
 # 卡片输出路径可覆盖:make card OUT=x.svg / make card-calendar OUT=y.svg
+# 整套发布包目录可覆盖:make card-bundle OUT_DIR=~/ai2nao-cards
 
 help: ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -41,3 +42,6 @@ card: ## 生成作息热力图 SVG(默认 rhythm.svg;make card OUT=xx.svg)
 
 card-calendar: ## 生成活动日历 SVG(GitHub 贡献图式,默认 calendar.svg)
 	npm run card:calendar -- --out $(or $(OUT),calendar.svg)
+
+card-bundle: ## 生成全部卡片 SVG + README 到目录(默认 ./cards;make card-bundle OUT_DIR=~/x)
+	npm run card:bundle -- --out-dir $(or $(OUT_DIR),cards)

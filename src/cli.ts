@@ -70,9 +70,8 @@ import {
 } from "./atuin/directoryActivity/index.js";
 import { migrateCredentials, migrateRagSettings } from "./settings/migrate.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
-import { heatmapRhythm, activityCalendar } from "./aiRhythm/queries.js";
-import { renderRhythmSvg } from "./cards/rhythmSvg.js";
-import { renderCalendarSvg } from "./cards/calendarSvg.js";
+import { CARD_REGISTRY } from "./cards/registry.js";
+import { generateCardBundle } from "./cards/bundle.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
   expandPath,
@@ -280,43 +279,44 @@ const cardCmd = program
   .command("card")
   .description("生成可嵌入的卡片(SVG)");
 
-cardCmd
-  .command("rhythm")
-  .description("生成 AI coding 作息热力图 SVG(可 commit 到公开 repo,嵌进 GitHub 主页 README)")
-  .option("--db <path>", "SQLite database path", defaultDbPath())
-  .option("--out <file>", "写入该文件;省略则打印到 stdout")
-  .action((opts: { db: string; out?: string }) => {
-    const db = openReadOnlyDatabase(opts.db);
-    try {
-      const svg = renderRhythmSvg(heatmapRhythm(db));
-      if (opts.out) {
-        const target = resolve(opts.out);
-        writeFileSync(target, svg, "utf8");
-        console.error(`Wrote ${target}`);
-      } else {
-        process.stdout.write(svg);
+// 每张注册表里的卡都有一个 `card <name>` 子命令(读 registry,一处维护)。
+for (const card of CARD_REGISTRY) {
+  cardCmd
+    .command(card.name)
+    .description(`生成「${card.title}」SVG`)
+    .option("--db <path>", "SQLite database path", defaultDbPath())
+    .option("--out <file>", "写入该文件;省略则打印到 stdout")
+    .option("--cost", "token 卡:附带成本估算($),其它卡忽略", false)
+    .action((opts: { db: string; out?: string; cost?: boolean }) => {
+      const db = openReadOnlyDatabase(opts.db);
+      try {
+        const svg = card.render(db, { cost: opts.cost });
+        if (opts.out) {
+          const target = resolve(opts.out);
+          writeFileSync(target, svg, "utf8");
+          console.error(`Wrote ${target}`);
+        } else {
+          process.stdout.write(svg);
+        }
+      } finally {
+        db.close();
       }
-    } finally {
-      db.close();
-    }
-  });
+    });
+}
 
 cardCmd
-  .command("calendar")
-  .description("生成 AI coding 活动日历 SVG(GitHub 贡献图式:列=周/月份,行=星期几)")
+  .command("bundle")
+  .description("生成全部卡片 SVG + 一个 README.md 到目录(整目录 commit 成公开 repo,主页 README 引用)")
   .option("--db <path>", "SQLite database path", defaultDbPath())
-  .option("--out <file>", "写入该文件;省略则打印到 stdout")
-  .action((opts: { db: string; out?: string }) => {
+  .option("--out-dir <dir>", "输出目录", "cards")
+  .option("--cost", "token 卡:附带成本估算($)", false)
+  .action((opts: { db: string; outDir: string; cost?: boolean }) => {
     const db = openReadOnlyDatabase(opts.db);
     try {
-      const svg = renderCalendarSvg(activityCalendar(db));
-      if (opts.out) {
-        const target = resolve(opts.out);
-        writeFileSync(target, svg, "utf8");
-        console.error(`Wrote ${target}`);
-      } else {
-        process.stdout.write(svg);
-      }
+      const { outDir, files } = generateCardBundle(db, opts.outDir, {
+        cost: opts.cost,
+      });
+      console.error(`Wrote ${files.length} files to ${outDir}`);
     } finally {
       db.close();
     }
