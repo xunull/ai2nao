@@ -13,6 +13,7 @@ import {
   weeklySourceMix,
 } from "../aiRhythm/queries.js";
 import { getAiToolsStatus, listAiTools } from "../aiTools/queries.js";
+import { listProviders } from "../providers/store.js";
 import { generateTrend } from "../workTokensTrend/service.js";
 import { renderCalendarSvg } from "./calendarSvg.js";
 import { renderLeaderboardSvg } from "./leaderboardSvg.js";
@@ -20,6 +21,7 @@ import { renderRhythmSvg } from "./rhythmSvg.js";
 import { renderSourceTrendSvg } from "./sourceTrendSvg.js";
 import {
   renderAiToolsCard,
+  renderKimiQuotaCard,
   renderRecordsCard,
   renderStreakCard,
   renderTokenCard,
@@ -97,6 +99,19 @@ export const CARD_REGISTRY: CardDef[] = [
     title: "命令 / 技能排行",
     description: "最常用的斜杠命令 / 技能 Top 8。",
     render: (db, o) => renderLeaderboardSvg(commandLeaderboard(db, { limit: 8, now: o?.now })),
+  },
+  {
+    name: "kimi-quota",
+    title: "Kimi 套餐余量",
+    description: "Kimi Code 编程套餐:各时间窗口的剩余额度。",
+    render: (db, o) => {
+      const kimi = listProviders(db).find((p) => p.id === "kimi");
+      const windows = (kimi?.items ?? []).map((it) => ({
+        label: it.label,
+        remainingPercent: it.remainingPercent,
+      }));
+      return renderKimiQuotaCard(windows, kimi?.lastSyncAt ?? isoNow(o));
+    },
   },
 ];
 

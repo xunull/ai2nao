@@ -1,3 +1,4 @@
+import { createKimiProvider } from "./kimi.js";
 import { createMinimaxProvider } from "./minimax.js";
 import type { ProviderUsageSource } from "./types.js";
 
@@ -6,7 +7,10 @@ import type { ProviderUsageSource } from "./types.js";
  * module). The management page, sync task, and display all iterate this list,
  * so a new provider surfaces everywhere automatically.
  */
-export const PROVIDER_SOURCES: ProviderUsageSource[] = [createMinimaxProvider()];
+export const PROVIDER_SOURCES: ProviderUsageSource[] = [
+  createMinimaxProvider(),
+  createKimiProvider(),
+];
 
 export function listProviderSources(): ProviderUsageSource[] {
   return PROVIDER_SOURCES;

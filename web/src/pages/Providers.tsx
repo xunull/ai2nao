@@ -135,10 +135,11 @@ function ProviderCard({ p }: { p: ProviderView }) {
         <table className="w-full text-sm tabular-nums">
           <thead>
             <tr className="text-xs uppercase tracking-wide text-[var(--fg-muted)]">
-              <th className="py-1 text-left font-medium">模型组</th>
-              <th className="py-1 text-right font-medium">本窗口剩余</th>
+              {/* Kimi 给的是每个时间窗口 used/limit;MiniMax 是每个模型的窗口%+周% */}
+              <th className="py-1 text-left font-medium">{p.id === "kimi" ? "窗口" : "模型组"}</th>
+              <th className="py-1 text-right font-medium">{p.id === "kimi" ? "剩余" : "本窗口剩余"}</th>
               <th className="py-1 text-right font-medium">重置时间</th>
-              <th className="py-1 text-right font-medium">周剩余</th>
+              <th className="py-1 text-right font-medium">{p.id === "kimi" ? "已用/上限" : "周剩余"}</th>
             </tr>
           </thead>
           <tbody>
@@ -150,9 +151,13 @@ function ProviderCard({ p }: { p: ProviderView }) {
                 </td>
                 <td className="py-1.5 text-right text-xs text-[var(--fg-muted)]">{fmtTime(it.resetAt)}</td>
                 <td className="py-1.5 text-right">
-                  {typeof it.detail.weeklyRemainingPercent === "number"
-                    ? `${it.detail.weeklyRemainingPercent}%`
-                    : "—"}
+                  {p.id === "kimi"
+                    ? typeof it.detail.used === "number" && typeof it.detail.limit === "number"
+                      ? `${it.detail.used}/${it.detail.limit}`
+                      : "—"
+                    : typeof it.detail.weeklyRemainingPercent === "number"
+                      ? `${it.detail.weeklyRemainingPercent}%`
+                      : "—"}
                 </td>
               </tr>
             ))}

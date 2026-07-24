@@ -29,7 +29,8 @@ export type CredentialName =
   | "web-search"
   | "github"
   | "feishu"
-  | "minimax";
+  | "minimax"
+  | "kimi";
 
 export const CREDENTIAL_NAMES: readonly CredentialName[] = [
   "llm-chat",
@@ -38,6 +39,7 @@ export const CREDENTIAL_NAMES: readonly CredentialName[] = [
   "github",
   "feishu",
   "minimax",
+  "kimi",
 ] as const;
 
 /**

@@ -15,7 +15,10 @@ import type { ProviderSnapshotItem } from "./types.js";
  * of scanned history that you can't exclude from a backup daemon, so a plaintext
  * key has no business living there.
  */
-const CREDENTIAL_PROVIDERS: Record<string, CredentialName> = { minimax: "minimax" };
+const CREDENTIAL_PROVIDERS: Record<string, CredentialName> = {
+  minimax: "minimax",
+  kimi: "kimi",
+};
 
 /** The key actually in effect: config.db first, then the legacy index.db column. */
 export function providerApiKey(db: Database.Database, provider: string): string | null {

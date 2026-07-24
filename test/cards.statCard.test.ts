@@ -5,6 +5,7 @@ import type { WorkTokensTrendTotals } from "../src/workTokensTrend/types.js";
 import { renderStatCard } from "../src/cards/statCard.js";
 import {
   renderAiToolsCard,
+  renderKimiQuotaCard,
   renderRecordsCard,
   renderStreakCard,
   renderTokenCard,
@@ -145,6 +146,32 @@ describe("renderAiToolsCard", () => {
     const svg = renderAiToolsCard([], "2026-07-23T00:00:00.000Z");
     expectValidSvg(svg);
     expect(svg).toContain(">0<");
+  });
+});
+
+describe("renderKimiQuotaCard", () => {
+  it("大数字 = 剩余最低的窗口,其余进 stats", () => {
+    const svg = renderKimiQuotaCard(
+      [
+        { label: "套餐总额", remainingPercent: 90 },
+        { label: "5 小时窗口", remainingPercent: 40 },
+      ],
+      "2026-07-24T00:00:00.000Z"
+    );
+    expectValidSvg(svg);
+    expect(svg).toContain(">40%<"); // 最紧的那个当大数字
+    expect(svg).toContain("5 小时窗口剩余"); // caption
+    expect(svg).toContain("套餐总额"); // 另一个进 stats
+    expect(svg).toContain(">90%<");
+  });
+  it("剩余 <15% → 橙红 accent", () => {
+    const svg = renderKimiQuotaCard([{ label: "5 小时窗口", remainingPercent: 8 }], "2026-07-24T00:00:00.000Z");
+    expect(svg).toContain("#cf222e");
+  });
+  it("空(未同步)→ 显 —,不出 NaN", () => {
+    const svg = renderKimiQuotaCard([], "2026-07-24T00:00:00.000Z");
+    expectValidSvg(svg);
+    expect(svg).toContain("—");
   });
 });
 

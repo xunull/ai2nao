@@ -82,6 +82,38 @@ export function renderAiToolsCard(views: AiToolView[], asOfIso: string): string 
   });
 }
 
+/** Kimi Code 编程套餐的一个窗口(某段时间的剩余额度)。 */
+export type QuotaWindow = { label: string; remainingPercent: number | null };
+
+/**
+ * Kimi 套餐余量卡:大数字 = 所有窗口里剩余% 最低的那个(当前最紧的约束,
+ * 「快到限没」),其余窗口列成 stats。<15% 转橙红。数据来自 provider_usage 快照。
+ */
+export function renderKimiQuotaCard(windows: QuotaWindow[], asOfIso: string): string {
+  const withPct = windows.filter((w) => w.remainingPercent != null);
+  const tightest =
+    withPct.length > 0
+      ? withPct.reduce((a, b) => (a.remainingPercent! <= b.remainingPercent! ? a : b))
+      : null;
+  const big = tightest
+    ? { value: `${tightest.remainingPercent}%`, caption: `${tightest.label}剩余` }
+    : { value: DASH, caption: "暂无数据,配置后同步" };
+  const stats = windows
+    .filter((w) => w !== tightest)
+    .map((w) => ({
+      label: w.label,
+      value: w.remainingPercent == null ? DASH : `${w.remainingPercent}%`,
+    }));
+  const low = tightest?.remainingPercent != null && tightest.remainingPercent < 15;
+  return renderStatCard({
+    title: "Kimi 套餐余量",
+    big,
+    stats,
+    footer: `截至 ${day10(asOfIso)}`,
+    accent: low ? "#cf222e" : "#216e39",
+  });
+}
+
 /** Token 用量(近 6 个月总量 + 各源分布;cost 时附成本估算)。 */
 export function renderTokenCard(
   t: WorkTokensTrendTotals,

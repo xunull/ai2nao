@@ -84,6 +84,17 @@ function parseMinimaxJson(raw: string): { apiKey: string } | null {
   }
 }
 
+/** Kimi Code has no JSON file either — key entered on the Providers page, config.db only. */
+function parseKimiJson(raw: string): { apiKey: string } | null {
+  try {
+    const data: unknown = JSON.parse(raw);
+    const apiKey = field(data, "apiKey");
+    return apiKey ? { apiKey } : null;
+  } catch {
+    return null;
+  }
+}
+
 const API_KEY_ONLY = ["apiKey"] as const;
 
 export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
@@ -156,5 +167,14 @@ export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
     secretFields: API_KEY_ONLY,
     legacyPath: null,
     label: "MiniMax",
+  },
+  kimi: {
+    parse: parseKimiJson,
+    envVar: null,
+    hasSecret: (p) => Boolean(field(p, "apiKey")),
+    redact: (p) => omit(p, API_KEY_ONLY),
+    secretFields: API_KEY_ONLY,
+    legacyPath: null,
+    label: "Kimi Code",
   },
 };
