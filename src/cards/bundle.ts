@@ -69,14 +69,29 @@ function buildReadme(now?: Date): string {
   const used = new Set<string>();
   const blocks: string[] = [];
 
+  // 连续的「并排行」归进同一张 <table>,列宽全表共享 → 三行的分界线才对齐。
+  let pending: CardDef[][] = [];
+  const flush = () => {
+    if (pending.length) {
+      blocks.push(multiRowTable(pending));
+      pending = [];
+    }
+  };
+
   for (const row of README_LAYOUT) {
     const cards = row
       .map((name) => findCard(name))
       .filter((c): c is CardDef => c !== undefined);
     if (cards.length === 0) continue;
     for (const c of cards) used.add(c.name);
-    blocks.push(cards.length === 1 ? fullBlock(cards[0]) : rowTable(cards));
+    if (cards.length === 1) {
+      flush(); // 整行卡打断表格
+      blocks.push(fullBlock(cards[0]));
+    } else {
+      pending.push(cards);
+    }
   }
+  flush();
   // 布局里没列到的卡(以后新增的)整行补在后面。
   for (const c of CARD_REGISTRY) {
     if (!used.has(c.name)) blocks.push(fullBlock(c));
@@ -94,18 +109,25 @@ function fullBlock(c: CardDef): string {
   return `## ${c.title}\n\n${c.description}\n\n![${c.name}](${c.name}.svg)`;
 }
 
-/** 并排:HTML 表格一行 N 列(GitHub 支持 <table>/<td>/<img>;width 平分栏宽)。 */
-function rowTable(cards: CardDef[]): string {
-  const w = Math.round(100 / cards.length);
-  const cells = cards
-    .map(
-      (c) =>
-        `<td width="${w}%" valign="top">\n` +
-        `<h3>${c.title}</h3>\n` +
-        `${c.description}<br><br>\n` +
-        `<img src="${c.name}.svg" width="100%" alt="${c.name}">\n` +
-        `</td>`
-    )
+/**
+ * 多行并排:一张 <table> 装多行(每行一个 <tr>)。列宽是整表共享的,所以各行的
+ * 列边界垂直对齐。列数取最宽一行,width 平分栏宽(td 用 % 让浏览器等分)。
+ */
+function multiRowTable(rows: CardDef[][]): string {
+  const cols = Math.max(...rows.map((r) => r.length));
+  const w = Math.round(100 / cols);
+  const trs = rows
+    .map((cards) => `<tr>\n${cards.map((c) => cell(c, w)).join("\n")}\n</tr>`)
     .join("\n");
-  return `<table>\n<tr>\n${cells}\n</tr>\n</table>`;
+  return `<table width="100%">\n${trs}\n</table>`;
+}
+
+function cell(c: CardDef, w: number): string {
+  return (
+    `<td width="${w}%" valign="top">\n` +
+    `<h3>${c.title}</h3>\n` +
+    `${c.description}<br><br>\n` +
+    `<img src="${c.name}.svg" width="100%" alt="${c.name}">\n` +
+    `</td>`
+  );
 }

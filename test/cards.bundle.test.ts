@@ -67,9 +67,10 @@ describe("generateCardBundle", () => {
       expect(referenced, card.name).toBe(true);
       expect(readme).toContain(card.title); // 标题:## 或 <h3>
     }
-    // 宽卡整行(markdown),窄卡两两并排(HTML 表格)。
+    // 宽卡整行(markdown),窄卡并排:三对合进同一张表 → 列对齐。
     expect(readme).toContain("![rhythm](rhythm.svg)");
-    expect(readme).toContain("<table>");
+    expect(readme).toContain("<table");
+    expect((readme.match(/<table/g) ?? []).length).toBe(1); // 单表,列共享才对齐
     expect(readme).toContain(`src="streak.svg"`);
     expect(readme).toContain("更新于 2026-07-23");
     expect(readme).toContain("github.com/xunull/ai2nao");
