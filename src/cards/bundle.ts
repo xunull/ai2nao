@@ -8,7 +8,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type Database from "better-sqlite3";
-import { CARD_REGISTRY, type CardRenderOpts } from "./registry.js";
+import {
+  CARD_REGISTRY,
+  findCard,
+  type CardDef,
+  type CardRenderOpts,
+} from "./registry.js";
 
 export type BundleOptions = {
   cost?: boolean;
@@ -47,14 +52,60 @@ export function generateCardBundle(
   return { outDir: dir, files };
 }
 
+/**
+ * README 布局:每行一个数组。单个 name = 整行(宽卡);两个 name = 并排(窄卡,HTML 表格)。
+ * 未列到的卡兜底整行补在末尾,删卡也不会引用到不存在的图。
+ */
+const README_LAYOUT: string[][] = [
+  ["rhythm"],
+  ["calendar"],
+  ["streak", "token"],
+  ["source-trend", "records"],
+  ["ai-tools", "leaderboard"],
+];
+
 function buildReadme(now?: Date): string {
   const date = (now ?? new Date()).toISOString().slice(0, 10);
-  const sections = CARD_REGISTRY.map(
-    (c) => `## ${c.title}\n\n${c.description}\n\n![${c.name}](${c.name}.svg)`
-  ).join("\n\n");
+  const used = new Set<string>();
+  const blocks: string[] = [];
+
+  for (const row of README_LAYOUT) {
+    const cards = row
+      .map((name) => findCard(name))
+      .filter((c): c is CardDef => c !== undefined);
+    if (cards.length === 0) continue;
+    for (const c of cards) used.add(c.name);
+    blocks.push(cards.length === 1 ? fullBlock(cards[0]) : rowTable(cards));
+  }
+  // 布局里没列到的卡(以后新增的)整行补在后面。
+  for (const c of CARD_REGISTRY) {
+    if (!used.has(c.name)) blocks.push(fullBlock(c));
+  }
+
   return (
     `# 我的 AI coding 面板\n\n` +
     `> 由 [ai2nao](https://github.com/xunull/ai2nao) 从本地数据生成 · 更新于 ${date}\n\n` +
-    `${sections}\n`
+    `${blocks.join("\n\n")}\n`
   );
+}
+
+/** 整行:markdown 标题 + 说明 + 图。 */
+function fullBlock(c: CardDef): string {
+  return `## ${c.title}\n\n${c.description}\n\n![${c.name}](${c.name}.svg)`;
+}
+
+/** 并排:HTML 表格一行 N 列(GitHub 支持 <table>/<td>/<img>;width 平分栏宽)。 */
+function rowTable(cards: CardDef[]): string {
+  const w = Math.round(100 / cards.length);
+  const cells = cards
+    .map(
+      (c) =>
+        `<td width="${w}%" valign="top">\n` +
+        `<h3>${c.title}</h3>\n` +
+        `${c.description}<br><br>\n` +
+        `<img src="${c.name}.svg" width="100%" alt="${c.name}">\n` +
+        `</td>`
+    )
+    .join("\n");
+  return `<table>\n<tr>\n${cells}\n</tr>\n</table>`;
 }

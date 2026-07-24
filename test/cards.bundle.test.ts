@@ -56,14 +56,21 @@ describe("generateCardBundle", () => {
     expect(existsSync(join(outDir, "README.md"))).toBe(true);
   });
 
-  it("README 用相对路径引用每张卡 + 生成日期", () => {
+  it("README 引用每张卡(整行 markdown 或表格 <img>)+ 生成日期", () => {
     const outDir = join(dir, "cards");
     generateCardBundle(db, outDir, { now: NOW });
     const readme = readFileSync(join(outDir, "README.md"), "utf8");
     for (const card of CARD_REGISTRY) {
-      expect(readme).toContain(`![${card.name}](${card.name}.svg)`);
-      expect(readme).toContain(`## ${card.title}`);
+      const referenced =
+        readme.includes(`![${card.name}](${card.name}.svg)`) ||
+        readme.includes(`src="${card.name}.svg"`);
+      expect(referenced, card.name).toBe(true);
+      expect(readme).toContain(card.title); // 标题:## 或 <h3>
     }
+    // 宽卡整行(markdown),窄卡两两并排(HTML 表格)。
+    expect(readme).toContain("![rhythm](rhythm.svg)");
+    expect(readme).toContain("<table>");
+    expect(readme).toContain(`src="streak.svg"`);
     expect(readme).toContain("更新于 2026-07-23");
     expect(readme).toContain("github.com/xunull/ai2nao");
   });
