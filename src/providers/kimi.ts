@@ -79,13 +79,13 @@ function windowKey(window: Record<string, unknown> | null, i: number): string {
 function windowLabel(window: Record<string, unknown> | null, i: number): string {
   const d = window ? numLoose(window.duration) : null;
   const u = (window ? str(window.timeUnit) ?? str(window.time_unit) : null)?.toUpperCase() ?? "";
-  if (d == null) return `窗口 ${i + 1}`;
+  if (d == null) return `用量 ${i + 1}`;
   if (u.includes("MINUTE"))
-    return d >= 60 && d % 60 === 0 ? `${d / 60} 小时窗口` : `${d} 分钟窗口`;
-  if (u.includes("HOUR")) return `${d} 小时窗口`;
-  if (u.includes("DAY")) return `${d} 天窗口`;
-  if (u.includes("MONTH")) return `${d} 月窗口`;
-  return `${d} 秒窗口`;
+    return d >= 60 && d % 60 === 0 ? `${d / 60} 小时用量` : `${d} 分钟用量`;
+  if (u.includes("HOUR")) return `${d} 小时用量`;
+  if (u.includes("DAY")) return `${d} 天用量`;
+  if (u.includes("MONTH")) return `${d} 月用量`;
+  return `${d} 秒用量`;
 }
 
 /** One quota block ({limit, remaining, resetTime}) → a snapshot item, or null. */
@@ -93,7 +93,7 @@ function toItem(
   data: Record<string, unknown>,
   key: string,
   label: string,
-  kind: "overall" | "window",
+  kind: "weekly" | "window",
   window?: Record<string, unknown> | null
 ): ProviderSnapshotItem | null {
   const limit = numLoose(data.limit ?? data.limit_amount);
@@ -184,19 +184,22 @@ export function parseKimiUsages(body: unknown): ProviderSnapshot {
       const isAll = str(m.model_name) === "all";
       const item = toItem(
         m,
-        isAll ? "overall" : str(m.model_name) ?? `w${i}`,
-        isAll ? "套餐总额" : str(m.model_name) ?? `窗口 ${i + 1}`,
-        isAll ? "overall" : "window"
+        isAll ? "weekly" : str(m.model_name) ?? `w${i}`,
+        isAll ? "7 天用量" : str(m.model_name) ?? `用量 ${i + 1}`,
+        isAll ? "weekly" : "window"
       );
       if (item) items.push(item);
     });
     return withMeta(items);
   }
 
-  // Primary form: `usage` (overall/plan window) + `limits[]` (each with a window).
+  // Primary form: `usage` (the 7-day/weekly window — verified against Kimi's
+  // member page: usage.resetTime lines up with the "7 天用量" bar, NOT a monthly
+  // total) + `limits[]` (each a shorter window, e.g. 5h). The monthly "总使用量"
+  // shown on the web member page is NOT in this endpoint (totalQuota stays {}).
   const usage = asObj(root.usage);
   if (usage) {
-    const item = toItem(usage, "overall", "套餐总额", "overall");
+    const item = toItem(usage, "weekly", "7 天用量", "weekly");
     if (item) items.push(item);
   }
   const limits = Array.isArray(root.limits) ? root.limits : [];

@@ -50,8 +50,8 @@ const KIMI_BODY = {
 describe("parseKimiUsages", () => {
   it("maps usage + limits[] (string numbers, remaining→percent), keeps raw", () => {
     const snap = parseKimiUsages(KIMI_BODY);
-    // membership meta-item first, then overall + one window
-    expect(snap.items.map((i) => i.key)).toEqual(["membership", "overall", "5h"]);
+    // membership meta-item first, then the 7-day (usage) + 5h window
+    expect(snap.items.map((i) => i.key)).toEqual(["membership", "weekly", "5h"]);
 
     const membership = snap.items.find((i) => i.key === "membership")!;
     expect(membership.detail.kind).toBe("membership");
@@ -59,14 +59,16 @@ describe("parseKimiUsages", () => {
     expect(membership.detail.subType).toBe("TYPE_PURCHASE");
     expect(membership.detail.parallelLimit).toBe(10); // "10" → number
 
-    const overall = snap.items.find((i) => i.key === "overall")!;
-    expect(overall.label).toBe("套餐总额");
-    expect(overall.remainingPercent).toBe(90); // 90/100
-    expect(overall.resetAt).toBe("2026-07-27T08:00:56.444Z");
-    expect(overall.detail.kind).toBe("overall");
+    // `usage` block is the 7-day/weekly window (per Kimi's member page), NOT a
+    // monthly total. Labeled accordingly.
+    const weekly = snap.items.find((i) => i.key === "weekly")!;
+    expect(weekly.label).toBe("7 天用量");
+    expect(weekly.remainingPercent).toBe(90); // 90/100
+    expect(weekly.resetAt).toBe("2026-07-27T08:00:56.444Z");
+    expect(weekly.detail.kind).toBe("weekly");
 
     const win = snap.items.find((i) => i.key === "5h")!;
-    expect(win.label).toBe("5 小时窗口"); // 300 min = 5h
+    expect(win.label).toBe("5 小时用量"); // 300 min = 5h
     expect(win.remainingPercent).toBe(40); // 40/100
     expect(win.detail.used).toBe(60); // limit - remaining
     expect(snap.raw).toBe(KIMI_BODY);
@@ -80,7 +82,7 @@ describe("parseKimiUsages", () => {
       ],
     });
     expect(snap.items).toHaveLength(2);
-    expect(snap.items.find((i) => i.key === "overall")!.remainingPercent).toBe(50);
+    expect(snap.items.find((i) => i.key === "weekly")!.remainingPercent).toBe(50);
     // used→remaining fallback: 100-30 = 70%
     expect(snap.items.find((i) => i.key === "kimi")!.remainingPercent).toBe(70);
   });
@@ -90,8 +92,8 @@ describe("parseKimiUsages", () => {
       usage: { limit: "0", remaining: "0" },
       limits: [{ detail: {} }, "junk"],
     });
-    const overall = snap.items.find((i) => i.key === "overall")!;
-    expect(overall.remainingPercent).toBeNull(); // limit 0 → null, not NaN
+    const weekly = snap.items.find((i) => i.key === "weekly")!;
+    expect(weekly.remainingPercent).toBeNull(); // limit 0 → null, not NaN
     expect(JSON.stringify(snap)).not.toContain("NaN");
     // the empty detail block is dropped
     expect(snap.items).toHaveLength(1);
@@ -116,7 +118,7 @@ describe("createKimiProvider (injected fetch, no network)", () => {
   it("200 → parses items", async () => {
     const src = createKimiProvider(async () => res(200, KIMI_BODY));
     const snap = await src.sync({ apiKey: "sk-kimi-x" });
-    expect(snap.items.map((i) => i.key)).toEqual(["membership", "overall", "5h"]);
+    expect(snap.items.map((i) => i.key)).toEqual(["membership", "weekly", "5h"]);
   });
 
   it("404 on /usages falls back to /usage", async () => {
