@@ -127,11 +127,53 @@ function toItem(
   };
 }
 
+/** 已知会员等级 → 中文;未知(如付费档)回退去掉 LEVEL_ 前缀的原始枚举。 */
+const KIMI_LEVEL_ZH: Record<string, string> = {
+  LEVEL_TRIAL: "试用",
+  LEVEL_FREE: "免费",
+};
+
+/**
+ * 会员档位友好名。API 只给 `membership.level` 枚举(试用账号是 LEVEL_TRIAL)+
+ * `subType`,**不含价格/计费周期**;付费档枚举需升级后才能看到真值,故未知档回退
+ * 显原始枚举尾巴,不臆造。价格若要显示,只能由调用方另配「档位→¥」映射。
+ */
+export function kimiTierLabel(level: string | null, subType: string | null): string {
+  if (level && KIMI_LEVEL_ZH[level]) return KIMI_LEVEL_ZH[level];
+  if (level) return level.replace(/^LEVEL_/, "");
+  return subType === "TYPE_PURCHASE" ? "已购买" : "—";
+}
+
+/** 把顶层 user.membership.level / subType / parallel.limit 收成一个 kind:"membership" 项。 */
+function membershipItem(root: Record<string, unknown>): ProviderSnapshotItem | null {
+  const user = asObj(root.user);
+  const membership = user ? asObj(user.membership) : null;
+  const level = membership ? str(membership.level) : null;
+  const subType = str(root.subType);
+  const parallel = asObj(root.parallel);
+  const parallelLimit = parallel ? numLoose(parallel.limit) : null;
+  if (level == null && subType == null && parallelLimit == null) return null;
+  return {
+    key: "membership",
+    label: "当前档位",
+    remainingPercent: null,
+    resetAt: null,
+    detail: { kind: "membership", level, subType, parallelLimit },
+  };
+}
+
 /** Parse a Kimi Code /usages body into snapshot items (exported for tests). */
 export function parseKimiUsages(body: unknown): ProviderSnapshot {
   const root = asObj(body);
   const items: ProviderSnapshotItem[] = [];
   if (!root) return { items, raw: body };
+
+  // 档位/并发是套餐元信息(非配额窗口),用 kind:"membership" 标记,前端/卡片单独渲。
+  const membership = membershipItem(root);
+  const withMeta = (windows: ProviderSnapshotItem[]): ProviderSnapshot => ({
+    items: membership ? [membership, ...windows] : windows,
+    raw: body,
+  });
 
   // Tolerated form: a flat `data[]` list (community-observed; model_name "all"
   // is the overall summary). This account returns the usage+limits form below.
@@ -148,7 +190,7 @@ export function parseKimiUsages(body: unknown): ProviderSnapshot {
       );
       if (item) items.push(item);
     });
-    return { items, raw: body };
+    return withMeta(items);
   }
 
   // Primary form: `usage` (overall/plan window) + `limits[]` (each with a window).
@@ -166,7 +208,7 @@ export function parseKimiUsages(body: unknown): ProviderSnapshot {
     const item = toItem(detail, windowKey(window, i), windowLabel(window, i), "window", window);
     if (item) items.push(item);
   });
-  return { items, raw: body };
+  return withMeta(items);
 }
 
 /** Minimal response shape the sync loop needs (a subset of the Fetch `Response`). */

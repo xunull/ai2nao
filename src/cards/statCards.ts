@@ -89,7 +89,11 @@ export type QuotaWindow = { label: string; remainingPercent: number | null };
  * Kimi 套餐余量卡:大数字 = 所有窗口里剩余% 最低的那个(当前最紧的约束,
  * 「快到限没」),其余窗口列成 stats。<15% 转橙红。数据来自 provider_usage 快照。
  */
-export function renderKimiQuotaCard(windows: QuotaWindow[], asOfIso: string): string {
+export function renderKimiQuotaCard(
+  windows: QuotaWindow[],
+  asOfIso: string,
+  tier?: string | null
+): string {
   const withPct = windows.filter((w) => w.remainingPercent != null);
   const tightest =
     withPct.length > 0
@@ -105,11 +109,12 @@ export function renderKimiQuotaCard(windows: QuotaWindow[], asOfIso: string): st
       value: w.remainingPercent == null ? DASH : `${w.remainingPercent}%`,
     }));
   const low = tightest?.remainingPercent != null && tightest.remainingPercent < 15;
+  const date = day10(asOfIso);
   return renderStatCard({
     title: "Kimi 套餐余量",
     big,
     stats,
-    footer: `截至 ${day10(asOfIso)}`,
+    footer: tier ? `${tier} · 截至 ${date}` : `截至 ${date}`,
     accent: low ? "#cf222e" : "#216e39",
   });
 }

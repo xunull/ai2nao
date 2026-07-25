@@ -13,6 +13,7 @@ import {
   weeklySourceMix,
 } from "../aiRhythm/queries.js";
 import { getAiToolsStatus, listAiTools } from "../aiTools/queries.js";
+import { kimiTierLabel } from "../providers/kimi.js";
 import { listProviders } from "../providers/store.js";
 import { generateTrend } from "../workTokensTrend/service.js";
 import { renderCalendarSvg } from "./calendarSvg.js";
@@ -106,11 +107,18 @@ export const CARD_REGISTRY: CardDef[] = [
     description: "Kimi Code 编程套餐:各时间窗口的剩余额度。",
     render: (db, o) => {
       const kimi = listProviders(db).find((p) => p.id === "kimi");
-      const windows = (kimi?.items ?? []).map((it) => ({
-        label: it.label,
-        remainingPercent: it.remainingPercent,
-      }));
-      return renderKimiQuotaCard(windows, kimi?.lastSyncAt ?? isoNow(o));
+      const items = kimi?.items ?? [];
+      const membership = items.find((it) => it.detail.kind === "membership");
+      const windows = items
+        .filter((it) => it.detail.kind !== "membership")
+        .map((it) => ({ label: it.label, remainingPercent: it.remainingPercent }));
+      const tier = membership
+        ? kimiTierLabel(
+            typeof membership.detail.level === "string" ? membership.detail.level : null,
+            typeof membership.detail.subType === "string" ? membership.detail.subType : null
+          )
+        : null;
+      return renderKimiQuotaCard(windows, kimi?.lastSyncAt ?? isoNow(o), tier);
     },
   },
 ];

@@ -6,6 +6,7 @@ import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
 import {
   createKimiProvider,
+  kimiTierLabel,
   parseKimiUsages,
   type KimiResponse,
 } from "../src/providers/kimi.js";
@@ -49,8 +50,14 @@ const KIMI_BODY = {
 describe("parseKimiUsages", () => {
   it("maps usage + limits[] (string numbers, remaining→percent), keeps raw", () => {
     const snap = parseKimiUsages(KIMI_BODY);
-    // one overall + one window
-    expect(snap.items.map((i) => i.key)).toEqual(["overall", "5h"]);
+    // membership meta-item first, then overall + one window
+    expect(snap.items.map((i) => i.key)).toEqual(["membership", "overall", "5h"]);
+
+    const membership = snap.items.find((i) => i.key === "membership")!;
+    expect(membership.detail.kind).toBe("membership");
+    expect(membership.detail.level).toBe("LEVEL_TRIAL");
+    expect(membership.detail.subType).toBe("TYPE_PURCHASE");
+    expect(membership.detail.parallelLimit).toBe(10); // "10" → number
 
     const overall = snap.items.find((i) => i.key === "overall")!;
     expect(overall.label).toBe("套餐总额");
@@ -96,11 +103,20 @@ describe("parseKimiUsages", () => {
   });
 });
 
+describe("kimiTierLabel", () => {
+  it("known level → 中文;unknown 付费档 → 去 LEVEL_ 前缀;无 level → subType 兜底", () => {
+    expect(kimiTierLabel("LEVEL_TRIAL", "TYPE_PURCHASE")).toBe("试用");
+    expect(kimiTierLabel("LEVEL_MODERATO", "TYPE_PURCHASE")).toBe("MODERATO");
+    expect(kimiTierLabel(null, "TYPE_PURCHASE")).toBe("已购买");
+    expect(kimiTierLabel(null, null)).toBe("—");
+  });
+});
+
 describe("createKimiProvider (injected fetch, no network)", () => {
   it("200 → parses items", async () => {
     const src = createKimiProvider(async () => res(200, KIMI_BODY));
     const snap = await src.sync({ apiKey: "sk-kimi-x" });
-    expect(snap.items.map((i) => i.key)).toEqual(["overall", "5h"]);
+    expect(snap.items.map((i) => i.key)).toEqual(["membership", "overall", "5h"]);
   });
 
   it("404 on /usages falls back to /usage", async () => {
@@ -139,9 +155,10 @@ describe("kimi through the generic store/sync", () => {
     const src = createKimiProvider(async () => res(200, KIMI_BODY));
     const r = await syncProvider(db, "kimi", src);
     expect(r.status).toBe("success");
-    expect(r.itemCount).toBe(2);
+    expect(r.itemCount).toBe(3); // membership + overall + 5h window
     const kimi = listProviders(db).find((p) => p.id === "kimi")!;
-    expect(kimi.items).toHaveLength(2);
+    expect(kimi.items).toHaveLength(3);
+    expect(kimi.items.find((it) => it.key === "membership")!.detail.level).toBe("LEVEL_TRIAL");
     expect(JSON.stringify(kimi)).not.toContain("sk-kimi-secret");
   });
 });

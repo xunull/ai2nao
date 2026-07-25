@@ -30,6 +30,16 @@ function fmtTime(iso: string | null): string {
   return new Date(iso).toLocaleString("zh-CN", { hour12: false });
 }
 
+/** Kimi 会员档位友好名(API 只给枚举,不含价格);未知付费档回退去掉 LEVEL_ 前缀。 */
+const KIMI_LEVEL_ZH: Record<string, string> = { LEVEL_TRIAL: "试用", LEVEL_FREE: "免费" };
+function tierZh(detail: Record<string, unknown>): string {
+  const level = typeof detail.level === "string" ? detail.level : null;
+  const subType = typeof detail.subType === "string" ? detail.subType : null;
+  if (level && KIMI_LEVEL_ZH[level]) return KIMI_LEVEL_ZH[level];
+  if (level) return level.replace(/^LEVEL_/, "");
+  return subType === "TYPE_PURCHASE" ? "已购买" : "—";
+}
+
 function StatusBadge({ status }: { status: string | null }) {
   const map: Record<string, string> = {
     success: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -61,6 +71,10 @@ function ProviderCard({ p }: { p: ProviderView }) {
     mutationFn: () => apiPost<ListResponse>(`/api/providers/${p.id}/sync`, {}),
     onSuccess: invalidate,
   });
+
+  // Kimi 把「当前档位」塞成一个 kind:"membership" 的元信息项,单独渲,不进配额表。
+  const membership = p.items.find((it) => it.detail.kind === "membership");
+  const quota = p.items.filter((it) => it.detail.kind !== "membership");
 
   return (
     <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -131,7 +145,16 @@ function ProviderCard({ p }: { p: ProviderView }) {
         {p.lastError && <span className="ml-2 text-rose-600">· {p.lastError}</span>}
       </div>
 
-      {p.items.length > 0 ? (
+      {membership && (
+        <div className="mb-2 text-xs text-[var(--fg)]">
+          档位：<span className="font-medium">{tierZh(membership.detail)}</span>
+          {typeof membership.detail.parallelLimit === "number" && (
+            <span className="ml-2 text-[var(--fg-muted)]">并发上限 {membership.detail.parallelLimit}</span>
+          )}
+        </div>
+      )}
+
+      {quota.length > 0 ? (
         <table className="w-full text-sm tabular-nums">
           <thead>
             <tr className="text-xs uppercase tracking-wide text-[var(--fg-muted)]">
@@ -143,7 +166,7 @@ function ProviderCard({ p }: { p: ProviderView }) {
             </tr>
           </thead>
           <tbody>
-            {p.items.map((it) => (
+            {quota.map((it) => (
               <tr key={it.key} className="border-t border-[var(--border)] text-[var(--fg)]">
                 <td className="py-1.5 text-left">{it.label}</td>
                 <td className="py-1.5 text-right">

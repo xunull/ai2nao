@@ -168,6 +168,14 @@ describe("renderKimiQuotaCard", () => {
     const svg = renderKimiQuotaCard([{ label: "5 小时窗口", remainingPercent: 8 }], "2026-07-24T00:00:00.000Z");
     expect(svg).toContain("#cf222e");
   });
+  it("传档位 → footer 带档位", () => {
+    const svg = renderKimiQuotaCard(
+      [{ label: "5 小时窗口", remainingPercent: 40 }],
+      "2026-07-24T00:00:00.000Z",
+      "试用"
+    );
+    expect(svg).toContain("试用 · 截至 2026-07-24");
+  });
   it("空(未同步)→ 显 —,不出 NaN", () => {
     const svg = renderKimiQuotaCard([], "2026-07-24T00:00:00.000Z");
     expectValidSvg(svg);
