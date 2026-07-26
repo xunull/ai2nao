@@ -254,13 +254,17 @@ export function createKimiProvider(fetchRaw: KimiFetch = defaultFetch): Provider
     id: "kimi",
     label: "Kimi Code",
     async sync(config: ProviderSyncConfig): Promise<ProviderSnapshot> {
+      // sync() already rejects a keyless run for key-requiring sources; this
+      // narrows `string | null` without an assertion.
+      const apiKey = config.apiKey;
+      if (!apiKey) throw new Error("未配置 Kimi Code API key");
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
       try {
-        let r = await fetchRaw(ENDPOINT, config.apiKey, ac.signal);
+        let r = await fetchRaw(ENDPOINT, apiKey, ac.signal);
         // Only 404 falls back to the singular endpoint; 401 etc. surface as-is
         // (a bad token must not be retried as a "maybe wrong path").
-        if (r.status === 404) r = await fetchRaw(FALLBACK, config.apiKey, ac.signal);
+        if (r.status === 404) r = await fetchRaw(FALLBACK, apiKey, ac.signal);
         if (!r.ok) throw new Error(errorHint(r.status));
         return parseKimiUsages(await r.json());
       } finally {

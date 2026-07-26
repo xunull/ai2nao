@@ -105,10 +105,14 @@ export function createMinimaxProvider(fetchJson: MinimaxFetch = defaultFetchJson
     id: "minimax",
     label: "MiniMax",
     async sync(config: ProviderSyncConfig): Promise<ProviderSnapshot> {
+      // sync() already rejects a keyless run for key-requiring sources; this
+      // narrows `string | null` without an assertion.
+      const apiKey = config.apiKey;
+      if (!apiKey) throw new Error("未配置 MiniMax API key");
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
       try {
-        const body = await fetchJson(ENDPOINT, config.apiKey, ac.signal);
+        const body = await fetchJson(ENDPOINT, apiKey, ac.signal);
         return parseMinimaxRemains(body);
       } finally {
         clearTimeout(timer);

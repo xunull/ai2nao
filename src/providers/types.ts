@@ -13,9 +13,15 @@
  * automatically.
  */
 
-/** Config passed to a provider's sync (the API key the user entered). */
+/**
+ * Config passed to a provider's sync.
+ *
+ * `apiKey` is non-null only for sources that require one (the default). Sources
+ * that declare `requiresApiKey: false` read the machine's own login state
+ * instead (Claude Code / Codex CLI credentials) and receive null here.
+ */
 export type ProviderSyncConfig = {
-  apiKey: string;
+  apiKey: string | null;
 };
 
 /**
@@ -42,6 +48,13 @@ export type ProviderSnapshot = {
 export type ProviderUsageSource = {
   id: string;
   label: string;
+  /**
+   * Omitted means true. `false` marks a source that reads THIS machine's
+   * credentials (Claude Code's Keychain item, Codex's auth.json) rather than a
+   * key the user pastes in: the management page shows no key field and sync
+   * must not fail such a source for "no key configured".
+   */
+  requiresApiKey?: boolean;
   /** Throws on transport/auth error; returns a snapshot otherwise. */
   sync(config: ProviderSyncConfig): Promise<ProviderSnapshot>;
 };

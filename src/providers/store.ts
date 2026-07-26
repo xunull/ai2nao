@@ -68,6 +68,8 @@ export type ProviderView = {
   enabled: boolean;
   /** Whether remote billing-history scraping is opted-in (separate from `enabled`). */
   historyEnabled: boolean;
+  /** false → the source reads this machine's login; the UI shows no key field. */
+  requiresApiKey: boolean;
   hasKey: boolean;
   lastSyncAt: string | null;
   lastStatus: string | null;
@@ -225,6 +227,7 @@ export function listProviders(db: Database.Database): ProviderView[] {
       label: s.label,
       enabled: !!cfg?.enabled,
       historyEnabled: !!cfg?.history_enabled,
+      requiresApiKey: s.requiresApiKey !== false,
       hasKey: providerApiKey(db, s.id) !== null,
       lastSyncAt: cfg?.last_sync_at ?? null,
       lastStatus: cfg?.last_status ?? null,

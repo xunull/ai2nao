@@ -14,6 +14,7 @@ import {
   setProviderConfig,
 } from "../src/providers/store.js";
 import { syncProvider, syncEnabledProviders } from "../src/providers/sync.js";
+import { listProviderSources } from "../src/providers/registry.js";
 import type { ProviderUsageSource } from "../src/providers/types.js";
 
 function freshDb(): Database.Database {
@@ -171,5 +172,87 @@ describe("syncProvider / syncEnabledProviders", () => {
     const db = freshDb();
     const r = await syncEnabledProviders(db); // nothing enabled
     expect(r.status).toBe("skipped");
+  });
+});
+
+/**
+ * Guards the `requiresApiKey` contract added for the local-credential sources
+ * (Claude / Codex). The key-requiring path must behave EXACTLY as before, and
+ * the keyless path must not be short-circuited into "未配置 API key".
+ */
+describe("requiresApiKey contract", () => {
+  it("registered key sources do not opt out (MiniMax / Kimi keep requiring a key)", () => {
+    for (const id of ["minimax", "kimi"]) {
+      const src = listProviderSources().find((s) => s.id === id)!;
+      expect(src.requiresApiKey).not.toBe(false);
+    }
+  });
+
+  it("omitting requiresApiKey still fails without a key (unchanged behaviour)", async () => {
+    const db = freshDb();
+    ensureProviderConfigs(db, "2026-07-26T00:00:00Z");
+    setProviderConfig(db, "minimax", { enabled: true }, "2026-07-26T00:00:00Z");
+    const src: ProviderUsageSource = {
+      id: "minimax",
+      label: "MiniMax",
+      sync: async () => parseMinimaxRemains(MM_BODY),
+    };
+    const r = await syncProvider(db, "minimax", src);
+    expect(r.status).toBe("failed");
+    expect(r.error).toMatch(/key/i);
+  });
+
+  it("the key still reaches a key-requiring source untouched", async () => {
+    const db = freshDb();
+    ensureProviderConfigs(db, "2026-07-26T00:00:00Z");
+    setProviderConfig(db, "minimax", { enabled: true, apiKey: "k-123" }, "2026-07-26T00:00:00Z");
+    let seen: string | null | undefined;
+    const src: ProviderUsageSource = {
+      id: "minimax",
+      label: "MiniMax",
+      sync: async (cfg) => {
+        seen = cfg.apiKey;
+        return parseMinimaxRemains(MM_BODY);
+      },
+    };
+    expect((await syncProvider(db, "minimax", src)).status).toBe("success");
+    expect(seen).toBe("k-123");
+  });
+
+  it("requiresApiKey:false syncs with no key configured and gets apiKey null", async () => {
+    const db = freshDb();
+    ensureProviderConfigs(db, "2026-07-26T00:00:00Z");
+    setProviderConfig(db, "claude", { enabled: true }, "2026-07-26T00:00:00Z");
+    let seen: string | null | undefined = "unset";
+    const src: ProviderUsageSource = {
+      id: "claude",
+      label: "Claude",
+      requiresApiKey: false,
+      sync: async (cfg) => {
+        seen = cfg.apiKey;
+        return { items: [{ key: "5h", label: "5 小时用量", remainingPercent: 48, resetAt: null, detail: {} }], raw: {} };
+      },
+    };
+    const r = await syncProvider(db, "claude", src);
+    expect(r.status).toBe("success");
+    expect(seen).toBeNull();
+  });
+
+  it("a keyless source that throws is recorded as failed, not masked as 'no key'", async () => {
+    const db = freshDb();
+    ensureProviderConfigs(db, "2026-07-26T00:00:00Z");
+    setProviderConfig(db, "claude", { enabled: true }, "2026-07-26T00:00:00Z");
+    const src: ProviderUsageSource = {
+      id: "claude",
+      label: "Claude",
+      requiresApiKey: false,
+      sync: async () => {
+        throw new Error("未检测到 Claude Code 登录凭据");
+      },
+    };
+    const r = await syncProvider(db, "claude", src);
+    expect(r.status).toBe("failed");
+    expect(r.error).toMatch(/登录凭据/);
+    expect(r.error).not.toMatch(/未配置 API key/);
   });
 });

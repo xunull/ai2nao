@@ -1,3 +1,5 @@
+import { createClaudeSubscriptionProvider } from "./claudeSubscription.js";
+import { createCodexSubscriptionProvider } from "./codexSubscription.js";
 import { createKimiProvider } from "./kimi.js";
 import { createMinimaxProvider } from "./minimax.js";
 import type { ProviderUsageSource } from "./types.js";
@@ -10,6 +12,10 @@ import type { ProviderUsageSource } from "./types.js";
 export const PROVIDER_SOURCES: ProviderUsageSource[] = [
   createMinimaxProvider(),
   createKimiProvider(),
+  // Subscription-quota sources: no key to configure, they read this machine's
+  // Claude Code / Codex login (see `requiresApiKey: false`).
+  createClaudeSubscriptionProvider(),
+  createCodexSubscriptionProvider(),
 ];
 
 export function listProviderSources(): ProviderUsageSource[] {

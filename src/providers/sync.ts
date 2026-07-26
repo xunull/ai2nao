@@ -35,7 +35,10 @@ export async function syncProvider(
   const cfg = getProviderConfig(db, providerId);
   if (!cfg?.enabled) return { provider: providerId, status: "skipped", itemCount: 0 };
   const apiKey = providerApiKey(db, providerId);
-  if (!apiKey) {
+  // Sources that read local credentials (Claude Code / Codex) have no key to
+  // configure — failing them here would make them permanently unsyncable. They
+  // report their own "not logged in" error from sync() instead.
+  if (source.requiresApiKey !== false && !apiKey) {
     const at = nowIso();
     recordSyncResult(db, providerId, "failed", "未配置 API key", at);
     return { provider: providerId, status: "failed", itemCount: 0, error: "未配置 API key" };
@@ -51,7 +54,8 @@ export async function syncProvider(
     return { provider: providerId, status, itemCount: snapshot.items.length };
   } catch (e) {
     // Never include the key. Source errors are already key-free, but guard anyway.
-    const msg = (e instanceof Error ? e.message : String(e)).replace(apiKey, "***");
+    const raw = e instanceof Error ? e.message : String(e);
+    const msg = apiKey ? raw.split(apiKey).join("***") : raw;
     recordSyncResult(db, providerId, "failed", msg, at);
     return { provider: providerId, status: "failed", itemCount: 0, error: msg };
   }

@@ -16,6 +16,7 @@ type ProviderView = {
   label: string;
   enabled: boolean;
   historyEnabled: boolean;
+  requiresApiKey: boolean;
   hasKey: boolean;
   lastSyncAt: string | null;
   lastStatus: string | null;
@@ -82,7 +83,9 @@ function ProviderCard({ p }: { p: ProviderView }) {
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--fg)]">{p.label}</h2>
           <StatusBadge status={p.lastStatus} />
-          <span className="text-xs text-[var(--fg-muted)]">{p.hasKey ? "已配置 key" : "未配置 key"}</span>
+          <span className="text-xs text-[var(--fg-muted)]">
+            {p.requiresApiKey ? (p.hasKey ? "已配置 key" : "未配置 key") : "读取本机登录凭据"}
+          </span>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--fg-muted)]">
           启用
@@ -115,21 +118,30 @@ function ProviderCard({ p }: { p: ProviderView }) {
       )}
 
       <div className="mb-3 flex items-center gap-2">
-        <input
-          type="password"
-          value={keyInput}
-          placeholder={p.hasKey ? "重新填写以替换 key" : "粘贴 API key"}
-          onChange={(e) => setKeyInput(e.target.value)}
-          className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-sm text-[var(--fg)]"
-        />
-        <button
-          type="button"
-          disabled={!keyInput || patch.isPending}
-          onClick={() => patch.mutate({ apiKey: keyInput })}
-          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--fg)] hover:bg-[var(--surface-2)] disabled:opacity-50"
-        >
-          保存 key
-        </button>
+        {p.requiresApiKey ? (
+          <>
+            <input
+              type="password"
+              value={keyInput}
+              placeholder={p.hasKey ? "重新填写以替换 key" : "粘贴 API key"}
+              onChange={(e) => setKeyInput(e.target.value)}
+              className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-sm text-[var(--fg)]"
+            />
+            <button
+              type="button"
+              disabled={!keyInput || patch.isPending}
+              onClick={() => patch.mutate({ apiKey: keyInput })}
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--fg)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+            >
+              保存 key
+            </button>
+          </>
+        ) : (
+          // 无需填 key:直接读本机 Claude Code / Codex 的登录凭据(只读,不刷新、不写回)。
+          <span className="flex-1 text-xs text-[var(--fg-muted)]">
+            无需填写 key，直接读取本机登录凭据；凭据失效时请在对应 CLI 里重新登录。
+          </span>
+        )}
         <button
           type="button"
           disabled={sync.isPending}
