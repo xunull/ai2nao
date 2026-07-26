@@ -34,11 +34,51 @@ function fmtTime(iso: string | null): string {
 /** Kimi 会员档位友好名(API 只给枚举,不含价格);未知付费档回退去掉 LEVEL_ 前缀。 */
 const KIMI_LEVEL_ZH: Record<string, string> = { LEVEL_TRIAL: "试用", LEVEL_FREE: "免费" };
 function tierZh(detail: Record<string, unknown>): string {
+  // Codex 的档位是自由文本(plus / pro …),Kimi 是 LEVEL_* 枚举 —— 按字段取,不按平台猜。
+  const planType = typeof detail.planType === "string" ? detail.planType : null;
+  if (planType) return planType;
   const level = typeof detail.level === "string" ? detail.level : null;
   const subType = typeof detail.subType === "string" ? detail.subType : null;
   if (level && KIMI_LEVEL_ZH[level]) return KIMI_LEVEL_ZH[level];
   if (level) return level.replace(/^LEVEL_/, "");
   return subType === "TYPE_PURCHASE" ? "已购买" : "—";
+}
+
+/**
+ * 配额表的列语义因源而异,但**由数据决定,不由 provider id 决定** —— 否则每加一个源都要
+ * 回来改这里,新源会静默掉进别人的分支(Claude/Codex 曾因此显示「模型组」和一整列空的
+ * 「周剩余」)。第一列:有窗口语义就是「窗口」,否则是 MiniMax 那种按模型组切的。
+ * 第四列:谁有数据显示谁,都没有就退化成「—」。
+ */
+type QuotaItem = ProviderItem;
+function firstColumnHeader(items: QuotaItem[]): string {
+  return items.some((it) => it.detail.kind === "window" || it.detail.kind === "weekly")
+    ? "窗口"
+    : "模型组";
+}
+function fourthColumn(items: QuotaItem[]): { header: string; cell: (it: QuotaItem) => string } {
+  if (items.some((it) => typeof it.detail.limit === "number")) {
+    return {
+      header: "已用/上限",
+      cell: (it) =>
+        typeof it.detail.used === "number" && typeof it.detail.limit === "number"
+          ? `${it.detail.used}/${it.detail.limit}`
+          : "—",
+    };
+  }
+  if (items.some((it) => typeof it.detail.weeklyRemainingPercent === "number")) {
+    return {
+      header: "周剩余",
+      cell: (it) =>
+        typeof it.detail.weeklyRemainingPercent === "number"
+          ? `${it.detail.weeklyRemainingPercent}%`
+          : "—",
+    };
+  }
+  return {
+    header: "已用",
+    cell: (it) => (typeof it.detail.usedPercent === "number" ? `${it.detail.usedPercent}%` : "—"),
+  };
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -76,6 +116,7 @@ function ProviderCard({ p }: { p: ProviderView }) {
   // Kimi 把「当前档位」塞成一个 kind:"membership" 的元信息项,单独渲,不进配额表。
   const membership = p.items.find((it) => it.detail.kind === "membership");
   const quota = p.items.filter((it) => it.detail.kind !== "membership");
+  const fourth = fourthColumn(quota);
 
   return (
     <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -170,11 +211,10 @@ function ProviderCard({ p }: { p: ProviderView }) {
         <table className="w-full text-sm tabular-nums">
           <thead>
             <tr className="text-xs uppercase tracking-wide text-[var(--fg-muted)]">
-              {/* Kimi 给的是每个时间窗口 used/limit;MiniMax 是每个模型的窗口%+周% */}
-              <th className="py-1 text-left font-medium">{p.id === "kimi" ? "窗口" : "模型组"}</th>
-              <th className="py-1 text-right font-medium">{p.id === "kimi" ? "剩余" : "本窗口剩余"}</th>
+              <th className="py-1 text-left font-medium">{firstColumnHeader(quota)}</th>
+              <th className="py-1 text-right font-medium">剩余</th>
               <th className="py-1 text-right font-medium">重置时间</th>
-              <th className="py-1 text-right font-medium">{p.id === "kimi" ? "已用/上限" : "周剩余"}</th>
+              <th className="py-1 text-right font-medium">{fourth.header}</th>
             </tr>
           </thead>
           <tbody>
@@ -185,15 +225,7 @@ function ProviderCard({ p }: { p: ProviderView }) {
                   {it.remainingPercent == null ? "—" : `${it.remainingPercent}%`}
                 </td>
                 <td className="py-1.5 text-right text-xs text-[var(--fg-muted)]">{fmtTime(it.resetAt)}</td>
-                <td className="py-1.5 text-right">
-                  {p.id === "kimi"
-                    ? typeof it.detail.used === "number" && typeof it.detail.limit === "number"
-                      ? `${it.detail.used}/${it.detail.limit}`
-                      : "—"
-                    : typeof it.detail.weeklyRemainingPercent === "number"
-                      ? `${it.detail.weeklyRemainingPercent}%`
-                      : "—"}
-                </td>
+                <td className="py-1.5 text-right">{fourth.cell(it)}</td>
               </tr>
             ))}
           </tbody>
@@ -219,7 +251,8 @@ export function Providers() {
         <h1 className="text-xl font-semibold text-[var(--fg)]">外部 AI 平台用量</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
           从各平台 API 同步用量快照（当前剩余额度，非每天历史）。API key 只保存在本机数据库、
-          不会通过接口返回。关闭的平台不同步、不展示。
+          不会通过接口返回；Claude / Codex 无需填 key，直接读本机对应 CLI 的登录凭据（只读，
+          不刷新也不写回）。关闭的平台不同步、不展示。
         </p>
       </header>
 
