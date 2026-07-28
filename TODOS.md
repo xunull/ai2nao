@@ -33,6 +33,7 @@
 31. Codex / Cursor 历史页也按最近活跃排序（与 Claude 项目列表平行）
 32. MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
 33. token-vs-git v2：per-commit churn + 降噪 config + 子目录二级粒度 + 精确剔除非 AI 提交
+34. 全站本地日分桶表达式统一走 `bucketExpr`（存量 5 文件 27 处手写）
 
 说明:
 前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
@@ -207,6 +208,30 @@ Depends on / blocked by:
 - 明确 CopilotKit custom/headless UI 接入边界
 
 Priority: P1（CopilotKit 迁移后）
+
+## 全站本地日分桶表达式统一走 bucketExpr
+
+What: 把 `src/aiRhythm/queries.ts`、`src/atuin/queries.ts`、`src/agentUserMessages/queries.ts`、`src/workTokensTrend/queries.ts` 里手写的 `date(X,'localtime')` / `strftime('%Y-%m-%d', X, 'localtime')` 统一改成调用 `src/timeWindow/bucket.ts:24` 的 `bucketExpr(granularity, col)`。
+
+Why: 本地日分桶的语义目前有 5 份副本（全仓库 27 处 `'localtime'` 散在 5 个文件）。改口径要改 5 个地方，漏掉的那几个不会报错、只会安静地按旧口径分桶。`/plan-eng-review` 在评审项目活动日历时发现设计文档差点造出第 6 份副本。
+
+Pros:
+- 分桶语义单一事实源；`bucketExpr` 的文件头注释（`bucket.ts:18-22`）就是 per-event 分桶不变式的权威表述
+- `bucketExpr` 只接受枚举 granularity，带 TS 类型护栏，防止未来重构把用户输入漏进 SQL 片段
+- 未来加时区契约（服务端权威 vs 浏览器权威）时只需改一处
+
+Cons:
+- 触碰 4 个已稳定模块，回归面不小，`aiRhythm.*`（6 个测试文件）、`atuin*`、`agentUserMessages.*`（7 个测试文件）、`workTokensTrend` 的测试都要一并跑
+- 纯重构，无用户可见收益，容易被无限期推后
+
+Context:
+来自 `/plan-eng-review` 对项目活动日历页（`/project-calendar`）的评审。该页已按评审结论走 `bucketExpr`，所以**新代码不再加债**；这条只处理存量。`bucket.ts` 提供 hour / 3hour / day / week 四档，day 档返回 `strftime('%Y-%m-%d', col, 'localtime')`，与现有手写写法产出完全相同的字符串，所以改动是纯等价替换，风险集中在"改漏"而非"改错"。
+
+Depends on / blocked by:
+- 无硬依赖，可独立进行
+- 建议在 `/project-calendar` 落地之后做，届时能直接拿它当参考实现
+
+Priority: Phase 2（存量清理，不阻塞任何功能）
 
 ## Work Dashboard 快照表 + scheduler 自动刷新
 

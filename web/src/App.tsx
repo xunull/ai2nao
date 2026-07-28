@@ -135,6 +135,9 @@ const AgentMessages = lazy(() =>
 const AiRhythm = lazy(() =>
   import("./pages/AiRhythm").then((m) => ({ default: m.AiRhythm }))
 );
+const ProjectCalendar = lazy(() =>
+  import("./pages/ProjectCalendar").then((m) => ({ default: m.ProjectCalendar }))
+);
 const CommitBridge = lazy(() =>
   import("./pages/CommitBridge").then((m) => ({ default: m.CommitBridge }))
 );
@@ -157,6 +160,7 @@ export function App() {
           <Route path="/providers" element={<Providers />} />
           <Route path="/agent-messages" element={<AgentMessages />} />
           <Route path="/ai-rhythm" element={<AiRhythm />} />
+          <Route path="/project-calendar" element={<ProjectCalendar />} />
           <Route path="/commit-bridge" element={<CommitBridge />} />
           <Route path="/replay" element={<Replay />} />
           <Route path="/repos" element={<Repos />} />
