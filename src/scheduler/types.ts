@@ -38,6 +38,12 @@ export type ScheduledTaskDefinition = {
   defaultIntervalSeconds: number;
   sensitivity: ScheduledTaskSensitivity;
   defaultConfig?: Record<string, unknown>;
+  /**
+   * 该任务独有的 lease 时长(毫秒)。省略则用 SchedulerRuntime 的全局默认(10 分钟)。
+   * 只有「遍历全部仓库」这类可能跑好几分钟的任务需要放大 —— lease 到期后第二个进程
+   * 就能重入,造成并发写与错误的进度。
+   */
+  leaseMs?: number;
   run(ctx: ScheduledTaskContext): Promise<ScheduledTaskRunResult>;
 };
 

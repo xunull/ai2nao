@@ -55,7 +55,10 @@ export class SchedulerRuntime {
     }
 
     const now = new Date();
-    const leaseUntil = new Date(now.getTime() + this.leaseMs);
+    // per-task lease 优先:遍历全部仓库那类任务可能跑好几分钟,10 分钟全局默认不够。
+    const leaseUntil = new Date(
+      now.getTime() + (definition.leaseMs ?? this.leaseMs)
+    );
     const acquired = acquireTaskLease(
       this.db,
       taskKey,

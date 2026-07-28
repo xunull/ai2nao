@@ -8,9 +8,21 @@
  *     repo's rows THEN full collect(`--since=<sinceDays>.days`);
  *   - upsert, then advance state.last_hash to the fresh HEAD (success).
  * Each repo is error-isolated (mirrors gitChurn/sync.ts): a non-git dir / git
- * failure records a failed state and continues — the loop never throws.
+ * failure records a failed state and continues — the walk never throws.
+ *
+ * `nowIso` is computed ONCE per run and stamped into every repo's
+ * `git_commits_state.last_run_at` as that repo finishes (success or failure).
+ * That is what lets a progress query report "N of M repos done" with no
+ * in-memory state:
+ *
+ *   done = COUNT(*) FROM git_commits_state
+ *          WHERE last_run_at >= <this run's scheduled_task_runs.started_at>
+ *
+ * Do not make nowIso per-repo — the progress query depends on every repo in one
+ * run sharing it.
  */
 import type Database from "better-sqlite3";
+import pLimit from "p-limit";
 import { execGit } from "../git/exec.js";
 import { resolveGlobalAuthorEmail } from "../workRecap/service.js";
 import {
@@ -27,6 +39,9 @@ import {
 
 /** Bounded lower window for a full (re)scan. */
 const DEFAULT_SINCE_DAYS = 180;
+
+/** Bounded concurrency for the per-repo git walk. Mirrors gitChurn/sync.ts. */
+const CONCURRENCY = 4;
 
 export type IngestGitCommitsResult = {
   status: "success" | "partial" | "failed" | "skipped";
@@ -75,7 +90,7 @@ export async function ingestGitCommits(
   let reposFailed = 0;
   let commitsUpserted = 0;
 
-  for (const repoKey of repos) {
+  const processRepo = async (repoKey: string): Promise<void> => {
     const state = getCommitState(db, repoKey);
     try {
       let result: CollectResult;
@@ -124,7 +139,12 @@ export async function ingestGitCommits(
         lastError: msg,
       });
     }
-  }
+  };
+
+  // 有界并发,与孪生模块 gitChurn/sync.ts 同形同值。并发的只是 git 子进程;
+  // better-sqlite3 是同步 API,upsert / setCommitState 仍然串行化。
+  const limit = pLimit(CONCURRENCY);
+  await Promise.all(repos.map((repoKey) => limit(() => processRepo(repoKey))));
 
   const status =
     reposFailed === 0 ? "success" : reposScanned === 0 ? "failed" : "partial";

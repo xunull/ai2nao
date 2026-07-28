@@ -23,6 +23,7 @@ import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
+import { ingestGitCommits } from "../gitCommits/ingest.js";
 import { runScan } from "../scan/runScan.js";
 import { resolveScanRoots } from "../scan/roots.js";
 import { getScanMaxDepth, getScanMaxDocs, getScanConcurrency } from "../appConfig/index.js";
@@ -335,6 +336,32 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
       sensitivity: "high",
       run: async (ctx) => {
         const result = await syncAllReposChurn(ctx.db);
+        return {
+          status: result.status,
+          summary: result,
+          errorSummary: result.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      // 对话↔提交桥 / 项目活动日历的提交事实源。在此之前 ingestGitCommits 只被测试调用
+      // —— 没有 scheduler 任务、没有 CLI 命令、没有路由,所以 git_commits 是一张没人喂的
+      // 表(接线时实测:774 个仓库的 last_run_at 全是同一时刻,数据停了 22 天)。
+      // /commit-bridge、/replay、/project-calendar 都读它。
+      //
+      // 默认关(全仓库约定:所有任务 seed disabled),用户在设置页或日历页内点「立即同步」开启。
+      // leaseMs 放大到 30 分钟:首轮要对从未扫描过的仓库跑 --since=180.days 全量收集,
+      // 796 个仓库粗算 6~7 分钟,10 分钟全局默认余量不够;lease 到期会允许第二个进程重入。
+      key: "git.commits.sync",
+      label: "Git 提交摄取",
+      description:
+        "按作者增量摄取各仓库提交(供对话↔提交桥与项目活动日历;默认关)。",
+      category: "derived",
+      defaultIntervalSeconds: sixHours,
+      sensitivity: "high",
+      leaseMs: 30 * 60 * 1000,
+      run: async (ctx) => {
+        const result = await ingestGitCommits(ctx.db);
         return {
           status: result.status,
           summary: result,
