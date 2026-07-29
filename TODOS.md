@@ -1142,3 +1142,35 @@ Depends on / blocked by:
 **Context:** agent_user_messages v1(opencode 切片)落地后再考虑。设计见 `docs/agent-user-messages-design.md` D7/§10。
 **Depends on:** v1 agent_user_messages 落地。
 **Effort:** S(human ~1-2h / CC ~20min) **Priority:** P3(archive 本就不删,非阻塞)
+
+---
+
+## index.db WAL checkpoint 策略
+
+**What:** 给 `index.db` 定一个 WAL 回收策略 —— `wal_autocheckpoint` 阈值，或在 scheduler 空闲窗口跑一次 `wal_checkpoint(TRUNCATE)`。
+
+**Why:** 2026-07-29 实测：`index.db` 898MB，`index.db-wal` 已涨到 43MB，而 `grep -rn "wal_autocheckpoint\|wal_checkpoint" src/` 全仓库只命中 `src/chromeHistory/sync.ts:403` —— 那是对 Chrome 的**源**快照做的，不是对自己的库。WAL 不回收会让读者扫描变慢、崩溃后恢复变慢、磁盘占用单向增长。
+
+**Pros:** 一次性收益，所有读路径受益；崩溃恢复时间可控。
+**Cons:** checkpoint 期间会短暂阻塞写者，得挑空闲窗口；TRUNCATE 比 PASSIVE 更彻底但更容易和长事务打架。
+
+**Context:** 桌面壳计划（`~/.gstack/projects/xunull-ai2nao/quincy-main-design-20260729-111531.md`）会把 daemon 变成开机自启、724 常驻。**常驻化直接放大这个问题** —— 以前关终端就断了，以后它整天持续写。写这条时 daemon 还是手动起的，所以现在还不痛。
+
+**Depends on:** 无，完全独立。但如果桌面壳 PR2 落地（daemon 常驻），优先级应上调。
+**Effort:** S（human ~1h / CC ~15min） **Priority:** P3（现在不痛，常驻化后会痛）
+
+---
+
+## serve 非-loopback 绑定的姿态（--host + 写接口无认证）
+
+**What:** 给 `ai2nao serve` 定一个非-loopback 绑定时的安全姿态：要么直接拒绝绑非 loopback 地址，要么在非 loopback 时强制要求一个 token。
+
+**Why:** `src/cli.ts` 的 `--host` 可以绑任意地址（默认 `127.0.0.1`），而 API 表面有大量**写接口** —— 设置、provider（写 API key）、bash 审批规则等，全部无认证。今天风险可控，因为这是「你自己手动跑起来的本地服务」。桌面壳计划要把它变成开机自启、724 常驻；一旦有人为了「从平板上看一眼」绑了 `0.0.0.0`，那就不是「本地壳」的问题，而是一个裸露的控制面。
+
+**Pros:** 开源项目，别人会拿它跑在比作者随意得多的环境里；默认安全 + 一个很好改的 flag 历来是事故配方。
+**Cons:** 作者本人永远不会绑 `0.0.0.0`，对自己是零价值；token 方案会给「我就想在内网另一台机器上看看」这种合理用法加摩擦。
+
+**Context:** 2026-07-29 eng review 的外部视角（codex）提出。README 现在写的是「默认只监听 127.0.0.1」，但没说改了会怎样。如果桌面壳走到 PR3（真的发 .dmg 给别人），这条应该在发布前处理。
+
+**Depends on:** 无。但应早于「把桌面壳发给别人」。
+**Effort:** M（human ~4h / CC ~40min） **Priority:** P2（发布桌面壳前处理；只自己用则 P3）
