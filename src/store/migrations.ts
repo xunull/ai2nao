@@ -1,7 +1,13 @@
 import type Database from "better-sqlite3";
 import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
 
-const CURRENT_VERSION = 50;
+/**
+ * The schema version this build knows how to produce. Exported so `/api/health`
+ * can report what a client should expect, and so `probeDaemon` can spot a daemon
+ * that is mid-migration or built from different code.
+ */
+export const SCHEMA_VERSION = 50;
+const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON;");

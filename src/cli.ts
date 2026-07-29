@@ -46,7 +46,7 @@ import {
 } from "./github/tags.js";
 import { scanDownloads } from "./downloads/scan.js";
 import { runScan } from "./scan/runScan.js";
-import { runServe } from "./serve/runServe.js";
+import { runServe, ServeListenError } from "./serve/runServe.js";
 import { resolveWebDist } from "./serve/app.js";
 import { ScheduledTaskRegistry } from "./scheduler/registry.js";
 import { SchedulerRuntime } from "./scheduler/runner.js";
@@ -1336,7 +1336,7 @@ program
     defaultRagDbPath()
   )
   .action(
-    (opts: {
+    async (opts: {
       db: string;
       host: string;
       port: string;
@@ -1432,16 +1432,42 @@ program
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
       const dist = resolveWebDist();
       const withStatic = !opts.apiOnly && existsSync(dist);
-      const { url, close } = runServe({
-        db,
-        mcpDb,
-        atuin,
-        dailySummary,
-        rag,
-        host: opts.host,
-        port,
-        withStatic,
-      });
+      let url: string;
+      let close: () => Promise<void>;
+      try {
+        ({ url, close } = await runServe({
+          db,
+          mcpDb,
+          atuin,
+          dailySummary,
+          rag,
+          host: opts.host,
+          port,
+          withStatic,
+        }));
+      } catch (e) {
+        // A port conflict is the single most likely way starting the daemon fails,
+        // and it used to surface as a raw uncaught EADDRINUSE stack trace. Say what
+        // happened and what to do about it.
+        if (e instanceof ServeListenError) {
+          console.error(e.message);
+          if (e.code === "EADDRINUSE") {
+            console.error(
+              e.ownerPid === null
+                ? `Find it with: lsof -ti tcp:${e.port} -sTCP:LISTEN — or start on another port with --port.`
+                : `That is probably another ai2nao. Stop pid ${e.ownerPid}, or start on another port with --port.`
+            );
+          }
+        } else {
+          console.error(String(e));
+        }
+        atuin?.db.close();
+        dailySummary?.cacheDb?.close();
+        rag?.db.close();
+        db.close();
+        process.exitCode = 1;
+        return;
+      }
       console.error(`Listening ${url}`);
       if (!withStatic) {
         console.error(
@@ -1460,7 +1486,10 @@ program
       }
       const shutdown = () => {
         try {
-          close();
+          // Fire and forget: everything that must happen before we exit (stop the
+          // scheduler, withdraw the daemon record) runs synchronously inside
+          // close(); only the socket teardown is async.
+          void close();
         } finally {
           try {
             atuin?.db.close();

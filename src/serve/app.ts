@@ -11,6 +11,7 @@ import {
 } from "../atuin/queries.js";
 import { registerAtuinDirectoryActivityRoutes } from "../atuin/directoryActivity/routes.js";
 import { packageRoot } from "../path/packageRoot.js";
+import { registerHealthRoute, type HealthSnapshot } from "./health.js";
 import {
   generateDailySummary,
   getDailySummaryStatus,
@@ -242,6 +243,13 @@ export type ServeOptions = {
   /** Optional RAG chunk index (`~/.ai2nao/rag.db`). */
   rag?: { db: Database.Database; path: string };
   schedulerRuntime?: SchedulerRuntime;
+  /**
+   * Startup snapshot for `GET /api/health`. When omitted the route is absent —
+   * same shape as `mcpDb`, and it is load-bearing: a 404 here is how a client
+   * tells "ai2nao older than /api/health" apart from "some other process owns
+   * this port". See `src/serve/health.ts`.
+   */
+  health?: HealthSnapshot;
 };
 
 function jsonErr(status: number, message: string) {
@@ -306,6 +314,10 @@ export function createApp(opts: ServeOptions): Hono {
   if (opts.schedulerRuntime) {
     registerSchedulerRoutes(app, opts.schedulerRuntime);
   }
+
+  // Process liveness. Deliberately NOT merged with /api/status below: this one
+  // must answer while the DB is locked, that one has to query it.
+  if (opts.health) registerHealthRoute(app, opts.health);
 
   app.get("/api/status", (c) => {
     try {
