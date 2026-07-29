@@ -3,7 +3,7 @@
 # 改了 src/ 后要重新 `make link`(或 make build)才生效。详见 local-docs/npm-link.md。
 
 .DEFAULT_GOAL := help
-.PHONY: help install build build-web build-all link unlink dev test card card-calendar card-bundle
+.PHONY: help install build build-web build-all link unlink dev test card card-calendar card-bundle shell shell-test
 
 # 卡片输出路径可覆盖:make card OUT=x.svg / make card-calendar OUT=y.svg
 # 整套发布包目录可覆盖:make card-bundle OUT_DIR=~/ai2nao-cards
@@ -36,6 +36,15 @@ dev: ## 起本地服务(tsx watch,:8787)
 
 test: ## 跑测试(vitest run)
 	npm test
+
+# 桌面壳是独立包(desktop/,自己的 package.json + electron)。首次要先 cd desktop && npm install。
+# 壳 import 的是仓库根的 dist/,所以 build-server 是前置。
+shell: build ## 起桌面壳(先构建 dist/,再跑 Electron)
+	cd desktop && npm run start
+
+shell-test: build ## 跑桌面壳的烟雾测试(Playwright + Electron)
+	cd desktop && npm run build && npm run test:e2e
+	@echo "手测清单(自动化盖不到的托盘/快捷键/通知):docs/desktop-manual-checklist.md"
 
 card: ## 生成作息热力图 SVG(默认 rhythm.svg;make card OUT=xx.svg)
 	npm run card:rhythm -- --out $(or $(OUT),rhythm.svg)

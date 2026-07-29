@@ -1,0 +1,20 @@
+{
+  "name": "ai2nao-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ai2nao 桌面壳 —— 连到本机 daemon 的极薄 Electron 客户端",
+  "type": "module",
+  "main": "out/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron out/main.js",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@types/node": "^22.10.0",
+    "electron": "^43.2.0",
+    "typescript": "^5.7.0"
+  }
+}
