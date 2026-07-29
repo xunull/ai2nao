@@ -6,15 +6,38 @@
   "type": "module",
   "main": "out/main.js",
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && electron out/main.js",
     "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && node build.mjs",
+    "start": "npm run build && electron out/main.js",
+    "package": "npm run build && electron-builder --dir",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "@types/node": "^22.10.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "com.xunull.ai2nao",
+    "productName": "ai2nao",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dir",
+          "arch": "arm64"
+        }
+      ],
+      "identity": null
+    }
   }
 }

@@ -46,6 +46,13 @@ shell-test: build ## 跑桌面壳的烟雾测试(Playwright + Electron)
 	cd desktop && npm run build && npm run test:e2e
 	@echo "手测清单(自动化盖不到的托盘/快捷键/通知):docs/desktop-manual-checklist.md"
 
+# 未签名、未公证、不发布 —— 只为拿到自己的 bundle id(com.xunull.ai2nao)。
+# macOS 的通知授权按 bundle id 走:开发模式跑的壳身份是 com.github.Electron,
+# 通知会署名 "Electron" 甚至根本不显示。
+shell-package: build ## 打一个本地 .app(desktop/release/,不签名不分发)
+	cd desktop && npm run package
+	@echo "产物:desktop/release/mac-arm64/ai2nao.app —— 双击即可,首次会问通知权限。"
+
 card: ## 生成作息热力图 SVG(默认 rhythm.svg;make card OUT=xx.svg)
 	npm run card:rhythm -- --out $(or $(OUT),rhythm.svg)
 

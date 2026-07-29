@@ -28,3 +28,4 @@ docs/.vitepress/cache
 # 桌面壳是独立包(自己的 package.json + electron devDep),不进 daemon 的依赖树
 desktop/node_modules
 desktop/out
+desktop/release
