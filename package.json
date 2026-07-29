@@ -6,7 +6,15 @@
   "bin": {
     "ai2nao": "./dist/cli.js"
   },
+  "files": [
+    "dist/**",
+    "web/dist/**",
+    "*.example.json",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
   "scripts": {
+    "prepack": "npm run build",
     "build": "npm run build:server && npm run build:web",
     "build:server": "tsc",
     "build:web": "vite build --config web/vite.config.ts",

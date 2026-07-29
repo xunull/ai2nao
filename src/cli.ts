@@ -69,6 +69,7 @@ import {
   rebuildDirectoryActivity,
 } from "./atuin/directoryActivity/index.js";
 import { migrateCredentials, migrateRagSettings } from "./settings/migrate.js";
+import { packageVersion } from "./path/packageRoot.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { CARD_REGISTRY } from "./cards/registry.js";
 import { generateCardBundle } from "./cards/bundle.js";
@@ -127,7 +128,9 @@ function defaultAtuinHistoryPath(): string {
 program
   .name("ai2nao")
   .description("Local-first indexer for git repos and manifest files")
-  .version("0.1.0");
+  // Read, never typed: this was hardcoded "0.1.0" long after package.json reached
+  // 0.4.0, so `ai2nao --version` lied by three minor releases.
+  .version(packageVersion());
 
 program
   .command("scan")
@@ -1427,7 +1430,7 @@ program
       }
 
       const port = Math.max(1, parseInt(opts.port, 10) || 8787);
-      const dist = resolveWebDist(process.cwd());
+      const dist = resolveWebDist();
       const withStatic = !opts.apiOnly && existsSync(dist);
       const { url, close } = runServe({
         db,
@@ -1438,7 +1441,6 @@ program
         host: opts.host,
         port,
         withStatic,
-        cwd: process.cwd(),
       });
       console.error(`Listening ${url}`);
       if (!withStatic) {

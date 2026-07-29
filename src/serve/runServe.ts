@@ -23,12 +23,10 @@ export type RunServeOptions = {
   port: number;
   /** Serve built SPA from `web/dist` (production). */
   withStatic: boolean;
-  cwd?: string;
 };
 
 export function runServe(opts: RunServeOptions): { url: string; close: () => void } {
-  const cwd = opts.cwd ?? process.cwd();
-  const staticRoot = opts.withStatic ? resolveWebDist(cwd) : undefined;
+  const staticRoot = opts.withStatic ? resolveWebDist() : undefined;
   const schedulerRuntime = new SchedulerRuntime({
     db: opts.db,
     atuin: opts.atuin,

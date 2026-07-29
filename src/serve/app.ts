@@ -10,6 +10,7 @@ import {
   listAtuinHistoryMonthCounts,
 } from "../atuin/queries.js";
 import { registerAtuinDirectoryActivityRoutes } from "../atuin/directoryActivity/routes.js";
+import { packageRoot } from "../path/packageRoot.js";
 import {
   generateDailySummary,
   getDailySummaryStatus,
@@ -1093,7 +1094,14 @@ export function createApp(opts: ServeOptions): Hono {
   return app;
 }
 
-/** Resolve `web/dist` from project root (cwd). */
-export function resolveWebDist(cwd: string = process.cwd()): string {
-  return join(cwd, "web", "dist");
+/**
+ * Resolve `web/dist` from the ai2nao install root.
+ *
+ * This used to default to `process.cwd()`, which was only right when you launched
+ * from the project directory. Anywhere else it found nothing and `serve` silently
+ * degraded to api-only — a working API with no UI and no error. See
+ * `test/serve.staticResolution.test.ts`.
+ */
+export function resolveWebDist(root: string = packageRoot()): string {
+  return join(root, "web", "dist");
 }
