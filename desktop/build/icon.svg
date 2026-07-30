@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    ai2nao 应用图标。
+
+    图形取产品本身在做的事:把散落各处的本地数据(AI 对话历史、token、浏览器、
+    shell、git)汇到一个本机库里。所以是「多点收束成一点」,不是脑子、不是芯片、
+    也不是发光的抽象球 —— 那些谁都能用。
+
+    配色照 web/src/index.css 的既有品牌变量:暖纸底 bg #f7f6f3 / sidebar-bg
+    #efede8、蓝色主色 accent #2f68d8、铜色点缀 sidebar-accent #9a6a1f。
+    Dock 里大多数开发工具是深色图标,暖白底反而认得出来。
+    (注:这里不写 CSS 变量的双横线前缀 —— XML 注释里不允许出现连续两个半角横线。)
+
+    几何按 macOS Big Sur+ 规范:1024 画布里 824 的内容区居中(各边留 100),
+    圆角 185 逼近 squircle。
+  -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#eae6dd"/>
+    </linearGradient>
+    <!--
+      必须是 userSpaceOnUse。默认的 objectBoundingBox 对「水平直线」这种包围盒
+      高度为 0 的形状是退化的,渐变变成无定义,描边直接不上色 —— 中间那条收束线
+      因此整条消失,而两条曲线正常。这个坑不看渲染结果是发现不了的。
+    -->
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse"
+                    x1="292" y1="330" x2="668" y2="694">
+      <stop offset="0" stop-color="#3d76e4"/>
+      <stop offset="1" stop-color="#2450b4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 底板 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#paper)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="none"
+        stroke="#d2c9ba" stroke-width="6"/>
+
+  <!--
+    三条收束线。终点故意伸到节点圆心(668)而不是停在边缘:停在边缘会留下一道缝,
+    「汇聚」就断了。节点随后画在上层把线头盖住。
+  -->
+  <g fill="none" stroke="url(#ink)" stroke-width="54" stroke-linecap="round">
+    <path d="M292 330 C 470 330, 490 512, 668 512"/>
+    <path d="M292 512 L 668 512"/>
+    <path d="M292 694 C 470 694, 490 512, 668 512"/>
+  </g>
+
+  <!-- 三个来源 -->
+  <g fill="#2f68d8">
+    <circle cx="292" cy="330" r="56"/>
+    <circle cx="292" cy="512" r="56"/>
+    <circle cx="292" cy="694" r="56"/>
+  </g>
+
+  <!--
+    汇聚点:整张图的重心。原先加过一圈白环,结果把三条线和节点视觉上切开了,去掉。
+    中心的铜点是唯一的暖色,呼应侧栏强调色,也让重心不是一个死板的纯色圆。
+  -->
+  <circle cx="668" cy="512" r="120" fill="#1f4699"/>
+  <circle cx="668" cy="512" r="46" fill="#d99a33"/>
+</svg>

@@ -1,0 +1,24 @@
+<!--
+  固有尺寸写 512、viewBox 保持 44:qlmanage 渲 SVG 时不会放大,只会把小图补白到
+  目标画布的左上角。所以这里必须以大尺寸渲出,再用 sips 降采样到 16/32/48。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 44 44">
+  <!--
+    菜单栏图标(macOS template image)。
+
+    必须是纯黑 + alpha:macOS 会自己按浅色/深色菜单栏和高亮状态重新着色,所以这里
+    任何颜色都会被丢掉。文件名带 Template 或代码里 setTemplateImage(true) 才生效。
+
+    比应用图标简化过:16px 高的时候三条收束线会糊成一团,所以只留两个来源。重心
+    那个环也去掉了 —— 22px 的描边在这个尺寸下会把中心吃光。
+  -->
+  <g fill="none" stroke="#000" stroke-width="3.2" stroke-linecap="round">
+    <path d="M12 13 C 20 13, 20 22, 28 22"/>
+    <path d="M12 31 C 20 31, 20 22, 28 22"/>
+  </g>
+  <g fill="#000">
+    <circle cx="12" cy="13" r="3.4"/>
+    <circle cx="12" cy="31" r="3.4"/>
+    <circle cx="30.5" cy="22" r="6.6"/>
+  </g>
+</svg>

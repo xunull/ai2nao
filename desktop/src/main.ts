@@ -27,6 +27,7 @@ import {
   schemaMismatchPage,
   timeoutPage,
 } from "./guidance.js";
+import { TRAY_ICON_DATA_URLS } from "./trayIcon.generated.js";
 
 /**
  * ai2nao 桌面壳 —— a window onto a daemon this process does not own.
@@ -286,11 +287,31 @@ function refreshTrayMenu(result: ProbeResult): void {
   );
 }
 
+/**
+ * Build the menubar glyph from the generated data URLs.
+ *
+ * Data URLs rather than files on purpose: a packaged `.app` has no source tree, so
+ * anything that resolves an asset by relative path at runtime breaks the moment it
+ * is packaged. The shell already paid for that lesson once.
+ *
+ * `setTemplateImage(true)` hands recolouring to macOS, which is what makes the
+ * glyph correct in a light menubar, a dark one, and while the menu is open. That
+ * is also why the artwork is pure black + alpha: any colour would be discarded.
+ */
+function trayImage(): Electron.NativeImage {
+  const [first, ...rest] = TRAY_ICON_DATA_URLS;
+  if (first === undefined) return nativeImage.createEmpty();
+  const image = nativeImage.createFromDataURL(first.dataUrl);
+  // @2x / @3x so it stays crisp on Retina instead of being upscaled from 16px.
+  for (const extra of rest) {
+    image.addRepresentation({ scaleFactor: extra.scale, dataURL: extra.dataUrl });
+  }
+  image.setTemplateImage(true);
+  return image;
+}
+
 function createTray(): void {
-  // An empty image gives a text-only menubar entry on macOS rather than a broken
-  // icon slot. Replacing this with real artwork is a design task, not a blocker.
-  tray = new Tray(nativeImage.createEmpty());
-  tray.setTitle("ai2nao");
+  tray = new Tray(trayImage());
   tray.on("click", () => revealWindow());
 }
 

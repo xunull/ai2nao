@@ -10,7 +10,8 @@
     "build": "npm run typecheck && node build.mjs",
     "start": "npm run build && electron out/main.js",
     "package": "npm run build && electron-builder --dir",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icons": "node build/render-icons.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
