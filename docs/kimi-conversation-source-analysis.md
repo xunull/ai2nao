@@ -1,6 +1,6 @@
 # 调研:能否把 Kimi app 的对话同步进 ai2nao
 
-延续 [claude.ai 导入设计](./claude-ai-import-design.md) 那条线,调研 Kimi Mac app
+延续 claude.ai 导入那条线（设计文档在 `~/.gstack/projects/xunull-ai2nao/20260720-design-claude-ai-conversation-import.md`，未进 docs 站）,调研 Kimi Mac app
 的对话能否在本地读取、同步进 ai2nao。
 
 > **结论:放弃(现阶段无任何官方入口)。** 主聊天服务器端、官方无导出也无历史读取
@@ -109,7 +109,7 @@ ai2nao 是公开仓库,这两类都不进主仓(参见 claude.ai 设计文档 §
 
 ## 7. 判决:放弃 Kimi 作为 ai2nao 的对话源
 
-- [claude.ai 导入](./claude-ai-import-design.md) 能落地,是因为它**有确认的官方 Export**,
+- claude.ai 导入能落地,是因为它**有确认的官方 Export**,
   可照 "官方导出 → 解析 → 入库" 设计。
 - Kimi **既无官方导出、也无历史读取 API**,主聊天服务器端,agent 模式本地库为空。
   **没有任何合法官方入口能把 Kimi 对话弄进 ai2nao。**

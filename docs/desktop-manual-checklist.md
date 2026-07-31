@@ -1,3 +1,8 @@
+---
+title: 桌面版手测清单
+category: 调度与运维
+order: 71
+---
 # 桌面壳手测清单
 
 自动化盖不到的部分。`desktop/e2e/smoke.spec.ts` 覆盖了启动、引导页、沙箱、单实例；
