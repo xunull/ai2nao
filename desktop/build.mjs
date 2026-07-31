@@ -34,15 +34,31 @@ const REPO = join(HERE, "..");
 const OUT = join(HERE, "out");
 
 /**
- * daemon 里外部化不掉的东西：原生 .node 二进制和 wasm 资产。
- * 它们必须以真实文件的形式躺在 .app 里（且在 asar 之外）。
+ * 不打进 bundle、留给运行时从 node_modules 解析的包。
+ *
+ * 判据只有一条:**这个包必须在运行时以一个真实目录的形式存在于磁盘上。**
+ * 下面每一条都注明了它属于哪种情况 —— 有的是物理上打不进去,有的是打得进去但
+ * 打进去就会坏,还有一条纯粹是保守。加新条目前先确认属于哪一类,别凭感觉加。
  */
 const DAEMON_EXTERNALS = [
-  "better-sqlite3", // 原生
-  "@lancedb/lancedb", // 原生（napi-rs）
-  "pyodide", // wasm + 一堆运行时资产
-  "playwright", // 会起 chromium 读 Cherry Studio 的 IndexedDB
-  "@anthropic-ai/sandbox-runtime", // bash 工具的沙箱
+  // 【原生二进制】.node 是编译产物,没法内联进 JS。
+  "better-sqlite3",
+  // 【原生二进制】同上,真正的 .node 在它的 optionalDependency
+  // @lancedb/lancedb-darwin-arm64 里(napi-rs 出的)。
+  "@lancedb/lancedb",
+  // 【自定位资产】src/codeRunner/pyodideWorker.ts:54 用
+  // `import.meta.resolve("pyodide")` 找自己的安装目录,再从那里加载
+  // pyodide.asm.wasm 和 python 标准库。打进 bundle 之后这个 resolve 就没有
+  // 目录可指 —— esbuild 能构建成功,但跑 Python 的时候才炸。
+  "pyodide",
+  // 【构建期就打不进去】playwright-core 里 require 了 chromium-bidi,而那是个
+  // 没被安装的可选依赖,esbuild 直接报 Could not resolve 并失败。
+  "playwright",
+  // 【保守】实测它其实**可以**打进去:没有自定位逻辑,没有非 JS 资产,唯一的
+  // spawn 是去起沙箱命令而不是自己的文件。留在外面只为省事和稳妥 —— 它是安全
+  // 相关组件,而 3.6MB 不值得为它冒一个「有没有我没查到的动态 require」的险。
+  // 要减重的话这是可以先动的一条。
+  "@anthropic-ai/sandbox-runtime",
 ];
 
 rmSync(OUT, { recursive: true, force: true });

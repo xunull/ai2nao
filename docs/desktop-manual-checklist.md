@@ -1,7 +1,7 @@
 ---
 title: 桌面版手测清单
 category: 调度与运维
-order: 71
+order: 72
 ---
 # 桌面壳手测清单
 

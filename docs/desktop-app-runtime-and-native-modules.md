@@ -168,5 +168,8 @@ daemon 由壳 detached spawn，脱离壳的进程组 —— **退出 app 后台�
 
 ## 相关
 
-- [桌面壳手测清单](./desktop-manual-checklist) —— 自动化盖不到的部分怎么验
+- [桌面版打包：什么算「外部依赖」](./desktop-bundling-external-dependencies) ——
+  本文讲的是「这 5 个包的 ABI 会不会出问题」；那篇讲的是「为什么恰好是这 5 个，以及
+  esbuild 和 electron-builder 两处配置必须对齐」
+- [桌面版手测清单](./desktop-manual-checklist) —— 自动化盖不到的部分怎么验
 - 设计文档：`~/.gstack/projects/xunull-ai2nao/quincy-main-design-20260729-111531.md`
