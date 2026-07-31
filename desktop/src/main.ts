@@ -28,31 +28,37 @@ import {
   timeoutPage,
 } from "./guidance.js";
 import { TRAY_ICON_DATA_URLS } from "./trayIcon.generated.js";
+import { autoStartDisabled, spawnDaemon, stopDaemon } from "./daemonProcess.js";
 
 /**
- * ai2nao 桌面壳 —— a window onto a daemon this process does not own.
+ * ai2nao 桌面应用 —— 它会启动后台服务，但不拥有它。
  *
- * ## The one rule everything else follows from
+ * ## 一条规则，其余都是它的推论
  *
- * The shell NEVER starts, owns, or kills the daemon. `ai2nao serve` is not just a
- * UI backend: it hosts the MCP endpoint other agents connect to (src/serve/app.ts)
- * and the scheduler running 27 tasks. Quitting this window must not take those
- * down, so the shell is a client and a control panel — never a parent process.
+ * 「启动一体化」和「生命周期一体化」是两件事，别合并:
  *
- * That inversion is also why this file is small and boring to package: nothing
- * here touches better-sqlite3, lancedb or pyodide, so there is no native module
- * to rebuild against Electron's ABI and nothing to unpack from the asar.
+ *   启动一体化   双击一个图标，整套东西起来           ← 做（ensureDaemon）
+ *   生命周期一体 退出 app 就把后台一起杀掉             ← 不做
  *
- * ## Notifications only exist while this window does
+ * `serve` 不只是界面的后端。它同时托管 `/mcp`（Claude Code / Codex 这些 agent 连着
+ * 它查你的开发数据，src/serve/app.ts）和 27 个定时任务。关掉窗口就把它们带走，
+ * 「常驻」这条诉求当场消失 —— 而那是做这个应用的头号理由。所以 daemon 用
+ * detached spawn 脱离本进程组；要停它，菜单栏里有单独一条。
  *
- * Deliberate (decision 4B). There is no daemon-side queue and no osascript
- * fallback: if the shell is not running, nothing fires. The upside is that alerts
- * come from Electron, so they carry ai2nao's own identity rather than being signed
- * "Script Editor" — which is one of the four things this shell exists to deliver.
+ * ## 通知只在这个窗口活着的时候存在
  *
- * State is in-memory on purpose. A restart re-baselines silently instead of
- * replaying what happened while you were away, which matches "if the shell was not
- * running, it did not happen."
+ * 刻意如此（决议 4B）。没有 daemon 侧的队列，也没有 osascript 兜底:壳没跑就不发。
+ * 换来的是通知由 Electron 发出，署名是 ai2nao 自己 —— 而那是四件诉求之一。
+ *
+ * 通知状态只在内存里。重启就静默重建基线，而不是把你离开期间的事补弹一遍，这和
+ * 「壳没跑 = 那段时间不存在」是一致的。
+ *
+ * ## 打包形态
+ *
+ * 打包后 daemon 就在 `.app` 里（`out/daemon/daemon.mjs`，esbuild 打的自包含产物），
+ * 用 `ELECTRON_RUN_AS_NODE` 跑 —— Electron 自带 Node，不必再塞一个二进制。代价是
+ * 原生模块要匹配 Electron 的 ABI，由 electron-builder 的 @electron/rebuild 处理
+ * （better-sqlite3 因此从 v11 升到 v13:v11 的 C++ 编不过 Electron 43 的 V8）。
  */
 
 const SHORTCUT = "CommandOrControl+Shift+Space";
@@ -194,8 +200,71 @@ function pageFor(result: ProbeResult): string {
   }
 }
 
+/**
+ * 端口覆盖。
+ *
+ * `ai2nao serve --port 8788` 一直是支持的，但壳此前只会看 8787（或实例记录里写的
+ * 那个），所以换了端口的 daemon 壳根本找不到。设了这个就固定探这个端口，跳过记录
+ * 查找 —— 「我明确告诉你去哪」应当压过「你自己去猜」。
+ *
+ * 烟雾测试也靠它把自己和开发者真实的 8787 daemon 隔开:只隔离 `AI2NAO_RUN_DIR`
+ * 是不够的，没有记录时探活会回退到默认端口，于是测试会连上真实实例并断言失败。
+ */
+const PORT_OVERRIDE = ((): number | null => {
+  const raw = (process.env.AI2NAO_SHELL_PORT ?? "").trim();
+  if (raw === "") return null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 && n < 65536 ? n : null;
+})();
+
+/** 默认端口，和 `ai2nao serve --port` 一致。 */
+const DEFAULT_PORT = PORT_OVERRIDE ?? 8787;
+
+/** 探活参数:指定了端口就只探它，否则让 probeDaemon 走实例记录再回退默认端口。 */
+function probeOptions(): { port?: number } {
+  return PORT_OVERRIDE === null ? {} : { port: PORT_OVERRIDE };
+}
+
+/** daemon 从启动到能应答的等待上限：要跑迁移、开一个可能上百 MB 的库。 */
+const DAEMON_START_TIMEOUT_MS = 30_000;
+const DAEMON_POLL_MS = 400;
+
+/**
+ * 没有 daemon 就拉一个起来，然后等它应答。
+ *
+ * 只在 `not-running` 时启动。其余五种失败态都**不能**启动:端口被别的程序占着、
+ * 版本对不上、schema 不一致、超时 —— 这些情况下再起一个只会多一个进程，问题原样
+ * 还在。那时候要给的是引导页，不是又一个 daemon。
+ *
+ * 等待靠反复 probe，不靠固定 sleep：只有 `/api/health` 应答才算真的起来了。
+ */
+async function ensureDaemon(result: ProbeResult): Promise<ProbeResult> {
+  if (result.kind !== "not-running") return result;
+  if (autoStartDisabled()) {
+    console.error("[ai2nao] 自动启动已关闭（AI2NAO_SHELL_NO_AUTOSTART）");
+    return result;
+  }
+  if (!spawnDaemon({ port: DEFAULT_PORT })) {
+    console.error("[ai2nao] 找不到可启动的 daemon（打包版应有内嵌 bundle，开发模式需先 npm run build:server）");
+    return result;
+  }
+  console.error("[ai2nao] 未发现 daemon，正在启动…");
+
+  const deadline = Date.now() + DAEMON_START_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, DAEMON_POLL_MS));
+    const next = await probeDaemon({ port: DEFAULT_PORT });
+    // 一旦不再是「没人在听」，就该由调用方去渲染对应的页面 —— 包括它自己起失败
+    // 之后端口被别人占住这种情况。
+    if (next.kind !== "not-running") return next;
+  }
+  console.error(`[ai2nao] daemon 在 ${DAEMON_START_TIMEOUT_MS / 1000}s 内没有应答`);
+  return result;
+}
+
 async function connect(): Promise<void> {
-  const result = await probeDaemon();
+  let result = await probeDaemon(probeOptions());
+  if (result.kind === "not-running") result = await ensureDaemon(result);
   attachedUrl = result.kind === "attached" ? result.url : null;
   // Say why we are showing what we are showing. A shell that silently renders a
   // guidance page leaves you with nothing to search for when it is wrong.
@@ -272,6 +341,7 @@ function trayStatusLabel(result: ProbeResult): string {
 
 function refreshTrayMenu(result: ProbeResult): void {
   if (tray === null) return;
+  const daemonPid = result.kind === "attached" ? result.health.pid : null;
   tray.setToolTip(`ai2nao —— ${trayStatusLabel(result)}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -280,9 +350,25 @@ function refreshTrayMenu(result: ProbeResult): void {
       { label: "显示窗口", click: () => revealWindow() },
       { label: "重新连接", click: () => void connect() },
       { type: "separator" },
+      {
+        // 有了自动拉起,就必须有对称的关掉 —— 否则用户没有任何办法停掉一个自己
+        // 从没主动启动过的后台进程。pid 来自 /api/health,不靠猜。
+        label: "停止后台服务",
+        enabled: daemonPid !== null,
+        click: () => {
+          if (daemonPid === null) return;
+          stopDaemon(daemonPid);
+          // 给它一点时间撤回实例记录,再刷新状态。
+          setTimeout(() => void connect(), 1_200);
+        },
+      },
+      { type: "separator" },
       { label: `快捷键 ${SHORTCUT}`, enabled: false },
       { type: "separator" },
-      { label: "退出 ai2nao 壳（daemon 继续运行）", click: () => app.quit() },
+      {
+        label: "退出 ai2nao（后台服务继续运行）",
+        click: () => app.quit(),
+      },
     ])
   );
 }

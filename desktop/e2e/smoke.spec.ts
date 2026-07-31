@@ -27,28 +27,46 @@ import electronPath from "electron";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAIN = join(HERE, "..", "out", "main.js");
 
-async function launch(): Promise<ElectronApplication> {
-  return electron.launch({
-    args: [MAIN],
-    env: {
-      ...process.env,
-      // Point the daemon-record lookup at an empty directory so the probe cannot
-      // find a real daemon this developer happens to be running, and cannot
-      // delete their records while cleaning up stale ones.
-      AI2NAO_RUN_DIR: mkdtempSync(join(tmpdir(), "ai2nao-e2e-run-")),
-    },
-  });
+function shellEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    // Point the daemon-record lookup at an empty directory so the probe cannot
+    // find a real daemon this developer happens to be running, and cannot
+    // delete their records while cleaning up stale ones.
+    AI2NAO_RUN_DIR: mkdtempSync(join(tmpdir(), "ai2nao-e2e-run-")),
+    // Auto-start is off for every test here. The shell would otherwise spawn a
+    // REAL daemon against the developer's real ~/.ai2nao, detached — so it would
+    // outlive the test run by design and there would be nothing to clean up.
+    // Covering the auto-start path needs an isolated HOME and a supervised
+    // teardown; that lives in the manual checklist, not here.
+    AI2NAO_SHELL_NO_AUTOSTART: "1",
+    // Isolating AI2NAO_RUN_DIR alone is NOT enough: with no record on disk the
+    // probe falls back to the default port, which is where the developer's real
+    // daemon lives. Without this the suite attaches to real data and asserts
+    // against the real dashboard. Point it at a port nothing uses.
+    AI2NAO_SHELL_PORT: "8399",
+  };
 }
 
-test("starts and shows the guidance page when no daemon is reachable", async () => {
+async function launch(): Promise<ElectronApplication> {
+  return electron.launch({ args: [MAIN], env: shellEnv() });
+}
+
+test("starts and shows the guidance page when the daemon cannot be started", async () => {
   const app = await launch();
   try {
     const win = await app.firstWindow();
     await win.waitForLoadState("domcontentloaded");
 
-    // Not a blank window: the user is told what is wrong and what to type.
-    await expect(win.locator("h1")).toContainText("daemon 没在跑");
-    await expect(win.locator("pre")).toContainText("ai2nao serve");
+    // Not a blank window. And note what it must NOT say any more: with auto-start
+    // wired in, "go run ai2nao serve" is no longer the first thing to tell someone
+    // — the app already tried. The page has to explain that it tried and failed,
+    // and hand over something to diagnose with.
+    await expect(win.locator("h1")).toContainText("后台服务没起来");
+    // Asserted against the whole page rather than a single <pre>: there is more
+    // than one code block, and what matters is that the diagnosis is *somewhere*
+    // on the page, not which box it landed in.
+    await expect(win.locator("body")).toContainText("lsof");
   } finally {
     await app.close();
   }
@@ -87,7 +105,7 @@ test("a second launch exits instead of opening a second window", async () => {
     await first.firstWindow();
 
     const second = spawn(electronPath as unknown as string, [MAIN], {
-      env: { ...process.env, AI2NAO_RUN_DIR: mkdtempSync(join(tmpdir(), "ai2nao-e2e-run-")) },
+      env: shellEnv(),
       stdio: "ignore",
     });
     const exitCode = await new Promise<number | null>((resolve, reject) => {

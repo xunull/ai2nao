@@ -54,14 +54,23 @@ function escapeHtml(s: string): string {
   });
 }
 
-/** Nothing is listening. The common case, and the only one with a one-line fix. */
+/**
+ * 后台服务起不来。
+ *
+ * 自动启动接进来之后，这一页的语义变了：它不再是「你忘了启动」，而是「我替你启动
+ * 了，但它没起来」。所以文案不能再是「去敲 ai2nao serve」—— 那已经做过了。
+ */
 export function notRunningPage(): string {
   return page(
-    "ai2nao —— daemon 未运行",
-    `<h1>daemon 没在跑</h1>
-     <p>ai2nao 的桌面壳只是一个窗口，数据和定时任务都在后台的 daemon 里。启动它：</p>
+    "ai2nao —— 后台服务未能启动",
+    `<h1>后台服务没起来</h1>
+     <p>ai2nao 的界面只是一个窗口，数据、定时任务和给 Claude Code / Codex 用的 MCP 端点都在后台服务里。刚才已经尝试自动启动它，但它没有在 30 秒内应答。</p>
+     <p>看一眼是什么原因：</p>
+     <pre>lsof -ti tcp:8787 -sTCP:LISTEN     # 端口有没有被别的东西占着
+tail -50 ~/.ai2nao/*.log             # 如果有日志</pre>
+     <p>也可以自己手动起一个，看它到底报什么错：</p>
      <pre>ai2nao serve</pre>
-     <p class="hint">起来之后点托盘图标里的「重新连接」，或者关掉这个窗口再打开。</p>`
+     <p class="hint">起来之后点菜单栏图标里的「重新连接」。</p>`
   );
 }
 

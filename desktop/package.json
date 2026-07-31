@@ -2,7 +2,7 @@
   "name": "ai2nao-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "ai2nao 桌面壳 —— 连到本机 daemon 的极薄 Electron 客户端",
+  "description": "ai2nao 桌面应用 —— Electron 壳 + 内嵌 daemon",
   "type": "module",
   "main": "out/main.js",
   "scripts": {
@@ -12,6 +12,14 @@
     "package": "npm run build && electron-builder --dir",
     "test:e2e": "playwright test",
     "icons": "node build/render-icons.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.52",
+    "@lancedb/lancedb": "^0.27.2",
+    "apache-arrow": "^18.1.0",
+    "better-sqlite3": "^13.0.2",
+    "playwright": "^1.59.1",
+    "pyodide": "^0.29.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
@@ -30,6 +38,7 @@
     "files": [
       "out/**"
     ],
+    "asar": false,
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [

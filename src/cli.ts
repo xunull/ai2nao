@@ -2030,7 +2030,13 @@ cursorHistoryCmd
     }
   });
 
-program.parseAsync().catch((e) => {
+// `from: "node"` 是显式的,不是多余的。commander 的自动检测看到
+// `process.versions.electron` 就会切到 electron 解析模式(见 commander
+// lib/command.js:981),按 argv.slice(1) 而不是 slice(2) 取参数。桌面版的 daemon
+// 正是用 ELECTRON_RUN_AS_NODE 跑的 —— 是 Electron 的二进制,但语义上就是 node,
+// 于是脚本路径本身会被当成子命令,报 "unknown command '.../daemon.mjs'"。
+// 这里的调用形态永远是 [执行文件, 脚本, ...参数],所以直接说清楚。
+program.parseAsync(process.argv, { from: "node" }).catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
   process.exitCode = 1;
 });
