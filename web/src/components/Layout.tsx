@@ -161,17 +161,8 @@ const navGroups: NavGroup[] = [
 ];
 
 const sidebarStorageKey = "ai2nao.sidebar.collapsed";
-const narrowDesktopQuery = "(max-width: 1439px)";
 const expandedSidebarWidth = 248;
 const collapsedSidebarWidth = 64;
-
-function hasExplicitSidebarPreference(): boolean {
-  try {
-    return window.localStorage.getItem(sidebarStorageKey) !== null;
-  } catch {
-    return false;
-  }
-}
 
 function readStoredSidebarCollapsed(): boolean | null {
   try {
@@ -184,19 +175,19 @@ function readStoredSidebarCollapsed(): boolean | null {
   return null;
 }
 
-function isNarrowDesktop(): boolean {
-  if (typeof window === "undefined") return false;
-  if (typeof window.matchMedia === "function") {
-    return window.matchMedia(narrowDesktopQuery).matches;
-  }
-  return window.innerWidth <= 1439;
-}
-
+/**
+ * 默认展开。
+ *
+ * 此前是「窗口窄于 1440px 就默认收起」。那在浏览器里是个启发式,在桌面应用里是个
+ * 常量:BrowserWindow 默认 1280 宽、最小 960,**永远小于 1440**。于是桌面版每一个
+ * 新用户第一次打开看到的都是收起态 —— 一列 41 个无标签图标,其中 8 个字形还是重
+ * 复的,只能靠 hover 出 tooltip 才能分辨。
+ *
+ * 收起态仍然在,手动切换照旧记进 localStorage。变的只是没有人选过时给什么。
+ */
 function initialSidebarCollapsed(): boolean {
   if (typeof window === "undefined") return false;
-  const stored = readStoredSidebarCollapsed();
-  if (stored !== null) return stored;
-  return !hasExplicitSidebarPreference() && isNarrowDesktop();
+  return readStoredSidebarCollapsed() ?? false;
 }
 
 
