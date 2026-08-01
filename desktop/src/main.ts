@@ -286,7 +286,7 @@ async function connect(): Promise<void> {
   if (result.kind === "attached") startNotifyLoop();
   else stopNotifyLoop();
 
-  refreshTrayMenu(result);
+  refreshMenus(result);
 }
 
 /* ------------------------------------------------------------------ *
@@ -349,29 +349,78 @@ function trayStatusLabel(result: ProbeResult): string {
   }
 }
 
-function refreshTrayMenu(result: ProbeResult): void {
-  if (tray === null) return;
+/**
+ * 三个动作,两个入口,一份定义。
+ *
+ * 托盘和应用菜单必须给出同一组动作、同样的措辞、同样的启用状态 —— 「停止后台服务」
+ * 只有在拿得到 pid 时才可点,而 pid 只有 attached 时才有。同一份模板生成两处,是让
+ * 它们不可能漂移的唯一办法。
+ */
+function daemonActions(result: ProbeResult): Electron.MenuItemConstructorOptions[] {
   const daemonPid = result.kind === "attached" ? result.health.pid : null;
+  return [
+    { label: "显示窗口", click: () => revealWindow() },
+    { label: "重新连接", accelerator: "CommandOrControl+R", click: () => void connect() },
+    { type: "separator" },
+    {
+      // 有了自动拉起,就必须有对称的关掉 —— 否则用户没有任何办法停掉一个自己
+      // 从没主动启动过的后台进程。pid 来自 /api/health,不靠猜。
+      label: "停止后台服务",
+      enabled: daemonPid !== null,
+      click: () => {
+        if (daemonPid === null) return;
+        stopDaemon(daemonPid);
+        // 给它一点时间撤回实例记录,再刷新状态。
+        setTimeout(() => void connect(), 1_200);
+      },
+    },
+  ];
+}
+
+/**
+ * 应用菜单此前根本没设,于是 macOS 用的是 Electron 的默认菜单:Apple / ai2nao /
+ * File / Edit / View / Window,里面没有一条和 ai2nao 有关的东西。三个动作全部只
+ * 存在于托盘 —— 而托盘是个 16px 的字形,不是发现功能的地方。
+ *
+ * 角色菜单(editMenu / windowMenu)不是可选项:SPA 里要能 Cmd+C / Cmd+V,而
+ * 复制粘贴在 macOS 上靠菜单项的 accelerator 生效,没有 Edit 菜单就真的没有快捷键。
+ */
+function refreshMenus(result: ProbeResult): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: "appMenu" },
+      { label: "服务", submenu: daemonActions(result) },
+      { role: "editMenu" },
+      {
+        // 自己拼而不是用 role:"viewMenu" —— 那个角色把 Cmd+R 占成「重新加载」,而
+        // 「重新连接」做的是它的超集(重新探活 + 重新加载),不该让位。剩下的缩放
+        // 对一个高密度数据工作台是真需要的。
+        //
+        // label 是显式给的:role 自带的文案跟随**系统**语言,而这个应用的界面、托盘
+        // 和引导页全是中文。凡是我们自己拼的菜单就跟应用走。Edit / Window 两个整
+        // 块角色菜单留给 Electron —— 手抄它们意味着重新实现 macOS 的 Speech、
+        // Emoji & Symbols 这些平台专属项,不值得,代价是那两个菜单是英文。
+        label: "视图",
+        submenu: [
+          { role: "resetZoom", label: "实际大小" },
+          { role: "zoomIn", label: "放大" },
+          { role: "zoomOut", label: "缩小" },
+          { type: "separator" },
+          { role: "togglefullscreen", label: "全屏" },
+          { role: "toggleDevTools", label: "开发者工具" },
+        ],
+      },
+      { role: "windowMenu" },
+    ])
+  );
+
+  if (tray === null) return;
   tray.setToolTip(`ai2nao —— ${trayStatusLabel(result)}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: trayStatusLabel(result), enabled: false },
       { type: "separator" },
-      { label: "显示窗口", click: () => revealWindow() },
-      { label: "重新连接", click: () => void connect() },
-      { type: "separator" },
-      {
-        // 有了自动拉起,就必须有对称的关掉 —— 否则用户没有任何办法停掉一个自己
-        // 从没主动启动过的后台进程。pid 来自 /api/health,不靠猜。
-        label: "停止后台服务",
-        enabled: daemonPid !== null,
-        click: () => {
-          if (daemonPid === null) return;
-          stopDaemon(daemonPid);
-          // 给它一点时间撤回实例记录,再刷新状态。
-          setTimeout(() => void connect(), 1_200);
-        },
-      },
+      ...daemonActions(result),
       { type: "separator" },
       { label: `快捷键 ${SHORTCUT}`, enabled: false },
       { type: "separator" },
