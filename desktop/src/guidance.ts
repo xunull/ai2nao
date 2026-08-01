@@ -43,13 +43,43 @@ const STYLE = `
   dt { opacity: .55; }
   dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .hint { font-size: 12.5px; opacity: .55; }
+  .act {
+    display: inline-block; margin: .4rem 0 0; padding: .5rem 1.15rem; border-radius: 7px;
+    border: 1px solid color-mix(in srgb, CanvasText 24%, Canvas);
+    background: color-mix(in srgb, CanvasText 5%, Canvas);
+    color: inherit; text-decoration: none; font-weight: 500;
+  }
+  .act:hover  { background: color-mix(in srgb, CanvasText 11%, Canvas); }
+  .act:active { background: color-mix(in srgb, CanvasText 17%, Canvas); }
+  .act:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
 `;
 
+/**
+ * 点「重新连接」时页面导航到的地址。
+ *
+ * 页面无脚本是刻意的(CSP `default-src 'none'`),但无脚本 ≠ 不能有动作:一个普通
+ * `<a href>` 触发 `will-navigate`,主进程在那里 preventDefault 并转成一次
+ * `connect()`。整条路径上没有一行页面脚本,CSP 不用放宽。
+ *
+ * 用 `.invalid`(RFC 2606 保留,永不解析)而不是自定义 scheme:自定义 scheme 在
+ * Chromium 里是否触发 will-navigate 取决于注册情况,而 http 一定触发。就算哪天
+ * 拦截漏了,这个域名也解析不出去 —— 失败方向是安全的。
+ */
+export const RETRY_URL = "http://ai2nao.invalid/retry";
+
+/**
+ * 动作由 page() 统一追加,而不是各页自己写。
+ *
+ * 修之前五个页面 clickable=0:它们出现的时机恰好是东西坏掉的时候,而全部内容只是
+ * 让用户离开这个窗口、去菜单栏里找一个图标。放在 page() 里意味着以后新增失败态也
+ * 不可能忘掉这个动作。措辞和托盘那条菜单一字不差 —— 同一个动作不该有两个名字。
+ */
 function page(title: string, bodyHtml: string): string {
   const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>${title}</title><style>${STYLE}</style></head>
-<body><main>${bodyHtml}</main></body></html>`;
+<body><main>${bodyHtml}
+<p><a class="act" href="${RETRY_URL}">重新连接</a></p></main></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -81,7 +111,7 @@ export function notRunningPage(): string {
 tail -50 ~/.ai2nao/*.log             # 如果有日志</pre>
      <p>也可以自己手动起一个，看它到底报什么错：</p>
      <pre>ai2nao serve</pre>
-     <p class="hint">起来之后点菜单栏图标里的「重新连接」。</p>`
+     <p class="hint">起来之后点下面的「重新连接」，菜单栏图标里也有同一条。</p>`
   );
 }
 

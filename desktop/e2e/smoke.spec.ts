@@ -92,6 +92,46 @@ test("the window is sandboxed and cannot reach Node", async () => {
   }
 });
 
+test("重新连接 re-probes in the main process instead of navigating away", async () => {
+  // 引导页无脚本(CSP `default-src 'none'`),所以「重新连接」只能是一个 <a href>,
+  // 靠主进程在 will-navigate 里接住。这条链路有两个地方会断,而且断了都不报错:
+  //
+  //   拦截漏了     → 浏览器真去解析 ai2nao.invalid,用户拿到一个 DNS 错误页
+  //   拦截顺序错了 → 落到下面的 origin 白名单,被当成越权导航静默拦掉,点了没反应
+  //
+  // 第二种是这里唯一有难度的地方:被白名单拦掉之后,页面**原样停在 data: URL 上,
+  // h1 一模一样** —— 和成功路径在渲染进程侧完全无法区分。只断言「没被带走」是一
+  // 张橡皮图章(验证过:把拦截分支改成永不成立,那样的断言照样通过)。
+  //
+  // 所以要一个「connect() 确实又跑了一次」的观测点,而它只存在于主进程:每次
+  // connect() 都会往 stderr 打一行 `[ai2nao] probe → ...`。数它。
+  const app = await launch();
+  const stderr: string[] = [];
+  app.process().stderr?.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+  const probeCount = (): number => stderr.join("").split("probe →").length - 1;
+  try {
+    const win = await app.firstWindow();
+    await win.waitForLoadState("domcontentloaded");
+    // 启动时那一次。
+    await expect.poll(probeCount, { timeout: 10_000 }).toBeGreaterThan(0);
+    const before = probeCount();
+
+    const retry = win.locator("a.act");
+    await expect(retry).toHaveText("重新连接");
+    await retry.click();
+
+    // 点击真的转成了第二次探活 —— 拦截没接住的话这里永远停在 before。
+    await expect.poll(probeCount, { timeout: 10_000 }).toBeGreaterThan(before);
+
+    // 而且没有被带去 ai2nao.invalid。注意不能断言「URL 里没有 ai2nao.invalid」:
+    // data: URL 里编码着页面自身的 HTML,那段 HTML 里就写着这个 href。
+    expect(win.url().startsWith("data:text/html")).toBe(true);
+    await expect(win.locator("h1")).toContainText("后台服务没起来");
+  } finally {
+    await app.close();
+  }
+});
+
 test("a second launch exits instead of opening a second window", async () => {
   // Two shells means two tray icons and a global shortcut that registers in one
   // process and silently fails in the other — the "hotkey works sometimes" bug.

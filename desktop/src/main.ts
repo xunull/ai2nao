@@ -24,6 +24,7 @@ import {
   incompatiblePage,
   notRunningPage,
   portTakenPage,
+  RETRY_URL,
   schemaMismatchPage,
   timeoutPage,
 } from "./guidance.js";
@@ -107,6 +108,15 @@ function allowedOrigin(): string | null {
 
 app.on("web-contents-created", (_event, contents) => {
   contents.on("will-navigate", (event, navigationUrl) => {
+    // 引导页上的「重新连接」。页面无脚本,所以动作只能是一次导航;在这里把它接住,
+    // 转成一次 connect()。必须排在下面的白名单之前 —— 走到那里就被当成越权导航
+    // 拦掉了(引导页没有 attachedUrl,origin 是 null)。
+    if (navigationUrl === RETRY_URL) {
+      event.preventDefault();
+      void connect();
+      return;
+    }
+
     const origin = allowedOrigin();
     let target: string | null = null;
     try {
