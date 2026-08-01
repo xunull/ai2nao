@@ -154,6 +154,11 @@ function createWindow(): BrowserWindow {
     height: 860,
     minWidth: 960,
     title: "ai2nao",
+    // SPA body 的实测底色(rgb(247,246,243))。show:false + ready-to-show 只盖住了
+    // 首次绘制之前那一下,而窗口底色还有两处会露出来:重连时两个 loadURL 之间,以及
+    // 拖拽改变窗口大小时新露出的区域 —— Electron 先用它填,渲染进程再补上。缺省的
+    // 纯白在这两处都会闪一下。
+    backgroundColor: "#f7f6f3",
     // show:false + ready-to-show avoids the white flash before first paint.
     show: false,
     webPreferences: {
