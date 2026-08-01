@@ -10,17 +10,28 @@
  * Deliberately script-free static HTML, loaded from a `data:` URL. The shell's
  * navigation whitelist only admits the probed daemon origin, and a page with no
  * scripts has nothing worth attacking.
+ *
+ * ## 布局必须在五页之间稳住
+ *
+ * `main` 用 `width` 而不是 `max-width`,`body` 顶对齐而不是垂直居中 —— 两条都不是
+ * 审美选择。在一个 flex 居中的 body 里,`max-width` 会让 `main` 缩到内容宽度,于是
+ * 文字左边缘按你撞上哪一种失败在 272 / 423 / 346 / 272 / 386 之间跳(实测,1280 宽
+ * 窗口);垂直居中同理,内容高度 319-466 不等,h1 落在 5 个不同的高度上。
+ *
+ * 这五页是同一个应用同一族失败态,用户可能在几秒内先后看到其中两页(重连一次换一
+ * 种错误)。DESIGN.md:「用户切换页面时,应用不应该跳」。
  */
 
 const STYLE = `
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    margin: 0; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
     font: 14px/1.7 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
     background: Canvas; color: CanvasText;
   }
-  main { max-width: 46rem; padding: 3rem 2.5rem; }
+  /* width, 不是 max-width —— 见下方注释。 */
+  main { width: 46rem; max-width: 100%; padding: 12vh 2.5rem 3rem; }
   h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 .6rem; letter-spacing: -0.01em; }
   p  { margin: 0 0 1rem; opacity: .85; }
   pre {
