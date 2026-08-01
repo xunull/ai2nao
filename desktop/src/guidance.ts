@@ -43,6 +43,9 @@ const STYLE = `
   dt { opacity: .55; }
   dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .hint { font-size: 12.5px; opacity: .55; }
+  /* 行内 code 此前完全没规则,退回浏览器默认等宽字体 —— 和上面精心调过的 pre 是
+     两套字。用同一组字体和字号,让「一段命令」在正文里和在代码块里长得一样。 */
+  code { font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .act {
     display: inline-block; margin: .4rem 0 0; padding: .5rem 1.15rem; border-radius: 7px;
     border: 1px solid color-mix(in srgb, CanvasText 24%, Canvas);
