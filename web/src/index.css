@@ -44,6 +44,53 @@ body {
   background: var(--bg);
 }
 
+/*
+ * 滚动条。此前全站从没管过,用的是系统默认。
+ *
+ * 在正文区看不太出来,在侧栏是灾难:macOS 的经典滚动条约 15px,而图标栏只有 64px
+ * 宽 —— 一条滚动条吃掉 23% 的栏宽,还带一条灰槽。桌面应用里比浏览器更容易撞上,
+ * 因为「显示滚动条」设为「始终」或接了鼠标时它会占位而不是悬浮。
+ *
+ * 一处定义覆盖全站十几个滚动区,不是只修侧栏 —— 症状最明显的地方不代表问题只在
+ * 那里。
+ *
+ * 三个刻意的选择:
+ *
+ * 1. 不写 `scrollbar-width` / `scrollbar-color`。Chromium 同时支持标准属性和
+ *    `::-webkit-scrollbar`,而两者共存时的优先级是个坑;只用一套就没有这个问题。
+ *    代价是 Firefox 下退回默认样式 —— 这个应用跑在 Electron 里,不构成损失。
+ * 2. 轨道透明。那条灰槽是「丑」的一半,而它不携带任何信息。
+ * 3. **不做自动隐藏。** 侧栏有 41 个目的地而一屏只放得下约 15 个,滚动条是用户
+ *    唯一能看到「下面还有」的信号。藏起来会让本来就不好的可达性更差。真正该解决
+ *    的是 41 这个数字,那是导航结构的问题,不该用藏滚动条来掩盖。
+ */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  /* --fg (#171612) 的低透明度版本,跟着暖中性色走,不是一条冷灰。 */
+  background-color: rgb(23 22 18 / 0.2);
+  border-radius: 999px;
+  /* 透明边框 + padding-box:拇指看起来是 6px 的细条,可点区域仍是 10px。 */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(23 22 18 / 0.32);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: rgb(23 22 18 / 0.44);
+}
+
 /* Cursor 对话页：略加深可读性，与主站变量一致 */
 .cursor-chat-root {
   --cursor-surface: #ffffff;
