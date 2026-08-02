@@ -4,161 +4,17 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  AppWindowMac,
-  Archive,
-  BarChart3,
-  Beer,
-  Bot,
-  BotMessageSquare,
-  Boxes,
-  BrainCircuit,
-  Bug,
-  CalendarClock,
-  CalendarDays,
-  Clapperboard,
-  Command,
-  Database,
-  Download,
-  FolderCode,
-  GitBranch,
-  GitCommit,
-  GitCompare,
-  GitFork,
-  Gauge,
-  Settings as SettingsIcon,
-  TrendingUp,
-  Globe,
-  HardDrive,
-  History,
-  LayoutDashboard,
-  MessageSquareText,
-  Package,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plug,
-  Radar,
-  Search,
-  Shield,
-  ShieldCheck,
-  Sparkles,
-  SquareTerminal,
-  Tags,
-  Terminal,
-  Waves,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ScrollToTop } from "./ScrollToTop";
-
-type NavItem = {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  matchChildren?: boolean;
-};
-
-type NavGroup = {
-  id: string;
-  label: string;
-  icon: LucideIcon;
-  items: NavItem[];
-};
-
-const primaryNavItems: NavItem[] = [
-  { to: "/ai-chat", label: "AI 对话", icon: BrainCircuit },
-];
-
-// Settings is a standalone page like the primary items (its own "workspace",
-// no sub-list), but it's pinned to the BOTTOM of the rail by convention
-// (VS Code / Linear / Slack), not rendered in the top rail loop.
-const settingsItem: NavItem = { to: "/settings", label: "设置", icon: SettingsIcon };
-
-const navGroups: NavGroup[] = [
-  {
-    id: "workbench",
-    label: "工作台",
-    icon: LayoutDashboard,
-    items: [
-      { to: "/dashboard", label: "最近工作", icon: LayoutDashboard },
-      { to: "/dashboard/tokens", label: "Token 排行", icon: BarChart3 },
-      { to: "/dashboard/tokens-trend", label: "Token 趋势", icon: TrendingUp },
-      { to: "/dashboard/project-output", label: "产出效率", icon: Gauge },
-      { to: "/work-recap", label: "工作回看", icon: GitCommit },
-      { to: "/dashboard/cosmos", label: "对话宇宙", icon: Sparkles },
-      { to: "/topics/river", label: "主题河流", icon: Waves },
-      { to: "/providers", label: "外部平台", icon: Plug },
-      { to: "/agent-messages", label: "对话搜索", icon: Search },
-      { to: "/ai-rhythm", label: "AI 节律", icon: CalendarClock },
-      { to: "/project-calendar", label: "项目日历", icon: CalendarDays },
-      { to: "/commit-bridge", label: "对话↔提交", icon: GitCompare },
-      { to: "/replay", label: "那天回放", icon: Clapperboard },
-    ],
-  },
-  {
-    id: "local-assets",
-    label: "本机资产",
-    icon: HardDrive,
-    items: [
-      { to: "/repos", label: "仓库", icon: Archive, matchChildren: true },
-      { to: "/scheduler", label: "定时任务", icon: CalendarClock },
-      { to: "/downloads", label: "下载", icon: Download },
-      { to: "/apps", label: "Mac 应用", icon: AppWindowMac },
-      { to: "/vscode", label: "VS Code", icon: FolderCode },
-      { to: "/cursor-projects", label: "Cursor 项目", icon: GitBranch },
-      { to: "/brew", label: "Homebrew", icon: Beer },
-      { to: "/huggingface-models", label: "HF 模型", icon: Boxes },
-      { to: "/lmstudio-models", label: "LM Studio", icon: BrainCircuit },
-      { to: "/ai-tools", label: "AI 工具清单", icon: Wrench },
-      { to: "/atuin", label: "Atuin", icon: Terminal },
-      { to: "/atuin/directories", label: "Atuin 目录", icon: Database },
-    ],
-  },
-  {
-    id: "browser",
-    label: "浏览器",
-    icon: Globe,
-    items: [
-      { to: "/chrome-history", label: "Chrome 历史", icon: History },
-      { to: "/chrome-history/domains", label: "Chrome 域名", icon: Search },
-      { to: "/chrome-downloads", label: "Chrome 下载", icon: Download },
-    ],
-  },
-  {
-    id: "ai-conversations",
-    label: "AI 记录",
-    icon: MessageSquareText,
-    items: [
-      { to: "/cherry-studio-history", label: "Cherry 对话", icon: MessageSquareText, matchChildren: true },
-      { to: "/cursor-history", label: "Cursor 对话", icon: BotMessageSquare, matchChildren: true },
-      { to: "/claude-code-history", label: "Claude", icon: Bot, matchChildren: true },
-      { to: "/codex-history", label: "Codex", icon: Command, matchChildren: true },
-      { to: "/opencode-history", label: "opencode", icon: SquareTerminal, matchChildren: true },
-    ],
-  },
-  {
-    id: "ai-tools",
-    label: "AI 工具",
-    icon: Wrench,
-    items: [
-      { to: "/bash-permissions", label: "Shell 权限", icon: ShieldCheck },
-      { to: "/bash-sandbox", label: "Shell 沙箱", icon: Shield },
-      { to: "/rag-status", label: "RAG 状态", icon: Package },
-      { to: "/rag-debug", label: "RAG 调试", icon: Bug },
-    ],
-  },
-  {
-    id: "github-open-source",
-    label: "GitHub/开源",
-    icon: GitFork,
-    items: [
-      { to: "/github", label: "GitHub", icon: GitBranch },
-      { to: "/github/radar", label: "开源雷达", icon: Radar },
-      { to: "/github/tags", label: "Star Tag", icon: Tags },
-    ],
-  },
-];
+import {
+  NAV_GROUPS,
+  PRIMARY_ITEMS,
+  SETTINGS_ITEM,
+  resolveNav,
+  type NavGroup,
+  type NavItem,
+} from "./navModel";
 
 const sidebarStorageKey = "ai2nao.sidebar.collapsed";
 const expandedSidebarWidth = 248;
@@ -191,51 +47,171 @@ function initialSidebarCollapsed(): boolean {
 }
 
 
-/** One nav link — labeled row when expanded, icon-only (tooltip) when collapsed. */
-function NavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+/**
+ * 一行导航链接。展开时有文字,收起时只有图标 + tooltip。
+ *
+ * `active` 是传进来的,不用 NavLink 自己的 isActive:有 tabs 的条目(比如「最近工作」)
+ * 在 /dashboard/tokens 上也必须保持高亮,而 NavLink 只认自己那条 `to`。判定统一走
+ * navModel.resolveNav,那里有测试。
+ *
+ * 因此这里用 Link 而不是 NavLink。NavLink 会把 `aria-current` 也接管掉 —— 它只在
+ * **自己**判定 active 时才输出这个属性,于是在 /chrome-downloads、/codex-history 这些
+ * tab 路由上,视觉高亮是对的(class 是我算的)而 aria-current 被悄悄抹掉。丢的恰好
+ * 是最需要它的那一批。
+ */
+function NavRow({
+  item,
+  collapsed,
+  active,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  active: boolean;
+}) {
   const Icon = item.icon;
   return (
-    <NavLink
+    <Link
       to={item.to}
-      end={!item.matchChildren}
       title={item.label}
       aria-label={collapsed ? item.label : undefined}
-      className={({ isActive }) =>
-        `group relative flex items-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
-          collapsed ? "h-9 w-full justify-center" : "h-8 gap-2.5 px-2"
-        } ${
-          isActive
-            ? "bg-[var(--sidebar-active)] font-medium text-[var(--sidebar-active-text)]"
-            : "text-[var(--sidebar-link)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--fg)]"
-        }`
-      }
+      aria-current={active ? "page" : undefined}
+      className={`group relative flex items-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
+        collapsed ? "h-9 w-full justify-center" : "h-8 gap-2.5 px-2"
+      } ${
+        active
+          ? "bg-[var(--sidebar-active)] font-medium text-[var(--sidebar-active-text)]"
+          : "text-[var(--sidebar-link)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--fg)]"
+      }`}
     >
-      {({ isActive }) => (
+      {active ? (
+        <span className="absolute bottom-1.5 left-0.5 top-1.5 w-0.5 rounded-full bg-[var(--sidebar-accent)]" />
+      ) : null}
+      <Icon
+        aria-hidden="true"
+        className={`h-[15px] w-[15px] shrink-0 ${
+          active ? "text-[var(--sidebar-accent)]" : "text-[var(--sidebar-muted)] group-hover:text-[var(--fg)]"
+        }`}
+      />
+      {collapsed ? null : <span className="truncate text-[13px]">{item.label}</span>}
+    </Link>
+  );
+}
+
+/**
+ * 手风琴的组头。
+ *
+ * 收起态下只有图标 —— 但这比改造前好:那时候组头是一条 1px 的匿名横线,六个组的名字
+ * 全丢了。现在至少有一个字形和 tooltip,而且 navModel 有测试钉着图标不重复。
+ */
+function NavGroupHeader({
+  group,
+  open,
+  collapsed,
+  onToggle,
+}: {
+  group: NavGroup;
+  open: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = group.icon;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      title={group.label}
+      aria-label={collapsed ? group.label : undefined}
+      className={`group flex w-full items-center rounded-lg text-[var(--sidebar-muted)] outline-none transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--fg)] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
+        collapsed ? "h-9 justify-center" : "h-8 gap-2.5 px-2"
+      }`}
+    >
+      <Icon aria-hidden="true" className="h-[15px] w-[15px] shrink-0" />
+      {collapsed ? null : (
         <>
-          {isActive ? (
-            <span className="absolute bottom-1.5 left-0.5 top-1.5 w-0.5 rounded-full bg-[var(--sidebar-accent)]" />
-          ) : null}
-          <Icon
+          <span className="flex-1 truncate text-left text-[11px] font-semibold tracking-wide">
+            {group.label}
+          </span>
+          <ChevronRight
             aria-hidden="true"
-            className={`h-[15px] w-[15px] shrink-0 ${
-              isActive ? "text-[var(--sidebar-accent)]" : "text-[var(--sidebar-muted)] group-hover:text-[var(--fg)]"
+            className={`h-3.5 w-3.5 shrink-0 transition-transform duration-150 ${
+              open ? "rotate-90" : ""
             }`}
           />
-          {collapsed ? null : <span className="truncate text-[13px]">{item.label}</span>}
         </>
       )}
-    </NavLink>
+    </button>
+  );
+}
+
+/**
+ * 页内 tab。
+ *
+ * 承担的是「17 个原本占着侧栏一行的视图」的落脚点。刻意做成一排链接而不是把页面
+ * 组件合并:那些页面 420-957 行不等,合并的收益为零而风险很实在。tab 是导航,不是
+ * 组件结构 —— 所以路由和页面一行没动。
+ */
+function SubNav({ tabs, frameClass }: { tabs: { to: string; label: string }[]; frameClass: string }) {
+  if (tabs.length === 0) return null;
+  return (
+    <div className="border-b border-[var(--border)] bg-[var(--bg)]">
+      <div className={`${frameClass} flex h-11 items-center gap-1`}>
+        {tabs.map((tab) => (
+          <NavLink
+            key={tab.to}
+            to={tab.to}
+            end
+            className={({ isActive }) =>
+              `relative flex h-11 items-center px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
+                isActive
+                  ? "font-medium text-[var(--fg)]"
+                  : "text-[var(--muted)] hover:text-[var(--fg)]"
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {tab.label}
+                {isActive ? (
+                  <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--sidebar-accent)]" />
+                ) : null}
+              </>
+            )}
+          </NavLink>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export function Layout({ children }: { children: ReactNode }) {
   const nav = useNavigate();
+  const { pathname } = useLocation();
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState(initialSidebarCollapsed);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLElement>(null);
   const frameClass = "mx-auto max-w-[1760px] px-8";
   const sidebarWidth = collapsed ? collapsedSidebarWidth : expandedSidebarWidth;
+
+  const match = resolveNav(pathname);
+
+  /*
+   * 手风琴:同一时刻只展开一个组。
+   *
+   * 24 个条目全摊开是 988px,而可见高度 609px —— 光靠分组和合并还是放不下。只展开
+   * 当前所在的那组之后最坏是 6 个组头 + 5 项 = 418px,一屏有富余。
+   *
+   * 跟随路由用的是 React 官方的「渲染期修正 state」写法而不是 useEffect:从 ⌘K 搜索
+   * 结果跳到另一个组时,侧栏必须当场跟过去,而 effect 会晚一帧 —— 表现为展开的组闪
+   * 一下才换。用户手动点开的组保留到下一次跨组跳转为止。
+   */
+  const [openGroupId, setOpenGroupId] = useState<string | null>(match.groupId);
+  const [lastGroupId, setLastGroupId] = useState<string | null>(match.groupId);
+  if (match.groupId !== lastGroupId) {
+    setLastGroupId(match.groupId);
+    if (match.groupId !== null) setOpenGroupId(match.groupId);
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -319,21 +295,32 @@ export function Layout({ children }: { children: ReactNode }) {
         )}
 
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3 pt-1" aria-label="全站导航">
-          {primaryNavItems.map((item) => (
-            <NavRow key={item.to} item={item} collapsed={collapsed} />
+          {PRIMARY_ITEMS.map((item) => (
+            <NavRow
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+              active={match.item?.to === item.to}
+            />
           ))}
-          {navGroups.map((group) => (
-            <div key={group.id} className="space-y-0.5">
-              {collapsed ? (
-                <div className="mx-2 my-1.5 h-px bg-[var(--sidebar-rail-border)]" aria-hidden="true" />
-              ) : (
-                <div className="px-2 pb-1 pt-3 text-[11px] font-semibold tracking-wide text-[var(--sidebar-muted)]">
-                  {group.label}
-                </div>
-              )}
-              {group.items.map((item) => (
-                <NavRow key={item.to} item={item} collapsed={collapsed} />
-              ))}
+          {NAV_GROUPS.map((group) => (
+            <div key={group.id} className="space-y-0.5 pt-1">
+              <NavGroupHeader
+                group={group}
+                open={openGroupId === group.id}
+                collapsed={collapsed}
+                onToggle={() => setOpenGroupId(openGroupId === group.id ? null : group.id)}
+              />
+              {openGroupId === group.id
+                ? group.items.map((item) => (
+                    <NavRow
+                      key={item.to}
+                      item={item}
+                      collapsed={collapsed}
+                      active={match.item?.to === item.to}
+                    />
+                  ))
+                : null}
             </div>
           ))}
         </nav>
@@ -345,7 +332,11 @@ export function Layout({ children }: { children: ReactNode }) {
               本机索引在线
             </div>
           )}
-          <NavRow item={settingsItem} collapsed={collapsed} />
+          <NavRow
+            item={SETTINGS_ITEM}
+            collapsed={collapsed}
+            active={match.item?.to === SETTINGS_ITEM.to}
+          />
           <button
             type="button"
             onClick={() => setSidebarCollapsed(!collapsed)}
@@ -373,6 +364,7 @@ export function Layout({ children }: { children: ReactNode }) {
         style={{ marginLeft: sidebarWidth }}
       >
         <ScrollToTop containerRef={scrollRef} />
+        <SubNav tabs={match.tabs} frameClass={frameClass} />
         <main
           ref={scrollRef}
           id="main-content"

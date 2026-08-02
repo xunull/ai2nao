@@ -455,6 +455,13 @@ describe("App routes", () => {
 });
 
 describe("Layout navigation", () => {
+  /*
+   * 侧栏在 2026-08-02 从「一列 41 个一级入口」改成「6 个组的手风琴 + 页内 tab」。
+   * 下面的用例是照着新结构重写的,但每一条原来在测什么都保留了下来 —— 只有两条的
+   * **意图本身**被改造推翻了,各自在原地注明。
+   *
+   * 改造前的实测:内容高 1638px / 可见 609px,一屏看得到 36%。
+   */
   beforeEach(() => {
     vi.restoreAllMocks();
     window.localStorage.clear();
@@ -466,7 +473,10 @@ describe("Layout navigation", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the AI chat action plus every group label and route link in one sidebar", () => {
+  it("shows the AI chat action plus all six group headers at once", () => {
+    // 原用例断言「每个组名 + 每条路由链接同时可见」。手风琴推翻了后半句 —— 那正是
+    // 改造的目的(24 个条目全摊开是 988px,放不下)。仍然成立、也仍然重要的是前半句:
+    // 六个组的**名字**必须一眼全看得到,否则用户不知道东西在哪个抽屉里。
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/repos");
@@ -474,35 +484,38 @@ describe("Layout navigation", () => {
     const navEl = screen.getByRole("navigation", { name: "全站导航" });
     expect(within(navEl).getByRole("link", { name: "AI 对话" })).toBeInTheDocument();
 
-    const groups = [
-      { label: "工作台", links: ["最近工作", "Token 排行", "Token 趋势", "工作回看", "对话宇宙"] },
-      {
-        label: "本机资产",
-        links: ["仓库", "下载", "Mac 应用", "VS Code", "Cursor 项目", "Homebrew", "HF 模型", "LM Studio", "AI 工具清单", "Atuin", "Atuin 目录"],
-      },
-      { label: "浏览器", links: ["Chrome 历史", "Chrome 域名", "Chrome 下载"] },
-      { label: "AI 记录", links: ["Cherry 对话", "Cursor 对话", "Claude", "Codex"] },
-      { label: "AI 工具", links: ["Shell 权限", "Shell 沙箱", "RAG 状态", "RAG 调试"] },
-      { label: "GitHub/开源", links: ["GitHub", "开源雷达", "Star Tag"] },
-    ];
-
-    // Single-column: every group label + every route link is visible at once,
-    // no rail-icon click / panel switch needed.
-    for (const group of groups) {
-      expect(within(navEl).getByText(group.label)).toBeInTheDocument();
-      for (const link of group.links) {
-        expect(within(navEl).getByRole("link", { name: link })).toBeInTheDocument();
-      }
+    for (const label of ["分析", "时间线", "代码", "软件", "历史记录", "运行与诊断"]) {
+      expect(within(navEl).getByRole("button", { name: label })).toBeInTheDocument();
     }
 
-    // Settings is pinned to the bottom, present exactly once.
+    // 设置钉在底部,只出现一次。
     expect(screen.getAllByRole("link", { name: "设置" })).toHaveLength(1);
   });
 
-  it("does not leak implementation taxonomy into the sidebar copy (work-recap)", () => {
+  it("expands only the group that owns the current route", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/repos");
+    const navEl = screen.getByRole("navigation", { name: "全站导航" });
+
+    expect(within(navEl).getByRole("button", { name: "代码" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+    expect(within(navEl).getByRole("button", { name: "时间线" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    // 展开的那组条目在,别组的不在 —— 手风琴之所以能放得下就是因为这个。
+    expect(within(navEl).getByRole("link", { name: "仓库" })).toBeInTheDocument();
+    expect(within(navEl).queryByRole("link", { name: "那天回放" })).toBeNull();
+  });
+
+  it("does not leak implementation taxonomy into the sidebar copy (work-recap)", () => {
+    // 「工作回看」现在属于「时间线」组,所以要在那一组的路由上渲染才看得到它。
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/work-recap");
     const navEl = screen.getByRole("navigation", { name: "全站导航" });
 
     // Prior learning sidebar-implementation-label-leak (2026-06-01): user-facing
@@ -515,9 +528,10 @@ describe("Layout navigation", () => {
   it("marks the current route link as the active page", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
+    // 「RAG 状态」和「RAG 调试」合成了一个条目「RAG」+ 两个 tab。
     renderLayout("/rag-status");
 
-    expect(screen.getByRole("link", { name: "RAG 状态" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "RAG" })).toHaveAttribute(
       "aria-current",
       "page"
     );
@@ -536,14 +550,16 @@ describe("Layout navigation", () => {
     );
   });
 
-  it("defaults to collapsed on narrow desktop when no preference exists", () => {
+  it("defaults to expanded even on a narrow desktop", () => {
+    // 原用例断言的是相反的行为:窗口窄于 1440px 就默认收起。那条规则在浏览器里是
+    // 启发式,在桌面应用里是常量 —— BrowserWindow 默认 1280 宽、最小 960,永远小于
+    // 1440,于是桌面版每个新用户第一次打开都是收起态:一列无标签图标。已删除。
     setViewport(1280);
 
     renderLayout("/github/radar");
 
-    // Collapsed = icon-only rail: the product wordmark is hidden, expand control shown.
-    expect(screen.getByRole("button", { name: "展开侧边导航" })).toBeInTheDocument();
-    expect(screen.queryByText("ai2nao")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起侧边导航" })).toBeInTheDocument();
+    expect(screen.getByText("ai2nao")).toBeInTheDocument();
   });
 
   it("expands the sidebar from the collapsed state", () => {
@@ -572,7 +588,7 @@ describe("Layout navigation", () => {
     );
   });
 
-  it("marks the work dashboard route as active", () => {
+  it("marks the work dashboard route as active and shows its tabs", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/dashboard");
@@ -581,19 +597,21 @@ describe("Layout navigation", () => {
       "aria-current",
       "page"
     );
+    // 「Token 排行」从侧栏的一级入口变成了页内 tab,不再在导航里。
+    const navEl = screen.getByRole("navigation", { name: "全站导航" });
+    expect(within(navEl).queryByRole("link", { name: "Token 排行" })).toBeNull();
     expect(screen.getByRole("link", { name: "Token 排行" })).toBeInTheDocument();
   });
 
-  it("marks the token ranking route without activating the dashboard link", () => {
+  it("keeps the parent item active while on one of its tabs", () => {
+    // 原用例断言的是相反的行为:在 /dashboard/tokens 上「最近工作」**不该**高亮,
+    // 因为那时它们是两个平级入口。现在 Token 排行是最近工作的一个 tab,父条目保持
+    // 高亮正是要的 —— 否则从 tab 切过去,侧栏会整个失去高亮。
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
     renderLayout("/dashboard/tokens");
 
-    expect(screen.getByRole("link", { name: "Token 排行" })).toHaveAttribute(
-      "aria-current",
-      "page"
-    );
-    expect(screen.getByRole("link", { name: "最近工作" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "最近工作" })).toHaveAttribute(
       "aria-current",
       "page"
     );
