@@ -5,7 +5,7 @@ import {
   useState,
 } from "react";
 import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ScrollToTop } from "./ScrollToTop";
 import {
   NAV_GROUPS,
@@ -14,6 +14,7 @@ import {
   resolveNav,
   type NavGroup,
   type NavItem,
+  type NavTab,
 } from "./navModel";
 
 const sidebarStorageKey = "ai2nao.sidebar.collapsed";
@@ -120,6 +121,7 @@ function NavGroupHeader({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
+      aria-controls={`nav-group-${group.id}`}
       title={group.label}
       aria-label={collapsed ? group.label : undefined}
       className={`group flex w-full items-center rounded-lg text-[var(--sidebar-muted)] outline-none transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--fg)] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
@@ -150,37 +152,45 @@ function NavGroupHeader({
  * 承担的是「17 个原本占着侧栏一行的视图」的落脚点。刻意做成一排链接而不是把页面
  * 组件合并:那些页面 420-957 行不等,合并的收益为零而风险很实在。tab 是导航,不是
  * 组件结构 —— 所以路由和页面一行没动。
+ *
+ * 和 NavRow 同样的理由用 Link 而不是 NavLink:选中判定必须走 resolveNav。第一版这里
+ * 用了 `NavLink … end`,于是会话详情页 /claude-code-history/s/<id> 上 5 个 tab 一个都
+ * 不高亮 —— 模型层已经算出 activeTab 是 Claude(nav.model.test.ts 有用例),Layout 却
+ * 没读它,自己用 NavLink 重新判了一遍。实测复现过。
  */
-function SubNav({ tabs, frameClass }: { tabs: { to: string; label: string }[]; frameClass: string }) {
+function SubNav({
+  tabs,
+  activeTab,
+  frameClass,
+}: {
+  tabs: NavTab[];
+  activeTab: NavTab | null;
+  frameClass: string;
+}) {
   if (tabs.length === 0) return null;
   return (
-    <div className="border-b border-[var(--border)] bg-[var(--bg)]">
+    <nav aria-label="页面视图" className="border-b border-[var(--border)] bg-[var(--bg)]">
       <div className={`${frameClass} flex h-11 items-center gap-1`}>
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            end
-            className={({ isActive }) =>
-              `relative flex h-11 items-center px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
-                isActive
-                  ? "font-medium text-[var(--fg)]"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]"
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {tab.label}
-                {isActive ? (
-                  <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--sidebar-accent)]" />
-                ) : null}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {tabs.map((tab) => {
+          const active = activeTab?.to === tab.to;
+          return (
+            <Link
+              key={tab.to}
+              to={tab.to}
+              aria-current={active ? "page" : undefined}
+              className={`relative flex h-11 items-center px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${
+                active ? "font-medium text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"
+              }`}
+            >
+              {tab.label}
+              {active ? (
+                <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--sidebar-accent)]" />
+              ) : null}
+            </Link>
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -202,14 +212,19 @@ export function Layout({ children }: { children: ReactNode }) {
    * 24 个条目全摊开是 988px,而可见高度 609px —— 光靠分组和合并还是放不下。只展开
    * 当前所在的那组之后最坏是 6 个组头 + 5 项 = 418px,一屏有富余。
    *
-   * 跟随路由用的是 React 官方的「渲染期修正 state」写法而不是 useEffect:从 ⌘K 搜索
-   * 结果跳到另一个组时,侧栏必须当场跟过去,而 effect 会晚一帧 —— 表现为展开的组闪
-   * 一下才换。用户手动点开的组保留到下一次跨组跳转为止。
+   * 跟随的是 pathname 而不是 groupId。跟 groupId 会漏一格:手动收掉当前所在的组,再用
+   * ⌘K 跳到**同一组内**的另一页,groupId 没变于是不重开 —— 高亮的那一行藏着,看不见。
+   * 按 pathname 跟,任何一次跳转都会把落地的那组打开,手动收起保留到下一次跳转为止。
+   *
+   * 用 React 官方的「渲染期修正 state」而不是 useEffect:effect 会晚一帧,表现为展开的
+   * 组闪一下才换。
    */
   const [openGroupId, setOpenGroupId] = useState<string | null>(match.groupId);
-  const [lastGroupId, setLastGroupId] = useState<string | null>(match.groupId);
-  if (match.groupId !== lastGroupId) {
-    setLastGroupId(match.groupId);
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
+    // groupId 为 null 的路由(/ai-chat、/settings、/search)不属于任何组,保持现状而不是
+    // 把侧栏全收起来。
     if (match.groupId !== null) setOpenGroupId(match.groupId);
   }
 
@@ -311,6 +326,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 collapsed={collapsed}
                 onToggle={() => setOpenGroupId(openGroupId === group.id ? null : group.id)}
               />
+              <div id={`nav-group-${group.id}`} className="space-y-0.5">
               {openGroupId === group.id
                 ? group.items.map((item) => (
                     <NavRow
@@ -321,6 +337,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     />
                   ))
                 : null}
+              </div>
             </div>
           ))}
         </nav>
@@ -364,7 +381,7 @@ export function Layout({ children }: { children: ReactNode }) {
         style={{ marginLeft: sidebarWidth }}
       >
         <ScrollToTop containerRef={scrollRef} />
-        <SubNav tabs={match.tabs} frameClass={frameClass} />
+        <SubNav tabs={match.tabs} activeTab={match.activeTab} frameClass={frameClass} />
         <main
           ref={scrollRef}
           id="main-content"

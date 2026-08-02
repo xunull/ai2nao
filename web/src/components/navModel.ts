@@ -276,7 +276,7 @@ export function allNavDestinations(): string[] {
   return out;
 }
 
-export function resolveNav(pathname: string, groups: NavGroup[] = NAV_GROUPS): NavMatch {
+export function resolveNav(pathname: string): NavMatch {
   // 常驻条目不属于任何组,所以 groupId 是 null —— 停在它们上面时侧栏不展开任何一组。
   // 第一版漏了这一段,后果是「AI 对话」和「设置」永远不高亮。
   for (const item of [...PRIMARY_ITEMS, SETTINGS_ITEM]) {
@@ -285,7 +285,7 @@ export function resolveNav(pathname: string, groups: NavGroup[] = NAV_GROUPS): N
     }
   }
 
-  for (const group of groups) {
+  for (const group of NAV_GROUPS) {
     for (const item of group.items) {
       const tabs = item.tabs ?? [];
       // 最长匹配:/atuin/directories 同时被 /atuin 和 /atuin/directories 覆盖,

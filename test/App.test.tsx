@@ -617,6 +617,36 @@ describe("Layout navigation", () => {
     );
   });
 
+  it("keeps the tab lit on a session detail page under a tab route", () => {
+    // /code-review 抓到的:第一版 SubNav 用 `NavLink … end` 自己重判选中,于是会话详情
+    // 页上 5 个 tab 一个都不高亮。模型层早就算对了(nav.model.test.ts 有对应用例)——
+    // 是 Layout 没读 match.activeTab。所以这条断言必须落在渲染结果上,模型层盖不住。
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/claude-code-history/s/abc123");
+
+    const tabsEl = screen.getByRole("navigation", { name: "页面视图" });
+    expect(within(tabsEl).getByRole("link", { name: "Claude" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    // 侧栏的父条目同时保持高亮。
+    const navEl = screen.getByRole("navigation", { name: "全站导航" });
+    expect(within(navEl).getByRole("link", { name: "AI 对话记录" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+  });
+
+  it("hides the tab bar entirely on pages that have no tabs", () => {
+    window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
+
+    renderLayout("/providers");
+
+    // 没有 tab 的页面不该为这条栏付出 44px 垂直空间。
+    expect(screen.queryByRole("navigation", { name: "页面视图" })).toBeNull();
+  });
+
   it("pins Settings at the bottom as a standalone link", () => {
     window.localStorage.setItem("ai2nao.sidebar.collapsed", "false");
 
