@@ -1093,7 +1093,22 @@ export function createApp(opts: ServeOptions): Hono {
 
   const staticRoot = opts.staticRoot;
   if (staticRoot && existsSync(staticRoot)) {
-    app.use("/assets/*", serveStatic({ root: staticRoot }));
+    /*
+     * 整个 dist 都要能取到,不能只挂 /assets/*。
+     *
+     * Vite 把 `web/public/**` 原样拷进 dist 的**根**下,而不是 assets/ —— 这是 Vite
+     * 对 public 目录的定义。原来只挂 /assets/* 的后果是这些文件全部落到下面的 SPA
+     * 兜底,拿到一份 index.html 和 `content-type: text/html`。
+     *
+     * 失败模式极其安静:HTTP 200,浏览器不报错,只是那份样式表/脚本一条规则都没有。
+     * 实测踩到的是 /vendor/copilotkit-v2.css(75831 字节的文件返回了 447 字节的
+     * HTML),表现为 AI 对话页的输入框渲染成一个没有任何样式的裸 textarea。
+     *
+     * 而且它只在 daemon 下暴露:Vite dev server 正确提供 public/,所以开发时看不见。
+     *
+     * serveStatic 找不到文件时会 next(),所以 SPA 路由仍然落到下面的兜底。
+     */
+    app.use("*", serveStatic({ root: staticRoot }));
     app.get("*", async (c) => {
       if (c.req.path.startsWith("/api")) return c.notFound();
       const indexPath = join(staticRoot, "index.html");
