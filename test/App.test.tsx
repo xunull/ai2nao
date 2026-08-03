@@ -473,7 +473,7 @@ describe("Layout navigation", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the AI chat action plus all six group headers at once", () => {
+  it("shows the pinned entries plus all seven group headers at once", () => {
     // 原用例断言「每个组名 + 每条路由链接同时可见」。手风琴推翻了后半句 —— 那正是
     // 改造的目的(24 个条目全摊开是 988px,放不下)。仍然成立、也仍然重要的是前半句:
     // 六个组的**名字**必须一眼全看得到,否则用户不知道东西在哪个抽屉里。
@@ -482,9 +482,20 @@ describe("Layout navigation", () => {
     renderLayout("/repos");
 
     const navEl = screen.getByRole("navigation", { name: "全站导航" });
+    // 两个常驻入口:AI 对话,和「最近工作」——后者是首页(`/` 重定向到它、a2 徽标也
+    // 指向它),折在组里意味着点自己的首页还得先展开一个抽屉。
     expect(within(navEl).getByRole("link", { name: "AI 对话" })).toBeInTheDocument();
+    expect(within(navEl).getByRole("link", { name: "最近工作" })).toBeInTheDocument();
 
-    for (const label of ["分析", "时间线", "代码", "软件", "历史记录", "运行与诊断"]) {
+    for (const label of [
+      "对话",
+      "时间线",
+      "代码",
+      "模型与平台",
+      "软件",
+      "本机记录",
+      "运行与诊断",
+    ]) {
       expect(within(navEl).getByRole("button", { name: label })).toBeInTheDocument();
     }
 

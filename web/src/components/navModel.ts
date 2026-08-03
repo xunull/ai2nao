@@ -2,7 +2,6 @@ import {
   Activity,
   AppWindowMac,
   Archive,
-  BarChart3,
   Beer,
   Boxes,
   BrainCircuit,
@@ -21,8 +20,10 @@ import {
   Globe,
   HardDrive,
   History,
+  Layers,
   LayoutDashboard,
   MessageSquareText,
+  MessagesSquare,
   Package,
   Plug,
   Search,
@@ -87,6 +88,21 @@ export type NavGroup = {
 
 export const PRIMARY_ITEMS: NavItem[] = [
   { to: "/ai-chat", label: "AI 对话", icon: BrainCircuit },
+  {
+    // 最近工作就是首页:App.tsx 把 `/` 重定向到这里,左上角的 a2 徽标也指向这里。
+    // 已经有两个入口的东西不该再折在某个组的抽屉里 —— 手风琴收起时,点自己的首页
+    // 还要先展开一个组,这比任何一处错位都别扭。
+    to: "/dashboard",
+    label: "最近工作",
+    icon: LayoutDashboard,
+    tabs: [
+      { to: "/dashboard", label: "总览" },
+      { to: "/dashboard/tokens", label: "Token 排行" },
+      { to: "/dashboard/tokens-trend", label: "Token 趋势" },
+      { to: "/dashboard/project-output", label: "产出效率" },
+      { to: "/dashboard/cosmos", label: "对话宇宙" },
+    ],
+  },
 ];
 
 /** 设置钉在栏底,不进任何组(VS Code / Linear / Slack 的惯例)。 */
@@ -98,29 +114,33 @@ export const SETTINGS_ITEM: NavItem = {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    id: "analysis",
-    label: "分析",
-    icon: BarChart3,
+    // 排第一位是因为这是这个应用的主体:库里 agent_user_messages 46666 行、
+    // topic_stream 67650 行、两个 token 表合计十万行。而且手风琴默认展开当前所在组,
+    // 最常停留的组排第一,展开的那一坨就在视线最上方。
+    id: "conversation",
+    label: "对话",
+    icon: MessagesSquare,
     items: [
+      { to: "/agent-messages", label: "对话搜索", icon: Search },
       {
-        to: "/dashboard",
-        label: "最近工作",
-        icon: LayoutDashboard,
+        // 5 个来源本来是 5 个一级入口,但它们是同一件事的不同来源 —— 而「按来源筛选」
+        // 这个模式应用里已经有了(最近工作页顶上就挂着来源下拉)。
+        to: "/claude-code-history",
+        label: "AI 对话记录",
+        icon: MessageSquareText,
         tabs: [
-          { to: "/dashboard", label: "总览" },
-          { to: "/dashboard/tokens", label: "Token 排行" },
-          { to: "/dashboard/tokens-trend", label: "Token 趋势" },
-          { to: "/dashboard/project-output", label: "产出效率" },
-          { to: "/dashboard/cosmos", label: "对话宇宙" },
+          { to: "/claude-code-history", label: "Claude" },
+          { to: "/codex-history", label: "Codex" },
+          { to: "/cursor-history", label: "Cursor" },
+          { to: "/cherry-studio-history", label: "Cherry" },
+          { to: "/opencode-history", label: "opencode" },
         ],
       },
       { to: "/topics/river", label: "主题河流", icon: Waves },
-      { to: "/providers", label: "外部平台", icon: Plug },
     ],
   },
   {
-    // 和「分析」分开的判据是主键不同:这一组每一页的主轴都是日期,分析那组的主轴是
-    // 项目 / 主题 / 平台。合在一起叫「工作台」时这条区别看不出来。
+    // 和其余组分开的判据是主键不同:这一组每一页的主轴都是日期。
     id: "timeline",
     label: "时间线",
     icon: CalendarClock,
@@ -153,13 +173,14 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "software",
-    label: "软件",
-    icon: HardDrive,
+    // 「我手上有哪些 AI 能力」的三个面:云端的额度、本地的模型、装了哪些工具。
+    // 外部平台原来在「分析」组 —— 但那组是分析你**已经做过**的工作,而额度是你
+    // **还能做多少**,方向是反的。
+    id: "models",
+    label: "模型与平台",
+    icon: Layers,
     items: [
-      { to: "/apps", label: "Mac 应用", icon: AppWindowMac },
-      { to: "/brew", label: "Homebrew", icon: Beer },
-      { to: "/downloads", label: "下载", icon: Download },
+      { to: "/providers", label: "外部平台", icon: Plug },
       {
         to: "/huggingface-models",
         label: "模型库存",
@@ -173,25 +194,24 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "history",
-    label: "历史记录",
+    id: "software",
+    label: "软件",
+    icon: HardDrive,
+    items: [
+      { to: "/apps", label: "Mac 应用", icon: AppWindowMac },
+      { to: "/brew", label: "Homebrew", icon: Beer },
+      { to: "/downloads", label: "下载", icon: Download },
+    ],
+  },
+  {
+    // 别的程序留在这台机器上的记录。原来叫「历史记录」,和 AI 对话混装在一起 ——
+    // 两者只在「都是过去发生的」这个意义上相同,而那个意义弱到不足以让人在找对话时
+    // 想到它。留在 2 项是因为 Chrome 和 Atuin 没有任何备用入口,撤掉这个组它们只能
+    // 塞进语义不对的地方。
+    id: "local-records",
+    label: "本机记录",
     icon: History,
     items: [
-      { to: "/agent-messages", label: "对话搜索", icon: Search },
-      {
-        // 5 个来源本来是 5 个一级入口,但它们是同一件事的不同来源 —— 而「按来源筛选」
-        // 这个模式应用里已经有了(最近工作页顶上就挂着来源下拉)。
-        to: "/claude-code-history",
-        label: "AI 对话记录",
-        icon: MessageSquareText,
-        tabs: [
-          { to: "/claude-code-history", label: "Claude" },
-          { to: "/codex-history", label: "Codex" },
-          { to: "/cursor-history", label: "Cursor" },
-          { to: "/cherry-studio-history", label: "Cherry" },
-          { to: "/opencode-history", label: "opencode" },
-        ],
-      },
       {
         to: "/chrome-history",
         label: "Chrome",
@@ -215,7 +235,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     // 杂物抽屉,而且知道自己是:定时任务和 RAG 是 ai2nao 自己的内部状态,Shell 权限
-    // 是你 Claude Code 的配置分析。严格说不是一类,但各自只有 1-2 项,单独成组更差。
+    // 是你 Claude Code 的配置分析。配置类永远垫底。
     id: "ops",
     label: "运行与诊断",
     icon: Gauge,
@@ -261,46 +281,53 @@ function covers(to: string, pathname: string): boolean {
 }
 
 /** 侧栏和顶栏能到达的全部路径,给完整性测试用。 */
+function itemDestinations(item: NavItem): string[] {
+  // 有 tabs 时条目自身的 to 一定等于 tabs[0].to(有测试钉着),不能重复计入。
+  return item.tabs === undefined ? [item.to] : item.tabs.map((t) => t.to);
+}
+
 export function allNavDestinations(): string[] {
-  const out: string[] = [
-    ...PRIMARY_ITEMS.map((i) => i.to),
-    SETTINGS_ITEM.to,
+  return [
+    ...PRIMARY_ITEMS.flatMap(itemDestinations),
+    ...itemDestinations(SETTINGS_ITEM),
+    ...NAV_GROUPS.flatMap((g) => g.items.flatMap(itemDestinations)),
   ];
-  for (const group of NAV_GROUPS) {
-    for (const item of group.items) {
-      // 有 tabs 时条目自身的 to 一定等于 tabs[0].to,不能重复计入。
-      if (item.tabs === undefined) out.push(item.to);
-      else out.push(...item.tabs.map((t) => t.to));
-    }
-  }
-  return out;
+}
+
+/**
+ * 一个条目是否命中当前路径,以及命中的是它的哪个 tab。
+ *
+ * 常驻条目和组内条目必须走同一套逻辑。第一版没有:常驻那条只判了 `pathname === item.to`
+ * 并把 activeTab 写死成 null。当时无所谓,因为常驻的只有「AI 对话」和「设置」,两个都
+ * 没有 tab —— code review 还因此判定那是死分支。
+ *
+ * 「最近工作」提成常驻之后那段就承重了:它带 5 个 tab,按旧逻辑 /dashboard/tokens 既
+ * 不等于 /dashboard 又没有 matchChildren,会一路穿过去谁都不命中 —— 侧栏和顶栏同时
+ * 失去高亮。所以抽出来共用。
+ */
+function matchItem(item: NavItem, pathname: string): { hit: boolean; activeTab: NavTab | null } {
+  const tabs = item.tabs ?? [];
+  // 最长匹配:/atuin/directories 同时被 /atuin 和 /atuin/directories 覆盖,
+  // 选中的 tab 必须是后者。
+  const activeTab =
+    tabs.filter((t) => covers(t.to, pathname)).sort((a, b) => b.to.length - a.to.length)[0] ??
+    null;
+  const selfHit =
+    pathname === item.to || (item.matchChildren === true && covers(item.to, pathname));
+  return { hit: activeTab !== null || selfHit, activeTab };
 }
 
 export function resolveNav(pathname: string): NavMatch {
   // 常驻条目不属于任何组,所以 groupId 是 null —— 停在它们上面时侧栏不展开任何一组。
-  // 第一版漏了这一段,后果是「AI 对话」和「设置」永远不高亮。
   for (const item of [...PRIMARY_ITEMS, SETTINGS_ITEM]) {
-    if (pathname === item.to || (item.matchChildren === true && covers(item.to, pathname))) {
-      return { groupId: null, item, tabs: item.tabs ?? [], activeTab: null };
-    }
+    const m = matchItem(item, pathname);
+    if (m.hit) return { groupId: null, item, tabs: item.tabs ?? [], activeTab: m.activeTab };
   }
 
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
-      const tabs = item.tabs ?? [];
-      // 最长匹配:/atuin/directories 同时被 /atuin 和 /atuin/directories 覆盖,
-      // 选中的 tab 必须是后者。
-      const activeTab =
-        tabs
-          .filter((t) => covers(t.to, pathname))
-          .sort((a, b) => b.to.length - a.to.length)[0] ?? null;
-
-      const selfHit =
-        pathname === item.to || (item.matchChildren === true && covers(item.to, pathname));
-
-      if (activeTab !== null || selfHit) {
-        return { groupId: group.id, item, tabs, activeTab };
-      }
+      const m = matchItem(item, pathname);
+      if (m.hit) return { groupId: group.id, item, tabs: item.tabs ?? [], activeTab: m.activeTab };
     }
   }
   return EMPTY_MATCH;

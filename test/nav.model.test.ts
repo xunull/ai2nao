@@ -42,7 +42,9 @@ describe("resolveNav — 路径落到哪个组、哪个条目", () => {
   it("tab 的路径落到它的父条目,并带出整条 tab 列表", () => {
     const m = resolveNav("/dashboard/tokens-trend");
     expect(m.item?.to).toBe("/dashboard");
-    expect(m.groupId).toBe("analysis");
+    // 「最近工作」是常驻条目(它是首页),不属于任何组 —— 但 tab 解析必须和组内条目
+    // 一样工作,这正是常驻分支曾经漏掉的那一格。
+    expect(m.groupId).toBeNull();
     expect(m.tabs.map((t) => t.label)).toEqual([
       "总览",
       "Token 排行",
@@ -97,6 +99,16 @@ describe("resolveNav — 路径落到哪个组、哪个条目", () => {
     expect(chat.tabs).toEqual([]);
 
     expect(resolveNav("/settings").item?.label).toBe("设置");
+  });
+
+  it("带 tab 的常驻条目,tab 也要能选中", () => {
+    // 「最近工作」从组里提成常驻时踩到的洞:常驻分支原来只判 `pathname === item.to`
+    // 并把 activeTab 写死成 null。当时常驻的两个条目都没有 tab,所以那是段死代码 ——
+    // code review 也因此判它是死分支。直到一个带 5 个 tab 的条目搬进来,它就承重了。
+    // 现在两条路径共用 matchItem。
+    const m = resolveNav("/dashboard/cosmos");
+    expect(m.item?.label).toBe("最近工作");
+    expect(m.activeTab?.label).toBe("对话宇宙");
   });
 });
 
