@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type Database from "better-sqlite3";
+import { getReplayGapMinutes } from "../appConfig/index.js";
 import { getReplaySession, listReplaySessions } from "./queries.js";
 
 function jsonErr(status: number, message: string) {
@@ -31,8 +32,14 @@ function parseWindowDays(raw: string | undefined): number | undefined | { error:
  *   GET /api/replay/sessions?windowDays=&includeNoCommit=  会话卡片(最新在前)+ skipped
  *   GET /api/replay/session?key=                          某段详情(交织事件流,commit 带 matchedCount)
  * 口径(matchedCount 的 windowFrom 夹逼 + project 隔离)见 queries.ts。
+ *
+ * 分段阈值来自 app_config 的 `replay.gapMinutes`(设置页可改),**每次请求现读**:
+ * 改完设置刷新页面即生效,不用重启 daemon。两个端点必须读同一个值 —— 列表按 A 切、
+ * 详情按 B 切的话,列表里的 firstEventKey 在详情侧根本不存在,点进去就是 404。
  */
 export function registerReplayRoutes(app: Hono, db: Database.Database): void {
+  const gapThresholdMs = () => getReplayGapMinutes(db) * 60_000;
+
   app.get("/api/replay/sessions", (c) => {
     const windowDays = parseWindowDays(c.req.query("windowDays"));
     if (windowDays != null && typeof windowDays === "object") {
@@ -40,7 +47,11 @@ export function registerReplayRoutes(app: Hono, db: Database.Database): void {
     }
     const includeNoCommit = boolQuery(c.req.query("includeNoCommit")) ?? false;
     try {
-      const result = listReplaySessions(db, { windowDays, includeNoCommit });
+      const result = listReplaySessions(db, {
+        windowDays,
+        includeNoCommit,
+        gapThresholdMs: gapThresholdMs(),
+      });
       return c.json({ ok: true, ...result });
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
@@ -55,7 +66,11 @@ export function registerReplayRoutes(app: Hono, db: Database.Database): void {
       return jsonErr(400, windowDays.error);
     }
     try {
-      const result = getReplaySession(db, { key, windowDays });
+      const result = getReplaySession(db, {
+        key,
+        windowDays,
+        gapThresholdMs: gapThresholdMs(),
+      });
       if (!result) return jsonErr(404, "session not found");
       return c.json({ ok: true, ...result });
     } catch (e) {

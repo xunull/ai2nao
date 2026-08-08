@@ -32,6 +32,7 @@ type SettingsRes = {
   scanMaxDepth: number;
   scanMaxDocs: number;
   scanConcurrency: number;
+  replayGapMinutes: number;
   github: { set: boolean; source: CredSource };
   credentials: Record<CredName, Credential>;
   settings: { "rag-corpus": Setting };
@@ -110,13 +111,16 @@ export function Settings() {
 
           <div className="min-w-0 flex-1 space-y-4">
             {active === "general" && (
-              <ScanRootsSection
-                roots={q.data.scanRoots}
-                maxDepth={q.data.scanMaxDepth}
-                maxDocs={q.data.scanMaxDocs}
-                concurrency={q.data.scanConcurrency}
-                onChanged={refresh}
-              />
+              <>
+                <ScanRootsSection
+                  roots={q.data.scanRoots}
+                  maxDepth={q.data.scanMaxDepth}
+                  maxDocs={q.data.scanMaxDocs}
+                  concurrency={q.data.scanConcurrency}
+                  onChanged={refresh}
+                />
+                <ReplayGapSection gapMinutes={q.data.replayGapMinutes} onChanged={refresh} />
+              </>
             )}
 
             {active === "topics" && (
@@ -657,6 +661,58 @@ function FeishuSection({ cred, onChanged }: { cred: Credential; onChanged: () =>
         }
         onClear={() => clear.mutate()}
       />
+    </Section>
+  );
+}
+
+/**
+ * 「那天回放」隔多久算两段工作。
+ *
+ * 只有一个数字，所以没有「保存」按钮 —— 失焦即提交，和上面几个扫描参数一致。越界的输入
+ * 本地就弹回原值：服务端也会拒（400），但让一个必然失败的请求飞出去只换来一条红字。
+ */
+function ReplayGapSection({
+  gapMinutes,
+  onChanged,
+}: {
+  gapMinutes: number;
+  onChanged: () => void;
+}) {
+  const [draft, setDraft] = useState(String(gapMinutes));
+
+  const save = useMutation({
+    mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { replayGapMinutes: n }),
+    onSuccess: () => onChanged(),
+  });
+
+  return (
+    <Section
+      title="那天回放"
+      hint="提交和对话按时间排成一条流，相邻两件事隔得够久就断成两段工作。"
+    >
+      <div className="flex items-center gap-2">
+        <label htmlFor="replay-gap" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
+          分段间隔
+        </label>
+        <input
+          id="replay-gap"
+          type="number"
+          min={1}
+          max={1440}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const n = Number(draft);
+            if (Number.isInteger(n) && n >= 1 && n <= 1440 && n !== gapMinutes) save.mutate(n);
+            else setDraft(String(gapMinutes));
+          }}
+          className="h-8 w-20 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+        />
+        <span className="text-xs text-[var(--muted)]">
+          分钟（默认 120 · 调小切得更碎，调大合并成整块）。
+        </span>
+        {save.isError && <span className="text-xs text-red-600">{shortErr(save.error)}</span>}
+      </div>
     </Section>
   );
 }

@@ -9,6 +9,8 @@ import {
   setScanMaxDocs,
   getScanConcurrency,
   setScanConcurrency,
+  getReplayGapMinutes,
+  setReplayGapMinutes,
 } from "../appConfig/index.js";
 import { githubTokenStatus } from "../github/config.js";
 import {
@@ -46,6 +48,7 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     scanMaxDepth: getScanMaxDepth(db),
     scanMaxDocs: getScanMaxDocs(db),
     scanConcurrency: getScanConcurrency(db),
+    replayGapMinutes: getReplayGapMinutes(db),
     // Kept for the shipped GitHub section of the settings page; `credentials`
     // below is the general form and includes github too.
     github: githubDto(),
@@ -66,11 +69,12 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
     } catch {
       return jsonErr(400, "invalid JSON body");
     }
-    const { scanRoots, scanMaxDepth, scanMaxDocs, scanConcurrency } = body as {
+    const { scanRoots, scanMaxDepth, scanMaxDocs, scanConcurrency, replayGapMinutes } = body as {
       scanRoots?: unknown;
       scanMaxDepth?: unknown;
       scanMaxDocs?: unknown;
       scanConcurrency?: unknown;
+      replayGapMinutes?: unknown;
     };
     try {
       if (scanRoots !== undefined) {
@@ -89,6 +93,12 @@ export function registerSettingsRoutes(app: Hono, db: Database.Database): void {
       if (scanConcurrency !== undefined) {
         if (typeof scanConcurrency !== "number") return jsonErr(400, "scanConcurrency must be a number");
         setScanConcurrency(db, scanConcurrency);
+      }
+      if (replayGapMinutes !== undefined) {
+        if (typeof replayGapMinutes !== "number") {
+          return jsonErr(400, "replayGapMinutes must be a number");
+        }
+        setReplayGapMinutes(db, replayGapMinutes);
       }
     } catch (e) {
       return jsonErr(400, e instanceof Error ? e.message : "invalid settings");

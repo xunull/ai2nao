@@ -203,4 +203,17 @@ describe("settings routes", () => {
     expect((await patch("/api/settings", { scanConcurrency: 0 })).status).toBe(400);
     expect((await patch("/api/settings", { scanConcurrency: 100 })).status).toBe(400);
   });
+
+  it("GET exposes replayGapMinutes (default 120); PATCH sets it", async () => {
+    expect((await get()).replayGapMinutes).toBe(120);
+    const res = await patch("/api/settings", { replayGapMinutes: 45 });
+    expect(res.status).toBe(200);
+    expect((await res.json()).replayGapMinutes).toBe(45);
+    expect((await get()).replayGapMinutes).toBe(45);
+  });
+
+  it("PATCH rejects an out-of-range replayGapMinutes with 400", async () => {
+    expect((await patch("/api/settings", { replayGapMinutes: 0 })).status).toBe(400);
+    expect((await patch("/api/settings", { replayGapMinutes: 1441 })).status).toBe(400);
+  });
 });

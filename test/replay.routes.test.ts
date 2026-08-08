@@ -9,6 +9,7 @@ import { openDatabase } from "../src/store/open.js";
 import { upsertCommits } from "../src/gitCommits/store.js";
 import { upsertUserMessagesBatch } from "../src/agentUserMessages/store.js";
 import { slugFromPath } from "../src/agentUserMessages/projectKey.js";
+import { setReplayGapMinutes } from "../src/appConfig/index.js";
 import { createApp } from "../src/serve/app.js";
 
 const REPO = "/w/x/repo";
@@ -169,5 +170,90 @@ describe("GET /api/replay/session —— createApp 集成", () => {
       "http://x/api/replay/session?key=git:nope"
     );
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * 分段阈值来自设置,不再是写死的 2 小时。
+ *
+ * ## 这组测试在防什么
+ *
+ * `sessionize()` 一直收 `gapThresholdMs`,`queries.ts` 也一路把它透传下来 —— 管线是通的,
+ * 但 **routes.ts 从来不填**,于是永远是 `undefined`,永远走 `DEFAULT_GAP_THRESHOLD_MS`。
+ * 「参数留好了没人接线」这种缺陷不会报错、不会崩,只会让设置页上的数字看起来生效了
+ * 而实际没有。所以断言落在**接口返回的分段结果**上,而不是落在「setter 存进去了」上 ——
+ * 后者就算全绿,route 不读它照样白搭。
+ */
+describe("那天回放的分段阈值可配", () => {
+  /** seed() 之外再加一条 13:55,让「改阈值」能产生两个都非空、但不相同的结果。 */
+  function seedExtraMessage(db: Database.Database): void {
+    upsertUserMessagesBatch(
+      db,
+      [
+        {
+          source: "claude",
+          sourceSessionId: "s1",
+          sourceMessageKey: "m3",
+          project: P,
+          eventAtUtc: "2026-06-30T13:55:00.000Z",
+          rawText: "再看一眼",
+          rawPayloadJson: '"再看一眼"',
+          cleanedText: "再看一眼",
+          isHuman: true,
+          cleanerVersion: 1,
+          parserVersion: 1,
+          sourcePath: null,
+        },
+      ],
+      "2026-06-01T00:00:00.000Z"
+    );
+  }
+
+  async function sessionsOf(db: Database.Database) {
+    const res = await createApp({ db }).request("http://x/api/replay/sessions");
+    expect(res.status).toBe(200);
+    return (await res.json()) as {
+      sessions: { commitCount: number; messageCount: number }[];
+    };
+  }
+
+  it("没设过 → 仍是 2 小时:13:00/13:30/13:55/14:00 合成一段", async () => {
+    const db = freshDb();
+    seed(db);
+    seedExtraMessage(db);
+    const body = await sessionsOf(db);
+    expect(body.sessions.length).toBe(1);
+    expect(body.sessions[0].messageCount).toBe(3);
+    expect(body.sessions[0].commitCount).toBe(1);
+  });
+
+  it("设成 25 分钟 → 13:00 那条被切出去,只剩 2 条消息和这次提交同段", async () => {
+    const db = freshDb();
+    seed(db);
+    seedExtraMessage(db);
+    setReplayGapMinutes(db, 25);
+    // 间隔:30 分(>25,断)、25 分(不 >25,连)、5 分(连)。
+    const body = await sessionsOf(db);
+    expect(body.sessions.length).toBe(1);
+    expect(body.sessions[0].messageCount).toBe(2);
+    expect(body.sessions[0].commitCount).toBe(1);
+  });
+
+  it("详情页用同一个阈值 —— 否则列表点进去会「找不到这一段」", async () => {
+    const db = freshDb();
+    seed(db);
+    seedExtraMessage(db);
+    setReplayGapMinutes(db, 25);
+    const list = await createApp({ db }).request("http://x/api/replay/sessions");
+    const { sessions } = (await list.json()) as {
+      sessions: { firstEventKey: string }[];
+    };
+    const key = sessions[0].firstEventKey;
+    // 列表按 25 分钟切出来的 key,详情必须也按 25 分钟才找得到。详情若还用 2 小时,
+    // 整段的 firstEventKey 会是 13:00 那条,这个请求就 404。
+    const res = await createApp({ db }).request(
+      `http://x/api/replay/session?key=${encodeURIComponent(key)}`
+    );
+    expect(res.status).toBe(200);
   });
 });

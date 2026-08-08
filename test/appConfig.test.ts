@@ -16,7 +16,11 @@ import {
   getScanConcurrency,
   setScanConcurrency,
   DEFAULT_SCAN_CONCURRENCY,
+  getReplayGapMinutes,
+  setReplayGapMinutes,
+  DEFAULT_REPLAY_GAP_MINUTES,
 } from "../src/appConfig/index.js";
+import { DEFAULT_GAP_THRESHOLD_MS } from "../src/replay/sessionize.js";
 
 let base: string;
 let db: Database.Database;
@@ -159,5 +163,34 @@ describe("getScanConcurrency / setScanConcurrency", () => {
   it("falls back to default on a corrupt / out-of-range stored value", () => {
     db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('scan.concurrency', '0', 't')").run();
     expect(getScanConcurrency(db)).toBe(DEFAULT_SCAN_CONCURRENCY);
+  });
+});
+
+describe("getReplayGapMinutes / setReplayGapMinutes", () => {
+  it("defaults to 120 minutes — the same 2h sessionize() has always used", () => {
+    expect(getReplayGapMinutes(db)).toBe(DEFAULT_REPLAY_GAP_MINUTES);
+    expect(DEFAULT_REPLAY_GAP_MINUTES).toBe(120);
+  });
+
+  it("默认值来自 sessionize 本身,不是另抄一份", () => {
+    // 两处各写一个 120 迟早会漂:一处改了另一处不改,而症状是「设置页显示 120、
+    // 实际按别的值切段」—— 没有任何东西会报错。所以这里断言它们同源。
+    expect(DEFAULT_REPLAY_GAP_MINUTES * 60_000).toBe(DEFAULT_GAP_THRESHOLD_MS);
+  });
+
+  it("stores and reads back a valid gap", () => {
+    expect(setReplayGapMinutes(db, 30)).toBe(30);
+    expect(getReplayGapMinutes(db)).toBe(30);
+  });
+
+  it("rejects non-integers and out-of-range values (min 1, max 1440)", () => {
+    expect(() => setReplayGapMinutes(db, 0)).toThrow();
+    expect(() => setReplayGapMinutes(db, 2.5)).toThrow();
+    expect(() => setReplayGapMinutes(db, 1441)).toThrow();
+  });
+
+  it("falls back to default on a corrupt / out-of-range stored value", () => {
+    db.prepare("INSERT INTO app_config (key, value, updated_at) VALUES ('replay.gapMinutes', '0', 't')").run();
+    expect(getReplayGapMinutes(db)).toBe(DEFAULT_REPLAY_GAP_MINUTES);
   });
 });

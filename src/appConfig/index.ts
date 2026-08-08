@@ -17,6 +17,7 @@ import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type Database from "better-sqlite3";
 import { canonicalizePath } from "../path/canonical.js";
+import { DEFAULT_GAP_THRESHOLD_MS } from "../replay/sessionize.js";
 import {
   OTHER_CATEGORY,
   TAXONOMY_RULE_KINDS,
@@ -216,6 +217,50 @@ export function setScanConcurrency(db: Database.Database, concurrency: number): 
   }
   writeRaw(db, KEY_SCAN_CONCURRENCY, concurrency);
   return concurrency;
+}
+
+// ---------- Replay session gap (「那天回放」的分段阈值) ----------
+
+const KEY_REPLAY_GAP_MINUTES = "replay.gapMinutes";
+
+/**
+ * 相邻事件隔多久算两段工作。**从 sessionize 的常量换算，不另抄一份数字** —— 两处各写
+ * 一个 120 迟早会漂，而症状是「设置页显示 120、实际按别的值切段」，没有任何东西会报错。
+ */
+export const DEFAULT_REPLAY_GAP_MINUTES = DEFAULT_GAP_THRESHOLD_MS / 60_000;
+/** 一天。再大就等于「永不分段」，那不是一个有意义的设置值。 */
+const MAX_REPLAY_GAP_MINUTES = 24 * 60;
+
+/**
+ * 回放的分段阈值（分钟）。返回配置值，或 {@link DEFAULT_REPLAY_GAP_MINUTES}；缺失 /
+ * 损坏 / 越界的行一律回落到默认值（corruption-tolerant，与上面几个 scan.* 一致）。
+ */
+export function getReplayGapMinutes(db: Database.Database): number {
+  const raw = readRaw(db, KEY_REPLAY_GAP_MINUTES);
+  if (
+    typeof raw !== "number" ||
+    !Number.isInteger(raw) ||
+    raw < 1 ||
+    raw > MAX_REPLAY_GAP_MINUTES
+  ) {
+    if (raw !== undefined) console.warn("app_config: replay.gapMinutes out of range; using default");
+    return DEFAULT_REPLAY_GAP_MINUTES;
+  }
+  return raw;
+}
+
+/** Validate + store。Throws（caller -> 400）on a non-integer or out-of-range value. */
+export function setReplayGapMinutes(db: Database.Database, minutes: number): number {
+  if (
+    typeof minutes !== "number" ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    minutes > MAX_REPLAY_GAP_MINUTES
+  ) {
+    throw new Error(`replay gap must be an integer 1..${MAX_REPLAY_GAP_MINUTES} minutes`);
+  }
+  writeRaw(db, KEY_REPLAY_GAP_MINUTES, minutes);
+  return minutes;
 }
 
 // ---------- Topic taxonomy (the categories behind 主题河流) ----------

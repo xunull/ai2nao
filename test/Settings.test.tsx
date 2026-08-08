@@ -25,6 +25,7 @@ function settingsPayload(over: Record<string, Partial<Cred>> = {}) {
     scanMaxDepth: 8,
     scanMaxDocs: 100,
     scanConcurrency: 16,
+    replayGapMinutes: 120,
     github: { set: false, source: null },
     credentials: {
       "llm-chat": cred({
@@ -157,5 +158,54 @@ describe("Settings page", () => {
 
     await user.click(await screen.findByRole("button", { name: "数据源" }));
     expect(await screen.findByText(/仍在读旧的 JSON 文件/)).toBeInTheDocument();
+  });
+
+  it("回放分段阈值:显示当前值,失焦时 PATCH 出去", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH") {
+          calls.push({ url: String(input), body: JSON.parse(String(init.body)) });
+        }
+        return json(settingsPayload());
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    // 落在「通用」上,和扫描设置同一屏。
+    const box = await screen.findByLabelText("分段间隔");
+    expect(box).toHaveValue(120);
+
+    await user.clear(box);
+    await user.type(box, "30");
+    await user.tab(); // 失焦提交,和旁边几个数字框一致
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain("/api/settings");
+    expect(calls[0].body).toEqual({ replayGapMinutes: 30 });
+  });
+
+  it("回放分段阈值:越界的输入不发请求,并弹回原值", async () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH") calls.push(init.body);
+        return json(settingsPayload());
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const box = await screen.findByLabelText("分段间隔");
+    await user.clear(box);
+    await user.type(box, "0");
+    await user.tab();
+
+    // 服务端也会拒(400),但让一个必然失败的请求飞出去只会换来一条红字。
+    expect(calls).toHaveLength(0);
+    expect(box).toHaveValue(120);
   });
 });
