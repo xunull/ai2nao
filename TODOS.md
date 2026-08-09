@@ -1174,3 +1174,49 @@ Depends on / blocked by:
 
 **Depends on:** 无。但应早于「把桌面壳发给别人」。
 **Effort:** M（human ~4h / CC ~40min） **Priority:** P2（发布桌面壳前处理；只自己用则 P3）
+
+---
+
+## 首页线索的曝光 / 点击日志
+
+**What:** 记录每次 `/api/home/leads` 渲染了哪些 `leadId`、用户点了哪一条、跳去了哪个路由。一张表 + 一个上报端点。
+
+**Why:** 这是**唯一**能回答「首页今日线索到底有没有用」的数据。原本的验证方案是「两周后看冷页访问量涨没涨」,但 2026-08 起主要使用桌面壳,Electron 有自己的存储、**不写 Chrome 历史** —— 当初产出这个方案的那份测量(4-7 月 1972 次访问)现在已经观测不到自己的结果了。而且 page-view 增长本身也测错了东西:它证明不了是哪条 Lead 起的作用。
+
+**Pros:**
+- 能按 leadId 看哪些探针有人点、哪些从来没人理 —— 没人理的探针该删,这是唯一的依据
+- 顺带补上 ai2nao 对自己的可观测性(它记录了 Chrome / Atuin / 五家 AI 工具的行为,唯独不记录自己)
+
+**Cons:**
+- 新建一张表 + 一个上报端点 + 前端埋点
+- 在首页 v1 落地之前建它是空转
+- 「自己记录自己」要想清楚保留策略,否则又是一张单向增长的表(参见 `scheduled_task_runs` 已 12 万行)
+
+**Context:** 来自 `/plan-eng-review` 对首页设计文档的 outside voice(codex,2026-08-08)第 10 条。设计文档 `~/.gstack/projects/xunull-ai2nao/quincy-main-design-20260808-211622.md` 的 Open Questions 第 1 条记的就是这个问题,当时没有答案。
+
+**Depends on:** 首页 v1 落地(没有 Lead 就没有曝光可记)。
+
+**Effort:** M(human ~4h / CC ~40min) **Priority:** P2(v1 之后立刻做,否则无从判断该不该扩展探针)
+
+---
+
+## 停更的同步任务审计
+
+**What:** 逐个决定 27 个定时任务里那 6 个 disabled、5 个永久 partial 的到底该开、该删,还是该改判定。
+
+**Why:** 2026-08-08 实测:`ai_tools.scan` 从未跑过(OFF, last=None,数据停在 7-21)、`atuin.directories.rebuild` OFF 且最后成功在 6-18、`work.cosmos.refresh` 停在 6-28、`minimax.tokens.sync` 停在 7-02、`chrome.domains.rebuild` 停在 6-18。**对应页面照样展示这些陈数据,不做任何声明。** 另有 5 个任务每次都 partial,其中 `git.commits.sync` / `git.line_churn.sync` 的原因只是 812 个仓库里有 32 个**空仓库** —— `git rev-parse HEAD` 在没有 commit 的仓库上必然失败,却被记成 error。永久黄灯等于没有灯,真出问题时看不出来。
+
+**Pros:**
+- 停更的数据源要么恢复、要么页面上标「数据截止 X」,不能装作是新的
+- 把空仓库从 error 里排除,partial 才会重新有意义
+- 首页的 `data.stale` 探针上线后,这些会天天挂在你眼前 —— 早晚要处理
+
+**Cons:**
+- 27 个任务逐个看是体力活
+- 有些当初关掉可能是有理由的(比如 cosmos 刷新太贵),得先查清再动
+
+**Context:** 来自 `/plan-eng-review`(2026-08-08)的 Step 0 调查。首页设计的 `data.stale` 探针(决定 T1A)会让这些**可见**,但可见不等于修好。
+
+**Depends on:** 无。但建议在首页 v1 之后,那时你会天天看见它们。
+
+**Effort:** M(human ~3h / CC ~30min) **Priority:** P2
