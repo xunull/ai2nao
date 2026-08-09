@@ -1,7 +1,11 @@
 process.env.TZ = "Asia/Shanghai";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { openDatabase } from "../src/store/open.js";
 import {
   collectLeads,
   validateRegistry,
@@ -17,8 +21,19 @@ import {
  */
 
 const NOW = new Date("2026-08-08T04:00:00.000Z");
-const ctx = { now: NOW };
-const db = null as unknown as Database.Database; // 合成探针不碰 db
+
+// 用一个真的(空)库,不是 null 存根:合成探针确实不碰 db,但同一次 collectLeads 里的
+// 今日概览要查 git_commits / agent_user_messages。给 null 的话概览会抛异常,
+// 于是每条用例的 errors 里都会多一个 "summary",把编排断言搅浑。
+let db: Database.Database;
+function freshDb(): Database.Database {
+  return openDatabase(join(mkdtempSync(join(tmpdir(), "home-leads-")), "t.db"));
+}
+const ctx = {
+  now: NOW,
+  // 空库上的趋势:给一个最小可用的形状,编排测试不关心它的内容。
+  trend: () => ({ buckets: [] }) as never,
+};
 
 /** run() 的返回值:不含 id / href —— 那两个由探针声明,collectLeads 负责补上。 */
 function lead(id: string, severity: LeadSeverity, asOf = "2026-08-08T00:00:00.000Z") {
@@ -55,6 +70,9 @@ function exploding(id: string, message = "boom"): Probe {
 }
 
 describe("collectLeads 编排", () => {
+  beforeEach(() => { db = freshDb(); });
+  afterEach(() => db?.close());
+
   it("探针返回 null 就不出现在结果里", () => {
     const r = collectLeads(db, ctx, [speaking("a", "info"), silent("b"), speaking("c", "info")]);
     expect(r.leads.map((l) => l.id)).toEqual(["a", "c"]);

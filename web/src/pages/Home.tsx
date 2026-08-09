@@ -14,8 +14,17 @@ type Lead = {
   asOf: string;
 };
 
+type TodaySummary = {
+  tokens: number;
+  costUsd: number;
+  commits: number;
+  projects: number;
+  messages: number;
+};
+
 type LeadsResp = {
   ok: true;
+  summary: TodaySummary;
   leads: Lead[];
   overflow: number;
   errors: { probeId: string; message: string }[];
@@ -58,12 +67,56 @@ export function Home() {
 
       {q.data && (
         <>
+          <SummaryStrip s={q.data.summary} />
           <LeadList leads={q.data.leads} overflow={q.data.overflow} />
           {q.data.leads.length === 0 && <EmptyState cards={q.data.fallbackCards ?? []} />}
           <ProbeErrors errors={q.data.errors} />
         </>
       )}
     </main>
+  );
+}
+
+function fmtCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * 今日概览 —— 永远存在的那一行。
+ *
+ * 它回答的是「今天我干了什么」,和下面的线索(「有什么该注意」)是两个不同的问题。
+ * 第一版只做了线索,而 9 个探针全是报警形状,于是正常的一天首页只剩一两行,空得像坏了。
+ *
+ * 每一项都可点:概览本身也是导航 —— 看到「7 次提交」想细看,直接点过去。
+ */
+function SummaryStrip({ s }: { s: TodaySummary }) {
+  const items: { label: string; value: string; href: string }[] = [
+    { label: "token", value: fmtCount(s.tokens), href: "/dashboard/tokens-trend" },
+    { label: "花费", value: `$${s.costUsd.toFixed(2)}`, href: "/dashboard/tokens" },
+    { label: "提交", value: `${s.commits}`, href: "/project-calendar" },
+    { label: "项目", value: `${s.projects}`, href: "/dashboard" },
+    { label: "我发的消息", value: `${s.messages}`, href: "/agent-messages" },
+  ];
+  return (
+    <div className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-2 rounded-md bg-[var(--surface)] px-4 py-3">
+      {items.map((it) => (
+        <Link
+          key={it.label}
+          to={it.href}
+          // 两个 span 之间只有 CSS gap,没有文本节点 —— 不给 aria-label 的话可访问名
+          // 会拼成「1.2Mtoken」。屏幕阅读器读出来是一个词。
+          aria-label={`${it.label} ${it.value}`}
+          className="group flex items-baseline gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)]"
+        >
+          <span className="text-lg font-semibold tabular-nums text-[var(--fg)] group-hover:underline">
+            {it.value}
+          </span>
+          <span className="text-xs text-[var(--fg-muted)]">{it.label}</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 

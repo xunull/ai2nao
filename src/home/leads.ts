@@ -2,8 +2,10 @@ import type Database from "better-sqlite3";
 import { listProviders } from "../providers/store.js";
 import { listReplaySessions } from "../replay/queries.js";
 import { localDayRangeUtc, todayLocalDay } from "../timeWindow/bucket.js";
-import { generateTrend } from "../workTokensTrend/service.js";
-import type { WorkTokensTrendBucket } from "../workTokensTrend/types.js";
+import type {
+  WorkTokensTrendBucket,
+  WorkTokensTrendResponse,
+} from "../workTokensTrend/types.js";
 
 /**
  * 首页「今日线索」。
@@ -54,7 +56,30 @@ export type BaselineSpec =
   | { kind: "novelty" }
   | { kind: "failure" };
 
-export type ProbeContext = { now: Date };
+export type ProbeContext = {
+  now: Date;
+  /**
+   * 近 7 日的 token 趋势,**记忆化**:今日概览和 tokens.today 探针都要它,而它是整条链路上
+   * 最贵的一次调用(真库实测约 35ms,其余探针合计不到 2ms)。一次请求只算一遍。
+   */
+  trend(): WorkTokensTrendResponse;
+};
+
+/**
+ * 今日概览 —— 永远存在的那一行确定性数字。
+ *
+ * 它和线索回答的是**两个不同的问题**:概览回答「今天我干了什么」,线索回答「有什么该注意」。
+ * v1 只做了后者,于是正常的一天首页几乎是空的 —— 9 个探针全是报警形状,没有反常就全体沉默。
+ * 但「今天我干了什么」本身就值得知道,它不需要反常。
+ */
+export type TodaySummary = {
+  tokens: number;
+  costUsd: number;
+  commits: number;
+  projects: number;
+  /** 你自己发出去的消息条数(is_human),不含模型回复。 */
+  messages: number;
+};
 
 export type Probe = {
   id: string;
@@ -72,6 +97,8 @@ export type Probe = {
 export type LeadError = { probeId: string; message: string };
 
 export type LeadsResponse = {
+  /** 永远存在。没有线索的日子,这一行就是首页的全部内容 —— 但它不会是空的。 */
+  summary: TodaySummary;
   leads: Lead[];
   /** 被截断的非 warning 条数。放响应上,不塞进 Lead。 */
   overflow: number;
@@ -107,11 +134,11 @@ const tokensToday: Probe = {
   label: "今天的 token 花销",
   baseline: { kind: "deviation", windowDays: 7, minPctDelta: TOKENS_TODAY_MIN_PCT },
   href: "/dashboard/tokens-trend",
-  run(db, ctx) {
+  run(_db, ctx) {
     // 复用趋势服务而不是自己拼多源 union —— token 口径散在 claude/codex/minimax/opencode
     // 四套表里,`generateTrend` 就是为统一它们而存在的,再写一遍必然漂。
-    const trend = generateTrend(db, { window: "1w", now: ctx.now });
-    const buckets = trend.buckets;
+    // 走 ctx.trend() 而不是直接调:今日概览也要同一份数据,记忆化后一次请求只算一遍。
+    const buckets = ctx.trend().buckets;
     if (buckets.length < 2) return null;
 
     const today = buckets[buckets.length - 1];
@@ -446,6 +473,37 @@ export function validateRegistry(probes: readonly Probe[]): void {
   }
 }
 
+/** 今日概览。三次小查询 + 复用已经算过的 trend,不新增昂贵路径。 */
+export function todaySummary(db: Database.Database, ctx: ProbeContext): TodaySummary {
+  const { fromIso, toIso } = localDayRangeUtc(ctx.now, 1);
+
+  const buckets = ctx.trend().buckets;
+  const today = buckets[buckets.length - 1];
+
+  const git = db
+    .prepare(
+      `SELECT COUNT(*) AS commits, COUNT(DISTINCT project_key) AS projects
+         FROM git_commits WHERE author_date_utc >= ? AND author_date_utc < ?`
+    )
+    .get(fromIso, toIso) as { commits: number; projects: number };
+
+  // is_human 打头正好命中 idx (is_human, event_at_utc, source)。
+  const msg = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM agent_user_messages
+        WHERE is_human = 1 AND event_at_utc >= ? AND event_at_utc < ?`
+    )
+    .get(fromIso, toIso) as { n: number };
+
+  return {
+    tokens: today ? bucketTotal(today) : 0,
+    costUsd: today ? today.claudeCostUsd + today.codexCostUsd : 0,
+    commits: git.commits,
+    projects: git.projects,
+    messages: msg.n,
+  };
+}
+
 export function collectLeads(
   db: Database.Database,
   ctx: ProbeContext,
@@ -480,7 +538,16 @@ export function collectLeads(
   const room = Math.max(0, MAX_LEADS - warnings.length);
   const shown = [...warnings, ...rest.slice(0, room)];
 
+  let summary: TodaySummary = { tokens: 0, costUsd: 0, commits: 0, projects: 0, messages: 0 };
+  try {
+    summary = todaySummary(db, ctx);
+  } catch (e) {
+    // 概览挂了不该让整页空掉,和探针一样降级 —— 但它没有对应的探针 id。
+    errors.push({ probeId: "summary", message: e instanceof Error ? e.message : String(e) });
+  }
+
   const res: LeadsResponse = {
+    summary,
     leads: shown,
     overflow: Math.max(0, rest.length - room),
     errors,

@@ -36,8 +36,11 @@ function json(body: unknown) {
   });
 }
 
+const SUMMARY = { tokens: 1_240_000, costUsd: 3.4, commits: 7, projects: 4, messages: 36 };
+
 function stub(payload: Record<string, unknown>) {
-  vi.stubGlobal("fetch", vi.fn(async () => json({ ok: true, ...payload })));
+  // summary 永远存在 —— 契约如此,前端不做缺省兜底。
+  vi.stubGlobal("fetch", vi.fn(async () => json({ ok: true, summary: SUMMARY, ...payload })));
 }
 
 function renderHome() {
@@ -56,6 +59,34 @@ describe("首页「今天」", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("今日概览带永远在,数字可读且每项可点", async () => {
+    stub({ leads: [], overflow: 0, errors: [] });
+    renderHome();
+
+    // 这一条是 2026-08-09 那次「首页只有一行,空得像坏了」的回归点:
+    // 9 个探针全是报警形状,正常的一天全体沉默,所以必须有一层不依赖异常的内容。
+    expect(await screen.findByText("1.2M")).toBeInTheDocument();
+    expect(screen.getByText("$3.40")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("36")).toBeInTheDocument();
+    // aria-label 是「标签 值」而不是靠 CSS gap 拼出来的「1.2Mtoken」。
+    expect(screen.getByRole("link", { name: "token 1.2M" })).toHaveAttribute(
+      "href",
+      "/dashboard/tokens-trend"
+    );
+    expect(screen.getByRole("link", { name: "提交 7" })).toHaveAttribute(
+      "href",
+      "/project-calendar"
+    );
+  });
+
+  it("一条线索都没有时,概览带仍然撑住页面(不是空屏)", async () => {
+    stub({ leads: [], overflow: 0, errors: [] });
+    renderHome();
+    expect(await screen.findByText("1.2M")).toBeInTheDocument();
+    expect(screen.queryAllByRole("link").length).toBeGreaterThanOrEqual(5);
   });
 
   it("渲染线索,每条都是能点的链接,指向后端给的 href", async () => {
@@ -135,7 +166,8 @@ describe("首页「今天」", () => {
     expect(screen.getByText(/atuin\.newdirs、tools\.new/)).toBeInTheDocument();
     // 关键:报错没有变成一条可点的线索。
     expect(screen.queryByRole("link", { name: /探针/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("link")).toHaveLength(1);
+    // 概览带自己有 5 个链接,所以这里数的是线索区之外再多出来的那一个。
+    expect(screen.getAllByRole("link")).toHaveLength(6);
   });
 
   it("errors 为空时不显示那一行", async () => {

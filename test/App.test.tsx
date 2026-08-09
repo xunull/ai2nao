@@ -95,6 +95,7 @@ describe("App routes", () => {
         if (url.startsWith("/api/home/leads")) {
           return json({
             ok: true,
+            summary: { tokens: 1_240_000, costUsd: 3.4, commits: 7, projects: 4, messages: 36 },
             leads: [
               {
                 id: "quota.low",

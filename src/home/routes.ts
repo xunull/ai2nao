@@ -1,6 +1,8 @@
 import type { Hono } from "hono";
 import type Database from "better-sqlite3";
 import { collectLeads } from "./leads.js";
+import { generateTrend } from "../workTokensTrend/service.js";
+import type { WorkTokensTrendResponse } from "../workTokensTrend/types.js";
 
 /**
  * 首页「今日线索」读侧路由。
@@ -16,7 +18,12 @@ import { collectLeads } from "./leads.js";
 export function registerHomeRoutes(app: Hono, db: Database.Database): void {
   app.get("/api/home/leads", (c) => {
     try {
-      return c.json({ ok: true, ...collectLeads(db, { now: new Date() }) });
+      const now = new Date();
+      // trend 是整条链路上最贵的一次调用(真库约 35ms),而今日概览和 tokens.today 都要它。
+      // 记忆化在这里而不是在 leads.ts 里:那样每次调 collectLeads 都得自己想着传缓存。
+      let cached: WorkTokensTrendResponse | null = null;
+      const trend = () => (cached ??= generateTrend(db, { window: "1w", now }));
+      return c.json({ ok: true, ...collectLeads(db, { now, trend }) });
     } catch (e) {
       // 走到这里说明炸的是编排本身,不是某个探针 —— 那是真 500。
       return Response.json(
