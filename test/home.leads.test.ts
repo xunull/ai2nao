@@ -65,7 +65,7 @@ describe("collectLeads 编排", () => {
     const r = collectLeads(db, ctx, [silent("a"), silent("b")]);
     expect(r.leads).toEqual([]);
     expect(r.overflow).toBe(0);
-    expect(r.fallbackCards).toEqual(["streak", "rhythm", "token"]);
+    expect(r.fallbackCards).toEqual(["streak", "rhythm", "source-trend"]);
   });
 
   it("有线索时不给兜底卡片(否则首页会同时出现两套东西)", () => {

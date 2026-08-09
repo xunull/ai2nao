@@ -84,7 +84,12 @@ function LeadList({ leads, overflow }: { leads: Lead[]; overflow: number }) {
             to={lead.href}
             className={`flex items-baseline gap-3 rounded-md bg-[var(--surface)] px-3 py-2.5 outline-none transition-colors hover:bg-[var(--surface-hover)] focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)] ${SEVERITY_STYLE[lead.severity]}`}
           >
-            <span className="min-w-0 flex-1 truncate text-sm text-[var(--fg)]">{lead.title}</span>
+            {/*
+              标题不加 flex-1:加了它会吃掉整行宽度,把 detail 顶到 1040px 容器的最右边,
+              两段文字隔着几百像素,读起来像不相干的两件事。让标题按内容宽度排,detail
+              紧跟其后;标题过长时靠 min-w-0 + truncate 收缩。
+            */}
+            <span className="min-w-0 truncate text-sm text-[var(--fg)]">{lead.title}</span>
             {lead.detail && (
               <span className="shrink-0 text-xs text-[var(--fg-muted)]">{lead.detail}</span>
             )}

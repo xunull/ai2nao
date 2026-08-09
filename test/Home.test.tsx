@@ -84,7 +84,7 @@ describe("首页「今天」", () => {
   });
 
   it("没有线索时摆兜底卡片,而不是一片空白", async () => {
-    stub({ leads: [], overflow: 0, errors: [], fallbackCards: ["streak", "rhythm", "token"] });
+    stub({ leads: [], overflow: 0, errors: [], fallbackCards: ["streak", "rhythm", "source-trend"] });
     renderHome();
 
     expect(await screen.findByText(/今天这台机器上没什么反常的/)).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe("首页「今天」", () => {
     expect(imgs.map((i) => i.getAttribute("src"))).toEqual([
       "/api/cards/streak.svg",
       "/api/cards/rhythm.svg",
-      "/api/cards/token.svg",
+      "/api/cards/source-trend.svg",
     ]);
   });
 

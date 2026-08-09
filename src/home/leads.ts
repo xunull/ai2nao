@@ -84,8 +84,16 @@ export type LeadsResponse = {
 /** 首页最多显示这么多条(项目铁律:禁止垂直过度滚动)。warning 例外,见 collectLeads。 */
 export const MAX_LEADS = 7;
 
-/** 全空时的兜底卡片,取自 src/cards/registry.ts 的 name。 */
-export const FALLBACK_CARDS = ["streak", "rhythm", "token"] as const;
+/**
+ * 全空时的兜底卡片,取自 src/cards/registry.ts 的 name。
+ *
+ * **刻意不含 `token`**:那张卡渲染时会跑 `generateTrend(db, { window: "6m" })`,六个月的
+ * 聚合,真库实测 185ms —— 比整个 leads 端点(p50 48ms)还贵近四倍。它只在空状态出现,
+ * 也就是「今天没什么事」那天首页反而最慢,正好是最不该慢的时候。
+ * 九张卡的实测成本:ai-tools/kimi-quota 1ms · calendar 5 · streak 6 · rhythm 7 ·
+ * source-trend 7 · leaderboard 30 · records 41 · token 185。
+ */
+export const FALLBACK_CARDS = ["streak", "rhythm", "source-trend"] as const;
 
 const SEVERITY_RANK: Record<LeadSeverity, number> = { warning: 2, notable: 1, info: 0 };
 

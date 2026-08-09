@@ -32,7 +32,7 @@ describe("GET /api/home/leads", () => {
       expect(typeof body.overflow).toBe("number");
       // 空库跑不出任何线索 → 首页该摆卡片,而不是一片「今天没有线索」的空白。
       expect(body.leads).toEqual([]);
-      expect(body.fallbackCards).toEqual(["streak", "rhythm", "token"]);
+      expect(body.fallbackCards).toEqual(["streak", "rhythm", "source-trend"]);
     } finally {
       db.close();
     }
