@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 
 const AiChat = lazy(() => import("./pages/AiChat").then((m) => ({ default: m.AiChat })));
@@ -142,13 +142,14 @@ const CommitBridge = lazy(() =>
   import("./pages/CommitBridge").then((m) => ({ default: m.CommitBridge }))
 );
 const Replay = lazy(() => import("./pages/Replay").then((m) => ({ default: m.Replay })));
+const Home = lazy(() => import("./pages/Home").then((m) => ({ default: m.Home })));
 
 export function App() {
   return (
     <Layout>
       <Suspense fallback={<p className="text-[var(--muted)]">加载中...</p>}>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<WorkDashboard />} />
           <Route path="/dashboard/tokens" element={<WorkTokenRanking />} />
           <Route path="/work-recap" element={<WorkRecap />} />

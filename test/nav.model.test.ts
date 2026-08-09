@@ -27,9 +27,11 @@ const APP_TSX = join(HERE, "..", "web", "src", "App.tsx");
 /** 从 App.tsx 里抠出真实声明的路由,而不是手抄一份会漂移的清单。 */
 function declaredStaticRoutes(): string[] {
   const src = readFileSync(APP_TSX, "utf8");
+  // `/` 曾经被排除在外,因为那时它只是一句 `<Navigate to="/dashboard">`,不是目的地。
+  // 现在它是「今天」这一页,既在路由表里也在侧栏常驻位上,必须参与死链和可达性检查。
   return [...src.matchAll(/<Route\s+path="([^"]+)"/g)]
     .map((m) => m[1] as string)
-    .filter((p) => p !== "/" && p !== "*" && !p.includes(":"));
+    .filter((p) => p !== "*" && !p.includes(":"));
 }
 
 describe("resolveNav — 路径落到哪个组、哪个条目", () => {

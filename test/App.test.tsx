@@ -87,35 +87,25 @@ describe("App routes", () => {
     vi.restoreAllMocks();
   });
 
-  it("redirects the root route to the work dashboard", async () => {
+  it("根路由渲染「今天」这一页,不再重定向到 dashboard", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.startsWith("/api/work-dashboard")) {
-          void init;
+        if (url.startsWith("/api/home/leads")) {
           return json({
             ok: true,
-            generatedAt: "2026-06-07T10:00:00.000Z",
-            range: { from: "2026-05-08T10:00:00.000Z", to: "2026-06-07T10:00:00.000Z", days: 30 },
-            diagnostics: [],
-            totals: {
-              projectCount: 0,
-              sessionCount: 0,
-              tokenUsage: {
-                inputTokens: 0,
-                outputTokens: 0,
-                totalTokens: 0,
-                coverage: "unknown",
-                coveredSessions: 0,
-                totalSessions: 0,
-                scannedSessions: 0,
-                scanLimit: 5,
-                truncated: false,
+            leads: [
+              {
+                id: "quota.low",
+                severity: "warning",
+                title: "Kimi Code · 7 天用量 额度只剩 6%",
+                href: "/providers",
+                asOf: "2026-08-09T02:00:00.000Z",
               },
-              sourceCounts: { "claude-code": 0, codex: 0 },
-            },
-            projects: [],
+            ],
+            overflow: 0,
+            errors: [],
           });
         }
         throw new Error(`Unhandled fetch: ${url}`);
@@ -124,8 +114,12 @@ describe("App routes", () => {
 
     renderApp("/");
 
-    expect(await screen.findByRole("heading", { name: "最近工作" })).toBeInTheDocument();
-    expect(await screen.findByText("当前范围内没有 Claude Code 或 Codex 项目。")).toBeInTheDocument();
+    // 这一屏的身份:标题是「今天」,内容是线索而不是项目排名表。
+    expect(await screen.findByRole("heading", { name: /今天/ })).toBeInTheDocument();
+    const lead = await screen.findByRole("link", { name: /额度只剩 6%/ });
+    expect(lead).toHaveAttribute("href", "/providers");
+    // 回归点:不能再落到 dashboard 上。
+    expect(screen.queryByRole("heading", { name: "最近工作" })).not.toBeInTheDocument();
   });
 
   it("loads a nested named-export page through the route suspense boundary", async () => {

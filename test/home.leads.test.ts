@@ -7,7 +7,6 @@ import {
   validateRegistry,
   MAX_LEADS,
   PROBES,
-  type Lead,
   type LeadSeverity,
   type Probe,
 } from "../src/home/leads.js";
@@ -21,8 +20,9 @@ const NOW = new Date("2026-08-08T04:00:00.000Z");
 const ctx = { now: NOW };
 const db = null as unknown as Database.Database; // 合成探针不碰 db
 
-function lead(id: string, severity: LeadSeverity, asOf = "2026-08-08T00:00:00.000Z"): Lead {
-  return { id, severity, title: `${id} 说了句话`, href: "/dashboard", asOf };
+/** run() 的返回值:不含 id / href —— 那两个由探针声明,collectLeads 负责补上。 */
+function lead(id: string, severity: LeadSeverity, asOf = "2026-08-08T00:00:00.000Z") {
+  return { severity, title: `${id} 说了句话`, asOf };
 }
 
 /** 出一条线索的探针。 */
@@ -31,13 +31,14 @@ function speaking(id: string, severity: LeadSeverity, asOf?: string): Probe {
     id,
     label: id,
     baseline: { kind: "threshold", note: "test" },
+    href: "/dashboard",
     run: () => lead(id, severity, asOf),
   };
 }
 
 /** 什么都不说的探针。 */
 function silent(id: string): Probe {
-  return { id, label: id, baseline: { kind: "novelty" }, run: () => null };
+  return { id, label: id, baseline: { kind: "novelty" }, href: "/dashboard", run: () => null };
 }
 
 /** 炸掉的探针。 */
@@ -46,6 +47,7 @@ function exploding(id: string, message = "boom"): Probe {
     id,
     label: id,
     baseline: { kind: "failure" },
+    href: "/scheduler",
     run: () => {
       throw new Error(message);
     },
@@ -153,8 +155,22 @@ describe("validateRegistry 注册前置", () => {
   });
 
   it("没有 baseline 的探针不允许注册", () => {
-    const bad = { id: "x", label: "x", run: () => null } as unknown as Probe;
+    const bad = { id: "x", label: "x", href: "/dashboard", run: () => null } as unknown as Probe;
     expect(() => validateRegistry([bad])).toThrow(/baseline/);
+  });
+
+  it("没有 href 的探针不允许注册 —— 不能点进去的线索没有意义", () => {
+    const bad = {
+      id: "x",
+      label: "x",
+      baseline: { kind: "novelty" },
+      run: () => null,
+    } as unknown as Probe;
+    expect(() => validateRegistry([bad])).toThrow(/href/);
+  });
+
+  it("每条真实探针的 href 都以 / 开头(具体路由校验见 home.links.test.ts)", () => {
+    for (const p of PROBES) expect(p.href.startsWith("/"), `${p.id}`).toBe(true);
   });
 
   it("id 重复会被拦下(否则前端 key 撞车,而且没人会发现)", () => {

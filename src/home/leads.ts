@@ -58,7 +58,13 @@ export type Probe = {
   id: string;
   label: string;
   baseline: BaselineSpec;
-  run(db: Database.Database, ctx: ProbeContext): Lead | null;
+  /**
+   * 这个探针把你送到哪一页。**声明在探针上,不是埋在 run() 的返回语句里** —— 深链是探针的
+   * 静态属性,提上来才能在不跑数据库的情况下静态校验(test/home.links.test.ts)。
+   * 埋在 run() 里的话,只有「今天恰好有话说」的探针才会被检查到,那种测试是假的。
+   */
+  href: string;
+  run(db: Database.Database, ctx: ProbeContext): Omit<Lead, "id" | "href"> | null;
 };
 
 export type LeadError = { probeId: string; message: string };
@@ -90,6 +96,7 @@ const tokensToday: Probe = {
   id: "tokens.today",
   label: "今天的 token 花销",
   baseline: { kind: "deviation", windowDays: 7, minPctDelta: TOKENS_TODAY_MIN_PCT },
+  href: "/dashboard/tokens-trend",
   run(db, ctx) {
     // 复用趋势服务而不是自己拼多源 union —— token 口径散在 claude/codex/minimax/opencode
     // 四套表里,`generateTrend` 就是为统一它们而存在的,再写一遍必然漂。
@@ -112,11 +119,9 @@ const tokensToday: Probe = {
 
     const dir = pct > 0 ? "高" : "低";
     return {
-      id: "tokens.today",
       severity: Math.abs(pct) >= 150 ? "notable" : "info",
       title: `今天 token ${fmtCount(todayTotal)},比近 7 日中位数${dir} ${Math.abs(pct)}%`,
       detail: `中位数 ${fmtCount(base)}`,
-      href: "/dashboard/tokens-trend",
       asOf: ctx.now.toISOString(),
     };
   },
@@ -130,6 +135,7 @@ const quotaLow: Probe = {
   id: "quota.low",
   label: "订阅额度见底",
   baseline: { kind: "threshold", note: `remainingPercent < ${QUOTA_NOTABLE_PCT}` },
+  href: "/providers",
   run(db, ctx) {
     let worst: { label: string; pct: number; syncedAt: string | null } | null = null;
     for (const p of listProviders(db)) {
@@ -144,10 +150,8 @@ const quotaLow: Probe = {
     }
     if (!worst) return null;
     return {
-      id: "quota.low",
       severity: worst.pct < QUOTA_WARN_PCT ? "warning" : "notable",
       title: `${worst.label} 额度只剩 ${Math.round(worst.pct)}%`,
-      href: "/providers",
       asOf: worst.syncedAt ?? ctx.now.toISOString(),
     };
   },
@@ -171,6 +175,9 @@ export function validateRegistry(probes: readonly Probe[]): void {
     if (!p.baseline || typeof p.baseline.kind !== "string") {
       throw new Error(`probe ${p.id} has no baseline — 说不清凭什么出声的探针不允许注册`);
     }
+    if (!p.href || !p.href.startsWith("/")) {
+      throw new Error(`probe ${p.id} has no href — 不能点进去的线索没有意义`);
+    }
   }
 }
 
@@ -186,8 +193,10 @@ export function collectLeads(
 
   probes.forEach((probe, order) => {
     try {
-      const lead = probe.run(db, ctx);
-      if (lead) found.push({ lead, order });
+      const partial = probe.run(db, ctx);
+      // id 和 href 由探针声明,run() 只负责「今天说什么」。这样一个探针不可能返回
+      // 与自己 id 不符的线索,href 也永远是那个被静态校验过的值。
+      if (partial) found.push({ lead: { ...partial, id: probe.id, href: probe.href }, order });
     } catch (e) {
       errors.push({ probeId: probe.id, message: e instanceof Error ? e.message : String(e) });
     }

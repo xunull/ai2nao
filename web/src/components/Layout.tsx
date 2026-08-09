@@ -264,7 +264,7 @@ export function Layout({ children }: { children: ReactNode }) {
       >
         <div className="flex items-center gap-2.5 px-3 py-3.5">
           <Link
-            to="/dashboard"
+            to="/"
             aria-label="ai2nao 本机工作台"
             title="ai2nao"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[var(--sidebar-mark-border)] bg-[var(--sidebar-mark)] text-[12px] font-semibold text-[var(--fg)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--sidebar-focus)]"

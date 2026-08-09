@@ -18,6 +18,7 @@ import {
   GitCompare,
   GitFork,
   Globe,
+  House,
   HardDrive,
   History,
   Layers,
@@ -87,11 +88,12 @@ export type NavGroup = {
 };
 
 export const PRIMARY_ITEMS: NavItem[] = [
+  // 真正的首页。`/` 从前只是一句 Navigate,现在是「今日线索」。左上角的 a2 徽标也指向这里。
+  { to: "/", label: "今天", icon: House },
   { to: "/ai-chat", label: "AI 对话", icon: BrainCircuit },
   {
-    // 最近工作就是首页:App.tsx 把 `/` 重定向到这里,左上角的 a2 徽标也指向这里。
-    // 已经有两个入口的东西不该再折在某个组的抽屉里 —— 手风琴收起时,点自己的首页
-    // 还要先展开一个组,这比任何一处错位都别扭。
+    // 「最近工作」是按项目钻取的工具,不再兼任首页(那件事归 `/` 了)。留在常驻位是因为
+    // 它带 5 个 tab、是使用频次最高的一组;折进抽屉里每次都要先展开一个组才够得着。
     to: "/dashboard",
     label: "最近工作",
     icon: LayoutDashboard,
