@@ -121,6 +121,7 @@ import { registerAgentUserMessagesRoutes } from "../agentUserMessages/routes.js"
 import { registerAiRhythmRoutes } from "../aiRhythm/routes.js";
 import { registerCommitBridgeRoutes } from "../commitBridge/routes.js";
 import { registerProjectCalendarRoutes } from "../projectCalendar/routes.js";
+import { registerHomeRoutes } from "../home/routes.js";
 import { registerReplayRoutes } from "../replay/routes.js";
 import { registerGitChurnRoutes } from "../gitChurn/routes.js";
 import { registerSettingsRoutes } from "./settingsRoutes.js";
@@ -308,6 +309,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerAiRhythmRoutes(app, db);
   registerCommitBridgeRoutes(app, db);
   registerProjectCalendarRoutes(app, db, opts.schedulerRuntime);
+  registerHomeRoutes(app, db);
   registerReplayRoutes(app, db);
   registerCodexTokenUsageRoutes(app, db);
   registerProjectOpenerRoutes(app);

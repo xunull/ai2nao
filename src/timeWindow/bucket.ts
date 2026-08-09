@@ -91,6 +91,46 @@ export function anchorBucketStart(d: Date, granularity: BucketGranularity): Date
   }
 }
 
+/**
+ * 今天是哪天(本地),`YYYY-MM-DD`。
+ *
+ * 存在的理由是收敛:仓库里「今天」此前有四个各写各的实现 —— `gitChurn/collect.ts` 的
+ * `localDay`、`workRecap/window.ts` 的 `localDayKey`、`topicStream/rebuild.ts` 的
+ * `localDayFromIso`、`atuin/queries.ts` 的 `localDayBoundsNs`。新代码一律从这里取,
+ * 别再添第五个。输出与 `bucketExpr("day")` 的 SQL 结果同格式,可以直接对上。
+ */
+export function todayLocalDay(now: Date = new Date()): string {
+  return fmtLocal(anchorBucketStart(now, "day"), "day");
+}
+
+/**
+ * 覆盖「以 `now` 所在本地日为结尾的 `days` 个本地日」的 **UTC 半开区间** `[fromIso, toIso)`。
+ *
+ * 这是给查询用的,不是给显示用的。**别写 `date(col,'localtime') = ?`** —— 那会对每一行的
+ * 时间列求函数,索引直接失效,在 943MB 的库上就是全表扫。改成
+ * `WHERE col >= ? AND col < ?` 喂本函数的两个值:ISO-8601 UTC 字符串按字典序就是时间序,
+ * SQLite 能当范围扫走索引。
+ *
+ * 半开而非闭区间,是为了避开「当天最后一毫秒」这类边界:`< 次日零点` 永远正确,
+ * 而 `<= 23:59:59.999` 会漏掉 `.9995`。
+ *
+ * days=1 → 今天一天;days=7 → 含今天在内的最近 7 个本地日。
+ * 要「不含今天的前 7 天」就传一个昨天的 Date 进来,别在这里加参数。
+ */
+export function localDayRangeUtc(
+  now: Date = new Date(),
+  days = 1
+): { fromIso: string; toIso: string } {
+  // 先挡 NaN 再取 max —— Math.max(1, NaN) 是 NaN,不是 1,会一路传到 setDate
+  // 把 Date 变成 Invalid Date,然后在 toISOString() 处才炸(离现场很远)。
+  const span = Number.isFinite(days) ? Math.max(1, Math.floor(days)) : 1;
+  const from = anchorBucketStart(now, "day");
+  from.setDate(from.getDate() - (span - 1));
+  const to = anchorBucketStart(now, "day");
+  to.setDate(to.getDate() + 1);
+  return { fromIso: from.toISOString(), toIso: to.toISOString() };
+}
+
 function advance(d: Date, granularity: BucketGranularity): Date {
   const out = new Date(d);
   switch (granularity) {
