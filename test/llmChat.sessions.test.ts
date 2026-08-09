@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/serve/app.js";
 import { openDatabase } from "../src/store/open.js";
+import { SCHEMA_VERSION } from "../src/store/migrations.js";
 import {
   createLlmChatSession,
   ensureLlmChatSession,
@@ -78,7 +79,8 @@ describe("LLM chat session storage", () => {
     const db = freshDb();
     try {
       const version = (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version;
-      expect(version).toBe(50);
+      // 断言 head 本身,不写字面量 —— 否则每升一版这里都要跟着改。
+      expect(version).toBe(SCHEMA_VERSION);
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('llm_chat_messages', 'llm_chat_sessions', 'bash_permission_rules') ORDER BY name")
         .all() as { name: string }[];

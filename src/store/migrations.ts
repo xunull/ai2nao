@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 51;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -67,6 +67,7 @@ export function migrate(db: Database.Database): void {
     applyV48(db);
     applyV49(db);
     applyV50(db);
+    applyV51(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -123,6 +124,7 @@ export function migrate(db: Database.Database): void {
   if (v < 48) applyV48(db);
   if (v < 49) applyV49(db);
   if (v < 50) applyV50(db);
+  if (v < 51) applyV51(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2393,5 +2395,28 @@ function applyV50(db: Database.Database): void {
       ON local_inventory_sync_runs(source, started_at);
 
     UPDATE meta_schema SET version = 50 WHERE id = 1;
+  `);
+}
+
+/**
+ * v51: 给 scheduled_task_runs 补一条以 started_at 打头的索引。
+ *
+ * 这张表已经有两条索引 —— (task_key, started_at DESC) 和 (status, started_at DESC) ——
+ * 看上去「started_at 已经索引过了」。但复合索引只能从最左列开始用,而
+ * `listScheduledTaskRuns` 的无过滤分支(src/scheduler/store.ts)是
+ * `ORDER BY started_at DESC, id DESC LIMIT ?`,两条都用不上,只能全表扫再排序。
+ *
+ * 2026-08-08 实测(真实库约 12 万行 run 记录):limit=5 要 123ms、limit=200 要 332ms ——
+ * 存在与返回行数无关的约 120ms 固定成本,payload 增长只是叠在上面。诊断办法就是同一端点
+ * 跑不同 limit:最小 limit 也慢,说明慢在扫描不在序列化。
+ *
+ * 带 id 是为了让 ORDER BY 的第二键也走索引,避免退化成「索引取序 + 内存再排」。
+ */
+function applyV51(db: Database.Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_started
+      ON scheduled_task_runs(started_at DESC, id DESC);
+
+    UPDATE meta_schema SET version = 51 WHERE id = 1;
   `);
 }

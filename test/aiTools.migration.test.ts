@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { migrate } from "../src/store/migrations.js";
+import { migrate, SCHEMA_VERSION } from "../src/store/migrations.js";
 
 // 回归:开发中真实库被热重载升到"半吊子 v49"(ai_tools 表已建,但
 // local_inventory_sync_runs 的 CHECK 还没含 'ai_tools'),ai_tools.scan 写 sync run 报
@@ -46,17 +46,17 @@ describe("V50 修 local_inventory_sync_runs 的 ai_tools CHECK(回归)", () => {
 
     expect(
       (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version
-    ).toBe(50);
+    ).toBe(SCHEMA_VERSION);
     // 修之后:放行。
     expect(() => insertAiToolsRun()).not.toThrow();
   });
 
-  it("全新库直达 head=50,CHECK 已含 ai_tools", () => {
+  it("全新库直达 head,CHECK 已含 ai_tools", () => {
     db = new Database(":memory:");
     migrate(db);
     expect(
       (db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as { version: number }).version
-    ).toBe(50);
+    ).toBe(SCHEMA_VERSION);
     expect(() => insertAiToolsRun()).not.toThrow();
   });
 });

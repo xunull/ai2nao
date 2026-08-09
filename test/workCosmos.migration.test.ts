@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/store/open.js";
+import { SCHEMA_VERSION } from "../src/store/migrations.js";
 
 /**
  * T1 regression: schema v27 creates the three cosmos tables with the right
@@ -20,8 +21,9 @@ describe("schema v27 — work_cosmos_* tables", () => {
     const version = (db.prepare(
       "SELECT version FROM meta_schema WHERE id = 1"
     ).get() as { version: number }).version;
-    // fresh DB migrates to the latest version; v27 created the cosmos tables
-    expect(version).toBe(50);
+    // fresh DB migrates to the latest version; v27 created the cosmos tables.
+    // 断言 head 本身,不写字面量 —— 否则每升一版这里都要跟着改一次。
+    expect(version).toBe(SCHEMA_VERSION);
 
     const tables = db
       .prepare(
