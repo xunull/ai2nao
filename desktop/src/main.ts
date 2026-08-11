@@ -64,6 +64,16 @@ import { autoStartDisabled, spawnDaemon, stopDaemon } from "./daemonProcess.js";
 
 const SHORTCUT = "CommandOrControl+Shift+Space";
 
+/**
+ * macOS 系统设置里「隐私与安全性 → 完全磁盘访问权限」那一页。
+ *
+ * 这是个 URL scheme,只有原生进程能打开 —— 浏览器不允许网页跳
+ * x-apple.systempreferences:,所以 /attention 页面上的引导只能写文字让人自己去点。
+ * 壳能直接把面板打开,这是注意力层唯一一处「壳能做而网页做不到」的事。
+ */
+export const FULL_DISK_ACCESS_SETTINGS_URL =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let notifyTimer: NodeJS.Timeout | null = null;
@@ -379,6 +389,20 @@ function daemonActions(result: ProbeResult): Electron.MenuItemConstructorOptions
         setTimeout(() => void connect(), 1_200);
       },
     },
+    // 注意力层读 macOS 的 knowledgeC,那需要完全磁盘访问。授权是按可执行文件授的,
+    // 而 daemon 用 ELECTRON_RUN_AS_NODE 跑、与壳同一个可执行文件,所以授给这个 .app
+    // 就等于授给了真正去读库的那个进程(见 desktop-app-embeds-daemon-one-program)。
+    ...(process.platform === "darwin"
+      ? ([
+          { type: "separator" },
+          {
+            label: "完全磁盘访问设置…",
+            click: () => {
+              void shell.openExternal(FULL_DISK_ACCESS_SETTINGS_URL);
+            },
+          },
+        ] as Electron.MenuItemConstructorOptions[])
+      : []),
   ];
 }
 

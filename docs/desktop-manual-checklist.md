@@ -148,3 +148,42 @@ sqlite3 ~/.ai2nao/index.db "INSERT INTO scheduled_task_runs
 > 2. commander 看到 `process.versions.electron` 会自动切到 electron 解析模式，把
 >    脚本路径当成子命令 —— 而后台服务正是用 `ELECTRON_RUN_AS_NODE` 跑的。已在
 >    `src/cli.ts` 显式 `parseAsync(process.argv, { from: "node" })` 关掉。
+
+## 完全磁盘访问：重新打包会不会让授权失效
+
+注意力层（`/attention`）要读 macOS 的 knowledgeC，那需要完全磁盘访问。这条权限授给谁、
+重新打包后还在不在，直接决定「改一行代码要不要重新授权一次」。2026-08-11 实测：
+
+**结论：改 JS 代码重新打包，授权保持；升 Electron 版本，授权失效。**
+
+依据是 TCC 认的东西和我们改的东西根本不是同一个文件：
+
+```
+codesign -dv --verbose=4 ai2nao.app
+  Identifier=Electron          ← 不是 com.xunull.ai2nao
+  Signature=adhoc              ← linker 生成，desktop/package.json 里 build.mac.identity = null
+  CDHash=5c22a19a764af33c82dfc3e3191db283a5b8e376
+
+shasum -a 256 ai2nao.app/Contents/MacOS/ai2nao
+  79019361f697c1a8...
+shasum -a 256 desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron
+  79019361f697c1a8...   ← 完全一致
+```
+
+electron-builder 把 Electron 的二进制**原样拷贝并重命名**，没有重新签名（所以签名标识符
+还是 `Electron`）。ad-hoc 签名下 TCC 用 cdhash 认应用，而 cdhash 是那个 33KB stub 的哈希 ——
+我们的代码在 `Contents/Resources/app/out/daemon/daemon.mjs`，压根不参与。
+
+推论：
+
+- **日常迭代（改 TS/JS、`make app`）**：主二进制不变 → cdhash 不变 → 授权保持，不用重授。
+- **升级 Electron 版本**：二进制变 → cdhash 变 → **授权失效，要重新授一次**。升级时记得提醒。
+- **将来配了真签名**（`build.mac.identity` 填 Developer ID）：TCC 改用签名身份而不是 cdhash，
+  授权会跨版本保持 —— 那时这条限制自然消失。
+
+顺带一个容易误判的点：`Info.plist` 的 `CFBundleIdentifier` 是 `com.xunull.ai2nao`，而
+code signing 的 `Identifier` 是 `Electron`。**这是两个东西**，看前者会以为签名身份没问题。
+系统设置的完全磁盘访问面板里显示的名字取自 `CFBundleName`，也就是 `ai2nao`，用户能认出来。
+
+授权对象只需要 `.app` 本身：后台服务用 `ELECTRON_RUN_AS_NODE` 跑，和壳是同一个可执行文件，
+共享同一份授权，不需要单独给 daemon 授权。
