@@ -73,6 +73,8 @@ import { packageVersion } from "./path/packageRoot.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
 import { CARD_REGISTRY } from "./cards/registry.js";
 import { generateCardBundle } from "./cards/bundle.js";
+import { exportFixture, probeAttentionSource } from "./attention/probe.js";
+import { CLOSING_STREAMS } from "./attention/read.js";
 import { getStatusSummary, searchManifests } from "./store/operations.js";
 import {
   expandPath,
@@ -2029,6 +2031,121 @@ cursorHistoryCmd
       process.exitCode = 1;
     }
   });
+
+const attentionCmd = program
+  .command("attention")
+  .description(
+    "Attention layer: read macOS knowledgeC foreground history (requires Full Disk Access)"
+  );
+
+attentionCmd
+  .command("probe")
+  .description(
+    "Phase 0 diagnostic: can we read knowledgeC, how far back does it go, and do rows carry an end time"
+  )
+  .option("--path <path>", "override the knowledgeC path (for testing)")
+  .option("--json", "print machine-readable JSON", false)
+  .option(
+    "--export <path>",
+    "also write a de-identified /app/inFocus slice as a test fixture"
+  )
+  .option("--export-limit <n>", "rows to export (default 2000)", "2000")
+  .action(
+    (opts: {
+      path?: string;
+      json: boolean;
+      export?: string;
+      exportLimit: string;
+    }) => {
+      const report = probeAttentionSource(opts.path);
+
+      if (opts.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.error(`source:  ${report.source.sourcePath}`);
+        console.error(`status:  ${report.source.status}`);
+        console.error(
+          `runtime: ${report.runtime} (feature ${report.featureWouldBeEnabled ? "enabled" : "disabled"} here)`
+        );
+        if (report.source.responsibleApp) {
+          console.error(`GRANT TO: ${report.source.responsibleApp}`);
+          console.error(
+            "          (System Settings -> Privacy & Security -> Full Disk Access, then Cmd+Q that app and reopen)"
+          );
+        }
+        if (report.source.detail) console.error(`detail:  ${report.source.detail}`);
+        if (report.source.rawError) console.error(`error:   ${report.source.rawError}`);
+
+        if (report.streams.length > 0) {
+          console.error("");
+          console.error("streams:");
+          for (const s of report.streams) {
+            const from =
+              s.earliestMs === null
+                ? "?"
+                : new Date(s.earliestMs).toISOString().slice(0, 10);
+            const to =
+              s.latestMs === null
+                ? "?"
+                : new Date(s.latestMs).toISOString().slice(0, 10);
+            console.error(
+              `  ${s.stream.padEnd(28)} ${String(s.rows).padStart(8)} rows  ${from} .. ${to}  (${s.spanDays ?? "?"}d)`
+            );
+          }
+        }
+
+        if (report.endDate) {
+          const ed = report.endDate;
+          console.error("");
+          console.error(
+            `ZENDDATE: ${ed.verdict} — ${ed.nullEnd} of ${ed.sampled} sampled rows have no end time` +
+              (ed.zeroDuration > 0
+                ? `, ${ed.zeroDuration} are zero-length flickers`
+                : "") +
+              (ed.maxDurationMs === null
+                ? ""
+                : `, longest span ${Math.round(ed.maxDurationMs / 60000)} min`)
+          );
+          if (ed.verdict === "reliable") {
+            console.error(
+              "          rows close themselves, so no closing stream is needed; drop the zero-length ones with a minimum-duration filter"
+            );
+          } else {
+            const available = CLOSING_STREAMS.filter((s) =>
+              report.streams.some((x) => x.stream === s)
+            );
+            console.error(
+              available.length > 0
+                ? `          spans will need closing from ${available.join(", ")}, or sleep turns into one fake span per night`
+                : "          spans need closing but NONE of the usual closing streams exist here — this needs a different answer"
+            );
+          }
+        }
+
+        console.error("");
+        console.error(
+          `PHASE 0 GATE: ${report.gate.passed ? "PASS" : "FAIL"} — ${report.gate.reason}`
+        );
+      }
+
+      if (opts.export) {
+        if (report.source.status !== "ok") {
+          console.error(`export skipped: source is ${report.source.status}`);
+        } else {
+          const limit = Number.parseInt(opts.exportLimit, 10);
+          const res = exportFixture(opts.export, {
+            sourcePath: opts.path,
+            limit: Number.isFinite(limit) && limit > 0 ? limit : 2000,
+          });
+          console.error(
+            `fixture: ${res.rows} rows, ${res.distinctBundles} bundles anonymized, timestamps rebased -> ${res.outPath}`
+          );
+        }
+      }
+
+      process.exitCode = report.gate.passed ? 0 : 1;
+    }
+  );
 
 // `from: "node"` 是显式的,不是多余的。commander 的自动检测看到
 // `process.versions.electron` 就会切到 electron 解析模式(见 commander

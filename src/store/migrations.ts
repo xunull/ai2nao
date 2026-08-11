@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 52;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -68,6 +68,7 @@ export function migrate(db: Database.Database): void {
     applyV49(db);
     applyV50(db);
     applyV51(db);
+    applyV52(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -125,6 +126,7 @@ export function migrate(db: Database.Database): void {
   if (v < 49) applyV49(db);
   if (v < 50) applyV50(db);
   if (v < 51) applyV51(db);
+  if (v < 52) applyV52(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2418,5 +2420,69 @@ function applyV51(db: Database.Database): void {
       ON scheduled_task_runs(started_at DESC, id DESC);
 
     UPDATE meta_schema SET version = 51 WHERE id = 1;
+  `);
+}
+
+/**
+ * 注意力层：macOS knowledgeC 的前台使用时段，以及它的同步水位。
+ *
+ * 列的语义全部来自 2026-08-10 在真机上的实测（`ai2nao attention probe`），不是
+ * 对 CoreDuet 文档的推断：
+ *
+ *   - 本机的前台流是 `/app/usage`（10349 行 / 19 天），**没有** `/app/inFocus`，
+ *     尽管取证文献称后者才是 macOS 的前台流。流名因此不写死，采集侧运行时解析，
+ *     并把当时用的流名记进 `attention_sync_state.focus_stream`。
+ *   - `ZVALUESTRING` 就是 bundle id，源里**没有**应用显示名，所以这里不存
+ *     `app_name`：查询时 LEFT JOIN `mac_apps`（已有 idx_mac_apps_bundle_id）。
+ *     存一个查出来的名字既冗余又会过期。
+ *   - `ZENDDATE` 全量 0 个 null、最长 span 49.7 分钟，所以每行自带结束时间，
+ *     不需要靠锁屏/背光事件封口。153/10343 行 `end == start` 是闪切，属合法数据，
+ *     由采集侧的最小时长阈值过滤，不在这里体现。
+ *
+ * 幂等键是「源库实例 + 源行号 + 分片序号」而不是「bundle + 开始时间」：后者依赖
+ * 一个未经验证的假设（同一 app 同一时刻只有一行），而 migration 一经应用即不可改。
+ * `part_index` 是必需的 —— 跨本地午夜的时段会被切成多行落库，共享同一个源行号，
+ * 没有它第二片会被唯一约束静默吞掉。
+ */
+function applyV52(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS attention_focus_spans (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      source             TEXT    NOT NULL,
+      source_instance_id TEXT    NOT NULL,
+      source_row_id      INTEGER NOT NULL,
+      part_index         INTEGER NOT NULL DEFAULT 0,
+      bundle_id          TEXT    NOT NULL,
+      start_ms           INTEGER NOT NULL,
+      end_ms             INTEGER NOT NULL,
+      duration_ms        INTEGER NOT NULL,
+      tz_offset_s        INTEGER,
+      local_day          TEXT    NOT NULL,
+      inserted_at        TEXT    NOT NULL,
+      UNIQUE(source, source_instance_id, source_row_id, part_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attention_spans_day
+      ON attention_focus_spans(local_day, start_ms);
+    CREATE INDEX IF NOT EXISTS idx_attention_spans_range
+      ON attention_focus_spans(start_ms, end_ms);
+    CREATE INDEX IF NOT EXISTS idx_attention_spans_bundle_day
+      ON attention_focus_spans(bundle_id, local_day);
+
+    CREATE TABLE IF NOT EXISTS attention_sync_state (
+      source             TEXT PRIMARY KEY,
+      source_instance_id TEXT,
+      focus_stream       TEXT,
+      watermark_row_id   INTEGER NOT NULL DEFAULT 0,
+      anchor_row_id      INTEGER,
+      anchor_start_ms    INTEGER,
+      anchor_bundle_id   TEXT,
+      last_success_at    TEXT,
+      last_error         TEXT,
+      coverage_from_ms   INTEGER,
+      coverage_to_ms     INTEGER
+    );
+
+    UPDATE meta_schema SET version = 52 WHERE id = 1;
   `);
 }

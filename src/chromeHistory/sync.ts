@@ -21,6 +21,20 @@ import {
 import { chromeVisitContentKey } from "./contentKey.js";
 import { calendarDayLocalFromChromeDownload, calendarDayLocalFromChromeUs } from "./time.js";
 
+/**
+ * Sibling implementation: `src/attention/sync.ts` mirrors macOS knowledgeC with
+ * the same state-machine shape — monotonic row-id watermark (never a timestamp,
+ * because source rows are not guaranteed to arrive in time order), a source
+ * instance id plus anchor triple to notice the upstream database being reset,
+ * and a baseline written even when a poll returns zero rows.
+ *
+ * The two are deliberately parallel rather than sharing a helper: this state is
+ * keyed per browser profile and that one is not, so a shared abstraction would
+ * carry a `profile` dimension that means nothing there. Rule of three applies —
+ * when a third read-only external source shows up, extract it (tracked in
+ * TODOS.md). Until then: **fix a bug in one of these, check the other.**
+ */
+
 /** Extra diagnostics when `verbose: true` (CLI `--verbose`). */
 export type SyncChromeHistoryDebug = {
   currentSourceId: string;
