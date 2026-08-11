@@ -436,6 +436,160 @@ const sessionLongest: Probe = {
   },
 };
 
+
+// ---------- 注意力层 ----------
+
+/** 前台在场少于这个数,却仍在烧 token —— 说明活是 agent 在干,人不在屏幕前。 */
+const ABSENT_SCREEN_MS = 45 * 60_000;
+/** 低于这个 token 量不值得说,那只是零星的后台调用。 */
+const ABSENT_MIN_TOKENS = 200_000;
+/** 开工时间比基线晚这么多才算「今天起得晚」。 */
+const LATE_START_MIN_MS = 90 * 60_000;
+/** 判断「新应用」时回看多少天。窗口内没出现过才算新。 */
+const NEW_APP_WINDOW_DAYS = 14;
+/** 新应用至少用了这么久才值得一提,避免误触一下就报。 */
+const NEW_APP_MIN_MS = 10 * 60_000;
+
+/** 某一天的前台总时长。走 idx_attention_spans_day 的最左列。 */
+function attentionMsOn(db: Database.Database, day: string): number {
+  const r = db
+    .prepare(
+      "SELECT COALESCE(SUM(duration_ms), 0) AS ms FROM attention_focus_spans WHERE local_day = ?"
+    )
+    .get(day) as { ms: number };
+  return r.ms;
+}
+
+const attentionAbsent: Probe = {
+  id: "attention.absent",
+  label: "人不在，但活在跑",
+  baseline: {
+    kind: "threshold",
+    note: `screenMs < ${ABSENT_SCREEN_MS / 60_000}min && tokens > ${ABSENT_MIN_TOKENS}`,
+  },
+  href: "/attention",
+  run(db, ctx) {
+    const today = todayLocalDay(ctx.now);
+    const screenMs = attentionMsOn(db, today);
+    // 完全没有记录 ≠ 你不在。可能是没授权、任务没开、或者今天刚开始 —— 那是
+    // data.stale 和 /attention 的状态面板该说的事，不是这条线索该猜的。
+    if (screenMs === 0) return null;
+    if (screenMs >= ABSENT_SCREEN_MS) return null;
+
+    const buckets = ctx.trend().buckets;
+    if (buckets.length === 0) return null;
+    const tokens = bucketTotal(buckets[buckets.length - 1]);
+    if (tokens < ABSENT_MIN_TOKENS) return null;
+
+    return {
+      severity: "notable",
+      title: `今天在屏幕前只有 ${Math.round(screenMs / 60_000)} 分钟，却烧了 ${fmtCount(tokens)} token`,
+      detail: "活基本是 agent 在干；也可能是注意力数据没覆盖到这段时间",
+      asOf: ctx.now.toISOString(),
+    };
+  },
+};
+
+const attentionLateStart: Probe = {
+  id: "attention.late_start",
+  label: "今天开工偏晚",
+  baseline: { kind: "deviation", windowDays: 14, minPctDelta: 0 },
+  href: "/attention",
+  run(db, ctx) {
+    const today = todayLocalDay(ctx.now);
+    const since = todayLocalDay(new Date(ctx.now.getTime() - 14 * 86_400_000));
+    const rows = db
+      .prepare(
+        `SELECT local_day AS day, MIN(start_ms) AS first_ms
+           FROM attention_focus_spans
+          WHERE local_day >= ?
+          GROUP BY local_day`
+      )
+      .all(since) as { day: string; first_ms: number }[];
+
+    const todayRow = rows.find((r) => r.day === today);
+    if (!todayRow) return null;
+
+    // 基线是「一天里第几分钟开始」，不是绝对时间戳 —— 否则跨天比较毫无意义。
+    const minuteOfDay = (ms: number): number => {
+      const d = new Date(ms);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    const prior = rows.filter((r) => r.day !== today).map((r) => minuteOfDay(r.first_ms));
+    if (prior.length < 5) return null; // 基线样本太少，说不了「偏晚」
+
+    const base = median(prior);
+    const todayMin = minuteOfDay(todayRow.first_ms);
+    const deltaMs = (todayMin - base) * 60_000;
+    if (deltaMs < LATE_START_MIN_MS) return null;
+
+    const hhmm = new Date(todayRow.first_ms).toTimeString().slice(0, 5);
+    const baseH = String(Math.floor(base / 60)).padStart(2, "0");
+    const baseM = String(Math.round(base % 60)).padStart(2, "0");
+    return {
+      severity: "info",
+      title: `今天 ${hhmm} 才开工，比近 14 天中位数晚 ${Math.round(deltaMs / 60_000)} 分钟`,
+      detail: `中位数 ${baseH}:${baseM}`,
+      asOf: new Date(todayRow.first_ms).toISOString(),
+    };
+  },
+};
+
+const attentionNewApp: Probe = {
+  id: "attention.new_app",
+  label: "今天用了个新应用",
+  baseline: { kind: "novelty" },
+  href: "/attention",
+  run(db, ctx) {
+    const today = todayLocalDay(ctx.now);
+    const since = todayLocalDay(
+      new Date(ctx.now.getTime() - NEW_APP_WINDOW_DAYS * 86_400_000)
+    );
+
+    // 数据本身不满一个窗口时，「窗口内首次出现」对每个应用都成立 —— 那会在接入后的
+    // 头两周天天报一堆假新应用。覆盖不够就闭嘴。
+    const span = db
+      .prepare(
+        "SELECT MIN(local_day) AS a, MAX(local_day) AS b FROM attention_focus_spans"
+      )
+      .get() as { a: string | null; b: string | null };
+    if (!span.a || !span.b) return null;
+    const coveredDays =
+      (Date.parse(`${span.b}T00:00:00Z`) - Date.parse(`${span.a}T00:00:00Z`)) / 86_400_000;
+    if (coveredDays < NEW_APP_WINDOW_DAYS) return null;
+
+    const rows = db
+      .prepare(
+        `SELECT bundle_id AS bundle, MIN(local_day) AS first_day, SUM(duration_ms) AS ms
+           FROM attention_focus_spans
+          WHERE local_day >= ?
+          GROUP BY bundle_id
+         HAVING first_day = ? AND ms >= ?`
+      )
+      .all(since, today, NEW_APP_MIN_MS) as {
+      bundle: string;
+      first_day: string;
+      ms: number;
+    }[];
+    if (rows.length === 0) return null;
+
+    rows.sort((a, b) => b.ms - a.ms);
+    const top = rows[0]!;
+    const named = db
+      .prepare("SELECT name FROM mac_apps WHERE bundle_id = ? LIMIT 1")
+      .get(top.bundle) as { name: string } | undefined;
+    const label = named?.name ?? top.bundle;
+    const more = rows.length > 1 ? `，另有 ${rows.length - 1} 个` : "";
+
+    return {
+      severity: "info",
+      title: `今天第一次用 ${label}，${Math.round(top.ms / 60_000)} 分钟${more}`,
+      detail: `近 ${NEW_APP_WINDOW_DAYS} 天里没见过它`,
+      asOf: ctx.now.toISOString(),
+    };
+  },
+};
+
 /**
  * 注册表。顺序即同级线索的确定性兜底排序 —— 越靠前越先显示,所以按「你多半更想先看到」
  * 排:出事的 → 该注意的 → 有意思的。
@@ -450,6 +604,9 @@ export const PROBES: Probe[] = [
   downloadsToday,
   toolsNew,
   atuinNewDirs,
+  attentionAbsent,
+  attentionLateStart,
+  attentionNewApp,
 ];
 
 // ---------- 编排 ----------
