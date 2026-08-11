@@ -127,6 +127,7 @@ import { registerGitChurnRoutes } from "../gitChurn/routes.js";
 import { registerSettingsRoutes } from "./settingsRoutes.js";
 import { registerCodexTokenUsageRoutes } from "../codexTokenUsage/routes.js";
 import { registerProjectOpenerRoutes } from "../projectOpeners/routes.js";
+import { registerAttentionRoutes } from "../attention/routes.js";
 
 const MAX_SEARCH_QUERY_LEN = 4000;
 const MAX_SEARCH_LIMIT = 100;
@@ -289,6 +290,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
   registerWebSearchRoutes(app);
   registerGithubRoutes(app, db);
+  registerAttentionRoutes(app, db);
   registerHuggingfaceRoutes(app, db);
   registerLmStudioRoutes(app, db);
   registerAiToolsRoutes(app, db);

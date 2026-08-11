@@ -8,6 +8,7 @@ import { runRecapPushTick } from "../workRecap/pushTick.js";
 import { syncChromeHistory } from "../chromeHistory/sync.js";
 import { defaultDownloadRoots } from "../downloads/roots.js";
 import { scanDownloads } from "../downloads/scan.js";
+import { syncAttention } from "../attention/sync.js";
 import { syncHuggingfaceModels } from "../huggingface/sync.js";
 import { syncLmStudioModels } from "../lmstudio/sync.js";
 import { rebuildDirectoryActivity } from "../atuin/directoryActivity/rebuild.js";
@@ -60,6 +61,33 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: result.errors.length > 0 ? "partial" : "success",
           summary: result,
           errorSummary: result.errors[0] ?? null,
+        });
+      },
+    },
+    {
+      key: "attention.sync",
+      label: "注意力层同步",
+      description:
+        "从 macOS knowledgeC 读前台使用时段，落进 attention_focus_spans。需要完全磁盘访问，且只在打包的 .app 里可用。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: (ctx) => {
+        const result = syncAttention(ctx.db);
+        if (result.status === "skipped") {
+          // 未授权 / 非 macOS / schema 变了：不是失败，是「这台机器现在读不到」。
+          // 记成 skipped 而不是 error，否则 /scheduler 上会永久亮红灯，
+          // 而永久的红灯等于没有灯。
+          return Promise.resolve({
+            status: "skipped" as const,
+            summary: result,
+            errorSummary: result.reason ?? "source unavailable",
+          });
+        }
+        return Promise.resolve({
+          status: "success" as const,
+          summary: result,
+          errorSummary: null,
         });
       },
     },
