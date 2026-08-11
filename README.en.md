@@ -18,6 +18,7 @@ Data lives in `~/.ai2nao/index.db` by default (override with `--db`). Everything
 - **GitHub / open-source radar** — GitHub repos & stars; `/github/radar` links your stars back to the TODOs/docs/README of locally indexed projects.
 - **AI chat + RAG** — `/ai-chat` keeps model-call orchestration in the ai2nao backend, with an optional local RAG (FTS + vector hybrid retrieval).
 - **MCP "memory organ"** — `serve` exposes a read-only MCP server at `/mcp` so agents like Claude Code / Codex can query your dev data inline (see [MCP memory organ](#mcp-memory-organ)).
+- **Attention layer** — `/attention` reads macOS system records to reconstruct which app held the foreground and when, then cross-references those hours with the git commits, browsing, token events and questions from the same window. **Requires Full Disk Access and is enabled only in the packaged desktop build** (see [Attention layer data boundary](#attention-layer-data-boundary)).
 - **Scheduler** — `serve` ships a built-in local scheduler for sync / scan / derived-rebuild tasks (all disabled by default).
 
 ## Showcase
@@ -229,6 +230,60 @@ A few pages have data boundaries worth noting:
   ```
 
   Config parsing is strict: unknown fields / invalid JSON / invalid rules fail the rebuild and show `config_error` in the status area, while the previous aggregate is kept.
+
+## Attention layer data boundary
+
+`/attention` is the only feature here that needs an extra system permission, and the only one restricted to the desktop build. This section states the cost so you can decide.
+
+**What it reads.** macOS `~/Library/Application Support/Knowledge/knowledgeC.db` (CoreDuet), and only the "which app was frontmost, from when to when" stream, stored into `attention_focus_spans`. It does not read notification contents, page contents, or input. Raw rows are not retained — only merged spans.
+
+**What it costs.** Full Disk Access. macOS offers no narrower grant for this database.
+
+**Why desktop-only.** Full Disk Access is granted **per executable**:
+
+| Install method | Grant lands on | Consequence |
+|---|---|---|
+| Packaged `ai2nao.app` | that app | only ai2nao can read the disk ✅ |
+| `npm`-installed CLI | your `node` binary | **every node script on the machine can read the disk** ❌ |
+
+That second row is why the CLI path is refused rather than documented. Outside the packaged app, `/api/attention/status` returns `unsupported_runtime` instead of pretending to work.
+
+**Granting and revoking.** In the desktop build use the menu bar: Services → Full Disk Access settings…, add ai2nao, then `Cmd+Q` and reopen (the grant is read at process start; reopening the window is not enough). To revoke, untick it in the same panel — ingestion stops, already-stored spans are unaffected.
+
+**Off by default.** Like every scheduled task in this project, `attention.sync` registers disabled. After granting access you still have to enable it in `/scheduler`, or hit Run now once.
+
+**Which apps get captured is configurable.** Everything, by default. To be stricter, switch to an allowlist in `~/.ai2nao/config.json`, or just exclude a few:
+
+```json
+{
+  "attention": {
+    "mode": "allowlist",
+    "allowBundles": ["com.googlecode.iterm2", "com.microsoft.VSCode"],
+    "excludeBundles": ["com.apple.MobileSMS"],
+    "minDurationMs": 0
+  }
+}
+```
+
+`mode` is `"all"` (default) or `"allowlist"`; `excludeBundles` applies in both modes and wins over the allowlist. Parsing is **strict**: unknown keys, wrong types, or malformed JSON fail the sync with `config_error` rather than silently falling back to capturing everything — a typo turning an allowlist back into full capture is the one failure this feature must not have.
+
+Defaulting to full capture rather than an allowlist is a deliberate trade: measured on the development machine, the single largest foreground app was a chat client (1998 minutes over 20 days), and an allowlist default would exclude it — leaving "where did my time go" unanswerable, which is the whole point of the feature. The real privacy boundary sits elsewhere: the task is off by default, nothing leaves the machine, and only bundle ids and start/end times are stored — no window titles, no contents.
+
+**Known boundaries.**
+
+- Retention depends on the OS. Measured on the development machine: about 19 days of `/app/usage`, shorter than the commonly cited "about four weeks".
+- Stream names differ across macOS versions: this machine has **no** `/app/inFocus` (which the forensics literature names as the macOS foreground stream), only `/app/usage`. The code resolves the stream at runtime from a candidate list and reports `schema_mismatch` with the actual stream inventory when neither exists, rather than silently returning nothing.
+- Cross-referencing covers 4 sources (git commits, Chrome visits, token events, agent questions). **Shell commands are not crossable** — `atuin_directory_activity_commands` aggregates `(cwd, command)` with counts rather than logging events, so it cannot answer "which commands ran in that half hour". The page declares this gap explicitly.
+- Typically 10–40% of a day's events fall outside every foreground span (an agent working while the screen is off, or the OS not recording that stretch). The page shows that count as "unattributed" rather than hiding it.
+
+**Want to look before deciding?** Run the read-only diagnostic; it writes nothing:
+
+```bash
+node dist/cli.js attention probe            # readable? how much history? do rows carry an end time?
+node dist/cli.js attention probe --json     # full report, including which streams this machine actually has
+```
+
+When unauthorized it names **which app needs the grant** (inferred from the process ancestry) rather than saying "go enable permissions".
 
 ## Tests
 

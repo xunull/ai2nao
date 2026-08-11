@@ -18,6 +18,7 @@
 - **GitHub / 开源雷达** — GitHub 仓库 & Star、`/github/radar` 把 Star 连回本地项目的 TODO/docs/README。
 - **AI 对话 + RAG** — `/ai-chat` 由 ai2nao 后端掌控模型调用,可挂本地 RAG（FTS + 向量双路召回）。
 - **MCP 记忆器官** — `serve` 在 `/mcp` 暴露只读 MCP server,让 Claude Code / Codex 等 agent 当场查你的开发数据（见 [MCP 记忆器官](#mcp-记忆器官)）。
+- **注意力层** — `/attention` 读 macOS 系统记录还原「这几小时人在哪个应用里」，再和同期的 git 提交 / 浏览 / token / 提问交叉。**需要完全磁盘访问，且只在打包的桌面版里启用**（见 [注意力层的数据边界](#注意力层的数据边界)）。
 - **定时任务** — `serve` 内置本地 scheduler,统一管理同步 / 扫描 / 派生重建任务(默认全部关闭)。
 
 ## Showcase
@@ -229,6 +230,60 @@ npm run dev:ui
   ```
 
   配置解析是严格模式:未知字段 / 非法 JSON / 非法规则会让重建失败并在状态区显示 `config_error`,旧聚合数据保留。
+
+## 注意力层的数据边界
+
+`/attention` 是这个项目里唯一一个**需要额外系统权限**的功能，也是唯一一个只在桌面版里可用的功能。这一节把代价说清楚，你再决定要不要开。
+
+**它读什么。** macOS 的 `~/Library/Application Support/Knowledge/knowledgeC.db`（CoreDuet），只取「哪个 app 在前台、从几点到几点」这一个流，落进 `attention_focus_spans`。不读通知内容、不读网页内容、不读输入。原始行不留，只留合并后的时段。
+
+**它要什么权限。** 完全磁盘访问（Full Disk Access）。macOS 不提供更细的粒度 —— 想读这个库就得给全盘读权限，没有中间档。
+
+**为什么只支持桌面版。** 完全磁盘访问是**按可执行文件**授予的：
+
+| 安装方式 | 授权对象 | 后果 |
+|---|---|---|
+| 打包的 `ai2nao.app` | 这个 app | 只有 ai2nao 能读全盘 ✅ |
+| `npm` 装的 CLI | 你的 `node` 二进制 | **机器上每一个 node 脚本都能读全盘** ❌ |
+
+第二行是这个功能拒绝支持 CLI 路径的原因。给共享的 `node` 授全盘读权，等于给你随手 `npx` 跑的任何东西都开了同一扇门。非桌面版运行时 `/api/attention/status` 直接返回 `unsupported_runtime`，不会假装能用。
+
+**怎么给、怎么收回。** 在桌面版里走菜单栏「服务 → 完全磁盘访问设置…」，把 ai2nao 加进去，然后 `Cmd+Q` 完全退出再打开（授权在进程启动时读取，重启窗口不够）。不想要了就在同一个面板里取消勾选 —— 采集会停，已经落库的时段不受影响。
+
+**默认是关的。** `attention.sync` 和其他所有定时任务一样注册即关闭。授权之后还要去 `/scheduler` 手动启用，或者点一次 Run now。
+
+**采哪些应用可配。** 默认全量（采所有前台应用）。想更保守，在 `~/.ai2nao/config.json` 里切成白名单，或者只排除几个：
+
+```json
+{
+  "attention": {
+    "mode": "allowlist",
+    "allowBundles": ["com.googlecode.iterm2", "com.microsoft.VSCode"],
+    "excludeBundles": ["com.apple.MobileSMS"],
+    "minDurationMs": 0
+  }
+}
+```
+
+`mode` 是 `"all"`（默认）或 `"allowlist"`；`excludeBundles` 在两种模式下都生效且优先于白名单。解析是**严格模式**：未知字段、类型不对、非法 JSON 都会让同步失败并报 `config_error`，**不会**悄悄回落到全量 —— 一个拼错的键把 allowlist 变回全量，是这个功能最不该有的失败方式。
+
+默认全量而不是白名单是一个有代价的选择：实测这台机器上前台时长第一的是微信（20 天 1998 分钟），白名单默认会把它挡在外面，而「我的时间去哪了」正是这个功能存在的理由。隐私的实质保护在别处 —— 任务默认关闭、数据不出本机、只存 bundle id 和起止时间，不存窗口标题也不存内容。
+
+**已知边界。**
+
+- 覆盖深度取决于系统保留多久。实测本机 `/app/usage` 约 19 天，比通行说法的「约四周」短。
+- 流名跨 macOS 版本会变：本机**没有** `/app/inFocus`（取证文献称它是 macOS 的前台流），只有 `/app/usage`。代码按候选列表运行时解析，两个都没有时报 `schema_mismatch` 并列出实际存在的流，不静默返回空。
+- 交叉层目前接 4 个源（git 提交 / Chrome 浏览 / token 事件 / agent 提问）。**shell 命令接不上** —— `atuin_directory_activity_commands` 是 `(cwd, command)` 的聚合表而不是事件表，答不了「那半小时跑了哪几条命令」。页面上会显式声明这个缺口。
+- 一天里通常有 10%–40% 的事件落在所有前台时段之外（屏幕关着时 agent 还在跑，或系统没记录那段）。页面把这个数字直接显示为「未归属」，不把它藏起来。
+
+**想先看看再决定？** 跑一次只读诊断，它不写任何东西：
+
+```bash
+node dist/cli.js attention probe            # 能不能读、有多少历史、行里有没有结束时间
+node dist/cli.js attention probe --json     # 完整报告，含这台机器上实际有哪些流
+```
+
+未授权时它会告诉你**该授权给哪个 app**（按进程祖先链推断），而不是笼统地说「去开权限」。
 
 ## 测试
 

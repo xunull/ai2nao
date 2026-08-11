@@ -1220,3 +1220,75 @@ Depends on / blocked by:
 **Depends on:** 无。但建议在首页 v1 之后,那时你会天天看见它们。
 
 **Effort:** M(human ~3h / CC ~30min) **Priority:** P2
+
+## 注意力层:零权限采样作为 knowledgeC 的降级路径
+
+**What:** 用 `lsappinfo` 轮询采集前台应用，作为 `knowledgeC.db` 失效时的第二条采集路径。`attention_focus_spans.source` 列已预留 `'sampler'` 取值，下游 spans / queries / routes 全部复用，不需要新迁移。
+
+**Why:** 注意力层 v1 把全部赌注压在一个 Apple 不作兼容性承诺的私有数据库上。三种情况都会让功能整个归零且没有退路：macOS 升级改 schema、用户撤销完全磁盘访问、Apple 移走或重构 CoreDuet。来自 `/plan-eng-review`(2026-08-10)的 outside voice 第 5 条：「把私有系统数据库当稳定接口……rowid/reset anchor 只处理部分重建问题，处理不了语义漂移」。
+
+**Pros:**
+- 零 TCC 权限，不需要完全磁盘访问，和项目「本地优先 + 数据边界清晰」的叙事一致
+- 口径完全自主：什么算一段专注、白名单采哪些、多久算离开，全由 ai2nao 定，永不因 Apple 改库失效
+- 实测成本极低：`lsappinfo front` + `lsappinfo info -only name,bundleid` 约 **18ms/次**，能拿到显示名、bundle id、pid、启动时间；scheduler 和桌面壳常驻都是现成宿主
+- 解锁 CLI / npm 安装路径 —— knowledgeC 路线因为 FDA 授权主体问题只支持 `.app`（见 D5）
+
+**Cons:**
+- 没有历史，只能从启用那天开始积累
+- serve 未运行的时段会有洞，需要在数据体检里显性化
+- 采样精度低于系统级记录，快速切换可能采不到
+
+**Context:** 本轮实测数据（2026-08-10，本机）：`knowledgeC.db` 17.9MB 且当日仍在写入，但被 TCC 拦截（**目录级**拦截 —— `ls` 目录返回 `total 0`，`ls` 完整路径能拿 stat）。零权限替代已验证：`lsappinfo` 可用，`osascript` 取 `AXTitle` 可拿窗口标题（需辅助功能权限），`pmset -g log` 有 33323 条睡眠唤醒记录可用于给专注段封口。本机 152 个 GUI 应用在跑。
+
+**Depends on:** 无前置依赖。但实现价值取决于 knowledgeC 路线先跑起来、并证明注意力数据确实有用 —— 否则两条路径都是白建。
+
+**Effort:** M(human ~2d / CC ~40min) **Priority:** P2
+
+## 注意力层:shell 命令的交叉证据(Atuin 原始历史)
+
+**What:** 让 `/attention` 的交叉层能回答「那段时间我在终端里跑了哪几条命令」。
+
+**Why:** `/plan-eng-review`(2026-08-10)把 atuin 列为交叉层的五个源之一，实现时才发现
+`atuin_directory_activity_commands` **是聚合表而不是事件表**：主键是 `(cwd, command)`，带
+`raw_count` / `filtered_count` 和 `first_timestamp_ns` / `last_timestamp_ns`。它能回答
+「这条命令最后一次是什么时候」，回答不了「14:00–14:30 之间跑了哪几条」。所以交叉层首版只接了
+4 个源（git 提交 / Chrome 浏览 / token 事件 / agent 提问），终端这一块是空的 —— 而终端恰好
+是实测中前台时长第二高的应用（Warp 1656 分钟 / 20 天）。
+
+**Pros:**
+- 补上交叉层最有说服力的一半：「Warp 前台 2 小时」× 「跑了这 47 条命令」才是这个功能的卖点
+- Atuin 原始库 `~/.local/share/atuin/history.db` 是逐条事件，带 timestamp / duration / exit / cwd
+- 只读外部 SQLite 的形状在 `src/attention/read.ts` 和 `src/chromeHistory/sync.ts` 都有先例
+
+**Cons:**
+- 又一个外部只读源，又一套同步状态机（第三个 —— 到时候该抽公共 util 了，见本文件另一条 TODO）
+- Atuin 库可能加密（取决于用户配置），需要先探测
+- 首版可以只做「按时间区间查询」而不落库，但那样每次翻页都要开外部库
+
+**Context:** 交叉层的 `UNSUPPORTED_SOURCES` 常量里已经声明了这个缺口和原因，页面上会显示
+「shell 命令暂不可交叉」而不是假装那段时间没敲过命令。实测：真实数据上一天的交叉结果是
+commit=12 / visit=103 / token=1371 / msg=63，终端那一列是 0。
+
+**Depends on:** 无。但建议在 `/attention` 页面（T9）之后做，那时能直接看到缺了这一块的样子。
+
+**Effort:** M(human ~2d / CC ~40min) **Priority:** P2
+
+## 外部只读数据源:抽公共同步状态机(等第三个源)
+
+**What:** 把 `src/chromeHistory/sync.ts` 和 `src/attention/sync.ts` 里那套同步状态机抽成公共 util：单调 row-id 水位、source instance id + anchor 三件套的源库重置检测、首轮 0 行也要写基线。
+
+**Why:** 现在有两份形状一样的实现。两份不抽是有意的（rule of three 还没到，而且两者主键维度不同：Chrome 那份按 browser profile 分区，attention 那份是单源，现在抽会把一个对 attention 毫无意义的 `profile` 参数强加给所有调用方）。但两份会静默漂移 —— 而这套状态机的每一种失败都是静默的：水位漏行不报错、源库重置后停死不报错、首轮吞数据不报错。目前靠两边互指的注释维持可发现性，那依赖人去读。
+
+**Pros:**
+- 第三个源出现时，一次抽象三处受益，且新源不用重新踩一遍这三个坑
+- 这三个坑各自都在这个项目里真实发生过（git_commits 停 22 天、desktopShell 首轮吞事件）
+
+**Cons:**
+- 抽早了会把先出现的那个源的形状固化成契约
+- 需要同时改两处已在生产的采集路径，回归面不小
+
+**Context:** 来自 `/plan-eng-review`(2026-08-10) D6 决议：「先平行实现，两边留互指注释 + 一条 TODO」。两个 `sync.ts` 的文件头已经互相指向并写明了共同的坑。触发条件是**第三个只读外部 SQLite 源**接入 —— 最可能是 TODOS 里那条 Atuin 原始历史。
+
+**Depends on:** 第三个外部只读源。没有它就不要动。
+
+**Effort:** M(human ~1d / CC ~40min) **Priority:** P3
