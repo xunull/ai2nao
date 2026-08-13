@@ -39,21 +39,43 @@ export function filterByReadingHidden<T extends FilterableMessage>(msgs: T[]): T
  *
  * 跨分页边界照常合并:下一页到达后卡片就地变长,靠 react-virtual 的 measureElement
  * 重测 + 自动补偿。不按页切断,否则后端的分页实现细节会漏成「同一轮被劈成两张卡」。
+ *
+ * **order 影响两件事,都不是「顺手把数组翻一下」那么简单:**
+ *
+ * 1. 合并永远在**升序**序列上做(按写作顺序分组),desc 下先把输入翻正再合并,
+ *    最后只翻**卡数组** —— 卡内保持写作顺序,否则一段连贯的话会从后往前读。
+ * 2. 卡的 key 取「不随成员增长而变」的那一端,而两个方向的稳定端是**相反**的:
+ *    asc 下新页 append 到尾部(首条稳定),desc 下新页前置到头部(末条稳定)。
+ *    取错会让边界那张卡在新页到达时换 key —— react-virtual 的行高缓存未命中而抖动,
+ *    React 视为新元素而重置卡内的展开/查看原文状态。
  */
 export function mergeAdjacentAssistant<T extends FilterableMessage>(
-  msgs: T[]
+  msgs: T[],
+  order: "asc" | "desc" = "asc"
 ): MergedCard<T>[] {
-  const cards: MergedCard<T>[] = [];
-  for (let i = 0; i < msgs.length; i++) {
-    const m = msgs[i];
-    const last = cards[cards.length - 1];
-    if (last && m.role === "assistant" && last.role === "assistant") {
-      last.messages.push(m);
+  // desc 下输入是「新 → 旧」,翻正后再按写作顺序分组。
+  const ascending = order === "desc" ? [...msgs].reverse() : msgs;
+
+  const groups: T[][] = [];
+  for (const m of ascending) {
+    const last = groups[groups.length - 1];
+    if (last && m.role === "assistant" && last[0]!.role === "assistant") {
+      last.push(m);
       continue;
     }
-    cards.push({ key: m.id ?? `${m.role}-${i}`, role: m.role, messages: [m] });
+    groups.push([m]);
   }
-  return cards;
+
+  const cards = groups.map((g, i) => {
+    const anchor = order === "desc" ? g[g.length - 1]! : g[0]!;
+    return {
+      key: anchor.id ?? `${g[0]!.role}-${i}`,
+      role: g[0]!.role,
+      messages: g,
+    };
+  });
+
+  return order === "desc" ? cards.reverse() : cards;
 }
 
 /**

@@ -21,6 +21,8 @@ import {
   type MergedCard,
 } from "../util/conversationFilter";
 import { ReadingModeToggle, useReadingMode } from "../components/ReadingModeToggle";
+import { SortOrderToggle, useSortOrder, type SortOrder } from "../components/SortOrderToggle";
+import { Toggle } from "../components/Toggle";
 import { AskUserQuestionCard } from "../components/AskUserQuestionCard";
 
 // 单条消息(与后端 messageToJson 序列化后的形状对齐;分页 ?cursor= 每页返回一组)。
@@ -444,6 +446,27 @@ function MessageArticle({
 }
 
 /**
+ * 哨兵页脚文案。五种状态里**只有「到底了」那条跟方向有关** —— 倒序下「底」是对话开头,
+ * 不是末尾。其余四条(加载中 / 本段全是工具调用 / 继续往下滚 / 全无可读内容)方向无关。
+ * 抽成函数是因为原来那串嵌套三元已经三层,再叠一层 order 就没法读了。
+ */
+function footerText(args: {
+  isFetchingNextPage: boolean;
+  hasNextPage: boolean;
+  empty: boolean;
+  order: SortOrder;
+}): string {
+  if (args.isFetchingNextPage) return "加载更多消息…";
+  if (args.hasNextPage) {
+    // 本页全是工具调用/系统事件,滤完一条不剩。说清楚正在往下找,
+    // 否则用户看到的是一块什么都没有、也不动的区域。
+    return args.empty ? "这一段都是工具调用,继续往下找…" : "向下滚动加载更多";
+  }
+  if (args.empty) return "本会话没有可读的对话内容(全部是工具调用与系统事件)";
+  return args.order === "desc" ? "已到对话开头" : "已到对话末尾";
+}
+
+/**
  * 消息虚拟列表:@tanstack/react-virtual + measureElement 自动测量。
  * - 滚动容器是 parentRef 这个 div(flex-1 填满剩余高度、内部纵向滚动、禁横向滚动)。
  * - 每行挂 virtualizer.measureElement,内建 ResizeObserver 自动量到真实高度并回填位置,
@@ -467,6 +490,7 @@ function MessageList({
   registerVirtualizer,
   readingMode,
   answersByToolUseId,
+  order,
 }: {
   cards: MergedCard<ApiMessage>[];
   hasNextPage: boolean;
@@ -476,6 +500,7 @@ function MessageList({
   registerVirtualizer?: (v: Virtualizer<HTMLDivElement, Element> | null) => void;
   readingMode: boolean;
   answersByToolUseId: Record<string, Record<string, string>>;
+  order: SortOrder;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   // 末尾多一行哨兵页脚。
@@ -543,17 +568,12 @@ function MessageList({
               <div className="px-1 pb-5">
                 {isFooter ? (
                   <div className="py-6 text-center text-xs text-neutral-400">
-                    {isFetchingNextPage
-                      ? "加载更多消息…"
-                      : hasNextPage
-                        ? cards.length === 0
-                          ? // 本页全是工具调用/系统事件,滤完一条不剩。说清楚正在往下找,
-                            // 否则用户看到的是一块什么都没有、也不动的区域。
-                            "这一段都是工具调用,继续往下找…"
-                          : "向下滚动加载更多"
-                        : cards.length === 0
-                          ? "本会话没有可读的对话内容(全部是工具调用与系统事件)"
-                          : "已到对话末尾"}
+                    {footerText({
+                      isFetchingNextPage,
+                      hasNextPage,
+                      empty: cards.length === 0,
+                      order,
+                    })}
                   </div>
                 ) : (
                   <MessageArticle
@@ -587,6 +607,8 @@ export function ClaudeCodeHistorySession() {
   const [expandAppendix, setExpandAppendix] = useState(false);
   // 「只看对话」开关。默认关,状态存 localStorage。
   const [readingMode, toggleReadingMode] = useReadingMode();
+  // 「最新在前」开关。默认 asc(与页面一直以来的行为一致),独立存一个键。
+  const [sortOrder, toggleSortOrder] = useSortOrder();
 
   // 头部:?meta=1 触发后端一次性索引(大文件约 1~2s),据此显示「首次打开」加载态。
   const meta = useQuery({
@@ -598,17 +620,22 @@ export function ClaudeCodeHistorySession() {
   // 消息:?cursor=&limit= 向后翻页(oldest→new)。maxPages 上限累计页(顶部会被淘汰,
   // 阅读是自上而下,可接受;淘汰致索引位移时各行会重测自愈)。
   const messages = useInfiniteQuery({
-    queryKey: ["claude-code-history-session-page", id, projectsRoot, projectId],
+    // order 必须进 key:方向变了数据也变。readingMode 刻意**不**进 key(它只改 limit,
+    // 已拉的数据仍然有效),两者在这里是不对称的。
+    queryKey: ["claude-code-history-session-page", id, projectsRoot, projectId, sortOrder],
     queryFn: ({ pageParam }) => {
       const p = new URLSearchParams();
       if (projectsRoot.trim()) p.set("projectsRoot", projectsRoot.trim());
-      p.set("cursor", String(pageParam));
-      // 阅读模式下一页要拉更多才填得满一屏(见 READING_PAGE_LIMIT 注释)。queryKey 刻意
-      // 不含 readingMode:切换开关不该重拉已有数据,只影响之后新拉的页。
+      // desc 首屏的 pageParam 是 null —— 不带 cursor,让后端用当时的文件末尾作右边界。
+      // 传 0 会被解释成右边界=0,读出空页。
+      if (pageParam != null) p.set("cursor", String(pageParam));
+      // 阅读模式下一页要拉更多才填得满一屏(见 READING_PAGE_LIMIT 注释)。
       p.set("limit", String(readingMode ? READING_PAGE_LIMIT : PAGE_LIMIT));
+      if (sortOrder === "desc") p.set("order", "desc");
       return apiGet<PageResp>(`${baseUrl}?${p.toString()}`);
     },
-    initialPageParam: 0,
+    // asc 必须显式给 0:不带 cursor 会掉进后端那条整文件读的兼容路径。
+    initialPageParam: (sortOrder === "desc" ? null : 0) as number | null,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     maxPages: MAX_PAGES,
     enabled,
@@ -649,13 +676,39 @@ export function ClaudeCodeHistorySession() {
   }
   // 阅读模式的两步变换。关闭时 visible === items 且每条各成一卡,渲染与改动前等价。
   const visible = readingMode ? filterByReadingHidden(items) : items;
+  // 非阅读模式下每条各成一卡:desc 的顺序后端已经翻好了,这里不用再动。
   const cards: MergedCard<ApiMessage>[] = readingMode
-    ? mergeAdjacentAssistant(visible)
+    ? mergeAdjacentAssistant(visible, sortOrder)
     : visible.map((m, i) => ({
         key: m.id ?? `${m.role}-${i}`,
         role: m.role,
         messages: [m],
       }));
+
+  /**
+   * 切换排序 = 从新顺序的开头重新读(D3),所以这里**不做锚定**,但要主动收拾两样东西:
+   *
+   * 1. `pendingAnchor` 可能还留着上一次「只看对话」的锚点(2 秒窗口内)。不清掉的话
+   *    那个 effect 会在切换后的重渲染里把落点顶走。
+   * 2. 目标 order 的分页缓存要清。react-query 恢复无限查询时第一页用的是
+   *    `oldPageParams[0] ?? initialPageParam` —— **缓存优先**,而 maxPages 淘汰会把
+   *    首页连同它的 pageParam 一起删。长会话往返切换会落在半路而不是开头,
+   *    且只在超过 40 页时才现形。
+   */
+  function onToggleSortOrder() {
+    pendingAnchor.current = null;
+    const nextOrder: SortOrder = sortOrder === "desc" ? "asc" : "desc";
+    void queryClient.removeQueries({
+      queryKey: [
+        "claude-code-history-session-page",
+        id,
+        projectsRoot,
+        projectId,
+        nextOrder,
+      ],
+    });
+    toggleSortOrder();
+  }
 
   function onToggleReadingMode() {
     const v = virtualizerRef.current;
@@ -765,29 +818,15 @@ export function ClaudeCodeHistorySession() {
         <button type="button" className={btnGhost} onClick={() => refreshSession()}>
           刷新此会话
         </button>
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          <SortOrderToggle order={sortOrder} onToggle={onToggleSortOrder} />
           <ReadingModeToggle on={readingMode} onToggle={onToggleReadingMode} />
+          <Toggle
+            label="结构化内容默认展开"
+            on={expandAppendix}
+            onToggle={() => setExpandAppendix((v) => !v)}
+          />
         </div>
-        <label className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
-          <span>结构化内容默认展开</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={expandAppendix}
-            onClick={() => setExpandAppendix((v) => !v)}
-            className={[
-              "relative inline-flex h-5 w-9 items-center rounded-full transition",
-              expandAppendix ? "bg-blue-500" : "bg-neutral-300",
-            ].join(" ")}
-          >
-            <span
-              className={[
-                "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
-                expandAppendix ? "translate-x-4" : "translate-x-0.5",
-              ].join(" ")}
-            />
-          </button>
-        </label>
       </header>
 
       <div className="mt-4 rounded-2xl border border-neutral-200/80 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
@@ -846,6 +885,7 @@ export function ClaudeCodeHistorySession() {
             registerVirtualizer={registerVirtualizer}
             readingMode={readingMode}
             answersByToolUseId={answersByToolUseId}
+            order={sortOrder}
           />
         )}
       </div>

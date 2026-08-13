@@ -566,3 +566,170 @@ describe("ClaudeCodeHistorySession — 阅读模式开关", () => {
     expect(readingSwitch()).toHaveAttribute("aria-checked", "true");
   });
 });
+
+/**
+ * 「最新在前」排序开关。
+ *
+ * mock 复刻后端的分页语义(cursor 在两个方向下都是绝对物理行号),否则测不出
+ * 「切换后从新顺序开头重新读」这类行为 —— 那正是本组用例要守的。
+ */
+type MockMsg = { id: string; role: string; content: string; timestamp: string };
+
+function installOrderAwareFetchMock(all: MockMsg[]): void {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://x");
+    if (url.searchParams.get("meta") != null) {
+      return jsonResponse({
+        ok: true,
+        header: { ...HEADER, messageCount: all.length, title: "排序会话" },
+      });
+    }
+    const order = url.searchParams.get("order") === "desc" ? "desc" : "asc";
+    const limit = Number(url.searchParams.get("limit") ?? "50");
+    const cursorRaw = url.searchParams.get("cursor");
+    const total = all.length;
+    let start: number;
+    let end: number;
+    if (order === "desc") {
+      end = cursorRaw != null ? Number(cursorRaw) : total;
+      start = Math.max(0, end - limit);
+    } else {
+      start = cursorRaw != null ? Number(cursorRaw) : 0;
+      end = Math.min(start + limit, total);
+    }
+    const slice = all.slice(start, end);
+    if (order === "desc") slice.reverse();
+    const hasMore = order === "desc" ? start > 0 : end < total;
+    return jsonResponse({
+      ok: true,
+      messages: slice,
+      nextCursor: hasMore ? (order === "desc" ? start : end) : null,
+      hasMore,
+    });
+  }) as unknown as typeof fetch;
+}
+
+const mk = (i: number, role: string, content: string): MockMsg => ({
+  id: `m${i}`,
+  role,
+  content,
+  timestamp: new Date(Date.parse("2026-06-29T00:00:00.000Z") + i * 60_000).toISOString(),
+});
+
+const sortSwitch = () => screen.getByRole("switch", { name: "最新在前" });
+
+describe("ClaudeCodeHistorySession — 最新在前排序", () => {
+  const CONVO = [
+    mk(0, "user", "第 0 轮提问"),
+    mk(1, "assistant", "第 0 轮回答"),
+    mk(2, "user", "第 1 轮提问"),
+    mk(3, "assistant", "第 1 轮回答"),
+  ];
+
+  it("默认正序:最早的在最上,页脚说『已到对话末尾』", async () => {
+    installOrderAwareFetchMock(CONVO);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("第 1 轮回答")).toBeInTheDocument());
+    const articles = Array.from(document.querySelectorAll("article"));
+    expect(articles[0].textContent).toContain("第 0 轮提问");
+    expect(screen.getByText("已到对话末尾")).toBeInTheDocument();
+    expect(sortSwitch()).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("打开:最新的排到最上,页脚改说『已到对话开头』", async () => {
+    installOrderAwareFetchMock(CONVO);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("第 1 轮回答")).toBeInTheDocument());
+
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+    const articles = Array.from(document.querySelectorAll("article"));
+    expect(articles[0].textContent).toContain("第 1 轮回答");
+    expect(articles[articles.length - 1].textContent).toContain("第 0 轮提问");
+    expect(screen.queryByText("已到对话末尾")).toBeNull();
+  });
+
+  // D4:卡之间倒序,但一张合并卡内部仍按写作顺序 —— 一段连贯的话倒着读是读不通的。
+  it("倒序 + 阅读模式:卡之间倒序,合并卡内部仍是写作顺序", async () => {
+    installOrderAwareFetchMock([
+      mk(0, "user", "帮我看下文件"),
+      mk(1, "assistant", "我先看一下。"),
+      mk(2, "assistant", "看完了,结论是 X。"),
+    ]);
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/结论是 X/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("switch", { name: "只看对话" }));
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+
+    const articles = Array.from(document.querySelectorAll("article"));
+    // 两条 assistant 并成一张卡,排在 user 那张之上(答在问上 —— D2=A 的消息级倒序)
+    expect(articles).toHaveLength(2);
+    const merged = articles[0].textContent ?? "";
+    expect(merged).toContain("我先看一下");
+    expect(merged).toContain("结论是 X");
+    // 卡内顺序:先写的在前
+    expect(merged.indexOf("我先看一下")).toBeLessThan(merged.indexOf("结论是 X"));
+    expect(articles[1].textContent).toContain("帮我看下文件");
+  });
+
+  it("开关状态存 localStorage,重新挂载后保持", async () => {
+    installOrderAwareFetchMock(CONVO);
+    const first = renderPage();
+    await waitFor(() => expect(screen.getByText("第 1 轮回答")).toBeInTheDocument());
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+    first.unmount();
+
+    installOrderAwareFetchMock(CONVO);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+    expect(sortSwitch()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("两个开关互不影响:各存各的键", async () => {
+    installOrderAwareFetchMock(CONVO);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("第 1 轮回答")).toBeInTheDocument());
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+    // 只切排序,「只看对话」不该被带动
+    expect(screen.getByRole("switch", { name: "只看对话" })).toHaveAttribute(
+      "aria-checked",
+      "false"
+    );
+    expect(window.localStorage.getItem("ai2nao.sortOrder")).toBe("desc");
+    expect(window.localStorage.getItem("ai2nao.readingMode")).not.toBe("1");
+  });
+
+  /**
+   * E4:react-query 恢复无限查询时第一页用 `oldPageParams[0] ?? initialPageParam`
+   * —— 缓存优先。而 maxPages(40)淘汰会把首页连同它的 pageParam 一起删掉。
+   * 所以往返切换必须清掉目标 order 的缓存,否则会落在半路而不是开头。
+   * 这条只在加载超过 40 页时现形,短会话永远测不出来。
+   */
+  it("往返切换时清掉目标 order 的缓存:切回去会重新从头请求,而不是复用缓存", async () => {
+    installOrderAwareFetchMock(CONVO);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("已到对话末尾")).toBeInTheDocument());
+
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话开头")).toBeInTheDocument());
+
+    // 记录「切回正序」之后发出的请求
+    const callsBefore = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(sortSwitch());
+    await waitFor(() => expect(screen.getByText("已到对话末尾")).toBeInTheDocument());
+
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+      .slice(callsBefore)
+      .map((c) => String(c[0]));
+    // 缓存被清 → 从 initialPageParam 重新起步,必然出现 cursor=0 的请求。
+    // 若沿用缓存,react-query 会直接拿旧数据、一个请求都不发。
+    expect(urls.some((u) => u.includes("cursor=0"))).toBe(true);
+    // 且顶部回到最早那条
+    const articles = Array.from(document.querySelectorAll("article"));
+    expect(articles[0].textContent).toContain("第 0 轮提问");
+  });
+});

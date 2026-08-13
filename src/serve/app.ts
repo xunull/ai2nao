@@ -212,6 +212,14 @@ function intQuery(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/**
+ * 消息排序方向。**只认 "desc"**,其余(缺省、拼错、大小写异常之外的任何值)一律 asc ——
+ * 排序方向拼错时给出正序是安全的默认,而不是报错或换一种方向。
+ */
+function orderQuery(raw: string | undefined): "asc" | "desc" {
+  return (raw ?? "").trim().toLowerCase() === "desc" ? "desc" : "asc";
+}
+
 function codexHistoryErr(e: unknown) {
   if (isCodexHistoryError(e)) {
     const status = e.kind === "transcript-too-large" ? 413 : 500;
@@ -773,12 +781,19 @@ export function createApp(opts: ServeOptions): Hono {
         }
 
         const cursorRaw = c.req.query("cursor");
-        if (cursorRaw != null) {
-          const cursor = Math.max(0, parseInt(cursorRaw, 10) || 0);
+        const order = orderQuery(c.req.query("order"));
+        // order=desc 的**首次**请求刻意不带 cursor(后端用当时的 total 作右边界),
+        // 所以判断条件必须把它算进来 —— 否则会掉进下面那条整文件读的兼容路径,
+        // 既全量解析,返回的 JSON 形状也是 session 而不是 messages/nextCursor。
+        if (cursorRaw != null || order === "desc") {
           const limit = intQuery(c.req.query("limit"), 50);
           const page = await loadClaudeSessionMessagePage(root, projectId, sessionId, {
-            cursor,
+            // desc 首次无 cursor → 不传,交给 load 用 total 兜底。
+            ...(cursorRaw != null
+              ? { cursor: Math.max(0, parseInt(cursorRaw, 10) || 0) }
+              : {}),
             limit,
+            order,
           });
           if (!page) return jsonErr(404, "session not found");
           return c.json({
