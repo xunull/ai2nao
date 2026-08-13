@@ -2,7 +2,7 @@
  * Claude Code「我说的」清洗 —— 后端权威版(option C:清洗归后端,抽屉/ingest 共用一份)。
  *
  * 逐字移植自原前端 `web/src/lib/cleanUserMessage.ts`(现已改为调本模块的后端端点)。
- * parity 测试(test/agentUserMessages.cleaners.test.ts)锁死与移植前语义一致。
+ * parity 测试(test/cleanUserMessage.test.ts)锁死与移植前语义一致。
  *
  * best-effort:只剥已知包装标记;剥完为空 → "",调用方据此丢弃该轮、不计数、is_human=0。
  */

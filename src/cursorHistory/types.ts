@@ -113,6 +113,19 @@ export interface Message {
     cherryMessageMetadata?: Record<string, unknown>;
     /** Cherry Studio agent runtime session pointer, when present. */
     cherryAgentSessionId?: string;
+    /**
+     * 阅读模式下这条为何该被隐藏;缺省 = 显示。**后端算,前端只读**——「什么算噪音」
+     * 的口径与 `cleanClaudeUserMessage` 同一份,不在前端另立一套(会漂)。
+     * 用枚举而非 boolean:前端要能分开处理(例如以后把 tool-only 压成一行摘要而非全藏)。
+     */
+    readingHidden?: "appendix" | "tool-only" | "injected";
+    /** AskUserQuestion 的作答:问题 → 选中项。来自 jsonl 行顶层 `toolUseResult.answers`。 */
+    answers?: Record<string, string>;
+    /**
+     * 上面 `answers` 对应的 `tool_use_id`。题在 assistant 的 {@link ToolCall.id},
+     * 答在**下一条 user 行**,一个会话可能问多次 —— 没有这个 key 就配不上。
+     */
+    answersForToolUseId?: string;
   };
 }
 
@@ -129,6 +142,11 @@ export interface CodeBlock {
  * A tool/function call executed by the assistant
  */
 export interface ToolCall {
+  /**
+   * 供应商侧的调用 id(Claude 的 `tool_use.id`),用于把结果或作答配回这次调用。
+   * 可选:并非所有源都提供。
+   */
+  id?: string;
   /** Tool/function name (e.g., 'read_file', 'write', 'grep') */
   name: string;
   /** Tool execution status */
