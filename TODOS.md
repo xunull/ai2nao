@@ -1292,3 +1292,25 @@ commit=12 / visit=103 / token=1371 / msg=63，终端那一列是 0。
 **Depends on:** 第三个外部只读源。没有它就不要动。
 
 **Effort:** M(human ~1d / CC ~40min) **Priority:** P3
+
+---
+
+## 用户消息清洗:bash-* 三个标签的口径分叉
+
+**What:** 让后端 `cleanClaudeUserMessage`(src/claudeCodeHistory/myMessages.ts)覆盖 `bash-input` / `bash-stdout` / `bash-stderr` 三个控制标签,或明确写下为什么不覆盖。
+
+**Why:** 前端 `web/src/util/controlTags.ts` 把这三个列进 `CONTROL_TAG_NAMES`(12 个之三),详情页 `parseUserMessage` 据此把 `!` 命令回显切成 command chip + 终端块。但后端清洗两条路都不管它们:`PAIRED_TAGS`(:21-30)没列,兼容正则(:63-66)只盖 `command-*` / `local-command-*` / `system-reminder` / `task-*`。结果是同一条消息在详情页是 chip、在「只看我说的」抽屉里是带尖括号的原文,并且标签文本会被当人类词汇写进 `agent_user_messages_fts` —— 以后搜自己的提问历史会搜到 `<bash-stdout>` 这类噪音。
+
+**Pros:**
+- 消掉一处已确认的前后端口径分叉(第三处口径 `conversationFilter` 已在阅读模式里靠「后端打标记」避免了,这条是遗留的那处)。
+- 全文索引里少一批伪词汇,跨会话搜索质量直接受益。
+
+**Cons:**
+- 改清洗规则必须 bump `CLAUDE_CLEANER_VERSION`(当前 v3 → v4),触发 `agent_user_messages` 里 source='claude' 行从 `raw_payload_json` 全量回填,含 FTS5 索引重建。
+- `test/controlTags.drift.test.ts` 目前只守 `controlTags.ts ↔ summarize.ts`,要扩成也守 `myMessages.ts`,否则修完还会再漂。
+
+**Context:** 来自 `/plan-eng-review`(2026-08-13)阅读模式开关评审的 Step 0。当时在查「阅读模式的噪音口径该放哪」时翻出这处既有不一致;评审结论是阅读模式本身走「后端打标记」不新增第四份口径(D2=A),但这条遗留分叉与阅读模式无关,单独记录。注意 `myMessages.ts:5` 的注释指向的 parity 测试文件名是错的(写的是 `test/agentUserMessages.cleaners.test.ts`,实际是 `test/cleanUserMessage.test.ts`),修这条时顺手改。
+
+**Depends on / blocked by:** 无前置。但因为要全表回填 + FTS 重建,不要和别的改动混在同一个 PR 里。
+
+**Effort:** M(human ~4h / CC ~20min,含 bump/回填/扩 drift 测试) **Priority:** P3
