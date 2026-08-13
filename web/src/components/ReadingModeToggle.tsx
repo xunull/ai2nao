@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Toggle } from "./Toggle";
 
 const STORAGE_KEY = "ai2nao.readingMode";
 
@@ -49,28 +50,12 @@ export function ReadingModeToggle({
   onToggle: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
-      <span>只看对话</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        aria-label="只看对话"
-        title="隐藏工具调用与系统事件,只看真人和 AI 说的话"
-        onClick={onToggle}
-        className={[
-          "relative inline-flex h-5 w-9 items-center rounded-full transition",
-          on ? "bg-blue-500" : "bg-neutral-300",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
-            on ? "translate-x-4" : "translate-x-0.5",
-          ].join(" ")}
-        />
-      </button>
-    </label>
+    <Toggle
+      label="只看对话"
+      title="隐藏工具调用与系统事件,只看真人和 AI 说的话"
+      on={on}
+      onToggle={onToggle}
+    />
   );
 }
 

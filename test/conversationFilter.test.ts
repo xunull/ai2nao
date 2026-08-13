@@ -108,6 +108,73 @@ describe("mergeAdjacentAssistant", () => {
   });
 });
 
+/**
+ * 倒序模式。卡与卡之间倒序(最新的一轮在最上),但**卡内保持写作顺序** ——
+ * 一条连贯的话倒着读是真读不通的。
+ */
+describe("mergeAdjacentAssistant — order: desc", () => {
+  it("卡之间倒序,卡内仍按写作顺序", () => {
+    // 后端 desc 每页已 reverse,所以前端拿到的是「新 → 旧」
+    const descending = [
+      msg("a2", "assistant", "看完了"),
+      msg("a1", "assistant", "我先看一下"),
+      msg("u1", "user", "帮我看下这个"),
+    ];
+    const cards = mergeAdjacentAssistant(descending, "desc");
+    expect(cards).toHaveLength(2);
+    // 第一张卡是那轮 assistant,内部按写作顺序(先"我先看一下"后"看完了")
+    expect(cards[0].messages.map((m) => m.id)).toEqual(["a1", "a2"]);
+    // user 那张排在后面(问在答之下 —— D2=A 选的消息级倒序)
+    expect(cards[1].messages.map((m) => m.id)).toEqual(["u1"]);
+  });
+
+  it("asc 默认不变:不传 order 与传 'asc' 结果一致", () => {
+    const ascending = [msg("a1", "assistant", "x"), msg("a2", "assistant", "y")];
+    expect(mergeAdjacentAssistant(ascending)).toEqual(
+      mergeAdjacentAssistant(ascending, "asc")
+    );
+  });
+
+  // C1:key 必须取「不随成员增长而变」的那一端,而两个方向的稳定端是相反的。
+  it("asc:新页 append 到尾部,key 取 run 首条才稳定", () => {
+    const before = mergeAdjacentAssistant(
+      [msg("a1", "assistant", "一"), msg("a2", "assistant", "二")],
+      "asc"
+    );
+    // 下一页到达,更晚的内容追加在尾部
+    const after = mergeAdjacentAssistant(
+      [msg("a1", "assistant", "一"), msg("a2", "assistant", "二"), msg("a3", "assistant", "三")],
+      "asc"
+    );
+    expect(before[0].key).toBe("a1");
+    expect(after[0].key).toBe("a1"); // 成员变多,key 不变
+  });
+
+  it("desc:新页前置到头部,key 取 run 末条才稳定", () => {
+    // 降序输入 [a3, a2] → 升序 run 是 [a2, a3]
+    const before = mergeAdjacentAssistant(
+      [msg("a3", "assistant", "三"), msg("a2", "assistant", "二")],
+      "desc"
+    );
+    // 下一页到达,更早的内容在降序数组尾部(= 升序数组头部)
+    const after = mergeAdjacentAssistant(
+      [msg("a3", "assistant", "三"), msg("a2", "assistant", "二"), msg("a1", "assistant", "一")],
+      "desc"
+    );
+    expect(before[0].key).toBe("a3");
+    expect(after[0].key).toBe("a3"); // 前面多了一条,key 仍不变
+    // 若按 asc 的策略取首条,这里会从 a2 变成 a1 —— 那正是要避免的抖动
+    expect(after[0].messages.map((m) => m.id)).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("desc 空数组与单条", () => {
+    expect(mergeAdjacentAssistant([], "desc")).toEqual([]);
+    const one = mergeAdjacentAssistant([msg("u1", "user", "hi")], "desc");
+    expect(one).toHaveLength(1);
+    expect(one[0].key).toBe("u1");
+  });
+});
+
 describe("computeAnchorIndex", () => {
   const prev = [
     msg("a1", "assistant", "一"),

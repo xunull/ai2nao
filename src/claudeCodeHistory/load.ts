@@ -190,18 +190,35 @@ export async function loadClaudeSessionMeta(
 
 /**
  * 从 `cursor`(物理行号,0-based,oldest→new)向后取一页消息。
- * - `cursor` 缺省 0;`limit` 缺省 {@link DEFAULT_PAGE_LIMIT},上限 {@link MAX_PAGE_LIMIT}。
- * - 用 readLineRange 只回读 `[cursor, cursor+limit)` 的原始物理行,逐行解析后交给
- *   mapRecordToMessage(传入「1-based 绝对行号」= cursor+j+1,合成 id 与整文件路径一致)。
+ * - `limit` 缺省 {@link DEFAULT_PAGE_LIMIT},上限 {@link MAX_PAGE_LIMIT}。
+ * - 用 readLineRange 只回读一段原始物理行,逐行解析后交给 mapRecordToMessage
+ *   (传入「1-based 绝对行号」= start+j+1,合成 id 与整文件路径一致)。
  * - 空行/坏行在页内被安静跳过(告警口径已由 header.warnings 承载);只收集非空消息。
- * - `nextCursor` = 下一页起始物理行号(= 本页末尾),到 EOF 时为 null;`hasMore` 同义。
- * 找不到 session → null(路由据此回 404)。
+ * - 找不到 session → null(路由据此回 404)。
+ *
+ * **cursor 的语义在两个方向下都是「绝对物理行号」,只是指向不同的边界:**
+ *
+ * ```
+ *   asc  (缺省)   cursor = 本页起始行号,缺省 0        nextCursor = 本页末尾
+ *                 [cursor, cursor+limit)              hasMore = end < total
+ *
+ *   desc          cursor = 本页**右边界**行号          nextCursor = 本页起始
+ *                 首次不传 → 用当时的 total            hasMore = start > 0
+ *                 [max(0,cursor-limit), cursor) 后 reverse
+ * ```
+ *
+ * desc 刻意用绝对行号而不是「已跳过多少条」:会话可能正在被写入(见 sessionIndex 的
+ * 增量续扫),相对量会让 total 一变就把前面拉过的页全冲掉 —— 表现为重复消息 + 新增
+ * 内容永不出现,而且不报错。绝对行号免疫这一整类问题。
+ *
+ * 反过来,文件被**截断**时(sessionIndex 会整文件重建)旧游标可能大于新 total ——
+ * 这时游标已失效,返回空页而不是静默 clamp 到新 EOF 再把末页重读一遍。
  */
 export async function loadClaudeSessionMessagePage(
   projectsRoot: string,
   projectId: string,
   sessionId: string,
-  opts?: { cursor?: number; limit?: number }
+  opts?: { cursor?: number; limit?: number; order?: "asc" | "desc" }
 ): Promise<{ messages: Message[]; nextCursor: number | null; hasMore: boolean } | null> {
   const hit = await findSessionFile(projectsRoot, projectId, sessionId);
   if (!hit) return null;
@@ -213,14 +230,30 @@ export async function loadClaudeSessionMessagePage(
   });
 
   const total = index.lineCount;
-  const cursor = Math.max(0, Math.min(Math.trunc(opts?.cursor ?? 0), total));
+  const order = opts?.order === "desc" ? "desc" : "asc";
   const limit = Math.max(
     1,
     Math.min(Math.trunc(opts?.limit ?? DEFAULT_PAGE_LIMIT), MAX_PAGE_LIMIT)
   );
-  const end = Math.min(cursor + limit, total);
 
-  const rawLines = await readLineRange(hit.filePath, index, cursor, end);
+  let start: number;
+  let end: number;
+  if (order === "desc") {
+    // 首次不传 cursor → 从当时的文件末尾开始往回翻。
+    const rawEnd = Math.trunc(opts?.cursor ?? total);
+    // 游标越过文件末尾 = 文件被截断/重写过,这个游标已经没有意义了。
+    // 必须在 clamp 之前判:夹到新 EOF 会把末页再读一遍,产生重复消息与重复 React key。
+    if (rawEnd > total) {
+      return { messages: [], nextCursor: null, hasMore: false };
+    }
+    end = Math.max(0, rawEnd);
+    start = Math.max(0, end - limit);
+  } else {
+    start = Math.max(0, Math.min(Math.trunc(opts?.cursor ?? 0), total));
+    end = Math.min(start + limit, total);
+  }
+
+  const rawLines = await readLineRange(hit.filePath, index, start, end);
   const messages: Message[] = [];
   for (let j = 0; j < rawLines.length; j++) {
     const raw = rawLines[j];
@@ -232,7 +265,9 @@ export async function loadClaudeSessionMessagePage(
       continue; // 坏行:安静跳过(header.warnings 已计入解析错误数)
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-    const lineNumber = cursor + j + 1; // 1-based 绝对物理行号(readLineRange 从 cursor 起返回)
+    // 1-based 绝对物理行号。**基准是 start 不是 cursor** —— desc 下 cursor 指的是
+    // 右边界,拿它当行号基准会让合成 id(user-L{n} 等)跨页碰撞。
+    const lineNumber = start + j + 1;
     const message = mapRecordToMessage(
       parsed as Record<string, unknown>,
       lineNumber,
@@ -241,8 +276,12 @@ export async function loadClaudeSessionMessagePage(
     if (message) messages.push(message);
   }
 
-  const hasMore = end < total;
-  return { messages, nextCursor: hasMore ? end : null, hasMore };
+  // 页内按物理行号升序读出,desc 下翻成「新 → 旧」。
+  if (order === "desc") messages.reverse();
+
+  const hasMore = order === "desc" ? start > 0 : end < total;
+  const nextCursor = hasMore ? (order === "desc" ? start : end) : null;
+  return { messages, nextCursor, hasMore };
 }
 
 export type ClaudeMyMessage = { id: string; timestamp: string; text: string };

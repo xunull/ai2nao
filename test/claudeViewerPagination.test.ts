@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -273,6 +273,174 @@ describe("loadClaudeSessionMessagePage 游标分页", () => {
   });
 });
 
+/**
+ * 倒序分页(order:"desc")。
+ *
+ * cursor 在 desc 下是**下一页右边界的绝对物理行号**,不是「已跳过多少条」——
+ * 后者是相对量,而会话可能正在被写入(sessionIndex 支持文件增长续扫),末尾一动
+ * 前面拉过的页就全错位。绝对行号免疫这一整类问题,「会话增长中」那条用例就是守它的。
+ */
+describe("loadClaudeSessionMessagePage 倒序分页", () => {
+  /** 5 行 → 逐条可辨认;limit=2 时 5 不整除 2,末页只剩 1 条(专门覆盖末页边界)。 */
+  function fiveLines() {
+    return [
+      userLine("2026-01-01T00:00:01.000Z", "第一条"), // L1
+      asstLine("2026-01-01T00:00:02.000Z", "a1"), // L2
+      line({ type: "user", timestamp: "2026-01-01T00:00:03.000Z", message: { role: "user", content: "third" } }), // L3 → user-L3
+      eventLine("2026-01-01T00:00:04.000Z", { uuid: "E1" }), // L4 → appendix
+      line({ type: "assistant", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "assistant", content: [{ type: "text", text: "last" }] } }), // L5 → assistant-L5
+    ];
+  }
+
+  it("逐页拉到底 == 整会话逆序;游标递减无重复无丢失;末页 nextCursor=null", async () => {
+    const { sessionId, content } = writeSession("desc-multi", fiveLines());
+    const { session: ref } = buildClaudeSession({
+      projectId: PROJECT_ID,
+      sessionId,
+      parse: parseJsonlText(content),
+      fileMtimeMs: 0,
+    });
+
+    const collected: unknown[] = [];
+    const nextCursors: (number | null)[] = [];
+    // 首次**不传 cursor**:后端用当时的 total 作右边界。
+    let opts: { cursor?: number; limit: number; order: "desc" } = { limit: 2, order: "desc" };
+    for (;;) {
+      const page = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, opts);
+      expect(page).not.toBeNull();
+      collected.push(...page!.messages);
+      nextCursors.push(page!.nextCursor);
+      if (page!.nextCursor == null) break;
+      opts = { cursor: page!.nextCursor, limit: 2, order: "desc" };
+    }
+
+    // 5 行 / limit 2 → 右边界 5→3→1,末页只有 1 条
+    expect(nextCursors).toEqual([3, 1, null]);
+    // 拼接结果就是整会话的逆序,无重复无丢失
+    expect(collected.map((m: any) => m.id)).toEqual(
+      [...ref.messages].reverse().map((m) => m.id)
+    );
+    expect(collected).toEqual([...ref.messages].reverse());
+  });
+
+  it("合成 id 仍用绝对物理行号(desc 下不能用 cursor 当行号基准)", async () => {
+    const { sessionId } = writeSession("desc-holes", fiveLines());
+    // 只取最后两行 L4/L5
+    const page = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      limit: 2,
+      order: "desc",
+    });
+    // 逆序:L5 在前。L5 无 uuid → 合成 assistant-L5(物理行号),不是 assistant-L1
+    expect(page!.messages.map((m) => m.id)).toEqual(["assistant-L5", "E1"]);
+  });
+
+  // E1 的唯一证明:相对量算法(total-cursor)在这里会与第一页完全重复。
+  it("会话增长中:拉完第一页后追写,第二页与第一页无重叠", async () => {
+    const { sessionId } = writeSession("desc-grow", [
+      userLine("2026-01-01T00:00:01.000Z", "L1"),
+      asstLine("2026-01-01T00:00:02.000Z", "L2"),
+      userLine("2026-01-01T00:00:03.000Z", "L3"),
+      asstLine("2026-01-01T00:00:04.000Z", "L4"),
+    ]);
+
+    const first = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      limit: 2,
+      order: "desc",
+    });
+    expect(first!.messages.map((m) => m.id)).toEqual([
+      "a-2026-01-01T00:00:04.000Z",
+      "u-2026-01-01T00:00:03.000Z",
+    ]);
+    expect(first!.nextCursor).toBe(2);
+
+    // 会话继续写入(追加改 size → 索引走增量续扫,不需要手动清缓存)
+    appendFileSync(
+      join(projectDir, `${sessionId}.jsonl`),
+      [
+        userLine("2026-01-01T00:00:05.000Z", "L5"),
+        asstLine("2026-01-01T00:00:06.000Z", "L6"),
+      ].join("\n") + "\n",
+      "utf8"
+    );
+
+    const second = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      cursor: first!.nextCursor!,
+      limit: 2,
+      order: "desc",
+    });
+    // 绝对行号 → 拿到 [L2, L1];若按「已跳过多少」算会重新拿到 [L4, L3](与第一页重复)
+    expect(second!.messages.map((m) => m.id)).toEqual([
+      "a-2026-01-01T00:00:02.000Z",
+      "u-2026-01-01T00:00:01.000Z",
+    ]);
+    expect(second!.nextCursor).toBeNull();
+    // 两页 id 不相交
+    const ids = [...first!.messages, ...second!.messages].map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // C2:文件被截断/重写(sessionIndex 会整文件重建),旧游标必须失效而不是静默 clamp。
+  it("文件被截断后旧游标失效:返回空页 + hasMore=false,不重复读末页", async () => {
+    const { sessionId } = writeSession("desc-trunc", fiveLines());
+    const first = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      limit: 2,
+      order: "desc",
+    });
+    expect(first!.nextCursor).toBe(3);
+
+    // 截断成 2 行(size 变小 → 整文件重建)
+    writeSession("desc-trunc", [
+      userLine("2026-02-01T00:00:01.000Z", "new1"),
+      asstLine("2026-02-01T00:00:02.000Z", "new2"),
+    ]);
+
+    const stale = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      cursor: 3, // > 新的 total(2)
+      limit: 2,
+      order: "desc",
+    });
+    expect(stale!.messages).toEqual([]);
+    expect(stale!.hasMore).toBe(false);
+    expect(stale!.nextCursor).toBeNull();
+  });
+
+  it("asc 行为不受影响:不传 order 时与传 order:'asc' 完全一致", async () => {
+    const { sessionId } = writeSession("desc-asc-parity", fiveLines());
+    const a = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      cursor: 0,
+      limit: 3,
+    });
+    const b = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      cursor: 0,
+      limit: 3,
+      order: "asc",
+    });
+    expect(b).toEqual(a);
+  });
+
+  it("limit > total 与空会话都自洽", async () => {
+    const { sessionId } = writeSession("desc-small", [
+      userLine("2026-01-01T00:00:01.000Z", "only"),
+    ]);
+    const page = await loadClaudeSessionMessagePage(root, PROJECT_ID, sessionId, {
+      limit: 50,
+      order: "desc",
+    });
+    expect(page!.messages).toHaveLength(1);
+    expect(page!.hasMore).toBe(false);
+    expect(page!.nextCursor).toBeNull();
+
+    const { sessionId: emptyId } = writeSession("desc-empty", []);
+    const empty = await loadClaudeSessionMessagePage(root, PROJECT_ID, emptyId, {
+      limit: 50,
+      order: "desc",
+    });
+    expect(empty!.messages).toEqual([]);
+    expect(empty!.hasMore).toBe(false);
+    expect(empty!.nextCursor).toBeNull();
+  });
+});
+
 describe("loadClaudeSessionMeta 头部", () => {
   it("header 的 messageCount/title/时间范围与整会话一致", async () => {
     const lines = [
@@ -405,6 +573,70 @@ describe("createApp 详情路由分页集成", () => {
       const wholeJson = (await wholeRes.json()) as { ok: boolean; session: { messages: unknown[] } };
       expect(wholeJson.ok).toBe(true);
       expect(wholeJson.session.messages).toHaveLength(3);
+    } finally {
+      db.close();
+    }
+  });
+
+  // order=desc 的首次请求刻意不带 cursor。路由判断若只看 cursor,它会掉进上面那条
+  // 整文件读的兼容路径 —— 全量解析,且返回 session 而不是 messages,前端直接白屏。
+  it("?order=desc 不带 cursor → 走分页(返回 messages/nextCursor),不掉进整会话路径", async () => {
+    const { sessionId } = writeSession("api-desc", [
+      userLine("2026-01-01T00:00:01.000Z", "L1"),
+      asstLine("2026-01-01T00:00:02.000Z", "L2"),
+      userLine("2026-01-01T00:00:03.000Z", "L3"),
+    ]);
+    const base = mkdtempSync(join(tmpdir(), "ai2nao-viewer-db-"));
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const app = createApp({ db });
+      const q = `projectsRoot=${encodeURIComponent(root)}`;
+      const url = `http://x/api/claude-code-history/projects/${PROJECT_ID}/sessions/${sessionId}`;
+
+      const res = await app.request(`${url}?${q}&order=desc&limit=2`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        ok: boolean;
+        messages?: { id: string }[];
+        session?: unknown;
+        nextCursor: number | null;
+        hasMore: boolean;
+      };
+      // 分页形状,不是整会话形状
+      expect(json.session).toBeUndefined();
+      expect(json.messages).toBeDefined();
+      // 最后两行,且新的在前
+      expect(json.messages!.map((m) => m.id)).toEqual([
+        "u-2026-01-01T00:00:03.000Z",
+        "a-2026-01-01T00:00:02.000Z",
+      ]);
+      expect(json.hasMore).toBe(true);
+      expect(json.nextCursor).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("order 值非法 → 按 asc 处理(不报错、不换方向)", async () => {
+    const { sessionId } = writeSession("api-bad-order", [
+      userLine("2026-01-01T00:00:01.000Z", "L1"),
+      asstLine("2026-01-01T00:00:02.000Z", "L2"),
+    ]);
+    const base = mkdtempSync(join(tmpdir(), "ai2nao-viewer-db-"));
+    const db = openDatabase(join(base, "idx.db"));
+    try {
+      const app = createApp({ db });
+      const q = `projectsRoot=${encodeURIComponent(root)}`;
+      const url = `http://x/api/claude-code-history/projects/${PROJECT_ID}/sessions/${sessionId}`;
+
+      const res = await app.request(`${url}?${q}&order=DESCENDING&cursor=0&limit=2`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { messages: { id: string }[] };
+      // asc:最早的在前
+      expect(json.messages.map((m) => m.id)).toEqual([
+        "u-2026-01-01T00:00:01.000Z",
+        "a-2026-01-01T00:00:02.000Z",
+      ]);
     } finally {
       db.close();
     }
