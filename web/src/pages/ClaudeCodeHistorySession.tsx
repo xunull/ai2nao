@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { JsonHighlighted } from "../components/JsonHighlighted";
@@ -14,9 +14,16 @@ import {
 import { sgrParse, type SgrSpan } from "../util/sgrParse";
 import { extractJsonFence, parseSmartJson } from "../util/smartJson";
 import { SmartJsonView } from "../components/SmartJsonView";
+import {
+  computeAnchorIndex,
+  filterByReadingHidden,
+  mergeAdjacentAssistant,
+  type MergedCard,
+} from "../util/conversationFilter";
+import { ReadingModeToggle, useReadingMode } from "../components/ReadingModeToggle";
+import { AskUserQuestionCard } from "../components/AskUserQuestionCard";
 
 // 单条消息(与后端 messageToJson 序列化后的形状对齐;分页 ?cursor= 每页返回一组)。
-// 渲染只用到下面这些字段(与旧整会话渲染完全一致,不引入 toolCalls 等新展示)。
 type ApiMessage = {
   id: string | null;
   role: string;
@@ -25,11 +32,22 @@ type ApiMessage = {
   thinking?: string;
   model?: string;
   durationMs?: number;
+  toolCalls?: {
+    id?: string;
+    name: string;
+    params?: Record<string, unknown>;
+  }[];
   metadata?: {
     corrupted?: boolean;
     bubbleType?: number;
     claudeEventType?: string;
     claudeAppendix?: boolean;
+    /** 阅读模式下为何隐藏;后端算,前端只读(口径见 src/claudeCodeHistory/normalize.ts)。 */
+    readingHidden?: "appendix" | "tool-only" | "injected";
+    /** AskUserQuestion 的作答:问题 → 选中项。 */
+    answers?: Record<string, string>;
+    /** 上面 answers 配给哪次 tool_use(对应 assistant 侧 toolCalls[].id)。 */
+    answersForToolUseId?: string;
   };
 };
 
@@ -56,8 +74,36 @@ type PageResp = {
 // 每页大小(与后端默认一致);maxPages 上限累计页数,数据层内存有界(DOM 由虚拟列表有界)。
 const PAGE_LIMIT = 50;
 const MAX_PAGES = 40;
+/**
+ * 阅读模式下一页 50 条滤完只剩十几条可见(实测按字节丢弃 75%),一次触底填不满一屏。
+ * 后端单页上限本来就是 200(load.ts MAX_PAGE_LIMIT),直接多拉一些 —— 比在前端搓
+ * 「循环拉页直到够一屏」的状态机简单得多,也没有那个状态何时重置的问题。
+ * maxPages 不跟着改:调小会让 react-query 立刻截断已加载的页,滚过的内容当场消失。
+ */
+const READING_PAGE_LIMIT = 200;
 // 虚拟列表未测量前的估算行高(首帧用,measureElement 量到真实高度后自动替换)。
 const ROW_ESTIMATE = 180;
+/**
+ * 切换开关后持续重新锚定的时间窗。切换会触发补拉新页,新页到达时的重排会把位置冲掉,
+ * 所以要在这段时间内每次数据变化都重新对准。取 2s:够覆盖一两次本地接口往返,
+ * 又不至于长到把用户之后的手动滚动也拽回来。
+ */
+const ANCHOR_HOLD_MS = 2000;
+
+/**
+ * 视口顶部那一项的下标。
+ *
+ * **不能用 getVirtualItems()[0]** —— 它包含 overscan(本页 6 行),即视口上方多渲染的那几行。
+ * 列表滚到靠前位置时 overscan 会把下标压到 0,于是锚点被取成第一条消息、切换后跳回顶部。
+ * 实测:阅读模式下 scrollTop=933、共约 20 张卡,视口顶部本是第 3 张,减 6 后 clamp 成 0。
+ * 取第一个「底边越过 scrollTop」的项才是真正露在视口顶部的那张。
+ */
+function topVisibleIndex(v: Virtualizer<HTMLDivElement, Element>): number {
+  const items = v.getVirtualItems();
+  if (items.length === 0) return 0;
+  const top = v.scrollElement?.scrollTop ?? 0;
+  return (items.find((it) => it.end > top) ?? items[items.length - 1]!).index;
+}
 
 function enc(s: string): string {
   return encodeURIComponent(s);
@@ -240,8 +286,27 @@ function AppendixBody({ content, expandDefault }: { content: string; expandDefau
  * user 消息若含命令注入回显(斜杠/! 命令的标签+SGR 残骸),按段结构化渲染,并给一个
  * 「查看原文」切换看原始 payload(数据工作台排查用)。其余照旧走 MessageMarkdown。
  */
-function MessageArticle({ m, expandAppendix }: { m: ApiMessage; expandAppendix: boolean }) {
+/**
+ * 一条消息的正文(不含卡片外壳与 header)。抽出来是因为阅读模式会把同一轮的多条
+ * assistant 消息并进一张卡,而每段各自要保有 thinking 折叠、「查看原文」这些状态 ——
+ * 放在同一个组件里就得在循环里用 hooks。
+ */
+function MessageBody({
+  m,
+  expandAppendix,
+  readingMode,
+  answersByToolUseId,
+}: {
+  m: ApiMessage;
+  expandAppendix: boolean;
+  readingMode: boolean;
+  answersByToolUseId: Record<string, Record<string, string>>;
+}) {
   const isUser = m.role === "user";
+  // 只在阅读模式下渲染提问卡:关闭开关时页面输出与改动前保持一致(不引入新展示)。
+  const asks = readingMode
+    ? (m.toolCalls ?? []).filter((t) => t.name === "AskUserQuestion")
+    : [];
   // 解析按 m.content key(codex #1:本 repo 回溯改写老行,同 id 内容会变,按 id 会陈旧)。
   const segments = useMemo<UserSegment[] | null>(
     () => (isUser && hasCommandInjection(m.content) ? parseUserMessage(m.content) : null),
@@ -251,43 +316,7 @@ function MessageArticle({ m, expandAppendix }: { m: ApiMessage; expandAppendix: 
   // 虚拟列表同一 DOM 槽会换消息;内容变了把「看原文」重置回结构化视图。
   useEffect(() => setShowRaw(false), [m.content]);
   return (
-    <article
-      className={[
-        "rounded-2xl px-4 py-4 shadow-sm sm:px-5 sm:py-5",
-        isUser
-          ? "border border-blue-200/70 bg-blue-50/70"
-          : "border border-neutral-100 bg-white ring-1 ring-black/[0.04]",
-      ].join(" ")}
-    >
-      <header className="mb-3 flex flex-wrap items-center gap-2">
-        <span
-          className={[
-            "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-            isUser ? "bg-blue-100 text-blue-800" : "bg-emerald-50 text-emerald-800",
-          ].join(" ")}
-        >
-          {m.role}
-        </span>
-        {m.metadata?.claudeAppendix && (
-          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-900">
-            {m.metadata.claudeEventType ?? "event"}
-          </span>
-        )}
-        <span className="text-xs tabular-nums text-neutral-400">
-          {formatFileTimeMs(new Date(m.timestamp).getTime())}
-        </span>
-        {m.model && (
-          <span className="truncate font-mono text-[11px] text-neutral-500">
-            {m.model}
-          </span>
-        )}
-        {m.metadata?.corrupted && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
-            数据可能损坏
-          </span>
-        )}
-      </header>
-
+    <>
       {m.thinking != null && m.thinking.trim() !== "" && (
         <details className="mb-4 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/60">
           <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-amber-950 hover:bg-amber-50">
@@ -332,6 +361,84 @@ function MessageArticle({ m, expandAppendix }: { m: ApiMessage; expandAppendix: 
       ) : (
         <MessageMarkdown text={m.content} />
       )}
+
+      {asks.map((t, i) => (
+        <AskUserQuestionCard
+          key={t.id ?? i}
+          params={t.params}
+          answers={t.id ? answersByToolUseId[t.id] : undefined}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * 一张消息卡。非阅读模式下一卡一条(与改动前渲染完全一致);阅读模式下同一轮被 jsonl
+ * 拆开的多条 assistant 消息会并进同一张卡,header 取首条,正文按序依次排。
+ */
+function MessageArticle({
+  card,
+  expandAppendix,
+  readingMode,
+  answersByToolUseId,
+}: {
+  card: MergedCard<ApiMessage>;
+  expandAppendix: boolean;
+  readingMode: boolean;
+  answersByToolUseId: Record<string, Record<string, string>>;
+}) {
+  const head = card.messages[0];
+  const isUser = head.role === "user";
+  // 合并卡里任一条损坏都要示警,不能只看首条。
+  const corrupted = card.messages.some((m) => m.metadata?.corrupted);
+  return (
+    <article
+      className={[
+        "rounded-2xl px-4 py-4 shadow-sm sm:px-5 sm:py-5",
+        isUser
+          ? "border border-blue-200/70 bg-blue-50/70"
+          : "border border-neutral-100 bg-white ring-1 ring-black/[0.04]",
+      ].join(" ")}
+    >
+      <header className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          className={[
+            "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+            isUser ? "bg-blue-100 text-blue-800" : "bg-emerald-50 text-emerald-800",
+          ].join(" ")}
+        >
+          {head.role}
+        </span>
+        {head.metadata?.claudeAppendix && (
+          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-900">
+            {head.metadata.claudeEventType ?? "event"}
+          </span>
+        )}
+        <span className="text-xs tabular-nums text-neutral-400">
+          {formatFileTimeMs(new Date(head.timestamp).getTime())}
+        </span>
+        {head.model && (
+          <span className="truncate font-mono text-[11px] text-neutral-500">
+            {head.model}
+          </span>
+        )}
+        {corrupted && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+            数据可能损坏
+          </span>
+        )}
+      </header>
+
+      {card.messages.map((m, i) => (
+        <MessageBody
+          key={m.id ?? `${card.key}-${i}`}
+          m={m}
+          expandAppendix={expandAppendix}
+          readingMode={readingMode}
+          answersByToolUseId={answersByToolUseId}
+        />
+      ))}
     </article>
   );
 }
@@ -341,46 +448,70 @@ function MessageArticle({ m, expandAppendix }: { m: ApiMessage; expandAppendix: 
  * - 滚动容器是 parentRef 这个 div(flex-1 填满剩余高度、内部纵向滚动、禁横向滚动)。
  * - 每行挂 virtualizer.measureElement,内建 ResizeObserver 自动量到真实高度并回填位置,
  *   无需手动 resetAfterIndex/行高缓存;内容变高(展开 thinking/details、正文加载)会自动重排。
- * - 末尾多一行哨兵页脚(index === items.length):承载「加载中 / 已到末尾」,也是触底触发点。
+ * - 末尾多一行哨兵页脚(index === cards.length):承载「加载中 / 已到末尾」,也是触底触发点。
+ *
+ * 两条不显然但要命的约束:
+ * 1. **本组件的挂载条件必须用未过滤的消息数**(调用方 :items.length > 0)。哨兵在这里面,
+ *    若按过滤后的数量判断,整页被滤空时组件不挂载 → 没有哨兵 → 永远拉不到下一页,
+ *    而 isEmpty 又因 hasNextPage 为真而不成立 → 纯白页。空数组是自锁的。
+ * 2. **必须传 getItemKey。** react-virtual 默认 keyExtractor 是 (index)=>index,
+ *    而 itemSizeCache 按这个 key 存实测高度且 count 变化不清空 —— 切换开关后数组从
+ *    579 变 112,新的 index 5 会直接复用旧 index 5 的高度,行高全错、锚定必飘。
  */
 function MessageList({
-  items,
+  cards,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
   expandAppendix,
+  registerVirtualizer,
+  readingMode,
+  answersByToolUseId,
 }: {
-  items: ApiMessage[];
+  cards: MergedCard<ApiMessage>[];
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
   expandAppendix: boolean;
+  registerVirtualizer?: (v: Virtualizer<HTMLDivElement, Element> | null) => void;
+  readingMode: boolean;
+  answersByToolUseId: Record<string, Record<string, string>>;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   // 末尾多一行哨兵页脚。
-  const itemCount = items.length + 1;
+  const itemCount = cards.length + 1;
 
   // measureElement 内建 ResizeObserver 自动测量;react-virtual 默认对「视口上方项变高」自动
   // 补偿滚动(shouldAdjustScrollPositionOnItemSizeChange 的默认行为)——翻转全局展开开关、上方
-  // appendix 就地展开时,滚动随之调整,当前视口内容不被挤走。无需手搓锚定。
+  // appendix 就地展开时,滚动随之调整,当前视口内容不被挤走。
   const virtualizer = useVirtualizer({
     count: itemCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_ESTIMATE,
     overscan: 6,
     measureElement: (el) => el.getBoundingClientRect().height,
+    // 见上方约束 2:按卡片身份而非下标缓存行高。
+    getItemKey: (index) => (index >= cards.length ? "__footer__" : cards[index]!.key),
   });
+
+  // 切换开关时页面层要拿它做锚定滚动。
+  useEffect(() => {
+    registerVirtualizer?.(virtualizer);
+    return () => registerVirtualizer?.(null);
+  }, [registerVirtualizer, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 
   // 触底:最后一个已渲染的虚拟行(哨兵页脚 / 最末消息)进入可视区 → 拉下一页。
+  // cards 为空时 itemCount 仍是 1(哨兵),所以这条路径在「整页被滤空」时照样成立 ——
+  // 哨兵立刻可见 → 继续拉,直到出现可见内容或到达末尾。这就是上方约束 1 要保住的自愈。
   useEffect(() => {
     const last = virtualItems.at(-1);
     if (!last) return;
-    if (last.index >= items.length - 1 && hasNextPage && !isFetchingNextPage) {
+    if (last.index >= cards.length - 1 && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [virtualItems, items.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [virtualItems, cards.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div
@@ -395,7 +526,7 @@ function MessageList({
         }}
       >
         {virtualItems.map((virtualItem) => {
-          const isFooter = virtualItem.index >= items.length;
+          const isFooter = virtualItem.index >= cards.length;
           return (
             <div
               key={virtualItem.key}
@@ -415,13 +546,21 @@ function MessageList({
                     {isFetchingNextPage
                       ? "加载更多消息…"
                       : hasNextPage
-                        ? "向下滚动加载更多"
-                        : "已到对话末尾"}
+                        ? cards.length === 0
+                          ? // 本页全是工具调用/系统事件,滤完一条不剩。说清楚正在往下找,
+                            // 否则用户看到的是一块什么都没有、也不动的区域。
+                            "这一段都是工具调用,继续往下找…"
+                          : "向下滚动加载更多"
+                        : cards.length === 0
+                          ? "本会话没有可读的对话内容(全部是工具调用与系统事件)"
+                          : "已到对话末尾"}
                   </div>
                 ) : (
                   <MessageArticle
-                    m={items[virtualItem.index]!}
+                    card={cards[virtualItem.index]!}
                     expandAppendix={expandAppendix}
+                    readingMode={readingMode}
+                    answersByToolUseId={answersByToolUseId}
                   />
                 )}
               </div>
@@ -446,6 +585,8 @@ export function ClaudeCodeHistorySession() {
 
   // 全局「结构化内容默认展开」开关:开→当前可见 + 之后滚进来的 appendix 都自动展开(单块仍可手动开合)。
   const [expandAppendix, setExpandAppendix] = useState(false);
+  // 「只看对话」开关。默认关,状态存 localStorage。
+  const [readingMode, toggleReadingMode] = useReadingMode();
 
   // 头部:?meta=1 触发后端一次性索引(大文件约 1~2s),据此显示「首次打开」加载态。
   const meta = useQuery({
@@ -462,7 +603,9 @@ export function ClaudeCodeHistorySession() {
       const p = new URLSearchParams();
       if (projectsRoot.trim()) p.set("projectsRoot", projectsRoot.trim());
       p.set("cursor", String(pageParam));
-      p.set("limit", String(PAGE_LIMIT));
+      // 阅读模式下一页要拉更多才填得满一屏(见 READING_PAGE_LIMIT 注释)。queryKey 刻意
+      // 不含 readingMode:切换开关不该重拉已有数据,只影响之后新拉的页。
+      p.set("limit", String(readingMode ? READING_PAGE_LIMIT : PAGE_LIMIT));
       return apiGet<PageResp>(`${baseUrl}?${p.toString()}`);
     },
     initialPageParam: 0,
@@ -475,6 +618,87 @@ export function ClaudeCodeHistorySession() {
   if (projectsRoot.trim()) listParams.set("projectsRoot", projectsRoot.trim());
   if (projectId.trim()) listParams.set("project", projectId.trim());
   const listHref = `/claude-code-history${listParams.toString() ? `?${listParams}` : ""}`;
+
+  // 锚定滚动:切换开关时把「当时视口顶部那条消息」重新滚回视口顶部。
+  const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const registerVirtualizer = useCallback(
+    (v: Virtualizer<HTMLDivElement, Element> | null) => {
+      virtualizerRef.current = v;
+    },
+    []
+  );
+  /**
+   * 切换开关的瞬间存下锚点与切换前的可见序列。
+   * `until` 是重锚的截止时刻 —— 见下面 effect 里的说明。
+   */
+  const pendingAnchor = useRef<{
+    id: string | null;
+    prev: ApiMessage[];
+    until: number;
+  } | null>(null);
+
+  const items = messages.data?.pages.flatMap((p) => p.messages) ?? [];
+  const messagesReady = messages.isSuccess;
+  // AskUserQuestion 的答案挂在**另一条** user 消息上(纯 tool_result),而那条在阅读模式下
+  // 会被过滤掉 —— 所以必须在过滤**之前**按 tool_use_id 收集好。
+  const answersByToolUseId: Record<string, Record<string, string>> = {};
+  for (const m of items) {
+    const key = m.metadata?.answersForToolUseId;
+    const a = m.metadata?.answers;
+    if (key && a) answersByToolUseId[key] = a;
+  }
+  // 阅读模式的两步变换。关闭时 visible === items 且每条各成一卡,渲染与改动前等价。
+  const visible = readingMode ? filterByReadingHidden(items) : items;
+  const cards: MergedCard<ApiMessage>[] = readingMode
+    ? mergeAdjacentAssistant(visible)
+    : visible.map((m, i) => ({
+        key: m.id ?? `${m.role}-${i}`,
+        role: m.role,
+        messages: [m],
+      }));
+
+  function onToggleReadingMode() {
+    const v = virtualizerRef.current;
+    const topIndex = v ? topVisibleIndex(v) : 0;
+    pendingAnchor.current = {
+      id: cards[topIndex]?.messages[0]?.id ?? null,
+      prev: visible,
+      until: Date.now() + ANCHOR_HOLD_MS,
+    };
+    toggleReadingMode();
+  }
+
+  /**
+   * 切换后把锚点滚回视口顶部。
+   *
+   * 两个坑都得防住:
+   * 1. **一帧不够。** ROW_ESTIMATE(180)与合并后卡片的真实高度差很远,而 measureElement
+   *    只量已渲染的行 —— 锚点之上从未渲染过的行永远用估值,误差按 index 累积。所以先粗
+   *    定位把目标行挂进 DOM,下一帧量到真实高度后再对一次。
+   * 2. **一次也不够。** 打开开关会同时改变可见条数和每页 limit,触底逻辑随即补拉新页;
+   *    新页到达时的重排会把刚对好的位置冲掉 —— 实测锚定只维持了一帧,随后滚回顶部。
+   *    不能用 isFetchingNextPage 判断「灌完了」:切换后的那一帧补拉还没开始(仍是 false),
+   *    照此清掉 pending,等新页真到达时已经没有锚点可用了。改成在一个短时间窗内,
+   *    **每次 cards 变化都重新对准**,窗口过后放手。窗内用户手动滚动会被拉回一次,
+   *    这是为「切换后位置不丢」付的代价,权衡后接受。
+   */
+  useEffect(() => {
+    const pending = pendingAnchor.current;
+    if (!pending) return;
+    if (Date.now() > pending.until) {
+      pendingAnchor.current = null;
+      return;
+    }
+    const v = virtualizerRef.current;
+    if (!v || cards.length === 0) return;
+    const idx = computeAnchorIndex(cards, pending.id, pending.prev);
+    v.scrollToIndex(idx, { align: "start" });
+    const raf = requestAnimationFrame(() => {
+      virtualizerRef.current?.scrollToIndex(idx, { align: "start" });
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readingMode, cards.length, messages.isFetchingNextPage]);
 
   function refreshSession() {
     void queryClient.invalidateQueries({
@@ -528,8 +752,8 @@ export function ClaudeCodeHistorySession() {
 
   const header = meta.data!.header;
   const warnings = header.warnings ?? [];
-  const items = messages.data?.pages.flatMap((p) => p.messages) ?? [];
-  const messagesReady = messages.isSuccess;
+  // 判空仍用**未过滤**的数量:真正「一条消息都没有」才是空会话。过滤后为空是另一回事,
+  // 由 MessageList 的哨兵继续往下拉(见该组件顶部约束 1)。
   const isEmpty = messagesReady && items.length === 0 && !messages.hasNextPage;
 
   return (
@@ -541,7 +765,10 @@ export function ClaudeCodeHistorySession() {
         <button type="button" className={btnGhost} onClick={() => refreshSession()}>
           刷新此会话
         </button>
-        <label className="ml-auto flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
+        <div className="ml-auto flex items-center gap-4">
+          <ReadingModeToggle on={readingMode} onToggle={onToggleReadingMode} />
+        </div>
+        <label className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
           <span>结构化内容默认展开</span>
           <button
             type="button"
@@ -608,13 +835,17 @@ export function ClaudeCodeHistorySession() {
             此会话没有可展示的消息
           </div>
         )}
+        {/* 挂载判断刻意用未过滤的 items:见 MessageList 顶部约束 1(空数组自锁 → 纯白页)。 */}
         {messagesReady && items.length > 0 && (
           <MessageList
-            items={items}
+            cards={cards}
             hasNextPage={Boolean(messages.hasNextPage)}
             isFetchingNextPage={messages.isFetchingNextPage}
             fetchNextPage={() => void messages.fetchNextPage()}
             expandAppendix={expandAppendix}
+            registerVirtualizer={registerVirtualizer}
+            readingMode={readingMode}
+            answersByToolUseId={answersByToolUseId}
           />
         )}
       </div>

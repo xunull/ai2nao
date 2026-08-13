@@ -131,6 +131,12 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // 阅读模式开关状态存在 localStorage,不清会串到下一个用例。
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* jsdom 之外的环境忽略 */
+  }
   globalThis.fetch = RAW_FETCH;
   Element.prototype.getBoundingClientRect = RAW_GET_BOUNDING_CLIENT_RECT;
   if (RAW_OFFSET_HEIGHT) Object.defineProperty(HTMLElement.prototype, "offsetHeight", RAW_OFFSET_HEIGHT);
@@ -339,12 +345,12 @@ describe("ClaudeCodeHistorySession — appendix 智能 JSON 渲染", () => {
     );
     expect(screen.queryByText(/SUPERPOWERS_MARKER/)).toBeNull();
     // 打开标题旁的全局开关 → appendix 跟随默认自动展开。
-    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.click(screen.getByRole("switch", { name: /结构化内容默认展开/ }));
     await waitFor(() =>
       expect(screen.getByText(/SUPERPOWERS_MARKER/)).toBeInTheDocument()
     );
     // 再关 → 折叠回去。
-    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.click(screen.getByRole("switch", { name: /结构化内容默认展开/ }));
     await waitFor(() =>
       expect(screen.queryByText(/SUPERPOWERS_MARKER/)).toBeNull()
     );
@@ -370,5 +376,193 @@ describe("ClaudeCodeHistorySession — appendix 智能 JSON 渲染", () => {
       expect(screen.getByText(/这是一条普通助手回复/)).toBeInTheDocument()
     );
     expect(screen.queryByText(/展开查看结构化内容/)).toBeNull();
+  });
+});
+
+/**
+ * 阅读模式(「只看对话」开关)。关注两件事:打开后噪音真的消失,以及**关闭时行为不变** ——
+ * 后者由本文件前面那批既有用例守着(它们都在开关默认关的状态下跑)。
+ */
+const READING_PAGE = {
+  ok: true,
+  messages: [
+    {
+      id: "u1",
+      role: "user",
+      content: "帮我把文章存进知识库",
+      timestamp: "2026-06-29T00:00:00.000Z",
+    },
+    {
+      id: "a1",
+      role: "assistant",
+      content: "我先确认一下存到哪。",
+      timestamp: "2026-06-29T00:01:00.000Z",
+      toolCalls: [
+        {
+          id: "toolu_ask1",
+          name: "AskUserQuestion",
+          params: {
+            questions: [
+              {
+                question: "存到哪个知识系统?",
+                header: "存入目标",
+                options: [{ label: "gbrain 知识库" }, { label: "Obsidian 笔记" }],
+              },
+            ],
+          },
+        },
+      ],
+    },
+    // 携带作答的那条 user 行本身是纯 tool_result,阅读模式下会被滤掉 ——
+    // 所以答案必须在过滤前按 tool_use_id 收好。这条用例正是守这个的。
+    {
+      id: "u2",
+      role: "user",
+      content: "",
+      timestamp: "2026-06-29T00:02:00.000Z",
+      metadata: {
+        readingHidden: "tool-only",
+        answers: { "存到哪个知识系统?": "gbrain 知识库" },
+        answersForToolUseId: "toolu_ask1",
+      },
+    },
+    {
+      id: "a2",
+      role: "assistant",
+      content: "",
+      timestamp: "2026-06-29T00:03:00.000Z",
+      metadata: { readingHidden: "tool-only" },
+    },
+    {
+      id: "e1",
+      role: "assistant",
+      content: "```json\n{\"snapshot\":1}\n```",
+      timestamp: "2026-06-29T00:04:00.000Z",
+      metadata: {
+        claudeAppendix: true,
+        claudeEventType: "file-history-snapshot",
+        readingHidden: "appendix",
+      },
+    },
+    {
+      id: "a3",
+      role: "assistant",
+      content: "已存入 gbrain。",
+      timestamp: "2026-06-29T00:05:00.000Z",
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+};
+
+const readingSwitch = () => screen.getByRole("switch", { name: "只看对话" });
+
+describe("ClaudeCodeHistorySession — 阅读模式开关", () => {
+  it("默认关:噪音照常显示(appendix 徽标、空消息占位都在)", async () => {
+    installFetchMock({ pageA: READING_PAGE });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument()
+    );
+    expect(screen.getByText("file-history-snapshot")).toBeInTheDocument();
+    expect(screen.getAllByText("（空消息）").length).toBeGreaterThan(0);
+    // 关闭时不渲染提问卡(保持与改动前一致,不引入新展示)。
+    expect(screen.queryByText(/存到哪个知识系统/)).toBeNull();
+    expect(document.querySelectorAll("article")).toHaveLength(6);
+  });
+
+  it("打开:appendix / 空消息消失,相邻 assistant 并成一张卡", async () => {
+    installFetchMock({ pageA: READING_PAGE });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument()
+    );
+    fireEvent.click(readingSwitch());
+    await waitFor(() => expect(screen.queryByText("file-history-snapshot")).toBeNull());
+    expect(screen.queryByText("（空消息）")).toBeNull();
+    // 真人一张卡 + a1/a3 合并成的一张 = 2 张
+    expect(document.querySelectorAll("article")).toHaveLength(2);
+    expect(screen.getByText(/我先确认一下存到哪/)).toBeInTheDocument();
+    expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument();
+  });
+
+  it("打开:AskUserQuestion 渲染成卡片并标出你选的那项", async () => {
+    installFetchMock({ pageA: READING_PAGE });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument());
+    fireEvent.click(readingSwitch());
+    await waitFor(() =>
+      expect(screen.getByText("存到哪个知识系统?")).toBeInTheDocument()
+    );
+    expect(screen.getByText("存入目标")).toBeInTheDocument();
+    expect(screen.getByText("gbrain 知识库")).toBeInTheDocument();
+    expect(screen.getByText("Obsidian 笔记")).toBeInTheDocument();
+    expect(screen.getByText(/✓ 你选的/)).toBeInTheDocument();
+    expect(screen.queryByText("未回答")).toBeNull();
+  });
+
+  it("打开:被 hook 拦下的提问(无作答)渲染成未回答态", async () => {
+    const noAnswer = {
+      ...READING_PAGE,
+      messages: READING_PAGE.messages.map((m) =>
+        m.id === "u2" ? { ...m, metadata: { readingHidden: "tool-only" } } : m
+      ),
+    };
+    installFetchMock({ pageA: noAnswer });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument());
+    fireEvent.click(readingSwitch());
+    await waitFor(() => expect(screen.getByText("未回答")).toBeInTheDocument());
+    expect(screen.queryByText(/✓ 你选的/)).toBeNull();
+  });
+
+  // R7:整页被滤空时 MessageList 仍要挂载(挂载判断用未过滤的数量),否则没有哨兵、
+  // 既不加载也不显示空态 —— 用户得到一块纯白。
+  it("整页全是噪音:不白屏,给出说明而不是空白", async () => {
+    const allNoise = {
+      ok: true,
+      messages: [
+        {
+          id: "n1",
+          role: "assistant",
+          content: "",
+          timestamp: "2026-06-29T00:00:00.000Z",
+          metadata: { readingHidden: "tool-only" },
+        },
+        {
+          id: "n2",
+          role: "assistant",
+          content: "```json\n{}\n```",
+          timestamp: "2026-06-29T00:01:00.000Z",
+          metadata: { claudeAppendix: true, claudeEventType: "queue-operation", readingHidden: "appendix" },
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    };
+    installFetchMock({ pageA: allNoise });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("queue-operation")).toBeInTheDocument());
+    fireEvent.click(readingSwitch());
+    await waitFor(() =>
+      expect(screen.getByText(/本会话没有可读的对话内容/)).toBeInTheDocument()
+    );
+    expect(document.querySelectorAll("article")).toHaveLength(0);
+  });
+
+  it("开关状态存进 localStorage,重新挂载后保持", async () => {
+    installFetchMock({ pageA: READING_PAGE });
+    const first = renderPage();
+    await waitFor(() => expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument());
+    fireEvent.click(readingSwitch());
+    await waitFor(() => expect(screen.queryByText("（空消息）")).toBeNull());
+    first.unmount();
+
+    installFetchMock({ pageA: READING_PAGE });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/已存入 gbrain/)).toBeInTheDocument());
+    // 不用再点,状态是从 localStorage 读回来的。
+    expect(screen.queryByText("（空消息）")).toBeNull();
+    expect(readingSwitch()).toHaveAttribute("aria-checked", "true");
   });
 });

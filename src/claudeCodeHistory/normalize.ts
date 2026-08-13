@@ -8,6 +8,8 @@ import type {
   TokenUsage,
 } from "../cursorHistory/types.js";
 import type { ParseJsonlResult } from "./parseJsonl.js";
+// 阅读模式判 injected 复用后端权威清洗器 —— 不在这里另写一套标签口径。
+import { cleanClaudeUserMessage } from "./myMessages.js";
 
 function isoDate(v: unknown): Date | null {
   if (typeof v !== "string") return null;
@@ -249,6 +251,9 @@ function assistantFromContent(content: unknown): {
           ? (b.input as Record<string, unknown>)
           : undefined;
       toolCalls.push({
+        // 保留 tool_use.id:AskUserQuestion 的作答在**另一条 user 行**上,
+        // 靠这个 id 配回来(一个会话可能问多次)。
+        id: typeof b.id === "string" ? b.id : undefined,
         name,
         status: "completed",
         params,
@@ -262,6 +267,68 @@ function assistantFromContent(content: unknown): {
     thinking,
     toolCalls: toolCalls.length ? toolCalls : undefined,
   };
+}
+
+function isPlainRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * user 消息在阅读模式下该不该藏。两种藏法要分开,因为它们的成因不同:
+ * - `tool-only`:整条只是工具结果回填。`userVisibleFromContent` 只抽 text 块,
+ *   这类解析出空串(实测一个 579 行会话里有 103 条)。
+ * - `injected`:有文本,但剥完已知注入标记后什么都不剩(system-reminder / 命令回显等)。
+ *   判据直接调后端权威清洗器,**不在这里重写一套标签表**。
+ */
+function userReadingHidden(body: string): "tool-only" | "injected" | undefined {
+  if (body === "") return "tool-only";
+  return cleanClaudeUserMessage(body).trim() === "" ? "injected" : undefined;
+}
+
+/**
+ * assistant 消息同理。**只有 tool_use 的那条才算 tool-only**。
+ * 注意 thinking:`assistantFromContent` 只把 text 段拼进 content,所以 thinking-only
+ * 的行 content 是空串 —— 但它是 AI 的真实输出(实测 67 条),按空内容藏掉就错了。
+ */
+function assistantReadingHidden(
+  text: string,
+  thinking: string | undefined
+): "tool-only" | undefined {
+  if (text.trim() !== "") return undefined;
+  if ((thinking ?? "").trim() !== "") return undefined;
+  return "tool-only";
+}
+
+/** tool_result 块携带的调用 id,用来把作答配回 assistant 侧那次 tool_use。 */
+function firstToolResultId(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  for (const b of content) {
+    if (!isPlainRecord(b)) continue;
+    if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+      return b.tool_use_id;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * AskUserQuestion 的作答。Claude Code 把它写在**行顶层**的 `toolUseResult.answers`
+ * (问题 → 选中项的现成映射),而不是消息 content 里 —— content 里只有一句拼好的
+ * 自然语言。读结构化的那份,不解析自然语言。
+ */
+function readAnswers(
+  record: Record<string, unknown>,
+  content: unknown
+): { answers?: Record<string, string>; answersForToolUseId?: string } {
+  const tur = record.toolUseResult;
+  if (!isPlainRecord(tur) || !isPlainRecord(tur.answers)) return {};
+  const answers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(tur.answers)) {
+    if (typeof v === "string") answers[k] = v;
+  }
+  if (Object.keys(answers).length === 0) return {};
+  const id = firstToolResultId(content);
+  return { answers, ...(id ? { answersForToolUseId: id } : {}) };
 }
 
 function isUserShape(rec: Record<string, unknown>): boolean {
@@ -310,12 +377,24 @@ export function mapRecordToMessage(
     const msg = record.message as Record<string, unknown>;
     const body = userVisibleFromContent(msg.content);
     const id = typeof record.uuid === "string" ? record.uuid : `user-L${lineNumber}`;
+    const readingHidden = userReadingHidden(body);
+    const { answers, answersForToolUseId } = readAnswers(record, msg.content);
+    // 只在真有内容时挂 metadata,避免给每条 user 消息平白多一个空对象。
+    const metadata =
+      readingHidden || answers
+        ? {
+            ...(readingHidden ? { readingHidden } : {}),
+            ...(answers ? { answers } : {}),
+            ...(answersForToolUseId ? { answersForToolUseId } : {}),
+          }
+        : undefined;
     return {
       id,
       role: "user",
       content: body,
       timestamp: ts ?? new Date(fileMtimeMs),
       codeBlocks: extractCodeBlocks(body),
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -326,6 +405,7 @@ export function mapRecordToMessage(
       typeof record.uuid === "string" ? record.uuid : `assistant-L${lineNumber}`;
     const model = typeof msg.model === "string" ? msg.model : undefined;
     const tokenUsage = mapTokenUsage(msg.usage);
+    const readingHidden = assistantReadingHidden(text, thinking);
     return {
       id,
       role: "assistant",
@@ -336,6 +416,7 @@ export function mapRecordToMessage(
       toolCalls,
       model,
       tokenUsage,
+      ...(readingHidden ? { metadata: { readingHidden } } : {}),
     };
   }
 
@@ -351,6 +432,7 @@ export function mapRecordToMessage(
     metadata: {
       claudeEventType: typ,
       claudeAppendix: true,
+      readingHidden: "appendix",
     },
   };
 }
