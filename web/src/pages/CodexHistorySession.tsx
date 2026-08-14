@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
-import { MessageMarkdown } from "../components/MessageMarkdown";
+import { MessageText } from "../components/MessageText";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 type ApiMessage = {
@@ -222,7 +222,7 @@ export function CodexHistorySession() {
                 </span>
                 {m.model && <span className="truncate font-mono text-[11px] text-neutral-500">{m.model}</span>}
               </header>
-              <MessageMarkdown text={m.content} />
+              <MessageText role={m.role} text={m.content} />
             </article>
           );
         })}

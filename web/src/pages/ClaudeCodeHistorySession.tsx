@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { JsonHighlighted } from "../components/JsonHighlighted";
-import { MessageMarkdown } from "../components/MessageMarkdown";
+import { MessagePlainText } from "../components/MessagePlainText";
+import { MessageText } from "../components/MessageText";
+import { RenderedMarkdown } from "../components/RenderedMarkdown";
 import { formatFileTimeMs } from "../util/formatDisplay";
 import {
   hasCommandInjection,
@@ -165,7 +167,7 @@ function spanClass(s: SgrSpan): string {
 /**
  * 命令输出块:等宽深底,SGR 残骸解析成样式 span。
  * 安全边界(codex #11):内容一律作**文本**(span 的 children 是纯字符串,不走
- * MessageMarkdown / dangerouslySetInnerHTML),user 消息含任意内容也不扩大 XSS 面。
+ * MessagePlainText / dangerouslySetInnerHTML),user 消息含任意内容也不扩大 XSS 面。
  */
 function TerminalOutput({ raw }: { raw: string }) {
   const spans = useMemo(() => sgrParse(raw), [raw]);
@@ -220,12 +222,12 @@ function CaveatBlock({ text }: { text: string }) {
   );
 }
 
-// 单段派发。text 段走既有 MessageMarkdown(真人正文,信任路径);其余是结构化注入回显。
+// 单段派发。text 段走既有 MessagePlainText(真人正文,信任路径);其余是结构化注入回显。
 function UserSegmentView({ seg }: { seg: UserSegment }) {
   if (seg.kind === "command") return <CommandChip seg={seg} />;
   if (seg.kind === "stdout") return <TerminalOutput raw={seg.raw} />;
   if (seg.kind === "caveat") return <CaveatBlock text={seg.text} />;
-  return <MessageMarkdown text={seg.text} />;
+  return <MessagePlainText text={seg.text} />;
 }
 
 /**
@@ -261,7 +263,7 @@ function AppendixBody({ content, expandDefault }: { content: string; expandDefau
     <div>
       {showRaw || node === null ? (
         // 原文视图 / 解析失败降级:回既有 Prism 渲染,不空白。
-        <MessageMarkdown text={content} />
+        <MessagePlainText text={content} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-100 bg-slate-50/40 p-3">
           <SmartJsonView node={node} />
@@ -286,7 +288,7 @@ function AppendixBody({ content, expandDefault }: { content: string; expandDefau
  * 角色徽标 / appendix 事件徽标 / 时间 / 模型 / 损坏徽标 + 可展开 thinking + 正文。
  *
  * user 消息若含命令注入回显(斜杠/! 命令的标签+SGR 残骸),按段结构化渲染,并给一个
- * 「查看原文」切换看原始 payload(数据工作台排查用)。其余照旧走 MessageMarkdown。
+ * 「查看原文」切换看原始 payload(数据工作台排查用)。其余照旧走 MessagePlainText。
  */
 /**
  * 一条消息的正文(不含卡片外壳与 header)。抽出来是因为阅读模式会把同一轮的多条
@@ -331,7 +333,7 @@ function MessageBody({
                 code={m.thinking}
               />
             ) : (
-              <MessageMarkdown text={m.thinking} />
+              <RenderedMarkdown text={m.thinking} />
             )}
           </div>
         </details>
@@ -361,7 +363,10 @@ function MessageBody({
       ) : m.metadata?.claudeAppendix ? (
         <AppendixBody content={m.content} expandDefault={expandAppendix} />
       ) : (
-        <MessageMarkdown text={m.content} />
+        // 兜底:assistant 正文 **与无命令注入的 user 正文** 都落这里
+        // (segments 的守卫是 isUser && hasCommandInjection,user 无注入时也是 null)。
+        // 这个角色条件是 D3「user 逐字符不变」的唯一保障,不能省。
+        <MessageText role={m.role} text={m.content} />
       )}
 
       {asks.map((t, i) => (

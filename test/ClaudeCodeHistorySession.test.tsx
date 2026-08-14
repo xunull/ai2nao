@@ -260,7 +260,7 @@ describe("ClaudeCodeHistorySession — user 命令注入回显结构化渲染", 
     };
     installFetchMock({ pageA: TEXT_PAGE });
     renderPage();
-    // 无控制标签 → 走 MessageMarkdown,[1m] 原样在文本里(未被 SGR 解析吃掉)。
+    // 无控制标签 → 走 MessagePlainText,[1m] 原样在文本里(未被 SGR 解析吃掉)。
     await waitFor(() =>
       expect(screen.getByText(/M\[1m\]/)).toBeInTheDocument()
     );
@@ -328,7 +328,7 @@ describe("ClaudeCodeHistorySession — appendix 智能 JSON 渲染", () => {
     installFetchMock({ pageA: BAD });
     renderPage();
     fireEvent.click(await screen.findByText(/展开查看结构化内容/));
-    // 降级:原始内容可见(经 MessageMarkdown),不空白。
+    // 降级:原始内容可见(经 MessagePlainText),不空白。
     await waitFor(() =>
       expect(screen.getByText(/半截 JSON/)).toBeInTheDocument()
     );
