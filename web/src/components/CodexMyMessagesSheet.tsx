@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../api";
 import { formatFileTimeMs } from "../util/formatDisplay";
-import { MessageMarkdown } from "./MessageMarkdown";
+import { MessagePlainText } from "./MessagePlainText";
 import { Sheet } from "./Sheet";
 
 type MyMessage = { id: string | null; timestamp: string; text: string };
@@ -93,7 +93,7 @@ export function CodexMyMessagesSheet({
                       </>
                     )}
                   </div>
-                  <MessageMarkdown text={m.text} />
+                  <MessagePlainText text={m.text} />
                 </li>
               );
             })}

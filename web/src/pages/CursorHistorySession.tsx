@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { JsonHighlighted } from "../components/JsonHighlighted";
-import { MessageMarkdown } from "../components/MessageMarkdown";
+import { MessageText } from "../components/MessageText";
+import { RenderedMarkdown } from "../components/RenderedMarkdown";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 type ApiMessage = {
@@ -189,13 +190,13 @@ export function CursorHistorySession() {
                         code={m.thinking}
                       />
                     ) : (
-                      <MessageMarkdown text={m.thinking} />
+                      <RenderedMarkdown text={m.thinking} />
                     )}
                   </div>
                 </details>
               )}
 
-              <MessageMarkdown text={m.content} />
+              <MessageText role={m.role} text={m.content} />
             </article>
           );
         })}

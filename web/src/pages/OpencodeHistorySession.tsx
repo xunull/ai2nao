@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
-import { MessageMarkdown } from "../components/MessageMarkdown";
+import { MessageText } from "../components/MessageText";
+import { RenderedMarkdown } from "../components/RenderedMarkdown";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 type ToolCall = {
@@ -225,11 +226,13 @@ export function OpencodeHistorySession() {
                   <summary className="cursor-pointer select-none text-xs font-medium text-neutral-500">
                     思考过程
                   </summary>
-                  <div className="mt-2 whitespace-pre-wrap break-words text-neutral-700">{m.thinking}</div>
+                  <div className="mt-2 text-neutral-700">
+                    <RenderedMarkdown text={m.thinking} />
+                  </div>
                 </details>
               )}
 
-              {m.content && <MessageMarkdown text={m.content} />}
+              {m.content && <MessageText role={m.role} text={m.content} />}
 
               {/* 工具调用折叠。 */}
               {m.toolCalls && m.toolCalls.length > 0 && (

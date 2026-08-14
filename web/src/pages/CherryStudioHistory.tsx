@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
-import { MessageMarkdown } from "../components/MessageMarkdown";
+import { MessageText } from "../components/MessageText";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 const PAGE_SIZE = 50;
@@ -625,7 +625,7 @@ function Transcript({ session, warnings }: { session: SessionDetail; warnings: s
                       {formatFileTimeMs(new Date(message.timestamp).getTime())}
                     </span>
                   </header>
-                  <MessageMarkdown text={message.content} />
+                  <MessageText role={message.role} text={message.content} />
                 </article>
               );
             })}

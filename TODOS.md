@@ -1314,3 +1314,53 @@ commit=12 / visit=103 / token=1371 / msg=63，终端那一列是 0。
 **Depends on / blocked by:** 无前置。但因为要全表回填 + FTS 重建,不要和别的改动混在同一个 PR 里。
 
 **Effort:** M(human ~4h / CC ~20min,含 bump/回填/扩 drift 测试) **Priority:** P3
+
+## 会话详情页：给另外四个来源上虚拟化
+
+What: 把 Claude 页已有的 `@tanstack/react-virtual` 方案推到 Cursor / Codex / OpenCode /
+CherryStudio 四个会话详情页。
+
+Why: 这四个页面打开即同步渲染整场会话的每一条消息。实测只有
+`web/src/pages/ClaudeCodeHistorySession.tsx:512` 用了 `useVirtualizer`，其余三个是裸
+`.map`（`CursorHistorySession.tsx:141` / `CodexHistorySession.tsx:181` /
+`OpencodeHistorySession.tsx:195`）。后端也不截断：`src/serve/app.ts` 里 cursor 和 codex
+都是整场会话一次返回，无 limit 参数。
+
+Pros:
+- 首帧成本与会话长度解耦（当前是线性）
+- 顺带解决长会话的 DOM 体量
+- 四个页面与 Claude 页行为统一，减少「同一个功能在五个页面表现不同」的排查成本
+
+Cons:
+- Claude 页的虚拟化 2026-08-13 才踩完 overscan 锚点坑（见 learnings
+  `virtual-getVirtualItems-zero-includes-overscan`），四倍复制风险高
+- 每个页面的消息卡片结构不同，行高估值要各自调
+- 若首帧实测下来无感，这就是为不存在的性能问题付代价
+
+Context:
+2026-08-14「AI 正文 markdown 渲染」eng review 的外部声音（P0-2）发现的。markdown 渲染
+上线后每条多约 1.37ms 解析，100 条会话首帧多付约 134ms、500 条约 685ms —— 但**根因是
+没虚拟化，不是 markdown**。本期决定是「先实测真实最长会话的首次可交互时间再决定」，
+若实测确认卡顿，这条是根治方案。注意 `useMemo` 救不了首帧（冷缓存），模块级缓存同样
+救不了 —— 只有虚拟化能。
+
+实测（2026-08-14，本机 345 场 Codex 会话，只数真正会走 markdown 渲染的 assistant
+文本消息，已排除在 `CodexHistorySession.tsx:180-200` 早退的工具事件）：
+
+| 分位 | 走渲染的消息数 | 平均/条 | 预估首帧解析 |
+|---|---:|---:|---:|
+| 中位数 | 6 | 533B | 5 ms |
+| P90 | 201 | 511B | 159 ms |
+| P99 | 730 | 325B | 527 ms |
+| 最长 | 2009 | 308B | 1438 ms |
+
+**结论：尾部问题，不是典型场景问题。** 中位数无感，P90 可接受，只有 P99 与最长那一场
+会明显卡。所以本期不做，但这条 TODO 的优先级由「可能不需要」升为「确实需要，只是不急」。
+触发条件很具体：当你开始经常打开 500 条以上的会话时。
+
+Depends on / blocked by:
+- ~~先拿到实测数字~~ ✅ 已测（见上表）
+
+Effort estimate: L（human）→ M（CC+gstack）
+
+Priority: P2
