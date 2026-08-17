@@ -1364,3 +1364,105 @@ Depends on / blocked by:
 Effort estimate: L（human）→ M（CC+gstack）
 
 Priority: P2
+
+---
+
+## recleanClaude 是死代码：cleaner_version 回填机制实际不工作
+
+**What:** `src/agentUserMessages/queries.ts:507` 的 `recleanClaude` 定义完整、有测试，但
+**生产代码零调用** —— grep 全仓只有 `test/agentUserMessages.claude.test.ts` 在调它。
+同族的 `recleanBySource` / `recleanCodexFromPayload` 同理，需一并核。
+
+**Why:** 本文件上方那条「用户消息清洗:bash-* 三个标签的口径分叉」在 Cons 里写着
+「改清洗规则必须 bump `CLAUDE_CLEANER_VERSION`(当前 v3 → v4),触发 `agent_user_messages`
+里 source='claude' 行从 `raw_payload_json` 全量回填」—— **这句话是假的**。bump 了版本号
+也没有任何生产代码去调 `recleanClaude`，旧行会永远停在旧版本口径上，只有 bump 之后**新
+入库**的行是新口径。结果是同一张表里两种口径共存且无人察觉。
+
+**Pros:**
+- 揭穿一个已经在误导决策的假前提（2026-08-17 的 eng review 正是因为相信它而把「先修
+  bash-*」排在了前面，发现后收益重估）。
+- `cleaner_version` 字段本身要么接上触发路径要么删掉，现状（有字段、有函数、无调用）是
+  最差的中间态：它让人以为回填能力存在。
+
+**Cons:**
+- 接上需要先想清楚触发时机：serve 启动时扫一遍？加一个 scheduler 任务？还是只做 CLI
+  子命令手动跑？各有代价 —— 启动时扫会拖慢冷启动，scheduler 任务默认 `enabled=0`
+  （见 `src/scheduler/store.ts:29`）等于不会自动跑。
+- 全量回填会重建 FTS 索引，成本随表增长。
+
+**Context:** 2026-08-17 的 `/gstack-plan-eng-review` 中由 codex outside voice 抓出，
+随后用 grep 验证属实。同一轮还发现新注册的 scheduler 任务默认 `enabled=0`
+（`INSERT ... VALUES (?, 0, ...)`），所以「加个定时任务就能回填」这条路也不是白拿的。
+
+**Depends on / blocked by:** 无前置。但与 bash-* 那条强相关 —— 修那条之前应先决定
+本条，否则修完清洗规则只对新行生效。
+
+**Effort:** S(human ~2h / CC ~15min，不含触发时机的设计决策) **Priority:** P2
+
+---
+
+## codex / opencode 的 AI 正文尚未入库
+
+**What:** 2026-08-17 落地的「AI 正文入库」只做了 Claude 一家（eng review D1 的缩范围
+决定）。codex 与 opencode 的 assistant 内容仍然只存在于各自的源里，没有进
+`agent_user_messages`。
+
+**Why:** 三家的用户提问早就统一入库了，AI 那半边只补了 claude。`topicStream/conversation.ts`
+的三家聚类、`replay`、`attention` 目前看到的仍是「三家的提问 + 一家的回答」这种不对称视图。
+
+实测（2026-08-17）：
+- **codex**：348 个会话 / 1110 MB 源文件，AI 正文 **15.82 MB / 26081 条**（比 Claude 的
+  7.29 MB 还多一倍）。源文件从 2026-04 起一条未删，**不存在时间压力**。
+- **opencode**：源是 `~/.local/share/opencode/opencode.db`（3.2 GB SQLite，`message` 表
+  9364 条），**不是** `storage/**/*.json` —— `opencodeIngest.ts:45` 读的是
+  `opencodeDbPath(dataDir)`。它的 prune 策略未验证。
+
+**Pros:**
+- 补齐后 topicStream 聚类、replay「那天回放」、attention 同时变准。
+- codex 的 AI 正文量比 Claude 大一倍，价值密度不低。
+
+**Cons:**
+- 两家的「什么算噪音」形态需**各自实测**才能写判定，不能照抄 Claude 的
+  `readingHidden`（Claude 那套是实测出来的）。这是最大的不确定工作量。
+- codex 的 rollout 格式 2026-08 变过：新增 `world_state`、
+  `inter_agent_communication_metadata` 两种记录类型。
+- codex 有 `programmatic` 门（`codexHistory/normalize.ts:543`）整场跳过 exec 会话；
+  实测被跳过的 AI 正文只占 codex 总量 2.2%（335 条 / 0.36 MB），但 office-hours 的 C1
+  已裁定「放开门 + user 侧前缀剥离」，实现时要一并处理。
+- opencode 是查表 + 行 ID 水位，与 claude/codex 的扫文件 + mtime 水位是两套 IO 模型。
+
+**Depends on / blocked by:** 无前置，Claude 那半边已落地可作参照。
+
+**Effort:** L(human ~4d / CC ~50min，含两家语料的噪音形态实测) **Priority:** P2
+
+---
+
+## 搜索两条路径的排序规则不一致
+
+**What:** `src/agentUserMessages/queries.ts` 的 `searchUserMessages` 有两条路径：搜索词
+**<3 码点**走 LIKE 全表匹配并 `ORDER BY m.event_at_utc DESC`；**≥3 码点**走 trigram
+`MATCH` 并 `ORDER BY rank`。同一个搜索框，**输入长度决定排序规则**。
+
+**Why:** 2 字中文词（「水位」「排序」「代码」）在 trigram 索引里命中不了，所以必须有
+LIKE 兜底 —— 这个设计本身是对的（`queries.ts:99` 的 D4 注释解释了原因）。问题在于两条
+路径顺带换了排序语义，用户搜「水位」得到时间倒序、搜「watermark」得到相关度序，而界面
+上没有任何提示。2026-08-17 给这个页加了 role 筛选后它会被用得更频繁。
+
+**Pros:**
+- 修了之后搜索行为可预测。
+- 即使不修，记录下来也能让下一个觉得「搜索好像乱排」的人查到成因，而不是当成 bug 去追。
+
+**Cons:**
+- 统一成哪种是个真问题：trigram 的 `rank` 对短词无意义（短词根本进不了这条路径），
+  而纯时间序对长词搜索的体验又不如相关度。可能的第三条路：两条路径都按时间序，把
+  相关度作为可选排序项交给用户。
+
+**Context:** 2026-08-17 `/gstack-plan-eng-review` 的 Code Quality 章节顺手发现，属于现存
+行为，不在那次改动范围内。`EXPLAIN QUERY PLAN` 实测 LIKE 路径走
+`idx_aum_human_event(is_human, event_at_utc, source)` 并在 `LIMIT 50` 处提前退出，
+所以时间序这一侧是有索引支撑的，改排序需要重新评估索引。
+
+**Depends on / blocked by:** 无。
+
+**Effort:** S(human ~2h / CC ~15min，不含「统一成哪种」的产品决策) **Priority:** P3
