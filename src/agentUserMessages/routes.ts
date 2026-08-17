@@ -6,6 +6,7 @@ import {
   userMessageAnalytics,
   userMessageList,
   userMessageTimeline,
+  type SearchRoleFilter,
   type TimelineWindow,
 } from "./queries.js";
 import { isWindowKey } from "../timeWindow/types.js";
@@ -16,12 +17,16 @@ function jsonErr(status: number, message: string) {
 }
 
 const SOURCES = new Set<AgentUserMessageSource>(["claude", "codex", "opencode"]);
+const ROLE_FILTERS = new Set<string>(["user", "assistant", "all"]);
 
 /**
  * agent 用户消息搜索 + 原文审计。
- *   GET /api/agent-user-messages/search?q=&source=&from=&to=&limit=
+ *   GET /api/agent-user-messages/search?q=&source=&from=&to=&limit=&role=
  *   GET /api/agent-user-messages/:id/raw
  * raw_text/raw_payload_json 只在 /:id/raw 返回(审计),搜索结果只给 cleaned 片段。
+ *
+ * `role` 缺省 = "user",与 V53 之前逐条一致 —— 不传这个参数的老调用方
+ * (以及所有已存在的书签/链接)行为完全不变。
  */
 export function registerAgentUserMessagesRoutes(
   app: Hono,
@@ -44,6 +49,10 @@ export function registerAgentUserMessagesRoutes(
         return jsonErr(400, `invalid limit parameter: ${JSON.stringify(limitRaw)}`);
       }
     }
+    const roleRaw = c.req.query("role")?.trim();
+    if (roleRaw && !ROLE_FILTERS.has(roleRaw)) {
+      return jsonErr(400, `invalid role parameter: ${JSON.stringify(roleRaw)}`);
+    }
     try {
       const hits = searchUserMessages(db, {
         q,
@@ -51,6 +60,7 @@ export function registerAgentUserMessagesRoutes(
         from,
         to,
         limit,
+        role: roleRaw as SearchRoleFilter | undefined,
       });
       return c.json({ ok: true, hits });
     } catch (e) {

@@ -22,11 +22,12 @@ function upsertOne(
        (source, source_session_id, source_message_key, project, event_at_utc,
         raw_text, raw_payload_json, cleaned_text, is_human, char_len,
         cleaner_version, parser_version, source_path, source_seen_at,
-        ingested_at, updated_at)
+        ingested_at, updated_at, role, answering_user_key)
      VALUES
        (@source, @sourceSessionId, @sourceMessageKey, @project, @eventAtUtc,
         @rawText, @rawPayloadJson, @cleanedText, @isHuman, @charLen,
-        @cleanerVersion, @parserVersion, @sourcePath, @now, @now, @now)
+        @cleanerVersion, @parserVersion, @sourcePath, @now, @now, @now,
+        @role, @answeringUserKey)
      ON CONFLICT(source, source_session_id, source_message_key) DO UPDATE SET
         project = excluded.project,
         event_at_utc = excluded.event_at_utc,
@@ -39,7 +40,9 @@ function upsertOne(
         parser_version = excluded.parser_version,
         source_path = excluded.source_path,
         source_seen_at = excluded.source_seen_at,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at,
+        role = excluded.role,
+        answering_user_key = excluded.answering_user_key`
   ).run({
     source: input.source,
     sourceSessionId: input.sourceSessionId,
@@ -55,6 +58,8 @@ function upsertOne(
     parserVersion: input.parserVersion,
     sourcePath: input.sourcePath,
     now: nowIso,
+    role: input.role ?? "user",
+    answeringUserKey: input.answeringUserKey ?? null,
   });
 
   const id = (

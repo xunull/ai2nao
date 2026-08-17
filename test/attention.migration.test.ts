@@ -17,14 +17,17 @@ describe("V52 注意力层表结构", () => {
       .map((c) => c.name)
       .sort();
 
-  it("迁移到 52 且 SCHEMA_VERSION 与之一致", () => {
+  it("迁移到 head 且 SCHEMA_VERSION 与之一致", () => {
     fresh();
     const v = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
     };
-    expect(v.version).toBe(52);
     // migrate() 末尾会在 vAfter > CURRENT_VERSION 时抛错，两者必须同步推进。
-    expect(SCHEMA_VERSION).toBe(52);
+    expect(v.version).toBe(SCHEMA_VERSION);
+    // head 的具体数值只 pin 在一个地方(test/agentUserMessages.migration.test.ts)，
+    // 否则每次 bump schema 都要在多个 migration 测试里改同一个数字 —— 这里只需要
+    // 保证「attention 层建完之后版本自洽」，且 head 不会倒退到 52 以下。
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(52);
   });
 
   it("spans 表的列来自实测语义，不含源里没有的 app_name", () => {

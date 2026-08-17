@@ -5,6 +5,9 @@
 
 export type AgentUserMessageSource = "claude" | "codex" | "opencode";
 
+/** 消息角色。V53 起这张表也装 assistant 行(AI 正文入库)。 */
+export type AgentMessageRole = "user" | "assistant";
+
 /** 写入一行的输入(ingest / 回填共用)。 */
 export type UpsertUserMessageInput = {
   source: AgentUserMessageSource;
@@ -19,6 +22,17 @@ export type UpsertUserMessageInput = {
   cleanerVersion: number;
   parserVersion: number;
   sourcePath: string | null;
+  /**
+   * 缺省 'user' —— 让 V53 之前就写好的调用方(codex/opencode ingest、回填)不用改
+   * 一行代码就继续正确工作,它们本来就只写 user 消息。
+   */
+  role?: AgentMessageRole;
+  /**
+   * assistant 行:它在回答的那条 user 消息的 source_message_key。user 行恒为空。
+   * 搜索命中一句 AI 的话时靠它带出一行提问上下文(AI 单条中位只有 87 字,孤立看
+   * 不知道在回答什么)。
+   */
+  answeringUserKey?: string | null;
 };
 
 /** 搜索命中(返回给前端;不含 raw,raw 走 /:id/raw 审计端点)。 */
@@ -28,6 +42,14 @@ export type AgentUserMessageSearchHit = {
   sourceSessionId: string;
   eventAtUtc: string;
   snippet: string;
+  /** V53:命中的是谁说的。老调用方不看这个字段也不会坏。 */
+  role?: AgentMessageRole;
+  /**
+   * 命中 assistant 行时,它在回答的那条提问的正文(已清洗)。
+   * AI 单条中位只有 87 字,孤立看不知道在回答什么 —— 这一行是上下文。
+   * user 行、或锚点行已被删时为 null。
+   */
+  answering?: string | null;
 };
 
 /** 原文审计。 */
