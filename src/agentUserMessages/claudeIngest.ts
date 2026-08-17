@@ -1,10 +1,15 @@
 /**
- * Claude Code → agent_user_messages 摄取(v1.1)。
+ * Claude Code → agent_user_messages 摄取(v2,V53 起连 AI 的话一起收)。
  *
  * 增量(D9):按会话 jsonl 文件 mtime 水位 `>=` 过滤(改过的文件重扫,幂等 upsert 按 uuid
  * 去重);**分批**(每 BATCH_FILES 个文件一事务)commit + 逐批推水位。孤儿留底 = 从不删。
- * 口径:共享 extractClaudeUserMessages(后端清洗,与抽屉端点同源 —— option C)。
+ * 口径:共享 extractClaudeMessages(后端清洗,与抽屉端点同源 —— option C)。抽屉那侧调
+ * 的是 extractClaudeUserMessages,它是同一函数 filter role==='user' 后的视图。
  * 自然 key:source_session_id = projectId:sessionId,source_message_key = record.uuid。
+ *
+ * V53 之前这里只收 role==='user'。放开的动机:Claude Code 按 30 天滚动窗口删本地
+ * transcript,实测 170 个会话里已有 75 个源文件消失 —— 那些会话的提问因「孤儿留底」
+ * 保住了 1988 条,AI 的回答则永久没了。每天还在以约 3 个会话的速度继续丢。
  */
 import type Database from "better-sqlite3";
 import { existsSync } from "node:fs";
@@ -15,7 +20,7 @@ import { readAndParseFile } from "../claudeCodeHistory/load.js";
 import {
   CLAUDE_CLEANER_VERSION,
   CLAUDE_PARSER_VERSION,
-  extractClaudeUserMessages,
+  extractClaudeMessages,
 } from "../claudeCodeHistory/myMessages.js";
 import { resolveClaudeProjectsRoot } from "../claudeCodeHistory/paths.js";
 import { getSyncState, setSyncState, upsertUserMessagesBatch } from "./store.js";
@@ -106,7 +111,7 @@ export async function ingestClaudeUserMessages(
           // 单文件过大/坏 → 跳过,不拖垮整批。
           continue;
         }
-        for (const ex of extractClaudeUserMessages(built.session.messages)) {
+        for (const ex of extractClaudeMessages(built.session.messages)) {
           rows.push({
             source: "claude",
             sourceSessionId: `${f.projectId}:${f.sessionId}`,
@@ -120,6 +125,8 @@ export async function ingestClaudeUserMessages(
             cleanerVersion: CLAUDE_CLEANER_VERSION,
             parserVersion: CLAUDE_PARSER_VERSION,
             sourcePath: f.filePath,
+            role: ex.role,
+            answeringUserKey: ex.answeringUserKey,
           });
         }
         if (f.mtimeMs > batchMaxMs) batchMaxMs = f.mtimeMs;

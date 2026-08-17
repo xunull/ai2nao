@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 52;
+export const SCHEMA_VERSION = 53;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -69,6 +69,7 @@ export function migrate(db: Database.Database): void {
     applyV50(db);
     applyV51(db);
     applyV52(db);
+    applyV53(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -127,6 +128,7 @@ export function migrate(db: Database.Database): void {
   if (v < 50) applyV50(db);
   if (v < 51) applyV51(db);
   if (v < 52) applyV52(db);
+  if (v < 53) applyV53(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2484,5 +2486,72 @@ function applyV52(db: Database.Database): void {
     );
 
     UPDATE meta_schema SET version = 52 WHERE id = 1;
+  `);
+}
+
+/**
+ * agent_user_messages 收 AI 的话:加 role 列。
+ *
+ * 在此之前这张表只装 role='user' 的消息(myMessages.ts 的 `if (m.role !== "user")
+ * continue`),AI 说的话一个字都没进过 db —— 而 Claude Code 按 30 天滚动窗口删本地
+ * transcript,实测 170 个会话里已有 75 个的源文件消失,那些会话的 AI 回答永久没了。
+ *
+ * **为什么加列而不是建新表**(2026-08-17 eng review 被 codex outside voice 反转):
+ * 建新表要付跨两表搜索的全部代价 —— user 行在两表重复、两个 FTS 的 BM25 rank 不可比、
+ * 全局 LIMIT 失效、搜索结果只带数字 id 会打错 raw 路由(AgentMessages.tsx:14/81)。
+ * 而当初拒绝加列的两条理由,一条(is_human=0 同时表示噪音和 AI 回答)恰恰被这个 role
+ * 列本身消解,另一条(表名说谎)是改名问题。
+ *
+ * **为什么 10 个下游零回归**:它们全部带 `is_human = 1` 过滤(逐个核验过 aiRhythm /
+ * home.leads / attention / commitBridge / projectCalendar / topicStream×2 / replay /
+ * queries)。assistant 行 is_human=0,天然被隔离在既有查询之外。
+ *
+ * DEFAULT 'user' 让现有 5.6 万行自动归位 —— 它们本来全是 user 消息,语义正确。
+ * 实测 SQLite 的 ADD COLUMN 支持 NOT NULL + DEFAULT + CHECK 组合。
+ *
+ * 索引形状照抄 idx_aum_human_event(is_human, event_at_utc, source):等值列 + 排序列。
+ * EXPLAIN QUERY PLAN 实证那条能让 <3 码点的 LIKE 兜底路径沿时间倒序扫、凑够 LIMIT
+ * 就停(5.6 万行 23ms,无 SCAN 无临时排序)。若把 char_len 放进第二列则范围条件会掐断
+ * 排序能力,退化成全表扫 + 临时排序。
+ *
+ * `answering_user_key` 存这条 AI 消息在回答哪个提问(指向同会话内更早的那条 user 行的
+ * source_message_key,user 行自身为 NULL)。搜索命中一句 AI 的话时,中位长度只有 87 字,
+ * 孤立看不知道在回答什么 —— 这一列让结果能带一行提问上下文。
+ *
+ * **为什么 ingest 期算而不是查询期算**:实测一条 AI 消息离它回答的那个提问中位隔 6 条、
+ * P90 隔 26 条、最远 91 条(中间全是同一轮里被工具调用切开的 AI 正文段)。查询期要沿
+ * 时间倒扫找最近的 user 行,而表上没有 (source_session_id, event_at_utc) 索引,50 条
+ * 结果就是 50 次子查询。ingest 期顺序扫一遍是 O(n) 且只算一次。
+ * 实测 13294 条 kept assistant 100% 能找到前置 kept user,所以 NULL 只会出现在 user 行上。
+ */
+function applyV53(db: Database.Database): void {
+  // pragma 检查让两条 ALTER 幂等 —— 同 applyV41 的模式。SQLite 没有
+  // ADD COLUMN IF NOT EXISTS,而「版本号被降回去再 migrate」是真实存在的路径:
+  // 三个既有 migration 测试就是这么构造夹具的(migrate 到 head → 改 meta_schema
+  // 版本号 → 再 migrate),不做检查会直接 duplicate column name。
+  const cols = (
+    db.prepare("PRAGMA table_info(agent_user_messages)").all() as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
+
+  if (!cols.includes("role")) {
+    db.exec(
+      `ALTER TABLE agent_user_messages
+         ADD COLUMN role TEXT NOT NULL DEFAULT 'user'
+         CHECK (role IN ('user', 'assistant'));`
+    );
+  }
+  if (!cols.includes("answering_user_key")) {
+    db.exec(
+      "ALTER TABLE agent_user_messages ADD COLUMN answering_user_key TEXT;"
+    );
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_aum_role_event
+      ON agent_user_messages(role, event_at_utc);
+
+    UPDATE meta_schema SET version = 53 WHERE id = 1;
   `);
 }

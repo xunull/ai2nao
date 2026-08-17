@@ -104,31 +104,88 @@ export type ClaudeUserMessageExtract = {
   rawPayloadJson: string;
   cleanedText: string;
   isHuman: boolean;
+  /** V53:'user' | 'assistant'。 */
+  role: "user" | "assistant";
+  /** assistant 行在回答的那条 user 消息的 messageKey;user 行恒为 null。 */
+  answeringUserKey: string | null;
 };
 
 /**
- * 从一个 session 的 Message[](buildClaudeSession 产出)抽「用户消息」。抽屉 + ingest 共用。
- * role 门在此(只取 role==='user')。纯注入轮也返回(cleaned='' / isHuman=false),
- * 由调用方决定留底(ingest)或省略(抽屉)。
+ * 从一个 session 的 Message[](buildClaudeSession 产出)抽消息。抽屉 + ingest 共用。
+ *
+ * **两侧判据不同,这是有意的**:
+ *
+ * - **user**:沿用 V53 之前的口径 —— 收**全部** user 消息,不看 readingHidden。
+ *   纯注入轮也返回(cleaned='' / isHuman=false),由调用方决定留底(ingest)或省略(抽屉)。
+ *   改这条会让既有的 4.9 万条 is_human=0 留底行凭空消失,直接违反回归基线。
+ * - **assistant**:用 `readingHidden` 判据,只收「阅读模式下可见」的行。assistant 侧
+ *   没有历史包袱,而 readingHidden 已在真实语料上验证一周(滤掉 98.6% 的字节)。
+ *
+ * 纯 thinking 行(text 空、thinking 非空)**跳过**:它 readingHidden 为空(是 AI 的真实
+ * 输出,不该在阅读模式里藏掉),但 cleaned_text 会是空串,而 store 层对每行无条件
+ * syncFtsRow —— 空串会进 FTS 索引。实测全量语料只有 20 条,不值得为它引入一个
+ * 「有内容但不索引」的第三态。
+ *
+ * `answeringUserKey` 靠顺序扫描:表里只有 kept 行,同会话内 assistant 前面最近的那条
+ * user 就是它在回答的提问。实测 13294 条 kept assistant 100% 能找到前置 user。
+ */
+export function extractClaudeMessages(
+  messages: Message[]
+): ClaudeUserMessageExtract[] {
+  const out: ClaudeUserMessageExtract[] = [];
+  let lastUserKey: string | null = null;
+
+  for (const m of messages) {
+    if (m.role === "user") {
+      const rawText = m.content ?? "";
+      const cleanedText = cleanClaudeUserMessage(rawText);
+      const messageKey = m.id ?? "";
+      // 锚点只认「人说的话」——纯注入轮(cleaned 为空)不该成为 AI 回答的提问上下文。
+      if (cleanedText.trim().length > 0) lastUserKey = messageKey;
+      out.push({
+        messageKey,
+        eventAtMs: new Date(m.timestamp).getTime(),
+        rawText,
+        rawPayloadJson: JSON.stringify(rawText),
+        cleanedText,
+        isHuman: cleanedText.trim().length > 0,
+        role: "user",
+        answeringUserKey: null,
+      });
+      continue;
+    }
+
+    if (m.role !== "assistant") continue;
+    // 阅读模式藏掉的(tool-only / appendix)不入库。
+    if ((m.metadata as { readingHidden?: string } | undefined)?.readingHidden) {
+      continue;
+    }
+    const body = m.content ?? "";
+    // 纯 thinking 行:见上方注释,跳过而不是写空串。
+    if (!body.trim()) continue;
+    out.push({
+      messageKey: m.id ?? "",
+      eventAtMs: new Date(m.timestamp).getTime(),
+      rawText: body,
+      rawPayloadJson: JSON.stringify(body),
+      // AI 输出不经清洗 —— 它不会往自己嘴里塞 system-reminder。
+      cleanedText: body,
+      isHuman: false,
+      role: "assistant",
+      answeringUserKey: lastUserKey,
+    });
+  }
+  return out;
+}
+
+/**
+ * 只要 user 消息(「只看我说的」抽屉用,语义与 V53 之前完全一致)。
+ * 名字保持诚实:它确实只返回 user 行。ingest 要连 AI 一起收,用 `extractClaudeMessages`。
  */
 export function extractClaudeUserMessages(
   messages: Message[]
 ): ClaudeUserMessageExtract[] {
-  const out: ClaudeUserMessageExtract[] = [];
-  for (const m of messages) {
-    if (m.role !== "user") continue;
-    const rawText = m.content ?? "";
-    const cleanedText = cleanClaudeUserMessage(rawText);
-    out.push({
-      messageKey: m.id ?? "",
-      eventAtMs: new Date(m.timestamp).getTime(),
-      rawText,
-      rawPayloadJson: JSON.stringify(rawText),
-      cleanedText,
-      isHuman: cleanedText.trim().length > 0,
-    });
-  }
-  return out;
+  return extractClaudeMessages(messages).filter((m) => m.role === "user");
 }
 
 /** 从 raw_payload_json 重算(cleaner_version 回填)。payload = JSON 编码的原始 body。 */
