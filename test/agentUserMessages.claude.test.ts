@@ -30,9 +30,16 @@ function userMessage(id: string, content: string, iso = "2026-06-29T01:00:00Z"):
 }
 
 describe("CLAUDE_CLEANER_VERSION pin", () => {
-  it("cleaner=3 —— 改 claude 清洗规则时必须同步 +1 并回填", () => {
-    expect(CLAUDE_CLEANER_VERSION).toBe(3);
+  it("cleaner=4 —— 改 claude 清洗规则时必须同步 +1", () => {
+    expect(CLAUDE_CLEANER_VERSION).toBe(4);
     expect(CLAUDE_PARSER_VERSION).toBe(1);
+  });
+
+  // 措辞修正(2026-08-17):原文写「必须同步 +1 **并回填**」,但回填不会自动发生 ——
+  // recleanClaude(queries.ts:507)在生产代码里零调用,只有本文件在调。bump 之后
+  // 已有行会停在旧口径,只有新入库的行是新口径。见 TODOS.md「recleanClaude 是死代码」。
+  it("bump 不触发自动回填:这是已知缺口,不是这条 pin 的职责", () => {
+    expect(CLAUDE_CLEANER_VERSION).toBeGreaterThanOrEqual(4);
   });
 });
 
