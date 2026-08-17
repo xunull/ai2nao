@@ -17,6 +17,10 @@ type Hit = {
   sourceSessionId: string;
   eventAtUtc: string;
   snippet: string;
+  /** V53:命中的是谁说的。后端可选返回,老响应里没有。 */
+  role?: "user" | "assistant";
+  /** 命中 AI 的话时,它在回答的那条提问;锚点行已删则为 null。 */
+  answering?: string | null;
 };
 type SearchResp = { ok: true; hits: Hit[] };
 type RawResp = {
@@ -39,6 +43,19 @@ const SOURCES = [
   { value: "opencode", label: "OpenCode" },
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
+] as const;
+
+type RoleFilter = "user" | "assistant" | "all";
+
+/**
+ * 默认 "我说的" —— 与 AI 内容入库之前逐条一致。
+ * AI 消息是人类消息的 5.76 倍、中位只有 87 字,默认混进来会淹没结果,
+ * 所以「搜 AI 的话」做成显式动作而不是默认行为。
+ */
+const ROLE_FILTERS = [
+  { value: "user", label: "我说的" },
+  { value: "assistant", label: "AI 说的" },
+  { value: "all", label: "全部" },
 ] as const;
 
 const SOURCE_META: Record<string, { label: string; color: string }> = {
@@ -383,15 +400,24 @@ function BrowseList({ windowKey }: { windowKey: string }) {
 export function AgentMessages() {
   const [input, setInput] = useState("");
   const [source, setSource] = useState("");
-  const [submitted, setSubmitted] = useState<{ q: string; source: string }>({ q: "", source: "" });
+  // 默认 "user":与加 AI 内容之前逐条一致。搜 AI 的话是显式动作 —— AI 消息是人类的
+  // 5.76 倍且中位只有 87 字,默认混进来会淹没结果。
+  const [role, setRole] = useState<RoleFilter>("user");
+  const [submitted, setSubmitted] = useState<{ q: string; source: string; role: RoleFilter }>({
+    q: "",
+    source: "",
+    role: "user",
+  });
   const [openId, setOpenId] = useState<number | null>(null);
   const [windowKey, setWindowKey] = useState<string>("1w"); // 上提:图 + 浏览列表共用
 
   const q = useQuery<SearchResp>({
-    queryKey: ["aum-search", submitted.q, submitted.source],
+    queryKey: ["aum-search", submitted.q, submitted.source, submitted.role],
     queryFn: () => {
       const p = new URLSearchParams({ q: submitted.q });
       if (submitted.source) p.set("source", submitted.source);
+      // 只有非默认值才带上,免得给所有既有请求平白加一个参数。
+      if (submitted.role !== "user") p.set("role", submitted.role);
       return apiGet<SearchResp>(`/api/agent-user-messages/search?${p.toString()}`);
     },
     enabled: submitted.q.trim().length > 0,
@@ -402,7 +428,26 @@ export function AgentMessages() {
     id: h.id,
     source: h.source,
     eventAtUtc: h.eventAtUtc,
-    content: <Snippet text={h.snippet} />,
+    content: (
+      <div>
+        {h.role === "assistant" && (
+          <div className="mb-1 flex items-baseline gap-1.5 text-[11px] text-[var(--fg-muted)]">
+            <span className="shrink-0 rounded bg-violet-50 px-1 py-px font-medium text-violet-700 ring-1 ring-violet-200">
+              AI
+            </span>
+            {h.answering ? (
+              <span className="truncate" title={h.answering}>
+                在回答：{h.answering}
+              </span>
+            ) : (
+              // 锚点行已随源文件一起被删(孤儿会话)。不是 bug,说清楚。
+              <span className="italic">这条提问已随源文件删除</span>
+            )}
+          </div>
+        )}
+        <Snippet text={h.snippet} />
+      </div>
+    ),
   }));
 
   return (
@@ -410,8 +455,9 @@ export function AgentMessages() {
       <header className="mb-5">
         <h1 className="text-xl font-semibold text-[var(--fg)]">对话搜索</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
-          搜索你在各 AI agent 会话里**自己发的**消息（已过滤注入）。中文 2 字词走 LIKE、≥3 字走 trigram
-          全文索引。收录 OpenCode / Claude / Codex 三个 agent。
+          默认搜你自己发的消息（已过滤注入）。切到「AI 说的」可以搜 Claude
+          的回答——它按「只看对话」的口径入库，工具调用和系统事件不收。中文 2 字词走
+          LIKE、≥3 字走 trigram 全文索引。收录 OpenCode / Claude / Codex 三个 agent。
         </p>
       </header>
 
@@ -422,7 +468,7 @@ export function AgentMessages() {
         onSubmit={(e) => {
           e.preventDefault();
           setOpenId(null);
-          setSubmitted({ q: input.trim(), source });
+          setSubmitted({ q: input.trim(), source, role });
         }}
       >
         <input
@@ -434,12 +480,24 @@ export function AgentMessages() {
             setInput(v);
             // 清空输入 → 回到窗口浏览
             if (!v.trim()) {
-              setSubmitted({ q: "", source: "" });
+              setSubmitted({ q: "", source: "", role: "user" });
               setOpenId(null);
             }
           }}
           className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--fg)]"
         />
+        <select
+          value={role}
+          aria-label="搜谁说的话"
+          onChange={(e) => setRole(e.target.value as RoleFilter)}
+          className="rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm text-[var(--fg)]"
+        >
+          {ROLE_FILTERS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
         <select
           value={source}
           onChange={(e) => setSource(e.target.value)}
@@ -479,8 +537,19 @@ export function AgentMessages() {
 
           {!q.isLoading && hits.length === 0 && !q.isError && (
             <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
-              没搜到「{submitted.q}」。换个词试试，或确认 OpenCode 用量历史已同步（定时任务
-              <code className="mx-1">agent_user_messages.opencode.sync</code>）。
+              没搜到「{submitted.q}」。
+              {submitted.role === "user" ? (
+                <>
+                  试试切到「AI 说的」——
+                  默认只搜你自己发的消息，AI 的回答要显式选。
+                </>
+              ) : (
+                <>
+                  换个词试试，或确认同步任务已跑过（
+                  <code className="mx-1">agent_user_messages.claude.sync</code>）。
+                  AI 的回答从 V53 起才入库，更早的会话只有你的提问。
+                </>
+              )}
             </div>
           )}
         </>

@@ -119,3 +119,126 @@ describe("AgentMessages — 浏览默认 / 搜索接管 / 清空回浏览(codex#
     );
   });
 });
+
+/**
+ * role 筛选器(V53)。硬约束是**默认行为不变**:不选筛选器时请求里不该出现 role 参数,
+ * 后端拿不到就走 is_human=1,与加 AI 内容之前逐条一致。
+ */
+describe("AgentMessages — role 筛选器", () => {
+  const AI_SEARCH = {
+    ok: true,
+    hits: [
+      {
+        id: 11,
+        source: "claude",
+        sourceSessionId: "s11",
+        eventAtUtc: "2026-08-17T03:00:00Z",
+        snippet: "水位是已经处理干净的时间点",
+        role: "assistant",
+        answering: "帮我看下 watermark",
+      },
+      {
+        id: 12,
+        source: "claude",
+        sourceSessionId: "s12",
+        eventAtUtc: "2026-08-17T04:00:00Z",
+        snippet: "孤儿会话里的回答",
+        role: "assistant",
+        answering: null,
+      },
+    ],
+  };
+
+  /** 记下每次搜索请求的 URL,用来断言 role 参数。 */
+  function routerCapturing(urls: string[]) {
+    return (url: string): Response => {
+      if (url.includes("/analytics")) return jsonResponse(ANALYTICS);
+      if (url.includes("/list")) return jsonResponse(LIST);
+      if (url.includes("/search")) {
+        urls.push(url);
+        return jsonResponse(url.includes("role=assistant") ? AI_SEARCH : SEARCH);
+      }
+      return jsonResponse({ ok: true });
+    };
+  }
+
+  const search = (q: string) => {
+    fireEvent.change(screen.getByPlaceholderText("搜我说过的话…"), {
+      target: { value: q },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+  };
+
+  it("默认不带 role 参数 —— 老行为一字不变", async () => {
+    const urls: string[] = [];
+    installFetchMock(routerCapturing(urls));
+    renderPage();
+    await waitFor(() => screen.getByText("浏览到的消息"));
+
+    search("关键词");
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls[0]).not.toContain("role=");
+  });
+
+  it("切到「AI 说的」→ 请求带 role=assistant", async () => {
+    const urls: string[] = [];
+    installFetchMock(routerCapturing(urls));
+    renderPage();
+    await waitFor(() => screen.getByText("浏览到的消息"));
+
+    fireEvent.change(screen.getByLabelText("搜谁说的话"), {
+      target: { value: "assistant" },
+    });
+    search("水位");
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls[urls.length - 1]).toContain("role=assistant");
+  });
+
+  it("AI 命中显示「在回答」的提问上下文", async () => {
+    installFetchMock(routerCapturing([]));
+    renderPage();
+    await waitFor(() => screen.getByText("浏览到的消息"));
+
+    fireEvent.change(screen.getByLabelText("搜谁说的话"), {
+      target: { value: "assistant" },
+    });
+    search("水位");
+
+    await waitFor(() =>
+      expect(screen.getByText(/在回答：帮我看下 watermark/)).toBeInTheDocument()
+    );
+    // AI 标记让人一眼分清是谁说的。
+    expect(screen.getAllByText("AI").length).toBeGreaterThan(0);
+  });
+
+  it("锚点行已被删 → 说清楚不是 bug", async () => {
+    installFetchMock(routerCapturing([]));
+    renderPage();
+    await waitFor(() => screen.getByText("浏览到的消息"));
+
+    fireEvent.change(screen.getByLabelText("搜谁说的话"), {
+      target: { value: "assistant" },
+    });
+    search("水位");
+
+    await waitFor(() =>
+      expect(screen.getByText("这条提问已随源文件删除")).toBeInTheDocument()
+    );
+  });
+
+  it("默认筛选下的空态提示切到「AI 说的」", async () => {
+    installFetchMock((url) => {
+      if (url.includes("/analytics")) return jsonResponse(ANALYTICS);
+      if (url.includes("/list")) return jsonResponse(LIST);
+      if (url.includes("/search")) return jsonResponse({ ok: true, hits: [] });
+      return jsonResponse({ ok: true });
+    });
+    renderPage();
+    await waitFor(() => screen.getByText("浏览到的消息"));
+
+    search("查不到的词");
+    await waitFor(() =>
+      expect(screen.getByText(/试试切到「AI 说的」/)).toBeInTheDocument()
+    );
+  });
+});
