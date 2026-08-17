@@ -74,4 +74,37 @@ describe("cleanUserMessage", () => {
   it("空输入安全", () => {
     expect(cleanUserMessage("")).toBe("");
   });
+
+  // v4(2026-08-17):bash-* 三个标签。实测语料里 input 与 stdout/stderr 是两条独立
+  // user 消息(各 63 条),性质相反,所以剥法必须分开 —— 一刀切会让 63 条你敲过的命令消失。
+  describe("bash-* 控制标签(v4)", () => {
+    it("bash-input 只剥标签、留下你敲的命令", () => {
+      expect(cleanUserMessage("<bash-input>ls</bash-input>")).toBe("ls");
+      expect(cleanUserMessage("<bash-input>git status</bash-input>")).toBe(
+        "git status"
+      );
+    });
+
+    it("bash-stdout / bash-stderr 整块剥(机器输出)", () => {
+      expect(
+        cleanUserMessage("<bash-stdout>client.go\ncmd\ngo.mod</bash-stdout>")
+      ).toBe("");
+      expect(cleanUserMessage("<bash-stderr>fatal: not a repo</bash-stderr>")).toBe(
+        ""
+      );
+    });
+
+    it("真实形态:stdout 与空 stderr 连在一起 → 整条变空", () => {
+      const raw =
+        "<bash-stdout>On branch main\nnothing to commit</bash-stdout>" +
+        "<bash-stderr></bash-stderr>";
+      expect(cleanUserMessage(raw)).toBe("");
+    });
+
+    it("标签字面不会残留进 cleaned_text(否则会当人类词汇进 FTS)", () => {
+      const cleaned = cleanUserMessage("<bash-input>echo hi</bash-input>");
+      expect(cleaned).not.toContain("bash-input");
+      expect(cleaned).not.toContain("<");
+    });
+  });
 });

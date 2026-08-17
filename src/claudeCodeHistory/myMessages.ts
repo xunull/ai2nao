@@ -14,10 +14,15 @@ import type { Message } from "../cursorHistory/types.js";
  */
 // v2(2026-07-04):压缩摘要续接 / context 报告 / task-notification / 图片占位 过滤。
 // v3(2026-07-04):命令/skill 调用不再丢弃 → 显示紧凑 /名字(用户裁定:调用 skill 是我的输入)。
-export const CLAUDE_CLEANER_VERSION = 3;
+// v4(2026-08-17):bash-* 三个标签。**注意这不是一刀切** —— 实测语料里 bash-input 与
+//   bash-stdout/stderr 是 Claude Code 写出的**两条独立 user 消息**(各 63 条,全部
+//   is_human=1):前者包的是你敲的命令,后者是执行结果。所以 bash-input 只剥标签留内容
+//   (与 v3「调用 skill 是我的输入」同一裁定),stdout/stderr 整块剥(与 local-command-*
+//   同类)。一刀切整块剥会让 63 条你敲过的命令从「我说的话」里消失。
+export const CLAUDE_CLEANER_VERSION = 4;
 export const CLAUDE_PARSER_VERSION = 1;
 
-// 成对、可跨行的注入标记。
+// 成对、可跨行的注入标记(整块剥,含内容)。
 const PAIRED_TAGS = [
   "command-name",
   "command-message",
@@ -27,6 +32,8 @@ const PAIRED_TAGS = [
   "local-command-stderr",
   "system-reminder",
   "task-notification", // 后台任务完成通知注入(非人)。
+  "bash-stdout", // ! 命令的执行结果(机器输出)。
+  "bash-stderr",
 ];
 
 /** 粘图占位/元数据:`[Image: …]` / `[Image #N]` / `[Image showing …]`(Claude Code 注入,非 prose)。 */
@@ -60,8 +67,11 @@ export function cleanClaudeUserMessage(raw: string): string {
   }
 
   // 2) 残留的未闭合 / 自闭合同类标记。
+  //    `bash-[a-z]+` 在这里而**不在** PAIRED_TAGS 里,是为了让 <bash-input>ls</bash-input>
+  //    只掉标签、留下 `ls` —— 那是你敲的命令。stdout/stderr 已在上一步整块剥掉,
+  //    走到这里时只剩 bash-input 的一对标签。
   s = s.replace(
-    /<\/?(?:command-[a-z-]+|local-command-[a-z]+|system-reminder|task-[a-z-]+)[^>]*>/g,
+    /<\/?(?:command-[a-z-]+|local-command-[a-z]+|system-reminder|task-[a-z-]+|bash-[a-z]+)[^>]*>/g,
     ""
   );
 

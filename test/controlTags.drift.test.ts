@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CONTROL_TAG_NAMES } from "../web/src/util/controlTags.js";
+import { cleanClaudeUserMessage } from "../src/claudeCodeHistory/myMessages.js";
 
 /**
  * 漂移守卫(codex #4):web/src/util/controlTags.ts 是仓库根
@@ -32,5 +33,27 @@ describe("controlTags 漂移守卫 —— 前端副本 == 后端 summarize.ts", 
     // 后端至少解析出 12 个(防正则抽空导致假绿)。
     expect(backend.size).toBeGreaterThanOrEqual(12);
     expect([...frontend].sort()).toEqual([...backend].sort());
+  });
+});
+
+/**
+ * 第三处口径(2026-08-17 补):`cleanClaudeUserMessage` 是清洗链上唯一决定
+ * 「什么进 agent_user_messages.cleaned_text」的地方,而 cleaned_text 直接进 FTS。
+ * 上面那条守的是 controlTags.ts ↔ summarize.ts,**守不到这里** —— bash-* 三个标签
+ * 就是这么漏了四个月的(前端列进 CONTROL_TAG_NAMES,后端两条清洗路都不管,
+ * 结果 `<bash-stdout>` 当人类词汇进了全文索引)。
+ *
+ * 这里断言的是**行为**不是名单:前端认定为控制标签的,后端清洗后标签字面必须消失。
+ * 内容留不留是各标签的裁定(bash-input 留、stdout 整块剥),不在本守卫范围。
+ */
+describe("controlTags 漂移守卫 —— 后端 cleaner 覆盖前端认定的每个控制标签", () => {
+  it.each([...CONTROL_TAG_NAMES])("<%s> 的标签字面不残留", (tag) => {
+    const cleaned = cleanClaudeUserMessage(`<${tag}>NOISE_MARKER</${tag}>`);
+    expect(cleaned).not.toContain(`<${tag}`);
+    expect(cleaned).not.toContain(`</${tag}`);
+  });
+
+  it("守卫本身不会因为清单为空而假绿", () => {
+    expect(CONTROL_TAG_NAMES.length).toBeGreaterThanOrEqual(12);
   });
 });
