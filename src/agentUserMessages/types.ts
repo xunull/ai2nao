@@ -42,6 +42,14 @@ export type AgentUserMessageSearchHit = {
   sourceSessionId: string;
   eventAtUtc: string;
   snippet: string;
+  /** V53:命中的是谁说的。老调用方不看这个字段也不会坏。 */
+  role?: AgentMessageRole;
+  /**
+   * 命中 assistant 行时,它在回答的那条提问的正文(已清洗)。
+   * AI 单条中位只有 87 字,孤立看不知道在回答什么 —— 这一行是上下文。
+   * user 行、或锚点行已被删时为 null。
+   */
+  answering?: string | null;
 };
 
 /** 原文审计。 */

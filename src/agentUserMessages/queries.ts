@@ -34,13 +34,45 @@ import type {
   AgentUserMessageSource,
 } from "./types.js";
 
+/**
+ * 搜谁的话。**不传 = 只搜你的话**,与 V53 之前逐条一致 —— 这是硬约束:
+ * /agent-messages 今天已经能用,加 AI 内容不能让它变难用。
+ *
+ * AI 消息是人类消息的 5.76 倍(实测 13414 : 2299),中位长度只有 87 字,大量是
+ * 「好的,我来看看」。原方案是用 char_len 门槛压噪音,codex 指出那个维度选错了:
+ * 长度不等于价值 —— 会杀掉「是的,watermark 那行错了」这种高价值短答案,
+ * 却保留冗长套话。改成按 role 筛,让「搜 AI 的话」成为显式动作。
+ */
+export type SearchRoleFilter = "user" | "assistant" | "all";
+
 export type SearchOpts = {
   q: string;
   source?: AgentUserMessageSource;
   from?: string; // ISO 下界(含)
   to?: string; // ISO 上界(不含)
   limit?: number;
+  /** 缺省 "user":只搜 is_human=1 的行,与 V53 之前完全一致。 */
+  role?: SearchRoleFilter;
 };
+
+/**
+ * role 过滤的 SQL 片段。
+ *
+ * "user" 用 `is_human = 1` 而不是 `role = 'user'` —— 两者**不等价**:这张表里
+ * 还留着 4.9 万条 role='user' 但 is_human=0 的注入噪音行(留底,从不删)。
+ * 搜索从来只看 is_human=1,改用 role='user' 会把那堆噪音放进结果里。
+ */
+function roleFilterSql(role: SearchRoleFilter | undefined): string {
+  switch (role) {
+    case "assistant":
+      return "m.role = 'assistant'";
+    case "all":
+      return "(m.is_human = 1 OR m.role = 'assistant')";
+    case "user":
+    default:
+      return "m.is_human = 1";
+  }
+}
 
 /** fts5 phrase 查询:整串当一个短语,内部双引号翻倍转义。 */
 function ftsPhrase(q: string): string {
@@ -94,6 +126,7 @@ export function searchUserMessages(
     params.to = opts.to;
   }
   const filterSql = filters.length ? ` AND ${filters.join(" AND ")}` : "";
+  const roleSql = roleFilterSql(opts.role);
   params.limit = limit;
 
   // D4:<3 码点(2 字中文词 trigram 命中不了)→ LIKE 全表兜底。
@@ -103,9 +136,14 @@ export function searchUserMessages(
       .prepare(
         `SELECT m.id AS id, m.source AS source,
                 m.source_session_id AS sourceSessionId,
-                m.event_at_utc AS eventAtUtc, m.cleaned_text AS cleanedText
+                m.event_at_utc AS eventAtUtc, m.cleaned_text AS cleanedText,
+                m.role AS role,
+                (SELECT a.cleaned_text FROM agent_user_messages a
+                  WHERE a.source = m.source
+                    AND a.source_session_id = m.source_session_id
+                    AND a.source_message_key = m.answering_user_key) AS answering
          FROM agent_user_messages m
-         WHERE m.is_human = 1 AND m.cleaned_text LIKE @like ESCAPE '\\'${filterSql}
+         WHERE ${roleSql} AND m.cleaned_text LIKE @like ESCAPE '\\'${filterSql}
          ORDER BY m.event_at_utc DESC
          LIMIT @limit`
       )
@@ -115,6 +153,8 @@ export function searchUserMessages(
       sourceSessionId: string;
       eventAtUtc: string;
       cleanedText: string;
+      role: "user" | "assistant";
+      answering: string | null;
     }>;
     return rows.map((r) => ({
       id: r.id,
@@ -122,6 +162,8 @@ export function searchUserMessages(
       sourceSessionId: r.sourceSessionId,
       eventAtUtc: r.eventAtUtc,
       snippet: makeSnippet(r.cleanedText, q),
+      role: r.role,
+      answering: r.answering,
     }));
   }
 
@@ -132,10 +174,15 @@ export function searchUserMessages(
       `SELECT m.id AS id, m.source AS source,
               m.source_session_id AS sourceSessionId,
               m.event_at_utc AS eventAtUtc,
-              snippet(agent_user_messages_fts, 0, '[', ']', '…', 12) AS snippet
+              snippet(agent_user_messages_fts, 0, '[', ']', '…', 12) AS snippet,
+              m.role AS role,
+              (SELECT a.cleaned_text FROM agent_user_messages a
+                WHERE a.source = m.source
+                  AND a.source_session_id = m.source_session_id
+                  AND a.source_message_key = m.answering_user_key) AS answering
        FROM agent_user_messages_fts
        JOIN agent_user_messages m ON m.id = agent_user_messages_fts.rowid
-       WHERE agent_user_messages_fts MATCH @q AND m.is_human = 1${filterSql}
+       WHERE agent_user_messages_fts MATCH @q AND ${roleSql}${filterSql}
        ORDER BY rank
        LIMIT @limit`
     )
