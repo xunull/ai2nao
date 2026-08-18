@@ -1126,6 +1126,22 @@ Depends on / blocked by:
 
 **状态(2026-07-03):** ✅ **v1(opencode)+ v1.1(claude/codex + analytics)已实现并真实数据验证**（opencode 1050 / claude 21078 / codex 2281 行入库可搜;980 测试绿、web 出包）。清洗器统一到后端(option C)。剩:v2 语义搜索(可选)、周期性 id 对账 sweep(下方 P3)。
 
+**⚠️ 语义已扩(2026-08-17/18):这张表不再只装「用户自己发的消息」。** 上面的 What 写于
+只收 user 的时期,现在已经不准确 —— V53 加了 `role` 列,claude 与 codex 的 AI 回答也
+进来了(claude 13456 条 / 7.29 MB、codex 12055 条 / 7.66 MB),因为 Claude Code 按 30 天
+滚动窗口删本地 transcript,已经丢掉过 75 个会话的 AI 回答。
+
+读这张表时必须知道的三件事:
+- **`is_human = 1` 仍然只表示「人说的话」**,10 个既有消费点全部带这个过滤,所以加
+  assistant 行没有改变它们的输出(有 IRON RULE 测试守着)。
+- **`role` 才是「谁说的」**;`is_human = 0` 现在同时涵盖「注入噪音的 user 行」和
+  「AI 的正经回答」两种,单看它会误判。
+- **搜索默认仍只搜 `is_human = 1`**,搜 AI 的话要显式传 `role=assistant`
+  (`/agent-messages` 上是「AI 说的」筛选器)。
+
+表名 `agent_user_messages` 因此也带上了历史包袱 —— 改名要动 10 处引用 + 3 处 SQL
+字符串,2026-08-17 eng review 明确列为 NOT in scope,不是忘了。
+
 **Effort estimate:** M（v1 opencode 纵向切片：human ~2-3 天 / CC ~2-3 轮会话）
 **Priority:** P2（新能力，非阻塞；先验最脏的 opencode 源）
 
@@ -1402,39 +1418,93 @@ Priority: P2
 
 ---
 
-## codex / opencode 的 AI 正文尚未入库
+## codex 的 subagent 会话:4325 条 AI 回答搜得到但看不出在回答什么
 
-**What:** 2026-08-17 落地的「AI 正文入库」只做了 Claude 一家（eng review D1 的缩范围
-决定）。codex 与 opencode 的 assistant 内容仍然只存在于各自的源里，没有进
-`agent_user_messages`。
+**What:** 给 codex `sessionKind === "subagent"` 会话的 assistant 行补上
+`answering_user_key`（或等价的上下文来源）。
 
-**Why:** 三家的用户提问早就统一入库了，AI 那半边只补了 claude。`topicStream/conversation.ts`
-的三家聚类、`replay`、`attention` 目前看到的仍是「三家的提问 + 一家的回答」这种不对称视图。
+**Why:** 2026-08-18 的三态分流裁定 subagent 会话**只收 assistant、不收 user** ——
+它的 user 侧是派给 codex 的活儿（`Read this document and review it on 5 dimensions`），
+是机器注入。代价是那批 AI 回答全部没有锚点：真实语料实测 assistant 12055 条里
+**7730 条有锚点、4325 条没有**，后者正好等于 subagent 会话的 assistant 条数。
 
-实测（2026-08-17）：
-- **codex**：348 个会话 / 1110 MB 源文件，AI 正文 **15.82 MB / 26081 条**（比 Claude 的
-  7.29 MB 还多一倍）。源文件从 2026-04 起一条未删，**不存在时间压力**。
-- **opencode**：源是 `~/.local/share/opencode/opencode.db`（3.2 GB SQLite，`message` 表
-  9364 条），**不是** `storage/**/*.json` —— `opencodeIngest.ts:45` 读的是
-  `opencodeDbPath(dataDir)`。它的 prune 策略未验证。
+这 4325 条恰恰是价值密度最高的一批 —— codex 写回来的对抗性审查意见。搜到一条
+「response_item 是 agent_message 的真子集」，却看不出它在审什么，只能点进会话详情页。
+
+`/agent-messages` 现在对这种情况显示中性的「没有关联的提问」而不编造原因
+（早先写死的「这条提问已随源文件删除」对 codex 这种是假话，已修）。
+
+**两条候选路径：**
+1. **用会话标题当锚点** —— 最省事。subagent 会话的 title 往往就是任务描述，
+   不需要碰 user 侧口径，也不会把派活 prompt 放进搜索。
+2. **收 subagent 的 user 侧 + 剥离派活模板** —— 实测那批 user 清洗后 1087/1884 非空，
+   里面混着真人内容和 prompt 模板，剥离规则要单独实测才能写对。
+
+**Pros:** 搜索结果自解释；这批内容的价值密度在三家里最高。
+**Cons:** 路径 2 会动 user 侧口径，要重新验回归基线；路径 1 需要给
+`answering_user_key` 之外再加一个字段（或约定一种前缀），语义上不如真锚点干净。
+
+**Context:** 2026-08-18 实现 codex AI 正文入库时产生。当时的裁定（D1 三类分别处理）
+是有意接受这个代价的，不是遗漏。UI 侧已经诚实处理，所以这条不紧急。
+
+**Depends on / blocked by:** 无前置。
+
+**Effort:** S(human ~3h / CC ~20min，走路径 1) **Priority:** P3
+
+---
+
+## opencode 的 AI 正文尚未入库
+
+**What:** 三家里只剩 opencode 的 assistant 内容没进 `agent_user_messages`。
+Claude 于 2026-08-17 落地（V53 加 `role` 列），codex 于 2026-08-18 落地（三态分流）。
+
+**Why:** `topicStream/conversation.ts` 的三家聚类、`replay`、`attention` 现在看到的是
+「三家的提问 + 两家的回答」，仍然不对称。
+
+**实测（2026-08-18，120/400 会话样本，用生产代码 `loadOpencodeSessionDetail` 跑）：**
+
+| | 值 |
+|---|---|
+| assistant 有正文 | 427 条 / 0.188 MB |
+| assistant 空 content | 1757 条（**80.4%**） |
+| 平均正文长度 | 461 字节 |
+| 全量外推 | **~1423 条 / 0.63 MB** |
+| `metadata` 字段 | **完全为空** |
+| `readingHidden` | 未实现 |
+
+**对照已完成的两家**（都是全量实测，非外推）：
+
+| | AI 正文 |
+|---|---|
+| Claude | 13456 条 / 7.29 MB |
+| codex | 12055 条 / 7.66 MB |
+| **opencode** | **~1423 条 / 0.63 MB ← 是另两家的 8%** |
 
 **Pros:**
-- 补齐后 topicStream 聚类、replay「那天回放」、attention 同时变准。
-- codex 的 AI 正文量比 Claude 大一倍，价值密度不低。
+- 补齐后三家聚类真正对称。
+- 判定可能是三家里最简单的：80.4% 的 assistant 消息 content 天然为空，
+  「非空即正文」这条粗判据也许就够（Claude 要解析 content 块、codex 要看 metadata 分类）。
 
 **Cons:**
-- 两家的「什么算噪音」形态需**各自实测**才能写判定，不能照抄 Claude 的
-  `readingHidden`（Claude 那套是实测出来的）。这是最大的不确定工作量。
-- codex 的 rollout 格式 2026-08 变过：新增 `world_state`、
-  `inter_agent_communication_metadata` 两种记录类型。
-- codex 有 `programmatic` 门（`codexHistory/normalize.ts:543`）整场跳过 exec 会话；
-  实测被跳过的 AI 正文只占 codex 总量 2.2%（335 条 / 0.36 MB），但 office-hours 的 C1
-  已裁定「放开门 + user 侧前缀剥离」，实现时要一并处理。
-- opencode 是查表 + 行 ID 水位，与 claude/codex 的扫文件 + mtime 水位是两套 IO 模型。
+- **价值最低、成本最高**，这是 2026-08-18 决定延后的直接理由。0.63 MB 是 codex 的 7%，
+  而它读的是 `~/.local/share/opencode/opencode.db`（3.2 GB SQLite）而非扫文件
+  —— `opencodeIngest.ts:45` 用的是 `opencodeDbPath(dataDir)`。查表 + 行 ID 水位
+  与另两家的扫文件 + mtime 水位是两套 IO 模型。
+- `metadata` 全空意味着没有任何分类标记可用。codex 之所以好做，正是因为它的消息自带
+  `codexEventType`；opencode 什么都没有，判据只能从 content 形态里找。
+- prune 策略未验证。现在 `opencode.db` 的 `message` 表最新一条与 db 水位对齐，
+  但那可能只是因为闲置，不能当作「不会删」的证据。
 
-**Depends on / blocked by:** 无前置，Claude 那半边已落地可作参照。
+**可照搬的形状**（两家已验证）：
+- `extractXxxMessages` 收两侧 + `extractXxxUserMessages` 作为 `filter(role==='user')` 视图
+- assistant 侧走 `readingHidden` 判据，user 侧口径**一字不动**（保回归基线）
+- 空 content 的 assistant 不入库（否则往 FTS 写空串）
+- `answeringUserKey` 靠 ingest 期顺序扫描，不用 parent 指针
 
-**Effort:** L(human ~4d / CC ~50min，含两家语料的噪音形态实测) **Priority:** P2
+**Depends on / blocked by:** 无前置。
+
+**Effort:** M(human ~1.5d / CC ~35min，含语料噪音形态实测) **Priority:** P3
+（从 P2 降为 P3：另两家落地后，这 0.63 MB 的边际价值进一步下降）
 
 ---
 
