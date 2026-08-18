@@ -1,9 +1,13 @@
 /**
  * agent 用户消息统一库 DTO。设计:docs/agent-user-messages-design.md。
- * 表结构见 migrations.ts applyV42。
+ * 表结构见 migrations.ts applyV54(原建于 applyV42)。
  */
 
-export type AgentUserMessageSource = "claude" | "codex" | "opencode";
+/**
+ * V54 起 source 列不再有 CHECK 约束 —— 合法性就靠这个联合类型。加新源改这一行,
+ * 零迁移(改 CHECK 要重建 232 MB 的表,见 migrations.ts applyV54)。
+ */
+export type AgentUserMessageSource = "claude" | "codex" | "opencode" | "kimi";
 
 /** 消息角色。V53 起这张表也装 assistant 行(AI 正文入库)。 */
 export type AgentMessageRole = "user" | "assistant";

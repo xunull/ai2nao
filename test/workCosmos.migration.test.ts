@@ -207,11 +207,31 @@ describe("schema v42 — agent_user_messages 用户消息统一库", () => {
     ]);
   });
 
-  it("rejects unknown source value (CHECK)", () => {
+  /**
+   * V54 起 source 列**没有** CHECK 了 —— 改 CHECK 要重建 232 MB 的表,
+   * 每加一个 agent 源都付一次这个代价不划算。合法性下移到 TS 的
+   * AgentUserMessageSource 联合类型:写这张表只有几个 ingest 函数,全部走
+   * UpsertUserMessageInput,编译期就拦得住拼错。见 migrations.ts applyV54。
+   */
+  it("V54 起数据库不再拦未知 source —— 守卫在 TS 类型上", () => {
     const db = fresh();
-    expect(() => insertRow(db, { source: "cursor", cleaned: "x" })).toThrow(
-      /CHECK constraint/
-    );
+    expect(() => insertRow(db, { source: "cursor", cleaned: "x" })).not.toThrow();
+  });
+
+  it("role 的 CHECK 保留着(取值封闭且不由外部数据驱动)", () => {
+    const db = fresh();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO agent_user_messages
+             (source, source_session_id, source_message_key, event_at_utc, raw_text,
+              raw_payload_json, cleaned_text, is_human, char_len, cleaner_version,
+              parser_version, source_seen_at, ingested_at, updated_at, role)
+           VALUES ('claude','s','k-role','2026-08-18T00:00:00Z','r','"r"','c',
+                   0,1,1,1,'n','n','n','tool')`
+        )
+        .run()
+    ).toThrow(/CHECK constraint/);
   });
 
   it("trigram FTS matches a >=3-char CJK substring; AFTER DELETE clears fts", () => {

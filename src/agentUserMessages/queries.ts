@@ -247,6 +247,7 @@ export type UserMessageTimelineBucket = {
   claude: number;
   codex: number;
   opencode: number;
+  kimi: number;
   total: number;
 };
 
@@ -326,20 +327,21 @@ export function userMessageTimeline(
 
   const byKey = new Map<
     string,
-    { claude: number; codex: number; opencode: number }
+    { claude: number; codex: number; opencode: number; kimi: number }
   >();
   for (const r of rows) {
-    const e = byKey.get(r.k) ?? { claude: 0, codex: 0, opencode: 0 };
+    const e = byKey.get(r.k) ?? { claude: 0, codex: 0, opencode: 0, kimi: 0 };
     if (r.source === "claude") e.claude += r.n;
     else if (r.source === "codex") e.codex += r.n;
     else if (r.source === "opencode") e.opencode += r.n;
+    else if (r.source === "kimi") e.kimi += r.n;
     byKey.set(r.k, e);
   }
 
   let windowTotal = 0;
   const outBuckets: UserMessageTimelineBucket[] = buckets.map((b) => {
-    const e = byKey.get(b.key) ?? { claude: 0, codex: 0, opencode: 0 };
-    const total = e.claude + e.codex + e.opencode;
+    const e = byKey.get(b.key) ?? { claude: 0, codex: 0, opencode: 0, kimi: 0 };
+    const total = e.claude + e.codex + e.opencode + e.kimi;
     windowTotal += total;
     return {
       bucketStart: b.start.toISOString(),
@@ -347,6 +349,7 @@ export function userMessageTimeline(
       claude: e.claude,
       codex: e.codex,
       opencode: e.opencode,
+      kimi: e.kimi,
       total,
     };
   });

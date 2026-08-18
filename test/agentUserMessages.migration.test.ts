@@ -62,8 +62,8 @@ describe("V53 —— agent_user_messages.role", () => {
           version: number;
         }
       ).version;
-      expect(v).toBe(53);
-      expect(SCHEMA_VERSION).toBe(53);
+      expect(v).toBe(54);
+      expect(SCHEMA_VERSION).toBe(54);
 
       const role = (
         db.prepare("PRAGMA table_info(agent_user_messages)").all() as {
@@ -224,7 +224,7 @@ describe("V53 —— agent_user_messages.role", () => {
           version: number;
         }
       ).version;
-      expect(v).toBe(53);
+      expect(v).toBe(54);
     });
 
     it("连续跑两次 migrate 不炸", () => {

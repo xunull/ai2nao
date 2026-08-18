@@ -21,6 +21,7 @@ import { refreshMinimaxTokenUsage } from "../minimaxTokenUsage/refresh.js";
 import { ingestOpencodeUserMessages } from "../agentUserMessages/opencodeIngest.js";
 import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
+import { ingestKimiUserMessages } from "../agentUserMessages/kimiIngest.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
@@ -604,6 +605,30 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
             upserted: r.upserted,
             watermarkMs: r.watermarkMs,
             truncated: r.truncated,
+          },
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // kimi「我发的消息」+ AI 正文入库(供全文搜索)。本地 wire.jsonl 源、常开、无 key。
+      // 两个根:CLI(~/.kimi-code)与桌面版内嵌的 kimi-code 沙箱,格式相同、时间不重叠
+      // (2026-07-29 切换)。增量按文件 mtime 水位分批 upsert,失败钳制从第一天就带。
+      key: "agent_user_messages.kimi.sync",
+      label: "kimi 用户消息入库",
+      description:
+        "把 kimi 会话 wire.jsonl 里「我发的消息」与 AI 正文抽取后写入 agent_user_messages,供跨 agent 全文搜索。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = ingestKimiUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedFiles: r.scannedFiles,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
           },
           errorSummary: r.error ?? null,
         };

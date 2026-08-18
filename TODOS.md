@@ -1536,3 +1536,70 @@ LIKE 兜底 —— 这个设计本身是对的（`queries.ts:99` 的 D4 注释�
 **Depends on / blocked by:** 无。
 
 **Effort:** S(human ~2h / CC ~15min，不含「统一成哪种」的产品决策) **Priority:** P3
+
+## file-mtime 水位状态机已经有三份
+
+**What:** `claudeIngest.ts` / `codexIngest.ts` / `kimiIngest.ts` 各有一份「按文件 mtime 增量、分批 upsert、逐批推水位」的实现。抽成公共 helper(rule of three 已到)。
+
+**Why:** 这套状态机的每一种失败都是静默的,而**漂移已经真实发生过一次**:`7de68d1` 修的「文件解析失败但水位照推 → 那个文件被永久排除且 lastStatus 仍写 success」只落在 claude 一处,codex 至今带着同一个缺陷(`codexIngest.ts:88-92` 的 `catch { continue }` 没有钳制)。kimi 是第三份,它从第一天就带上了钳制,但那是靠人记得照抄。
+
+**Pros:**
+- 三处受益,以后加第四个文件型源不用重新踩钳制这个坑
+- 钳制逻辑只有一份,tripwire 测试也只需要一套
+
+**Cons:**
+- 要同时改两条已在生产的采集路径,回归面不小
+- 三家的文件枚举形状不同(claude 两层目录、codex 一层、kimi 两个根),抽象要挑对边界:共享的是「给定 {id, mtimeMs} 列表,按 mtime 升序处理、失败钳制、分批提交水位」,不是文件发现
+
+**Context:** 来自 `/plan-eng-review`(2026-08-18)kimi 入库评审的问题 6。当时选了 6C(修 codex 的 bug + kimi 写对 + 抽象另开 TODO),理由是重构的回归面不该与 applyV54 那个不可逆的 232 MB 迁移落在同一个 PR 里。参考 `TODOS.md` 里「外部只读数据源:抽公共同步状态机」那条 —— 它是 row-id 水位的同类问题,两条可以一起做。
+
+**Depends on / blocked by:** codex 的水位钳制修复先落地(PR2),否则抽象出来的 helper 会把一个带缺陷的行为固化成契约。
+
+**Effort:** M(human ~1d / CC ~40min) **Priority:** P2
+
+---
+
+## kimi 的 origin 为 null 是什么原因
+
+**What:** kimi 的 `context.append_message` 里有一批消息 `origin` 缺失,实测**全是真人打的字**,判据因此写成 `origin === null || origin.kind === "user"`。但成因没查清。
+
+**Why:** 这是 kimi 抽取口径里唯一一条「知其然不知其所以然」的规则。当前它是对的(2026-08-18 实测 162 条真人消息全部正确分类,`user-history` 对账差集为空),但如果 kimi 以后给别的东西也发 null origin,这条判据会把噪音当成人类提问放进搜索结果,而且是静默的。
+
+**Pros:**
+- 查清后可以把判据换成正面条件,而不是「排除法 + 经验」
+- 顺带可能解释为什么它只在 2026-08-11 之后出现
+
+**Cons:**
+- kimi 是闭源二进制,可能查不出来
+- 当前判据在实测数据上正确,收益是防御性的
+
+**Context:** 来自 `/office-hours`(2026-08-18)。分布很有特点:2026-08-08 之前的会话一条都没有,08-11 那个会话 12 条无 origin 对 13 条有 origin,两种混杂在同一个会话里。`test/kimiHistory.realData.test.ts` 有一条断言守着「这批确实进了抽取结果」,但它守不住「未来的 null origin 仍然是人」。可查的地方:各会话的 `logs/kimi-code.log`、`~/.kimi-code/logs/`、`~/.kimi-code/bin/`(340 MB,也许能 strings 出线索)。
+
+**Depends on / blocked by:** 无。
+
+**Effort:** S(human ~2h / CC ~20min) **Priority:** P2
+
+---
+
+## opencode 的 raw_payload_json 把附件全文内联了
+
+**What:** `agent_user_messages` 里 opencode 的 281 条真人提问占了 **56.2 MB** payload,而它们的正文只有 0.08 MB。最大一条是 **3.77 MB 换 553 字提问** —— 提问内容是「Analyze the attached file」,附件全文被内联进了 `raw_payload_json`。
+
+**Why:** 整张表 232.5 MB 里,真正的正文只有 1.9 MB;其余是 `raw_text`(68.2 MB)和 `raw_payload_json`(123.4 MB),而 opencode 这 281 行独占其中 56.2 MB。每加一个源都要重建这张表时,搬的主要是这些附件。
+
+**Pros:**
+- 省约 56 MB
+- 以后重建表(加源)会快一截
+
+**Cons:**
+- 附件留底**可能是故意的**:源文件会被删,payload 是唯一的原始副本
+- 要动 `opencodeIngest` 的 payload 口径(写侧),而已存的 281 行怎么办是另一个决定(改写?留着?)
+- 974 MB 的库里 56 MB 不疼,收益是长期的
+
+**Context:** 来自 `/plan-eng-review`(2026-08-18)kimi 入库评审的 Step 0,量表体积时发现。当时判定不在本轮范围(D2)。kimi 不会得这个病:它的 user content 534 个 part 共 0.512 MB,平均 1 KB,附件只存引用(`<attachment>{"type":"image","path":...}</attachment>`)不存内容 —— 那个引用也已经在 `cleanKimiUserText` 里从 `cleaned_text` 剥掉,只留在 `raw_text`。
+
+**Depends on / blocked by:** 无。做之前先确认「附件留底是不是故意的」。
+
+**Effort:** M(human ~4h / CC ~30min) **Priority:** P3
+
+---

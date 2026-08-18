@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -70,6 +70,7 @@ export function migrate(db: Database.Database): void {
     applyV51(db);
     applyV52(db);
     applyV53(db);
+    applyV54(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -129,6 +130,7 @@ export function migrate(db: Database.Database): void {
   if (v < 51) applyV51(db);
   if (v < 52) applyV52(db);
   if (v < 53) applyV53(db);
+  if (v < 54) applyV54(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2554,4 +2556,131 @@ function applyV53(db: Database.Database): void {
 
     UPDATE meta_schema SET version = 53 WHERE id = 1;
   `);
+}
+
+/**
+ * V54:重建 agent_user_messages,去掉 source 列的 CHECK。
+ *
+ * 为什么要重建整张表(232.5 MB / 6.2 万行):SQLite 不支持修改 CHECK 约束,唯一办法是
+ * 12 步重建(新建 → 搬数据 → 删旧 → 改名 → 重建索引触发器)。先例是 applyV49 给
+ * local_inventory_sync_runs 扩 source CHECK。这次不写新 CHECK —— source 的合法性
+ * 下移到 TS 的 AgentUserMessageSource 联合类型,以后加源改一行类型,零迁移。
+ * 保留 role 的 CHECK:它只有两个取值且是本次唯一没被外部数据驱动的列。
+ *
+ * 三件实测出来、写错就静默的事:
+ *
+ * 1. **必须包事务。** 仓库里所有 applyVNN 都是裸 db.exec 多语句(全文件只有一处
+ *    db.transaction)。实测:崩在 DROP 和 RENAME 之间 → 主表已删、版本号仍是 53、
+ *    数据只在 _v54 里,下次启动重跑撞 "no such table" 而 applyVNN 不可改 = 永久
+ *    启动失败。小表上这个窗口是毫秒所以从没出过事;这张表实测 6.74 秒。
+ *
+ * 2. **必须写显式列名,不能用 SELECT *。** role / answering_user_key 是 applyV53
+ *    用 ALTER 追加在末尾的。重写建表语句时把 role 挪到 is_human 旁边是人之常情,
+ *    而 SELECT * 按列序对应 —— 实测错位后 is_human=42、char_len='/p/a.jsonl',
+ *    零报错、事务照常提交。也不能照抄 applyV49 的 INSERT OR IGNORE(冲突时静默丢行);
+ *    普通 INSERT 抛错,配合事务就是干净回滚。
+ *
+ * 3. **触发器和索引会随 DROP TABLE 一起消失,FTS 不会。** 实测:DROP TABLE 不触发
+ *    AFTER DELETE,所以独立 fts5 表完好且 rowid 对齐(含空洞);但三个索引和
+ *    agent_user_messages_ad_fts 必须显式重建。漏了触发器没有任何东西会报错 ——
+ *    搜索走的是 fts JOIN 主表的内连接,孤儿 FTS 行被静默丢弃,只会无限膨胀。
+ */
+function applyV54(db: Database.Database): void {
+  // 幂等:CHECK 已经没了就只推版本号。"版本号被降回去再 migrate" 是真实路径
+  // (几个 migration 测试就这么造夹具),不判的话会白搬一遍 232 MB。
+  const ddl =
+    (
+      db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_user_messages'"
+        )
+        .get() as { sql: string } | undefined
+    )?.sql ?? "";
+  if (!ddl.includes("CHECK (source IN")) {
+    db.exec("UPDATE meta_schema SET version = 54 WHERE id = 1;");
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE agent_user_messages_v54 (
+        id                 INTEGER PRIMARY KEY,
+        source             TEXT NOT NULL,
+        source_session_id  TEXT NOT NULL,
+        source_message_key TEXT NOT NULL,
+        project            TEXT,
+        event_at_utc       TEXT NOT NULL,
+        raw_text           TEXT NOT NULL,
+        raw_payload_json   TEXT NOT NULL,
+        cleaned_text       TEXT NOT NULL,
+        is_human           INTEGER NOT NULL,
+        char_len           INTEGER NOT NULL,
+        cleaner_version    INTEGER NOT NULL,
+        parser_version     INTEGER NOT NULL,
+        source_path        TEXT,
+        source_seen_at     TEXT NOT NULL,
+        ingested_at        TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        role               TEXT NOT NULL DEFAULT 'user'
+                             CHECK (role IN ('user', 'assistant')),
+        answering_user_key TEXT,
+        UNIQUE (source, source_session_id, source_message_key)
+      );
+    `);
+
+    // 19 列逐个写死。id 是 INTEGER PRIMARY KEY(rowid 别名),显式带上它才能保住
+    // rowid —— 独立 fts5 靠 rowid = 主表 id 关联,错一个位整个搜索就对不上了。
+    db.exec(`
+      INSERT INTO agent_user_messages_v54 (
+        id, source, source_session_id, source_message_key, project,
+        event_at_utc, raw_text, raw_payload_json, cleaned_text, is_human,
+        char_len, cleaner_version, parser_version, source_path,
+        source_seen_at, ingested_at, updated_at, role, answering_user_key
+      )
+      SELECT
+        id, source, source_session_id, source_message_key, project,
+        event_at_utc, raw_text, raw_payload_json, cleaned_text, is_human,
+        char_len, cleaner_version, parser_version, source_path,
+        source_seen_at, ingested_at, updated_at, role, answering_user_key
+      FROM agent_user_messages;
+    `);
+
+    db.exec("DROP TABLE agent_user_messages;");
+    db.exec("ALTER TABLE agent_user_messages_v54 RENAME TO agent_user_messages;");
+
+    // 三个索引 + 触发器都随旧表没了,逐个重建(形状与 applyV42/V47/V53 一致)。
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_aum_source_event
+        ON agent_user_messages(source, event_at_utc);
+      CREATE INDEX IF NOT EXISTS idx_aum_human_event
+        ON agent_user_messages(is_human, event_at_utc, source);
+      CREATE INDEX IF NOT EXISTS idx_aum_role_event
+        ON agent_user_messages(role, event_at_utc);
+
+      CREATE TRIGGER IF NOT EXISTS agent_user_messages_ad_fts
+        AFTER DELETE ON agent_user_messages BEGIN
+          DELETE FROM agent_user_messages_fts WHERE rowid = old.id;
+        END;
+    `);
+
+    // 事务内自检:行数和 rowid 集合都必须与 FTS 对得上。对不上就抛,整个迁移回滚,
+    // 库还停在 v53 —— 好过带着一个搜不全的索引往下跑。
+    const bad = db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM agent_user_messages) AS main_rows,
+           (SELECT COUNT(*) FROM agent_user_messages_fts) AS fts_rows,
+           (SELECT COUNT(*) FROM agent_user_messages_fts f
+              WHERE NOT EXISTS (SELECT 1 FROM agent_user_messages m WHERE m.id = f.rowid)
+           ) AS orphan_fts`
+      )
+      .get() as { main_rows: number; fts_rows: number; orphan_fts: number };
+    if (bad.main_rows !== bad.fts_rows || bad.orphan_fts !== 0) {
+      throw new Error(
+        `applyV54 一致性自检失败: main=${bad.main_rows} fts=${bad.fts_rows} orphan=${bad.orphan_fts}`
+      );
+    }
+
+    db.exec("UPDATE meta_schema SET version = 54 WHERE id = 1;");
+  })();
 }

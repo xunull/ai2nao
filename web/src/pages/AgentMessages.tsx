@@ -43,6 +43,7 @@ const SOURCES = [
   { value: "opencode", label: "OpenCode" },
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
+  { value: "kimi", label: "kimi" },
 ] as const;
 
 type RoleFilter = "user" | "assistant" | "all";
@@ -62,6 +63,7 @@ const SOURCE_META: Record<string, { label: string; color: string }> = {
   claude: { label: "Claude", color: "#d97757" },
   codex: { label: "Codex", color: "#2563eb" },
   opencode: { label: "OpenCode", color: "#7c3aed" },
+  kimi: { label: "kimi", color: "#16a34a" },
 };
 
 /** 日期分隔条(按本地日分组);行内只留时分秒,不重复日期。 */
@@ -205,6 +207,7 @@ type TimelineBucket = {
   claude: number;
   codex: number;
   opencode: number;
+  kimi: number;
   total: number;
 };
 type Timeline = {
@@ -261,6 +264,7 @@ function AnalyticsStrip({
     claude: b.claude,
     codex: b.codex,
     opencode: b.opencode,
+    kimi: b.kimi,
   }));
   const delta = timeline.deltaRatio;
 
@@ -318,6 +322,7 @@ function AnalyticsStrip({
             <Bar dataKey="opencode" stackId="s" fill={SOURCE_META.opencode.color} />
             <Bar dataKey="claude" stackId="s" fill={SOURCE_META.claude.color} />
             <Bar dataKey="codex" stackId="s" fill={SOURCE_META.codex.color} />
+            <Bar dataKey="kimi" stackId="s" fill={SOURCE_META.kimi.color} />
           </BarChart>
         </ResponsiveContainer>
       </div>

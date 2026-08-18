@@ -3,7 +3,7 @@
  *
  * FTS 同步(D3/D10):独立 fts5 不是 external-content,`'rebuild'` 只重 tokenize 影子副本、
  * 捡不到更新后的 cleaned_text。故每次 upsert 后**逐行** DELETE+INSERT fts(rowid=主表 id)。
- * 主表删除由 applyV42 的 AFTER DELETE 触发器兜底清 fts。
+ * 主表删除由 AFTER DELETE 触发器兜底清 fts(applyV42 建,applyV54 重建表时同步重建)。
  */
 import type Database from "better-sqlite3";
 import type {
