@@ -71,6 +71,11 @@ import {
 import { migrateCredentials, migrateRagSettings } from "./settings/migrate.js";
 import { packageVersion } from "./path/packageRoot.js";
 import { openDatabase, openReadOnlyDatabase } from "./store/open.js";
+import { ingestClaudeUserMessages } from "./agentUserMessages/claudeIngest.js";
+import { ingestCodexUserMessages } from "./agentUserMessages/codexIngest.js";
+import { ingestKimiUserMessages } from "./agentUserMessages/kimiIngest.js";
+import { ingestOpencodeUserMessages } from "./agentUserMessages/opencodeIngest.js";
+import { setSyncState, getSyncState } from "./agentUserMessages/store.js";
 import { CARD_REGISTRY } from "./cards/registry.js";
 import { generateCardBundle } from "./cards/bundle.js";
 import { exportFixture, probeAttentionSource } from "./attention/probe.js";
@@ -2153,6 +2158,175 @@ attentionCmd
 // 正是用 ELECTRON_RUN_AS_NODE 跑的 —— 是 Electron 的二进制,但语义上就是 node,
 // 于是脚本路径本身会被当成子命令,报 "unknown command '.../daemon.mjs'"。
 // 这里的调用形态永远是 [执行文件, 脚本, ...参数],所以直接说清楚。
+
+/**
+ * agent_user_messages 的重扫入口。
+ *
+ * 存在的理由:给这张表加新的**行类型**(比如 2026-08 加 assistant 行)之后,已有的
+ * 水位会挡住回填 —— 旧文件的 mtime 都在水位之下,永远不会被重扫,而 ingest 的
+ * lastStatus 一直是 success。实测后果:codex 的 AI 正文一条都没有,claude 的只有
+ * 最近三周,而它的提问能回到 4 月。
+ *
+ * `--full` 把水位置 0 再跑。upsert 走 UNIQUE(source, session, key) 天然幂等,
+ * 不会重复插行 —— 但它是 ON CONFLICT DO UPDATE,**会重写已存在行的 cleaned_text**。
+ * 所以这个命令跑前跑后各拍一次快照并打出差异,让「顺带把旧行重清洗了」这件事
+ * 是看得见的,而不是一个只有读过代码的人才知道的副作用。
+ */
+const agentMessagesCmd = program
+  .command("agent-messages")
+  .description("Cross-agent conversation index (agent_user_messages)");
+
+type AumSourceName = "claude" | "codex" | "opencode" | "kimi";
+const AUM_SOURCES: AumSourceName[] = ["claude", "codex", "opencode", "kimi"];
+
+agentMessagesCmd
+  .command("resync")
+  .description(
+    "Re-run the conversation ingests. With --full, reset watermarks to 0 first so pre-existing files get re-scanned (needed after adding a new row type)."
+  )
+  .option("--db <path>", "SQLite database path", defaultDbPath())
+  .option(
+    "--source <name>",
+    "claude | codex | opencode | kimi | all",
+    "all"
+  )
+  .option("--full", "reset watermarks to 0 (re-scan everything)", false)
+  .option("--json", "print machine-readable JSON", false)
+  .action(
+    async (opts: { db: string; source: string; full: boolean; json: boolean }) => {
+      const want =
+        opts.source === "all"
+          ? AUM_SOURCES
+          : AUM_SOURCES.filter((s) => s === opts.source);
+      if (want.length === 0) {
+        console.error(`unknown --source ${opts.source}; expected one of: all ${AUM_SOURCES.join(" ")}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const db = openDatabase(opts.db);
+      try {
+        const snapshot = () =>
+          db
+            .prepare(
+              `SELECT source, role, is_human AS isHuman, cleaner_version AS cleanerVersion,
+                      COUNT(*) AS rows, SUM(char_len) AS chars
+               FROM agent_user_messages GROUP BY 1,2,3,4 ORDER BY 1,2,3,4`
+            )
+            .all() as {
+            source: string; role: string; isHuman: number;
+            cleanerVersion: number; rows: number; chars: number;
+          }[];
+
+        const before = snapshot();
+
+        if (opts.full) {
+          for (const src of want) {
+            const st = getSyncState(db, src);
+            setSyncState(db, src, {
+              watermarkMs: 0,
+              lastRunAt: st?.lastRunAt ?? null,
+              lastStatus: st?.lastStatus ?? null,
+              lastError: st?.lastError ?? null,
+            });
+          }
+        }
+
+        const results: Record<string, unknown> = {};
+        for (const src of want) {
+          if (src === "claude") results[src] = await ingestClaudeUserMessages(db);
+          else if (src === "codex") results[src] = await ingestCodexUserMessages(db);
+          else if (src === "opencode") results[src] = ingestOpencodeUserMessages(db);
+          else results[src] = ingestKimiUserMessages(db);
+        }
+
+        const after = snapshot();
+        const key = (r: { source: string; role: string; isHuman: number; cleanerVersion: number }) =>
+          `${r.source}/${r.role}/human=${r.isHuman}/cleaner=v${r.cleanerVersion}`;
+        const beforeMap = new Map(before.map((r) => [key(r), r]));
+        const afterMap = new Map(after.map((r) => [key(r), r]));
+        const changed: { key: string; rows: string; chars: string }[] = [];
+        for (const k of new Set([...beforeMap.keys(), ...afterMap.keys()])) {
+          const b = beforeMap.get(k);
+          const a = afterMap.get(k);
+          if (b?.rows === a?.rows && b?.chars === a?.chars) continue;
+          changed.push({
+            key: k,
+            rows: `${b?.rows ?? 0} → ${a?.rows ?? 0}`,
+            chars: `${b?.chars ?? 0} → ${a?.chars ?? 0}`,
+          });
+        }
+
+        /**
+         * 真人消息条数的逐源变化。
+         *
+         * 这里刻意**不做硬断言**。`--full` 会把已存在的行也重跑一遍清洗器
+         * (upsert 是 ON CONFLICT DO UPDATE),而清洗器升级本来就可能改变
+         * is_human —— 实测 claude 从 v3 升到 v4 后有 15 行被正确地重判为非人
+         * (内容是 "Base directory for this skill: ..." 这类机器注入,v3 误当成了人话)。
+         * 所以这是一份**要你看一眼**的报告,不是一个会误报的闸门。
+         * 真正不该发生的只有一件:某个原本有数据的源变成了 0。
+         */
+        const humanBySource = (rows: typeof before) => {
+          const m = new Map<string, number>();
+          for (const r of rows) {
+            if (r.isHuman !== 1) continue;
+            m.set(r.source, (m.get(r.source) ?? 0) + r.rows);
+          }
+          return m;
+        };
+        const hb = humanBySource(before);
+        const ha = humanBySource(after);
+        const humanDelta = [...new Set([...hb.keys(), ...ha.keys()])].sort().map((src) => ({
+          source: src,
+          before: hb.get(src) ?? 0,
+          after: ha.get(src) ?? 0,
+        }));
+        const wiped = humanDelta.filter((d) => d.before > 0 && d.after === 0);
+        const humanBefore = [...hb.values()].reduce((n, v) => n + v, 0);
+        const humanAfter = [...ha.values()].reduce((n, v) => n + v, 0);
+
+        if (opts.json) {
+          console.log(JSON.stringify({ results, changed, humanDelta, humanBefore, humanAfter }, null, 2));
+        } else {
+          for (const [src, r] of Object.entries(results)) {
+            console.error(`${src.padEnd(9)} ${JSON.stringify(r)}`);
+          }
+          console.error("");
+          if (changed.length === 0) {
+            console.error("没有任何分组发生变化。");
+          } else {
+            console.error("变化的分组(行数 / 字数):");
+            for (const c of changed.sort((x, y) => x.key.localeCompare(y.key))) {
+              console.error(`  ${c.key.padEnd(46)} ${c.rows.padEnd(18)} ${c.chars}`);
+            }
+          }
+          console.error("");
+          console.error("真人消息条数(逐源):");
+          for (const d of humanDelta) {
+            const diff = d.after - d.before;
+            const tag = diff === 0 ? "" : diff > 0 ? `  (+${diff})` : `  (${diff})`;
+            console.error(`  ${d.source.padEnd(9)} ${d.before} → ${d.after}${tag}`);
+          }
+          console.error(`  ${"合计".padEnd(9)} ${humanBefore} → ${humanAfter}`);
+          if (humanDelta.some((d) => d.after < d.before)) {
+            console.error(
+              "  注:条数下降通常是清洗器升级把机器注入重判为非人 —— 用 --json 看 changed 里的 cleaner 分组确认。"
+            );
+          }
+        }
+        if (wiped.length > 0) {
+          console.error(
+            `原本有数据的源变成了 0: ${wiped.map((w) => w.source).join(", ")}`
+          );
+          process.exitCode = 1;
+        }
+      } finally {
+        db.close();
+      }
+    }
+  );
+
 program.parseAsync(process.argv, { from: "node" }).catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
   process.exitCode = 1;

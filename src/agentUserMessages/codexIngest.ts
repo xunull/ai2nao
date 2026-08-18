@@ -21,10 +21,20 @@ import {
   CODEX_PARSER_VERSION,
   extractCodexMessages,
 } from "../codexHistory/myMessages.js";
+import { MAX_CODEX_JSONL_BYTES } from "../codexHistory/constants.js";
 import { codexSessionsRoot, resolveCodexRoot } from "../codexHistory/paths.js";
 import { slugFromPath } from "./projectKey.js";
 import { getSyncState, setSyncState, upsertUserMessagesBatch } from "./store.js";
 import type { UpsertUserMessageInput } from "./types.js";
+
+/** codex 的「文件太大」是确定性拒绝,与瞬时失败要分开处理(见下面的 catch)。 */
+function isTooLarge(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { kind?: unknown }).kind === "transcript-too-large"
+  );
+}
 
 const BATCH_FILES = 40;
 const MAX_FILES = 5000;
@@ -53,6 +63,24 @@ export async function ingestCodexUserMessages(
 
   const state = getSyncState(db, "codex");
   let watermark = state?.watermarkMs ?? 0;
+
+  /**
+   * 水位钳制。`7de68d1` 给 claudeIngest 修过同一个缺陷,当时没有同步到这里 ——
+   * 于是 codex 这条管子一直带着它:单文件解析失败 → `continue` 跳过 → 批内后面
+   * 一个成功的文件把 batchMaxMs 推过去 → 下一轮 `mtimeMs >= watermark` 把它
+   * 永久排除,而 lastStatus 照写 success。整条链上没有任何地方会响。
+   *
+   * 钳制方式与 claudeIngest 一致:取全 run 最小的失败 mtime,把水位拦在它之前。
+   * 不能按批算 —— batchMaxMs 每批重置且每批 commit 一次水位,批 N 钳住了,
+   * 批 N+1 的文件 mtime 更大,照样推过去。
+   */
+  let runFirstFailureMtime: number | null = null;
+  let tooLarge = 0;
+  const noteFileFailure = (mtimeMs: number) => {
+    if (runFirstFailureMtime === null || mtimeMs < runFirstFailureMtime) {
+      runFirstFailureMtime = mtimeMs;
+    }
+  };
 
   let files;
   let truncated = false;
@@ -88,10 +116,24 @@ export async function ingestCodexUserMessages(
         let built;
         try {
           built = await loadCodexSessionDetail(codexRoot, f.id);
-        } catch {
-          continue; // 单文件坏/过大 → 跳过
+        } catch (e) {
+          // 两种跳过要分开:
+          //   transcript-too-large  确定性拒绝 —— 文件不会变小,重扫一万次也一样。
+          //                         钳水位只会让管子永久卡在它之前,所以**不钳**,
+          //                         但计数写进 lastError,不让它变回静默。
+          //   其他                  可能是瞬时的(权限、写到一半、磁盘抖动)——
+          //                         钳住水位,下轮重试。
+          if (isTooLarge(e)) {
+            tooLarge++;
+          } else {
+            noteFileFailure(f.mtimeMs);
+          }
+          continue;
         }
-        if (!built) continue;
+        if (!built) {
+          noteFileFailure(f.mtimeMs);
+          continue;
+        }
         const codexMeta = built.session.metadata?.codex as
           | { programmatic?: boolean; sessionKind?: "normal" | "subagent" | "exec" }
           | undefined;
@@ -124,24 +166,48 @@ export async function ingestCodexUserMessages(
       }
 
       upserted += upsertUserMessagesBatch(db, rows, nowIso);
-      if (batchMaxMs > watermark) {
-        watermark = batchMaxMs;
+      const capped =
+        runFirstFailureMtime === null
+          ? batchMaxMs
+          : Math.min(batchMaxMs, runFirstFailureMtime - 1);
+      if (capped > watermark) {
+        watermark = capped;
         setSyncState(db, "codex", {
           watermarkMs: watermark,
           lastRunAt: nowIso,
-          lastStatus: "success",
+          lastStatus: runFirstFailureMtime === null ? "success" : "partial",
           lastError: truncated ? `truncated at ${MAX_FILES} files` : null,
         });
       }
     }
 
+    // 有跳过就不能报 success —— 以前这里无条件写 success,于是「水位推过了被跳过的
+    // 文件」这件事在 sync_state 里完全看不出来。
+    const notes: string[] = [];
+    if (truncated) notes.push(`truncated at ${MAX_FILES} files`);
+    if (tooLarge > 0) {
+      notes.push(`${tooLarge} 个会话超过 ${MAX_CODEX_JSONL_BYTES} 字节上限,已跳过(确定性拒绝,不影响水位)`);
+    }
+    if (runFirstFailureMtime !== null) {
+      notes.push(
+        `有文件解析失败,水位钳在 mtime ${runFirstFailureMtime} 之前,下轮重试`
+      );
+    }
+    const degraded = runFirstFailureMtime !== null;
     setSyncState(db, "codex", {
       watermarkMs: watermark,
       lastRunAt: nowIso,
-      lastStatus: "success",
-      lastError: truncated ? `truncated at ${MAX_FILES} files` : null,
+      lastStatus: degraded ? "partial" : "success",
+      lastError: notes.length > 0 ? notes.join(" | ") : null,
     });
-    return { status: "success", scannedFiles: scanned, upserted, watermarkMs: watermark, truncated };
+    return {
+      status: degraded ? "partial" : "success",
+      scannedFiles: scanned,
+      upserted,
+      watermarkMs: watermark,
+      truncated,
+      ...(degraded ? { error: notes.join(" | ") } : {}),
+    };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     setSyncState(db, "codex", {
