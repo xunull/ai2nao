@@ -304,6 +304,34 @@ function summaryTitle(firstUserText: string | null, fallback: string): string {
   return truncate(t, 120);
 }
 
+/**
+ * 阅读模式下这条 codex 消息为何该被隐藏;缺省 = 显示。与 claude 侧的
+ * `userReadingHidden` / `assistantReadingHidden` 同一职责,但判据完全不同 ——
+ * claude 要解析 content 块才知道一条是不是纯工具结果,codex 的消息**自带分类标记**。
+ *
+ * 只需要两条,而不是枚举五种事件类型:
+ *
+ * 1. `codexToolEvent` —— 上面四处 push 工具消息的地方(exec_command_end /
+ *    function_call / function_call_output / 任何 `*_call`)都已经打了这个标记。
+ *    用它而不是枚举类型名,新增的工具事件自动被覆盖。这些消息的 content 是本文件
+ *    自己拼的占位符(`Tool call: xxx`),实测平均 27 字节,无信息量。
+ * 2. `codexSource === "response_item"` —— 同一条内容的第二份记录。codex 把每条
+ *    消息既写进 event_msg 又写进 response_item;实测(49 会话)response_item 是
+ *    agent_message 的真子集:完全相同 909 条、只在 agent 里有 1237 条、
+ *    **只在 response 里有 0 条**。所以藏后者零损失。
+ *
+ * 未在此列的(agent_message、event_msg 的 user_message)= 可见。未知的 event_msg
+ * 类型根本不产生 Message(上面的分支没有 else),不需要在这里兜底。
+ */
+function codexReadingHidden(m: Message): "tool-only" | "duplicate" | undefined {
+  const meta = m.metadata as
+    | { codexToolEvent?: boolean; codexSource?: string }
+    | undefined;
+  if (meta?.codexToolEvent) return "tool-only";
+  if (meta?.codexSource === "response_item") return "duplicate";
+  return undefined;
+}
+
 export function buildCodexSession(options: {
   sessionId: string;
   parse: ParseJsonlResult;
@@ -342,6 +370,10 @@ export function buildCodexSession(options: {
   };
 
   const pushMessage = (m: Message) => {
+    const hidden = codexReadingHidden(m);
+    if (hidden) {
+      m.metadata = { ...(m.metadata ?? {}), readingHidden: hidden };
+    }
     messages.push(m);
     bumpTime(m.timestamp);
   };
@@ -539,9 +571,20 @@ export function buildCodexSession(options: {
     titleFromEvent?.trim() ||
     summaryTitle(firstUserText, "");
   const preview = firstUserText ? truncate(firstUserText, 100) : title;
-  // 程序化会话:codex exec / 子代理审批(guardian)/ 插件跑的,user_message 全是机器注入,非真人。
-  const programmatic =
-    sourceKind === "exec" || originator === "codex_exec" || subagent;
+  // 会话性质三态(2026-08-18)。原来这里是一个布尔值,把三种性质完全不同的会话压成
+  // 一类然后整场跳过,误杀了大量真人内容。全量实测 349 个会话的分布与各自的 user 侧
+  // 干净度见 CodexSessionMetadata.sessionKind 的注释。
+  //
+  // 判定顺序有意义:exec 优先于 subagent —— 两者同时命中时(实测 12 个会话)按更严格的
+  // exec 处理,因为那批的 user 侧确实全是机器 prompt。
+  const sessionKind: "normal" | "subagent" | "exec" =
+    sourceKind === "exec" || originator === "codex_exec"
+      ? "exec"
+      : subagent
+        ? "subagent"
+        : "normal";
+  // 旧字段保留为别名:仍有调用方读它,语义不变(非 normal 即程序化)。
+  const programmatic = sessionKind !== "normal";
   const metadata: { codex: CodexSessionMetadata } = {
     codex: {
       cwd: cwd || thread?.cwd || "",
@@ -553,6 +596,7 @@ export function buildCodexSession(options: {
       degradationReason: options.degradationReason,
       metrics,
       programmatic,
+      sessionKind,
     },
   };
 

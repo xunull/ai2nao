@@ -2,7 +2,13 @@
  * Codex → agent_user_messages 摄取(v1.1)。
  *
  * 增量(D9):按 rollout jsonl 文件 mtime 水位 `>=` 过滤,分批 upsert + 逐批推水位。
- * 口径:共享 extractCodexUserMessages(含 event_msg 双重门 + exec 样板剥离,与抽屉端点同源)。
+ * 口径:共享 extractCodexMessages(含三态分流 + event_msg 双重门 + exec 样板剥离,与抽屉
+ * 端点同源;抽屉那侧调 extractCodexUserMessages,是同一函数 filter role==='user' 的视图)。
+ *
+ * 2026-08-18 起连 AI 的话一起收。原来只收 user,且「programmatic 就整场跳过」——
+ * 全量实测 349 个会话证明那个布尔门把三种性质不同的会话压成一类:normal(126 会话,
+ * AI 正文 13.24 MB)是主体、subagent(137 会话,2.57 MB)的 AI 侧是 codex 写的审查意见
+ * 但 user 侧是派活 prompt、exec(86 会话,0.37 MB)两侧都是机器注入。现按三态分别处理。
  * 自然 key:source_session_id = 文件 id(rollout uuid),source_message_key = user-L<line>。
  * 诚实:listCodexTranscriptFiles 有 5000 上限,truncated 时在 summary 标注(不静默丢)。
  */
@@ -13,7 +19,7 @@ import { loadCodexSessionDetail } from "../codexHistory/load.js";
 import {
   CODEX_CLEANER_VERSION,
   CODEX_PARSER_VERSION,
-  extractCodexUserMessages,
+  extractCodexMessages,
 } from "../codexHistory/myMessages.js";
 import { codexSessionsRoot, resolveCodexRoot } from "../codexHistory/paths.js";
 import { slugFromPath } from "./projectKey.js";
@@ -87,13 +93,15 @@ export async function ingestCodexUserMessages(
         }
         if (!built) continue;
         const codexMeta = built.session.metadata?.codex as
-          | { programmatic?: boolean }
+          | { programmatic?: boolean; sessionKind?: "normal" | "subagent" | "exec" }
           | undefined;
-        const programmatic = codexMeta?.programmatic ?? false;
+        // 三态优先;拿不到时退回旧布尔(true → 按最严格的 exec 处理)。
+        const sessionKind =
+          codexMeta?.sessionKind ?? (codexMeta?.programmatic ? "exec" : "normal");
         // 从 session cwd 回填 project(slug,与 claude 对齐;供对话↔提交桥归属)。
         const project = slugFromPath(built.session.workspacePath);
-        for (const ex of extractCodexUserMessages(built.session.messages, {
-          programmatic,
+        for (const ex of extractCodexMessages(built.session.messages, {
+          sessionKind,
         })) {
           rows.push({
             source: "codex",
@@ -108,6 +116,8 @@ export async function ingestCodexUserMessages(
             cleanerVersion: CODEX_CLEANER_VERSION,
             parserVersion: CODEX_PARSER_VERSION,
             sourcePath: f.filePath,
+            role: ex.role,
+            answeringUserKey: ex.answeringUserKey,
           });
         }
         if (f.mtimeMs > batchMaxMs) batchMaxMs = f.mtimeMs;

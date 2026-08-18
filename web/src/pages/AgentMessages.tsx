@@ -440,8 +440,11 @@ export function AgentMessages() {
                 在回答：{h.answering}
               </span>
             ) : (
-              // 锚点行已随源文件一起被删(孤儿会话)。不是 bug,说清楚。
-              <span className="italic">这条提问已随源文件删除</span>
+              // 没有锚点有两种成因,而这里分不出是哪一种,所以不编原因:
+              //   1. claude 的孤儿会话 —— 那条提问随源文件一起被 30 天窗口删了
+              //   2. codex 的 subagent 会话 —— 它的 user 侧是派活的 prompt,按设计不入库
+              // 早先这里写死「已随源文件删除」,对第 2 种是假话。
+              <span className="italic">没有关联的提问</span>
             )}
           </div>
         )}

@@ -211,7 +211,9 @@ describe("AgentMessages — role 筛选器", () => {
     expect(screen.getAllByText("AI").length).toBeGreaterThan(0);
   });
 
-  it("锚点行已被删 → 说清楚不是 bug", async () => {
+  // 没有锚点有两种成因(claude 孤儿会话 / codex subagent 会话),UI 分不出来,
+  // 所以文案保持中性 —— 早先写死「已随源文件删除」,对 codex 那种是假话。
+  it("没有锚点 → 中性文案,不编造原因", async () => {
     installFetchMock(routerCapturing([]));
     renderPage();
     await waitFor(() => screen.getByText("浏览到的消息"));
@@ -222,7 +224,7 @@ describe("AgentMessages — role 筛选器", () => {
     search("水位");
 
     await waitFor(() =>
-      expect(screen.getByText("这条提问已随源文件删除")).toBeInTheDocument()
+      expect(screen.getByText("没有关联的提问")).toBeInTheDocument()
     );
   });
 

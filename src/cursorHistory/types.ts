@@ -117,8 +117,14 @@ export interface Message {
      * 阅读模式下这条为何该被隐藏;缺省 = 显示。**后端算,前端只读**——「什么算噪音」
      * 的口径与 `cleanClaudeUserMessage` 同一份,不在前端另立一套(会漂)。
      * 用枚举而非 boolean:前端要能分开处理(例如以后把 tool-only 压成一行摘要而非全藏)。
+     *
+     * `duplicate`(2026-08-18 加,codex 专用):同一条内容的第二份记录。codex 把每条 AI
+     * 回复既写进 event_msg 又写进 response_item,实测 response_item 是 agent_message 的
+     * **真子集**(49 会话:完全相同 909 条、只在 agent 里有 1237 条、只在 response 里有 0 条),
+     * 留前者零损失。不复用 tool-only —— 那个值的定义是「整条只是工具调用/结果」,
+     * 而这里是完整的 AI 正文,复用会让排查的人找错方向。
      */
-    readingHidden?: "appendix" | "tool-only" | "injected";
+    readingHidden?: "appendix" | "tool-only" | "injected" | "duplicate";
     /** AskUserQuestion 的作答:问题 → 选中项。来自 jsonl 行顶层 `toolUseResult.answers`。 */
     answers?: Record<string, string>;
     /**
