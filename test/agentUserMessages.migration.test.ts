@@ -62,8 +62,9 @@ describe("V53 —— agent_user_messages.role", () => {
           version: number;
         }
       ).version;
-      expect(v).toBe(54);
-      expect(SCHEMA_VERSION).toBe(54);
+      expect(v).toBe(SCHEMA_VERSION);
+      // head 不写死 —— 只要求 V54 已经在链条里(后续 migration 会继续往上加)。
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(54);
 
       const role = (
         db.prepare("PRAGMA table_info(agent_user_messages)").all() as {
@@ -224,7 +225,7 @@ describe("V53 —— agent_user_messages.role", () => {
           version: number;
         }
       ).version;
-      expect(v).toBe(54);
+      expect(v).toBe(SCHEMA_VERSION);
     });
 
     it("连续跑两次 migrate 不炸", () => {

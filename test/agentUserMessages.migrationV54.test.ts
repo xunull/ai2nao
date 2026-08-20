@@ -210,7 +210,8 @@ describe("V54 —— 去掉 source 的 CHECK", () => {
       const v = (db.prepare("SELECT version FROM meta_schema WHERE id=1").get() as
         { version: number }).version;
       expect(v).toBe(SCHEMA_VERSION);
-      expect(SCHEMA_VERSION).toBe(54);
+      // head 不写死 —— 只要求 V54 已经在链条里(后续 migration 会继续往上加)。
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(54);
     });
 
     it("CHECK 已经没了时不再白搬一遍表", () => {
@@ -221,7 +222,7 @@ describe("V54 —— 去掉 source 的 CHECK", () => {
       expect(() => migrate(db)).not.toThrow();
       const v = (db.prepare("SELECT version FROM meta_schema WHERE id=1").get() as
         { version: number }).version;
-      expect(v).toBe(54);
+      expect(v).toBe(SCHEMA_VERSION);
       expect(
         (db.prepare("SELECT COUNT(*) n FROM agent_user_messages").get() as { n: number }).n
       ).toBe(3);

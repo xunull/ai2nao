@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 54;
+export const SCHEMA_VERSION = 55;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -71,6 +71,7 @@ export function migrate(db: Database.Database): void {
     applyV52(db);
     applyV53(db);
     applyV54(db);
+    applyV55(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -131,6 +132,7 @@ export function migrate(db: Database.Database): void {
   if (v < 52) applyV52(db);
   if (v < 53) applyV53(db);
   if (v < 54) applyV54(db);
+  if (v < 55) applyV55(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2682,5 +2684,126 @@ function applyV54(db: Database.Database): void {
     }
 
     db.exec("UPDATE meta_schema SET version = 54 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V55 — kimi token 用量的两张表。
+ *
+ * ## 为什么主表是 **agent** 粒度而不是 session 粒度
+ *
+ * claude / codex 一个会话对应一个文件,所以它们的主表是 session 粒度。
+ * kimi 不是:一个会话下有 `agents/<main|agent-N>/wire.jsonl` 多个文件,
+ * 实测 29 个会话里 6 个是多 agent,最多一个会话有 **12 个** agent 文件。
+ *
+ * 如果照抄 session 粒度,那么「12 个 agent 里坏了 1 个」就只能给整个会话
+ * 记一个最差态。而趋势页的 token SUM 门禁是 `token_status='full'`,
+ * 于是那 11 个好文件的 token 会**整场从图表里消失** —— 一个诊断列
+ * (`covered_agents`)只能记录这个损失,阻止不了它。
+ * (这条是 codex outside voice 的 X2 抓到的;主评审最初把它写反了。)
+ *
+ * 一行一个 agent 文件之后:坏的那个 agent 记 error 且不贡献 token,
+ * 好的 11 个照常计入。会话级的「11/12 覆盖」是 COUNT 出来的,不用存。
+ *
+ * 单位差异由 `SourceCapabilities.coverageUnit = "agent"` 显式承载 ——
+ * kimi 的覆盖率单位是 agent,claude/codex 是 session,两者不能汇总成
+ * 同一个百分比,totals 会因此报 `coverageUnit: "mixed"`。
+ *
+ * ## 事件键(X3)
+ *
+ * `(session_id, agent, event_ordinal)`,`event_ordinal` 是该 `usage.record`
+ * 在文件内的出现序号。**不用时间戳做键** —— 实测「time 全局唯一」是观察
+ * 不是格式契约。ingest 侧按文件事务性 delete-and-replace,所以文件被截断、
+ * 重写或删除时旧事件不会残留。
+ *
+ * `(event_at, session_id, agent)` 复合索引只服务查询(趋势页 event JOIN agent),
+ * **不兼任幂等键**。
+ *
+ * ## 列按原子分量存(X1)
+ *
+ * fresh_input / cache_read_input / cache_creation_input / output。
+ * kimi 的 `usage.record.inputOther` 直接就是 `fresh_input`,零转换 ——
+ * 存融合值的话「真实新增」要靠减法,映射写反会得到大负数。
+ */
+function applyV55(db: Database.Database): void {
+  // 幂等:表已在就只推版本号(migration 测试会把版本号降回去重跑)。
+  const exists = db
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kimi_token_usage_event'"
+    )
+    .get();
+  if (exists) {
+    db.exec("UPDATE meta_schema SET version = 55 WHERE id = 1;");
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE kimi_agent_token_usage (
+        session_id          TEXT NOT NULL,
+        agent               TEXT NOT NULL,
+        file_path           TEXT NOT NULL,
+        file_mtime_ms       INTEGER NOT NULL,
+        file_size_bytes     INTEGER NOT NULL,
+        root_kind           TEXT NOT NULL CHECK (root_kind IN ('cli', 'desktop')),
+        cwd                 TEXT NOT NULL,
+        project_key         TEXT NOT NULL,
+        project_path        TEXT NOT NULL,
+        identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+        title               TEXT,
+        model               TEXT,
+        created_at          TEXT,
+        last_updated_at     TEXT NOT NULL,
+        token_status        TEXT NOT NULL CHECK (token_status IN ('full', 'unknown', 'error')),
+        parse_error         TEXT,
+        missing_since       TEXT,
+        source_seen_at      TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        PRIMARY KEY (session_id, agent)
+      );
+
+      CREATE INDEX idx_kimi_agent_project_updated
+        ON kimi_agent_token_usage(project_key, last_updated_at DESC);
+      CREATE INDEX idx_kimi_agent_updated
+        ON kimi_agent_token_usage(last_updated_at DESC);
+      CREATE INDEX idx_kimi_agent_file
+        ON kimi_agent_token_usage(file_path);
+      CREATE INDEX idx_kimi_agent_missing
+        ON kimi_agent_token_usage(missing_since);
+
+      CREATE TABLE kimi_token_usage_event (
+        session_id           TEXT NOT NULL,
+        agent                TEXT NOT NULL,
+        -- 该 usage.record 在文件内的出现序号(0 起)。稳定事件键的一半。
+        event_ordinal        INTEGER NOT NULL,
+        event_at             TEXT NOT NULL,
+        -- 原子分量:不存任何可派生的量(X1)
+        fresh_input          INTEGER NOT NULL DEFAULT 0,
+        cache_read_input     INTEGER NOT NULL DEFAULT 0,
+        cache_creation_input INTEGER NOT NULL DEFAULT 0,
+        output               INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, agent, event_ordinal)
+      );
+
+      -- 只服务趋势页的 event JOIN agent + 时间范围;不兼任幂等键。
+      CREATE INDEX idx_kimi_token_event_at
+        ON kimi_token_usage_event(event_at, session_id, agent);
+
+      CREATE TABLE kimi_token_usage_state (
+        id                        INTEGER PRIMARY KEY CHECK (id = 1),
+        rule_version              INTEGER NOT NULL,
+        last_rebuilt_at           TEXT,
+        last_error                TEXT,
+        source_agent_count        INTEGER NOT NULL DEFAULT 0,
+        indexed_agent_count       INTEGER NOT NULL DEFAULT 0,
+        token_known_agent_count   INTEGER NOT NULL DEFAULT 0,
+        token_unknown_agent_count INTEGER NOT NULL DEFAULT 0,
+        error_agent_count         INTEGER NOT NULL DEFAULT 0,
+        skipped_unchanged_count   INTEGER NOT NULL DEFAULT 0,
+        duration_ms               INTEGER,
+        updated_at                TEXT NOT NULL
+      );
+    `);
+    db.exec("UPDATE meta_schema SET version = 55 WHERE id = 1;");
   })();
 }
