@@ -196,7 +196,7 @@ const claudeAdapter: TokenSourceAdapter = {
     cacheRead: true,
     cacheCreation: true,
     reasoningOutput: false,
-    sessionCounts: true,
+    coverageUnit: "session",
   },
   probePresence: (db) =>
     everPresent(db, "claude_session_token_usage_state", "claude_session_token_usage"),
@@ -287,7 +287,7 @@ const codexAdapter: TokenSourceAdapter = {
     // codex 没有 cache 写入这个概念 —— 不是「恒为 0」,是不适用。
     cacheCreation: false,
     reasoningOutput: true,
-    sessionCounts: true,
+    coverageUnit: "session",
   },
   probePresence: (db) =>
     everPresent(db, "codex_token_usage_state", "codex_session_token_usage"),
@@ -369,7 +369,7 @@ const minimaxAdapter: TokenSourceAdapter = {
     cacheCreation: true,
     reasoningOutput: false,
     // 逐小时账单事件,没有 session 概念 —— 三态计数不适用,不是「恒为 0」。
-    sessionCounts: false,
+    coverageUnit: null,
   },
   /**
    * MiniMax 是远程账单源,没有本地同步状态表。

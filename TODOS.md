@@ -904,29 +904,6 @@ Depends on / blocked by:
 
 ---
 
-## Diagnostic type 三处同款抽公共 util
-
-**What:** `src/util/diagnostics.ts` 抽 `type Diagnostic = { severity: "info" | "warning" | "error"; kind: string; message: string; ... }`，让 workDashboard / workRecap / workTokensTrend 全部 import。
-
-**Why:** 现有三处（含本 PR 即将引入的 workTokensTrend 是第四处）各定义同款 type，~10 行重复 × 4。未来加 source 会继续漂移；每加一处单点维护成本递增。
-
-**Pros:**
-- 单点 type 维护
-- 跨 module 互通 diagnostic 数组形状，可写公共 UI 组件统一渲染
-
-**Cons:**
-- 抽公共 util 有 over-abstraction 风险（虽然 4 处够多了）
-- 各 module 当前有 namespace-prefix 前缀（如 `WorkTokensTrendDiagnostic`），抽出后命名要重新决定
-
-**Context:** 来源于 `/plan-eng-review` 对 work-tokens-trend 设计文档的 Section 2 review（2026-06-10）。当时选不在本 PR 中处理以保持 PR 聚焦，但记录避免遗忘。同款 module: `src/workDashboard/types.ts DashboardDiagnostic`、`src/workRecap/types.ts WorkRecapDiagnostic`、`src/workTokensTrend/types.ts WorkTokensTrendDiagnostic`。
-
-**Depends on / blocked by:** work-tokens-trend ship 落地。
-
-**Effort estimate:** S（human ~30min / CC ~10min）
-
-**Priority:** P3
-
----
 
 ## 30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
 

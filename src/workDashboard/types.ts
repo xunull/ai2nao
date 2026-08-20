@@ -1,3 +1,4 @@
+import type { Diagnostic } from "../util/diagnostics.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import type { ClaudeProjectTokenUsage, ClaudeTokenUsageStatus } from "../claudeTokenUsage/types.js";
 import type { CodexProjectTokenUsage, CodexTokenUsageStatus } from "../codexTokenUsage/types.js";
@@ -29,11 +30,8 @@ export type DashboardTokenUsage = {
   truncated: boolean;
 };
 
-export type DashboardDiagnostic = {
+export type DashboardDiagnostic = Diagnostic & {
   source: DashboardSource;
-  severity: "info" | "warning" | "error";
-  kind: string;
-  message: string;
   path?: string;
   count?: number;
 };

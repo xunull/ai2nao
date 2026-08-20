@@ -30,6 +30,8 @@
  * 存原子分量之后,kimi 的 `inputOther` 直接就是 `freshInput`,零转换、无从写反。
  */
 
+import type { Diagnostic } from "../util/diagnostics.js";
+
 // 窗口/月原语已抽到中立模块 src/timeWindow/(2026-07-03);import 供本文件 DTO 使用 + re-export。
 import {
   WINDOW_KEYS,
@@ -77,9 +79,20 @@ export type SourceCapabilities = {
   cacheRead: boolean;
   cacheCreation: boolean;
   reasoningOutput: boolean;
-  /** 有没有 session 级三态表。MiniMax 是逐小时账单事件,没有 session 概念。 */
-  sessionCounts: boolean;
+  /**
+   * 三态覆盖计数的**单位**;`null` = 这个源没有覆盖概念。
+   *
+   * 写成单位而不是布尔,是为了让「不同单位不能相加」变成类型层面的事:
+   * MiniMax 是逐小时账单事件,没有 session(null);
+   * 而将来接入以 **agent** 为统计单位的源时(一个会话下有 N 个 agent 文件),
+   * 它的「12 中 11 覆盖」与 claude 的「3 个 session 全覆盖」不是同一把尺,
+   * 汇总成一个百分比没有统计意义。
+   */
+  coverageUnit: CoverageUnit;
 };
+
+/** 覆盖计数的单位。`null` = 该源没有覆盖概念。 */
+export type CoverageUnit = "session" | "agent" | null;
 
 /**
  * 这个源在本次响应里的状态。
@@ -200,20 +213,22 @@ export type WorkTokensTrendTotals = {
   priceSnapshotDate: string;
   coverage: WorkTokensTrendCoverage;
   /**
-   * 三态 session 计数,只累加 `capabilities.sessionCounts === true` 的源。
-   * ⚠️ 单位是 **session**。将来接入以 agent 为单位统计的源时不能直接汇总进来。
+   * 汇总计数的单位。
+   *
+   * - `"session"` / `"agent"`  参与汇总的源共用这一个单位,总体百分比有意义
+   * - `"mixed"`                源之间单位不同 —— **不要展示单一百分比**,
+   *                            下面四个计数不可解释,前端应改为逐源展示
+   * - `null`                   没有任何源有覆盖概念
    */
+  coverageUnit: CoverageUnit | "mixed";
+  /** 三态覆盖计数。单位见 `coverageUnit`;为 `"mixed"` 时这四个值无意义。 */
   coveredSessionCount: number;
   unknownSessionCount: number;
   errorSessionCount: number;
   totalSessionCount: number;
 };
 
-export type WorkTokensTrendDiagnostic = {
-  severity: "info" | "warning" | "error";
-  kind: string;
-  message: string;
-};
+export type WorkTokensTrendDiagnostic = Diagnostic;
 
 /** 全部源里最早/最晚的自然月。 */
 export type MonthRange = {

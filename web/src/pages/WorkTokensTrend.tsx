@@ -51,11 +51,14 @@ const SOURCE_META: Record<TokenSourceKey, { label: string; color: string }> = {
 type SourceState = "ok" | "failed" | "absent";
 
 /** 这个源有没有这个维度 —— 用来决定「画一段 0」还是「根本不画」。 */
+type CoverageUnit = "session" | "agent" | null;
+
 type SourceCapabilities = {
   cacheRead: boolean;
   cacheCreation: boolean;
   reasoningOutput: boolean;
-  sessionCounts: boolean;
+  /** 覆盖计数的单位;null = 该源没有覆盖概念。单位不同不能汇总。 */
+  coverageUnit: CoverageUnit;
 };
 
 type SourceCostState = "full" | "partial" | "none";
@@ -102,6 +105,8 @@ type Totals = {
   totalTokens: number;
   sources: Record<TokenSourceKey, SourceUsage & { share: number }>;
   costState: Record<TokenSourceKey, SourceCostState>;
+  /** 汇总计数的单位;"mixed" 表示源之间单位不同,不要展示单一百分比。 */
+  coverageUnit: CoverageUnit | "mixed";
   totalCostUsd: number;
   unpricedTokenCount: number;
   priceSnapshotDate: string;
@@ -483,13 +488,15 @@ function OutputComposition({
 // Recharts 2.x's TooltipProps surface drifts across minor versions, so we
 // type the prop bag locally instead of importing it.
 type CustomTooltipProps = {
+  /** 汇总计数的单位。"mixed" 时 tooltip 改成逐源展示。 */
+  coverageUnit?: CoverageUnit | "mixed";
   active?: boolean;
   payload?: Array<{ payload: ChartRow }>;
   label?: string | number;
   costMode?: boolean;
 };
 
-function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps): React.ReactElement | null {
+function CustomTooltip({ active, payload, label, costMode, coverageUnit }: CustomTooltipProps): React.ReactElement | null {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
   const fmt = costMode ? formatUsd : formatTokenCount;
@@ -528,7 +535,15 @@ function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps)
       </div>
       {sessions.imperfect > 0 && (
         <div className="mt-2 border-t border-[var(--border)] pt-1 text-[10px] text-amber-700">
-          {sessions.covered} / {sessions.total} session 有真实 token
+          {coverageUnit === "mixed"
+            ? // 单位不同的源混在一起,汇总没有统计意义 —— 逐源说
+              TOKEN_SOURCES.filter((k) => row.bucket.sources[k].sessionCount > 0)
+                .map(
+                  (k) =>
+                    `${SOURCE_META[k].label} ${row.bucket.sources[k].coveredSessionCount}/${row.bucket.sources[k].sessionCount}`
+                )
+                .join(" · ")
+            : `${sessions.covered} / ${sessions.total} ${coverageUnit ?? ""} 有真实 token`}
         </div>
       )}
     </div>
@@ -1007,7 +1022,7 @@ export function WorkTokensTrend() {
                     tickFormatter={(v: number) => (showCost ? formatUsd(v) : formatTokenCount(v))}
                     width={50}
                   />
-                  <Tooltip content={<CustomTooltip costMode={showCost} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
+                  <Tooltip content={<CustomTooltip costMode={showCost} coverageUnit={trend.data.totals.coverageUnit} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                   {/* 逐源出柱。归一之前是三行写死的 <Bar>,加源要记得回来补一行。 */}
                   {(showCost ? costSources : visibleSources).map((key) => (
                     <Bar

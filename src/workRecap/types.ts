@@ -1,3 +1,4 @@
+import type { Diagnostic } from "../util/diagnostics.js";
 /**
  * Commit-based work recap: given the user's git commits across all locally
  * indexed `repos` over a fixed window, produce a fact layer + an LLM-inferred
@@ -178,12 +179,7 @@ export type WorkRecapFacts = {
   topicDrift: WorkRecapFactGroup<WorkRecapTopicFacts>;
 };
 
-export type WorkRecapDiagnostic = {
-  severity: "info" | "warning" | "error";
-  kind: string;
-  message: string;
-  repo?: string;
-};
+export type WorkRecapDiagnostic = Diagnostic & { repo?: string };
 
 export type WorkRecapInference = {
   /** Chinese narrative paragraph, <= 400 chars. */

@@ -9,6 +9,7 @@ import {
   type BucketGranularity,
   type MonthRange,
   type PreviousWindow,
+  type CoverageUnit,
   type SourceCostState,
   type SourceUsage,
   type TokenSourceKey,
@@ -114,6 +115,7 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
   let covered = 0;
   let unknown = 0;
   let errored = 0;
+  const unitsPresent = new Set<Exclude<CoverageUnit, null>>();
 
   for (const key of TOKEN_SOURCES) {
     const u = acc[key];
@@ -121,8 +123,10 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
     costState[key] = costStateOf(u);
     totalCostUsd += u.costUsd;
     unpricedTokenCount += u.unpricedTokens;
-    // ⚠️ 只累加有 session 概念的源。单位是 session。
-    if (ADAPTERS[key].capabilities.sessionCounts) {
+    // ⚠️ 只累加有覆盖概念的源,且**记下它们的单位** —— 单位不同不能相加。
+    const unit = ADAPTERS[key].capabilities.coverageUnit;
+    if (unit !== null) {
+      unitsPresent.add(unit);
       covered += u.coveredSessionCount;
       unknown += u.unknownSessionCount;
       errored += u.errorSessionCount;
@@ -130,6 +134,11 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
   }
   // 总数由三态相加得出,不用 COUNT(*) —— 与归一之前一致。
   const sessionTotal = covered + unknown + errored;
+
+  // 单位不一致时汇总没有统计意义 —— 明说 mixed,让前端改成逐源展示,
+  // 而不是给出一个把 session 数和 agent 数加在一起的百分比。
+  const coverageUnit: WorkTokensTrendTotals["coverageUnit"] =
+    unitsPresent.size === 0 ? null : unitsPresent.size === 1 ? [...unitsPresent][0]! : "mixed";
 
   // 四个分支,与归一之前逐字一致。特别是「零 session → full」:
   // 没有会话就是「该记的都记了」,不是「不知道」。
@@ -147,6 +156,7 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
     unpricedTokenCount,
     priceSnapshotDate: PRICE_SNAPSHOT_DATE,
     coverage,
+    coverageUnit,
     coveredSessionCount: covered,
     unknownSessionCount: unknown,
     errorSessionCount: errored,
