@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { generateTrend } from "../src/workTokensTrend/service.js";
-import { WINDOW_KEYS, type WorkTokensTrendBucket } from "../src/workTokensTrend/types.js";
+import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
+import { WINDOW_KEYS } from "../src/workTokensTrend/types.js";
+import type { LegacyBucket } from "../src/workTokensTrend/legacyShape.js";
 import {
   assertFixtureCoverage,
   buildTokensTrendFixture,
@@ -75,7 +76,7 @@ function buildLayer1(): Record<string, unknown> {
  * 这正是 5A 要统一掉的不一致。T6 改完之后这里的公式与 golden-layer2.json 一起更新,
  * 差异必须与设计文档里列出的清单逐条吻合。
  */
-function derivedForBucket(b: WorkTokensTrendBucket, includeCache: boolean) {
+function derivedForBucket(b: LegacyBucket, includeCache: boolean) {
   return {
     claudeFullTokens: includeCache
       ? b.claudeTokens

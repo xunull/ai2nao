@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
+import { computeMonthRange } from "../src/workTokensTrend/queries.js";
 import {
-  computeMonthRange,
-  computePreviousWindowTotal,
-  computeTotals,
-  mergeAndZeroFill,
-  queryBucketsBySource,
-} from "../src/workTokensTrend/queries.js";
+  computePreviousWindowTotalLegacy as computePreviousWindowTotal,
+  computeTotalsLegacy as computeTotals,
+  mergeAndZeroFillLegacy as mergeAndZeroFill,
+  queryBucketsBySourceLegacy as queryBucketsBySource,
+} from "../src/workTokensTrend/legacyShape.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {

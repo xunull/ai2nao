@@ -10,7 +10,7 @@ import {
   type MinimaxAmountFetch,
 } from "../src/minimaxTokenUsage/refresh.js";
 import { queryBucketsBySource } from "../src/workTokensTrend/queries.js";
-import { generateTrend } from "../src/workTokensTrend/service.js";
+import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {

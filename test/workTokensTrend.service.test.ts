@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
-import { generateTrend } from "../src/workTokensTrend/service.js";
+import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {
