@@ -436,9 +436,105 @@ const minimaxAdapter: TokenSourceAdapter = {
   // 没有 queryCostRows —— MiniMax 的 token 全部计入 unpriced,而不是当成 $0。
 };
 
+
+// ── kimi ─────────────────────────────────────────────────────────────────────
+
+const kimiAdapter: TokenSourceAdapter = {
+  key: "kimi",
+  capabilities: {
+    cacheRead: true,
+    // 字段在(usage.inputCacheCreation),实测全量恒 0 —— 是「有这个维度、值为 0」,
+    // 不是「没有这个概念」。成因未查清,记在 TODOS.md。
+    cacheCreation: true,
+    reasoningOutput: false,
+    // ⚠️ **agent**,不是 session。一个会话下有 N 个 agent 的 wire.jsonl,
+    // 主表按 (session_id, agent) 建,覆盖率的分母是 agent 文件数。
+    // 与 claude/codex 的 session 不是同一把尺,汇总时 totals 会报 "mixed"。
+    coverageUnit: "agent",
+  },
+  probePresence: (db) =>
+    everPresent(db, "kimi_token_usage_state", "kimi_agent_token_usage"),
+
+  queryBuckets(db, from, to, granularity) {
+    // token 分量直接就是原子列 —— kimi 是唯一一个不需要在 SQL 里做减法的源
+    // (usage.record.inputOther 落库时就是 fresh_input)。
+    //
+    // 门禁在 **agent** 粒度:坏掉的那个 agent 不贡献 token,
+    // 同会话其他 agent 照常计入(X2)。
+    const tokenRows = db
+      .prepare(
+        `SELECT ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+                COALESCE(SUM(e.fresh_input), 0) AS fresh_input,
+                COALESCE(SUM(e.cache_read_input), 0) AS cache_read_input,
+                COALESCE(SUM(e.cache_creation_input), 0) AS cache_creation_input,
+                COALESCE(SUM(e.output), 0) AS output,
+                0 AS reasoning_output
+           FROM kimi_token_usage_event e
+           JOIN kimi_agent_token_usage a
+             ON a.session_id = e.session_id AND a.agent = e.agent
+          WHERE e.event_at >= ? AND e.event_at < ?
+            AND a.missing_since IS NULL AND a.token_status = 'full'
+          GROUP BY bucket_key
+          ORDER BY bucket_key ASC`
+      )
+      .all(from.toISOString(), to.toISOString()) as SourceBucketRow[];
+
+    // 三态计数按 agent 文件数,分桶键用 last_updated_at(与 claude/codex 同构)。
+    const counts = db
+      .prepare(
+        `SELECT ${bucketExpr(granularity)} AS bucket_key,
+                COUNT(*) AS session_count,
+                SUM(CASE WHEN token_status = 'full' THEN 1 ELSE 0 END) AS full_count,
+                SUM(CASE WHEN token_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_count,
+                SUM(CASE WHEN token_status = 'error' THEN 1 ELSE 0 END) AS error_count
+           FROM kimi_agent_token_usage
+          WHERE last_updated_at >= ? AND last_updated_at < ? AND missing_since IS NULL
+          GROUP BY bucket_key`
+      )
+      .all(from.toISOString(), to.toISOString()) as {
+      bucket_key: string;
+      session_count: number;
+      full_count: number;
+      unknown_count: number;
+      error_count: number;
+    }[];
+    return mergeTokensAndCounts(tokenRows, new Map(counts.map((r) => [r.bucket_key, r])));
+  },
+
+  queryPrevWindow(db, from, to) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(SUM(e.fresh_input), 0) AS fresh_input,
+                COALESCE(SUM(e.cache_read_input), 0) AS cache_read_input,
+                COALESCE(SUM(e.cache_creation_input), 0) AS cache_creation_input,
+                COALESCE(SUM(e.output), 0) AS output
+           FROM kimi_token_usage_event e
+           JOIN kimi_agent_token_usage a
+             ON a.session_id = e.session_id AND a.agent = e.agent
+          WHERE e.event_at >= ? AND e.event_at < ?
+            AND a.missing_since IS NULL AND a.token_status = 'full'`
+      )
+      .get(from.toISOString(), to.toISOString()) as SourcePrevWindowRow;
+    return row ?? ZERO_PREV;
+  },
+
+  queryMonthRange(db) {
+    return monthRangeOf(
+      db,
+      `SELECT MIN(strftime('%Y-%m', last_updated_at, 'localtime')) AS earliest,
+              MAX(strftime('%Y-%m', last_updated_at, 'localtime')) AS latest
+         FROM kimi_agent_token_usage
+        WHERE missing_since IS NULL`
+    );
+  },
+  // 没有 queryCostRows —— kimi 是订阅套餐,kimi-code/k3 不在价格表里。
+  // 它的 token 全部计入 unpriced,而不是当成 $0。
+};
+
 /** 注册表。**顺序 = 前端柱子的堆叠顺序,也是 `TOKEN_SOURCES` 的顺序。** */
 export const ADAPTERS: Record<TokenSourceKey, TokenSourceAdapter> = {
   claude: claudeAdapter,
   codex: codexAdapter,
   minimax: minimaxAdapter,
+  kimi: kimiAdapter,
 };

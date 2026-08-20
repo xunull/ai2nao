@@ -1,3 +1,4 @@
+import type { TokenSourceKey } from "../workTokensTrend/types.js";
 import type { Diagnostic } from "../util/diagnostics.js";
 /**
  * Commit-based work recap: given the user's git commits across all locally
@@ -129,7 +130,7 @@ export type WorkRecapTokenFacts = {
   priceSnapshotDate: string;
   /** input+output headline tokens (cache / reasoning excluded). */
   headlineTokens: number;
-  dominantProvider: "claude" | "codex" | "minimax" | "none";
+  dominantProvider: TokenSourceKey | "none";
   claudeShare: number;
   codexShare: number;
 };

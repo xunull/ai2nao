@@ -58,7 +58,7 @@ export type { WindowKey, BucketGranularity, MonthKey };
  * 趋势页认的源。**加一个源 = 这里加一项 + 注册一个 adapter + 前端 SOURCE_META 加一项。**
  * 顺序即前端柱子的堆叠顺序。
  */
-export const TOKEN_SOURCES = ["claude", "codex", "minimax"] as const;
+export const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi"] as const;
 export type TokenSourceKey = (typeof TOKEN_SOURCES)[number];
 
 /** 展示用名字。前端的 SOURCE_META 另有配色,名字以这里为准。 */
@@ -66,6 +66,7 @@ export const SOURCE_LABELS: Record<TokenSourceKey, string> = {
   claude: "Claude",
   codex: "Codex",
   minimax: "MiniMax",
+  kimi: "Kimi",
 };
 
 /**

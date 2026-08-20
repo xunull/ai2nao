@@ -124,9 +124,12 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
     totalCostUsd += u.costUsd;
     unpricedTokenCount += u.unpricedTokens;
     // ⚠️ 只累加有覆盖概念的源,且**记下它们的单位** —— 单位不同不能相加。
+    //
+    // 单位只在该源**真的有计数**时才登记:一个注册了但这台机器上没数据的源
+    // 不该把汇总打成 "mixed"(那会让前端一直退化成逐源展示)。
     const unit = ADAPTERS[key].capabilities.coverageUnit;
     if (unit !== null) {
-      unitsPresent.add(unit);
+      if (u.sessionCount > 0) unitsPresent.add(unit);
       covered += u.coveredSessionCount;
       unknown += u.unknownSessionCount;
       errored += u.errorSessionCount;

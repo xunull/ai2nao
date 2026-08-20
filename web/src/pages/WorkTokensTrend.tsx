@@ -37,7 +37,7 @@ type Coverage = "full" | "partial" | "unknown";
  * ⚠️ web/ 与 src/ 是两套 tsconfig,前端不 import 后端类型 —— 也就是说
  * **两个 typecheck 都抓不到这里与后端 DTO 的漂移**。改后端形状时必须手动同步这里。
  */
-const TOKEN_SOURCES = ["claude", "codex", "minimax"] as const;
+const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi"] as const;
 type TokenSourceKey = (typeof TOKEN_SOURCES)[number];
 
 /** 展示名与柱色。柱色是既有的,**不许改** —— 用户认这个颜色。 */
@@ -45,6 +45,8 @@ const SOURCE_META: Record<TokenSourceKey, { label: string; color: string }> = {
   claude: { label: "Claude", color: "#d97757" },
   codex: { label: "Codex", color: "#2563eb" },
   minimax: { label: "MiniMax", color: "#7c3aed" },
+  // 与 /agent-messages 页同色 —— 用户在两个页面上认的是同一个绿。
+  kimi: { label: "Kimi", color: "#16a34a" },
 };
 
 /** ok = 查到了(哪怕 0 行);failed = 查询抛了(表坏);absent = 这台机器没这个源。 */

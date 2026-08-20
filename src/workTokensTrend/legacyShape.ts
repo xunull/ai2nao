@@ -342,12 +342,15 @@ export function mergeAndZeroFillLegacy(
   codexRows: LegacyRawBucketRow[],
   minimaxRows: LegacyRawBucketRow[] = []
 ): LegacyBucket[] {
+  // 旧形状**不认识 kimi** —— 它是归一之后才接进来的。喂空 + absent,
+  // 让 flattenBucket 出来的东西与归一之前逐字段一致。
   const bySource = {
     claude: new Map(claudeRows.map((r) => [r.bucket_key, fromLegacyRow(r)])),
     codex: new Map(codexRows.map((r) => [r.bucket_key, fromLegacyRow(r)])),
     minimax: new Map(minimaxRows.map((r) => [r.bucket_key, fromLegacyRow(r)])),
+    kimi: new Map<string, SourceBucketRow>(),
   };
-  const states = { claude: "ok", codex: "ok", minimax: "ok" } as const;
+  const states = { claude: "ok", codex: "ok", minimax: "ok", kimi: "absent" } as const;
   return mergeAndZeroFill(bucketKeys, bySource, states).map(flattenBucket);
 }
 
@@ -360,6 +363,8 @@ export function computeTotalsLegacy(
     bucketStart: b.bucketStart,
     bucketEnd: b.bucketEnd,
     sources: {
+      // 旧形状不认识 kimi —— 它是归一之后接进来的
+      kimi: emptyUsage("absent"),
       claude: {
         ...emptyUsage("ok"),
         freshInput:

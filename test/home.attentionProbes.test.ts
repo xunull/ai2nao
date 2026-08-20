@@ -30,6 +30,7 @@ function ctxWithTokens(tokens: number, now = NOW): ProbeContext {
       claude: { ...emptyUsage("ok" as const), freshInput: tokens },
       codex: emptyUsage("ok" as const),
       minimax: emptyUsage("ok" as const),
+      kimi: emptyUsage("absent" as const),
     },
     codexTokens: 0,
     minimaxTokens: 0,
