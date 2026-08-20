@@ -214,15 +214,26 @@ export function enumerateAndAggregate(
       const costKey = keyByStart.get(b.bucketStart);
       const cell = costKey ? cost.byBucket.get(costKey) : undefined;
       for (const key of TOKEN_SOURCES) {
+        const u = b.sources[key];
+        if (!ADAPTERS[key].queryCostRows) {
+          // 该源根本没有定价概念(订阅套餐、价格表没这个模型)——
+          // 它的 token 全部算「无定价」,**不是 $0**。
+          //
+          // ⚠️ 这个判据只看「这个源有没有定价能力」,**与别的源无关**。
+          // 写成 `else if`(即「这一桶没查到成本格子才算」)是错的:
+          // priceCostByBucket 的 slot() 会给所有源都建格子,只要 claude/codex
+          // 在这一桶有成本行,minimax 的格子就存在(值为 0),分支进不去。
+          // 实测后果:7 个窗口里只有 2 个被正确计入。黄金快照的预测对账抓到的。
+          u.unpricedTokens =
+            u.freshInput + u.cacheReadInput + u.cacheCreationInput + u.output;
+          continue;
+        }
         const c = cell?.[key];
         if (c) {
-          b.sources[key].costUsd = c.costUsd;
-          b.sources[key].pricedTokens = c.priced;
-          b.sources[key].unpricedTokens = c.unpriced;
+          u.costUsd = c.costUsd;
+          u.pricedTokens = c.priced;
+          u.unpricedTokens = c.unpriced;
         }
-        // 注意:没有定价概念的源(MiniMax)这里**暂不**把 token 计进 unpriced。
-        // 那是 T7(X4)的改动 —— 它会改变 totals.unpricedTokenCount,属于
-        // 「故意改数」,必须与黄金快照的层二差异清单一起落,不能混进 T3。
       }
     }
   } catch (e) {

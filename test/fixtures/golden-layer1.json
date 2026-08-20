@@ -2808,7 +2808,7 @@
       "totalSessionCount": 1,
       "totalTokens": 2820,
       "unknownSessionCount": 0,
-      "unpricedTokenCount": 0
+      "unpricedTokenCount": 320
     }
   },
   "month:2026-08": {
@@ -3755,7 +3755,7 @@
       "totalSessionCount": 14,
       "totalTokens": 38735,
       "unknownSessionCount": 2,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10025
     }
   },
   "window:1d": {
@@ -4503,7 +4503,7 @@
       "totalSessionCount": 0,
       "totalTokens": 1660,
       "unknownSessionCount": 0,
-      "unpricedTokenCount": 0
+      "unpricedTokenCount": 1660
     },
     "windowKey": "1d"
   },
@@ -5426,7 +5426,7 @@
       "totalSessionCount": 14,
       "totalTokens": 38735,
       "unknownSessionCount": 2,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10025
     },
     "windowKey": "1m"
   },
@@ -5682,7 +5682,7 @@
       "totalSessionCount": 10,
       "totalTokens": 38735,
       "unknownSessionCount": 0,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10025
     },
     "windowKey": "1w"
   },
@@ -6141,7 +6141,7 @@
       "totalSessionCount": 14,
       "totalTokens": 38735,
       "unknownSessionCount": 2,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10025
     },
     "windowKey": "2w"
   },
@@ -6890,7 +6890,7 @@
       "totalSessionCount": 6,
       "totalTokens": 30770,
       "unknownSessionCount": 0,
-      "unpricedTokenCount": 0
+      "unpricedTokenCount": 2060
     },
     "windowKey": "3d"
   },
@@ -7320,7 +7320,7 @@
       "totalSessionCount": 17,
       "totalTokens": 45720,
       "unknownSessionCount": 2,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10345
     },
     "windowKey": "3m"
   },
@@ -8127,7 +8127,7 @@
       "totalSessionCount": 18,
       "totalTokens": 47800,
       "unknownSessionCount": 2,
-      "unpricedTokenCount": 7965
+      "unpricedTokenCount": 10345
     },
     "windowKey": "6m"
   }

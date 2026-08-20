@@ -172,4 +172,57 @@ describe("USD cost in tokens-trend", () => {
     expect(r.totals.unpricedTokenCount).toBe(2_000_000);
     expect(totalTokens(r.totals.sources.claude)).toBe(2_000_000);
   });
+
+  /**
+   * X4 的契约:成本可信度是三态,不是布尔。
+   * 布尔说不清 partial —— 而 claude 与 codex 在真实数据里现在就是 partial
+   * (claude 有一批 model 为 null 的 session,codex 有 codex-auto-review)。
+   */
+  it("costState 三态:全定价 full / 有无价模型 partial / 无定价概念 none", () => {
+    const db = freshDb();
+    // claude:一条有价 + 一条 null model → partial
+    seedClaude(db, "c-priced", "2026-06-09T18:00:00Z", "claude-haiku-4-5", {
+      input: 1000, output: 100, cacheRead: 0, cacheCreation: 0,
+    });
+    seedClaude(db, "c-null", "2026-06-09T19:00:00Z", null, {
+      input: 500, output: 50, cacheRead: 0, cacheCreation: 0,
+    });
+    // codex:只有有价模型 → full
+    seedCodexEvent(db, "x-priced", "2026-06-09T20:00:00Z", "claude-haiku-4-5", {
+      input: 400, output: 40, cached: 0,
+    });
+    const r = generateTrend(db, { month: "2026-06", now: new Date(2026, 5, 11, 12, 0, 0, 0) });
+    if (r.mode !== "month") throw new Error("type narrow");
+    expect(r.totals.costState.claude).toBe("partial");
+    expect(r.totals.costState.codex).toBe("full");
+    // minimax 没有 queryCostRows → 恒 none(没数据时也是 none)
+    expect(r.totals.costState.minimax).toBe("none");
+    // partial 的那一半:无价的 550 token 露在 unpricedTokens 里,不当成 $0
+    expect(r.totals.sources.claude.unpricedTokens).toBe(550);
+    expect(r.totals.sources.claude.pricedTokens).toBe(1100);
+  });
+
+  it("无定价概念的源:token 全部计入 unpriced,而不是当成 $0", () => {
+    const db = freshDb();
+    // 同一个桶里既有 claude 的成本行,也有 minimax 的 token ——
+    // 这正是「判据搭错对象」会漏掉的形状:slot() 给所有源建了格子,
+    // 用「这一桶查到格子没有」当判据的话 minimax 永远进不去 unpriced。
+    seedClaude(db, "c1", "2026-06-09T18:00:00Z", "claude-haiku-4-5", {
+      input: 1000, output: 100, cacheRead: 0, cacheCreation: 0,
+    });
+    db.prepare(
+      `INSERT INTO minimax_token_usage_event
+         (event_at, method, model, api_token_name, input_tokens, output_tokens, consume_cash, raw_json)
+       VALUES (?, 'Text API', 'mm', 'k', 700, 30, null, null)`
+    ).run("2026-06-09T18:30:00Z");
+    const r = generateTrend(db, { month: "2026-06", now: new Date(2026, 5, 11, 12, 0, 0, 0) });
+    if (r.mode !== "month") throw new Error("type narrow");
+    expect(r.totals.sources.minimax.costUsd).toBe(0);
+    expect(r.totals.sources.minimax.unpricedTokens).toBe(730);
+    expect(r.totals.costState.minimax).toBe("none");
+    // claude 那 1100 被正常定价,不受影响
+    expect(r.totals.sources.claude.pricedTokens).toBe(1100);
+    // 总的 unpriced 含 minimax 全量
+    expect(r.totals.unpricedTokenCount).toBe(730);
+  });
 });

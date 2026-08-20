@@ -754,6 +754,16 @@ export function WorkTokensTrend() {
    * 会让人以为「用了但没花 token」。`failed` 要画并标注,那是坏了不是零。
    */
   const visibleSources = TOKEN_SOURCES.filter((key) => sourceState(key) !== "absent");
+  /**
+   * 成本模式下要画哪些源。`costState === "none"` 的源**不画** ——
+   * 画一段 0 高度的柱子等于在说「这个源不花钱」,而真相是「不知道它花了多少」。
+   */
+  const costSources = visibleSources.filter(
+    (key) => trend.data?.totals.costState[key] !== "none"
+  );
+  const partialCostSources = costSources.filter(
+    (key) => trend.data?.totals.costState[key] === "partial"
+  );
 
   const monthOptions = useMemo(
     () => buildMonthOptions(trend.data?.monthRange),
@@ -914,6 +924,23 @@ export function WorkTokensTrend() {
                   />
                 ))}
               </div>
+              {partialCostSources.length > 0 && (
+                <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                  {partialCostSources.map((k) => SOURCE_META[k].label).join("、")}
+                  {" "}只有一部分 token 能定价，上面的数字是
+                  <strong>下界</strong>，不是真实花费。
+                </div>
+              )}
+              {visibleSources.filter((k) => trend.data!.totals.costState[k] === "none").length >
+                0 && (
+                <div className="mt-3 rounded-md bg-[var(--surface)] px-3 py-2 text-xs text-[var(--fg-muted)] ring-1 ring-[var(--border)]">
+                  {visibleSources
+                    .filter((k) => trend.data!.totals.costState[k] === "none")
+                    .map((k) => SOURCE_META[k].label)
+                    .join("、")}
+                  {" "}无定价（订阅套餐或价格表未收录），未画入成本柱，也未计入总成本。
+                </div>
+              )}
               {trend.data.totals.unpricedTokenCount > 0 && (
                 <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
                   有 {formatTokenCount(trend.data.totals.unpricedTokenCount)} token
@@ -951,7 +978,7 @@ export function WorkTokensTrend() {
                   : `${WINDOWS.find((w) => w.value === currentWindow)?.label} 趋势`}
               </h2>
               <div className="flex items-center gap-3 text-xs text-[var(--fg-muted)]">
-                {visibleSources.map((key) => (
+                {(showCost ? costSources : visibleSources).map((key) => (
                   <span key={`lg-${key}`} className="flex items-center gap-1">
                     <span
                       className="inline-block h-2.5 w-2.5 rounded-sm"
@@ -982,7 +1009,7 @@ export function WorkTokensTrend() {
                   />
                   <Tooltip content={<CustomTooltip costMode={showCost} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                   {/* 逐源出柱。归一之前是三行写死的 <Bar>,加源要记得回来补一行。 */}
-                  {visibleSources.map((key) => (
+                  {(showCost ? costSources : visibleSources).map((key) => (
                     <Bar
                       key={`bar-${key}`}
                       dataKey={key}
