@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
@@ -30,57 +30,80 @@ const DEFAULT_WINDOW: WindowKey = "1w";
 
 type Coverage = "full" | "partial" | "unknown";
 
+/**
+ * 认的源。**加一个源 = 这里加一项 + SOURCE_META 加一项。** 顺序即柱子堆叠顺序。
+ * 与后端 `src/workTokensTrend/types.ts` 的 TOKEN_SOURCES 保持一致。
+ *
+ * ⚠️ web/ 与 src/ 是两套 tsconfig,前端不 import 后端类型 —— 也就是说
+ * **两个 typecheck 都抓不到这里与后端 DTO 的漂移**。改后端形状时必须手动同步这里。
+ */
+const TOKEN_SOURCES = ["claude", "codex", "minimax"] as const;
+type TokenSourceKey = (typeof TOKEN_SOURCES)[number];
+
+/** 展示名与柱色。柱色是既有的,**不许改** —— 用户认这个颜色。 */
+const SOURCE_META: Record<TokenSourceKey, { label: string; color: string }> = {
+  claude: { label: "Claude", color: "#d97757" },
+  codex: { label: "Codex", color: "#2563eb" },
+  minimax: { label: "MiniMax", color: "#7c3aed" },
+};
+
+/** ok = 查到了(哪怕 0 行);failed = 查询抛了(表坏);absent = 这台机器没这个源。 */
+type SourceState = "ok" | "failed" | "absent";
+
+/** 这个源有没有这个维度 —— 用来决定「画一段 0」还是「根本不画」。 */
+type SourceCapabilities = {
+  cacheRead: boolean;
+  cacheCreation: boolean;
+  reasoningOutput: boolean;
+  sessionCounts: boolean;
+};
+
+type SourceCostState = "full" | "partial" | "none";
+
+/** 只存原子分量,派生量用下面的函数,不在组件里手写加减。 */
+type SourceUsage = {
+  state: SourceState;
+  freshInput: number;
+  cacheReadInput: number;
+  cacheCreationInput: number;
+  output: number;
+  reasoningOutput: number;
+  costUsd: number;
+  pricedTokens: number;
+  unpricedTokens: number;
+  sessionCount: number;
+  coveredSessionCount: number;
+  unknownSessionCount: number;
+  errorSessionCount: number;
+};
+
+const inputTokens = (u: SourceUsage): number =>
+  u.freshInput + u.cacheReadInput + u.cacheCreationInput;
+const totalTokens = (u: SourceUsage): number => inputTokens(u) + u.output;
+
+/**
+ * 当前(T5)的「不含缓存」口径 —— **逐源不同,这是历史遗留**:
+ *   claude / codex  只减 cache-read
+ *   minimax         read + create 都减
+ * T6 会统一成「都减」(即 `freshInput + output`)。T5 只搬形状不改数,
+ * 所以这里原样复刻旧语义。
+ */
+const cacheCutLegacy = (u: SourceUsage, key: TokenSourceKey): number =>
+  key === "minimax" ? u.cacheReadInput + u.cacheCreationInput : u.cacheReadInput;
+
 type Bucket = {
   bucketStart: string;
   bucketEnd: string;
-  claudeTokens: number;
-  codexTokens: number;
-  /** MiniMax total (input+output) this bucket — remote billing history, T+1 lagged. */
-  minimaxTokens: number;
-  /** Claude cache_read in this bucket — subtracted when the cache toggle is off. */
-  claudeCacheReadInputTokens: number;
-  /** Codex cached_input in this bucket — subtracted when the cache toggle is off. */
-  codexCachedInputTokens: number;
-  /** MiniMax cache (read+create) — BOTH subtracted when the cache toggle is off. */
-  minimaxCacheReadInputTokens: number;
-  minimaxCacheCreationInputTokens: number;
-  /** Estimated USD cost of priced tokens in this bucket (unknown models excluded). */
-  claudeCostUsd: number;
-  codexCostUsd: number;
-  claudeSessionCount: number;
-  codexSessionCount: number;
-  claudeCoveredSessionCount: number;
-  codexCoveredSessionCount: number;
-  claudeUnknownSessionCount: number;
-  codexUnknownSessionCount: number;
-  claudeErrorSessionCount: number;
-  codexErrorSessionCount: number;
+  sources: Record<TokenSourceKey, SourceUsage>;
 };
 
 type Totals = {
   totalTokens: number;
-  claudeTokens: number;
-  codexTokens: number;
-  minimaxTokens: number;
-  claudeInputTokens: number;
-  claudeOutputTokens: number;
-  codexInputTokens: number;
-  codexOutputTokens: number;
-  minimaxInputTokens: number;
-  minimaxOutputTokens: number;
-  claudeCacheReadInputTokens: number;
-  claudeCacheCreationInputTokens: number;
-  codexReasoningOutputTokens: number;
-  codexCachedInputTokens: number;
-  minimaxCacheReadInputTokens: number;
-  minimaxCacheCreationInputTokens: number;
+  sources: Record<TokenSourceKey, SourceUsage & { share: number }>;
+  costState: Record<TokenSourceKey, SourceCostState>;
   totalCostUsd: number;
-  claudeCostUsd: number;
-  codexCostUsd: number;
   unpricedTokenCount: number;
   priceSnapshotDate: string;
-  claudeShare: number;
-  codexShare: number;
   coverage: Coverage;
   coveredSessionCount: number;
   unknownSessionCount: number;
@@ -96,6 +119,14 @@ type Diagnostic = {
   message: string;
 };
 
+type PreviousWindow = {
+  totalTokens: number;
+  bySource: Record<
+    TokenSourceKey,
+    { totalTokens: number; freshInput: number; cacheReadInput: number; cacheCreationInput: number }
+  >;
+};
+
 type TrendResponse =
   | {
       ok: true;
@@ -106,9 +137,8 @@ type TrendResponse =
       bucketGranularity: "hour" | "3hour" | "day" | "week";
       buckets: Bucket[];
       totals: Totals;
-      previousWindowTotal: number;
-      previousWindowClaudeCacheReadInputTokens: number;
-      previousWindowCodexCachedInputTokens: number;
+      capabilities: Record<TokenSourceKey, SourceCapabilities>;
+      previousWindow: PreviousWindow;
       deltaRatio: number | null;
       monthRange: MonthRange;
       diagnostics: Diagnostic[];
@@ -122,10 +152,10 @@ type TrendResponse =
       bucketGranularity: "day";
       buckets: Bucket[];
       totals: Totals;
+      capabilities: Record<TokenSourceKey, SourceCapabilities>;
       monthRange: MonthRange;
       diagnostics: Diagnostic[];
     };
-
 function parseWindow(raw: string | null): WindowKey {
   if (raw && WINDOWS.some((w) => w.value === raw)) {
     return raw as WindowKey;
@@ -150,17 +180,16 @@ function bucketLabel(b: Bucket, granularity: TrendResponse["bucketGranularity"])
   }
 }
 
-type ChartRow = Bucket & {
+/**
+ * recharts 的 `dataKey` 只能是平的字符串键,所以每个源在行上占一个数值键
+ * (键名就是 source key)。原始桶挂在 `bucket` 上给 tooltip 用。
+ *
+ * 归一之前这里是 `claudeFullTokens` / `codexFullTokens` / `minimaxFullTokens`
+ * 三个写死的字段 + 一个硬编码 `minimaxCostUsd: 0`。
+ */
+type ChartRow = Record<TokenSourceKey, number> & {
   label: string;
-  // F1 spike-compatible field split: separate full vs unknown/error so that
-  // a future Recharts <pattern> fill can be applied per series. v1 we only
-  // visualize the *Full series; partial sessions show up in coverage UI
-  // rather than a separate hatched series.
-  claudeFullTokens: number;
-  codexFullTokens: number;
-  minimaxFullTokens: number;
-  /** MiniMax cost is deferred (subscription bills 0) → always 0 in cost mode. */
-  minimaxCostUsd: number;
+  bucket: Bucket;
 };
 
 function StatCard({
@@ -199,10 +228,17 @@ function BreakdownMatrix({
   totals: Totals;
   includeCache: boolean;
 }) {
-  const claudeTotal = totals.claudeInputTokens + totals.claudeOutputTokens;
-  const codexTotal = totals.codexInputTokens + totals.codexOutputTokens;
-  const inputTotal = totals.claudeInputTokens + totals.codexInputTokens;
-  const outputTotal = totals.claudeOutputTokens + totals.codexOutputTokens;
+  // 逐源遍历 —— 归一之前这里写死了 Claude / Codex 两行(MiniMax 从来没进过这张表,
+  // 加源也不会自动出现)。现在 TOKEN_SOURCES 有谁就有谁。
+  const perSource = TOKEN_SOURCES.map((key) => ({
+    label: SOURCE_META[key].label,
+    dot: SOURCE_META[key].color,
+    input: inputTokens(totals.sources[key]),
+    output: totals.sources[key].output,
+    total: totalTokens(totals.sources[key]),
+  })).filter((r) => r.total > 0);
+  const inputTotal = perSource.reduce((n, r) => n + r.input, 0);
+  const outputTotal = perSource.reduce((n, r) => n + r.output, 0);
   const grandTotal = inputTotal + outputTotal;
 
   const rows: {
@@ -213,20 +249,7 @@ function BreakdownMatrix({
     total: number;
     bold?: boolean;
   }[] = [
-    {
-      label: "Claude",
-      dot: "#d97757",
-      input: totals.claudeInputTokens,
-      output: totals.claudeOutputTokens,
-      total: claudeTotal,
-    },
-    {
-      label: "Codex",
-      dot: "#2563eb",
-      input: totals.codexInputTokens,
-      output: totals.codexOutputTokens,
-      total: codexTotal,
-    },
+    ...perSource,
     {
       label: "合计",
       input: inputTotal,
@@ -284,46 +307,38 @@ function BreakdownMatrix({
 }
 
 /**
- * Claude 输入构成 —— breaks Claude's (cache-inflated) input into three parts:
- *   命中 cache (read)  — replayed from cache, cheap, the bulk on long sessions
- *   写入 cache (write) — first-time cache fill
- *   真实新增 (fresh)   — claudeInput - read - write, the actually-new bytes
+ * 一个源的「输入构成」或「输出构成」。
  *
- * Cache is a Claude-only concept (Codex has no equivalent), so this lives in
- * its own section rather than the shared 2×3 matrix. 命中率 = read / input.
- * Hidden entirely when there are no Claude input tokens in the window.
+ * 归一之前这里是**四个组件**:Claude/Codex × 输入/输出,同一套堆叠比例条 + 表格
+ * 复制了四遍。加一个源要再复制两遍,而每个源具备哪些段是硬编码在组件名里的。
+ * 现在段由 `capabilities` 决定,组件只剩两个,加源零改动。
  */
-function ClaudeInputComposition({ totals }: { totals: Totals }) {
-  const input = totals.claudeInputTokens;
-  if (input <= 0) return null;
-  const read = totals.claudeCacheReadInputTokens;
-  const creation = totals.claudeCacheCreationInputTokens;
-  const fresh = Math.max(0, input - read - creation);
-  const hitRate = input === 0 ? 0 : (read / input) * 100;
-
-  const segments: { label: string; value: number; color: string; hint: string }[] = [
-    { label: "真实新增", value: fresh, color: "#d97757", hint: "本轮首次喂入的新内容" },
-    { label: "写入 cache", value: creation, color: "#f0a868", hint: "首次写入 prompt cache" },
-    { label: "命中 cache", value: read, color: "#9ca3af", hint: "从 cache 回放（命中）" },
-  ];
-
+function CompositionSection({
+  title,
+  hint,
+  total,
+  totalLabel,
+  segments,
+}: {
+  title: string;
+  hint?: string;
+  total: number;
+  totalLabel: string;
+  segments: { label: string; value: number; color: string; hint: string }[];
+}) {
+  if (total <= 0) return null;
+  const pct = (v: number) => (total === 0 ? 0 : (v / total) * 100);
   return (
     <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输入构成</h2>
-        <span className="text-xs text-[var(--fg-muted)]">
-          cache 命中率 {hitRate.toFixed(1)}%
-        </span>
+        <h2 className="text-sm font-semibold text-[var(--fg)]">{title}</h2>
+        {hint ? <span className="text-xs text-[var(--fg-muted)]">{hint}</span> : null}
       </div>
-      {/* stacked proportion bar */}
       <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
         {segments.map((s) => (
           <div
             key={s.label}
-            style={{
-              width: `${input === 0 ? 0 : (s.value / input) * 100}%`,
-              background: s.color,
-            }}
+            style={{ width: `${pct(s.value)}%`, background: s.color }}
             title={`${s.label} ${formatTokenCount(s.value)}`}
           />
         ))}
@@ -344,13 +359,13 @@ function ClaudeInputComposition({ totals }: { totals: Totals }) {
               </td>
               <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
               <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
-                {input === 0 ? "0%" : `${((s.value / input) * 100).toFixed(1)}%`}
+                {`${pct(s.value).toFixed(1)}%`}
               </td>
             </tr>
           ))}
           <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
-            <td className="py-1 text-left">输入合计</td>
-            <td className="py-1 text-right">{formatTokenCount(input)}</td>
+            <td className="py-1 text-left">{totalLabel}</td>
+            <td className="py-1 text-right">{formatTokenCount(total)}</td>
             <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
           </tr>
         </tbody>
@@ -359,199 +374,108 @@ function ClaudeInputComposition({ totals }: { totals: Totals }) {
   );
 }
 
-/**
- * Codex 输入构成 —— mirror of ClaudeInputComposition, on the Codex input side.
- * Codex reports cached_input_tokens (cache-hit replay) as a subset of its input,
- * but has NO cache-creation concept (unlike Claude), so the split is two parts:
- *   命中 cache (hit) = codexCachedInputTokens
- *   真实新增 (fresh) = codexInputTokens - cached
- * 命中率 = cached / input. Hidden when there is no Codex input in the window.
- */
-function CodexInputComposition({ totals }: { totals: Totals }) {
-  const input = totals.codexInputTokens;
-  if (input <= 0) return null;
-  const cached = totals.codexCachedInputTokens;
-  const fresh = Math.max(0, input - cached);
-  const hitRate = input === 0 ? 0 : (cached / input) * 100;
+/** cache 段的固定配色(与源无关,读者认的是「灰=回放、橙=写入」)。 */
+const CACHE_CREATION_COLOR = "#f0a868";
+const CACHE_READ_COLOR = "#9ca3af";
+const REASONING_COLOR = "#8b5cf6";
 
+/**
+ * 输入构成:真实新增 / 写入 cache / 命中 cache。
+ * **段由 capabilities 决定** —— codex 没有 cache 写入这个概念,就不画那一段,
+ * 而不是画一段永远为 0 的东西让人以为「codex 这段时间没写 cache」。
+ */
+function InputComposition({
+  sourceKey,
+  usage,
+  caps,
+}: {
+  sourceKey: TokenSourceKey;
+  usage: SourceUsage;
+  caps: SourceCapabilities;
+}) {
+  const input = inputTokens(usage);
   const segments: { label: string; value: number; color: string; hint: string }[] = [
-    { label: "真实新增", value: fresh, color: "#2563eb", hint: "本轮首次喂入的新内容" },
-    { label: "命中 cache", value: cached, color: "#9ca3af", hint: "从 cache 回放（命中）" },
+    {
+      label: "真实新增",
+      value: usage.freshInput,
+      color: SOURCE_META[sourceKey].color,
+      hint: "本轮首次喂入的新内容",
+    },
   ];
-
+  if (caps.cacheCreation) {
+    segments.push({
+      label: "写入 cache",
+      value: usage.cacheCreationInput,
+      color: CACHE_CREATION_COLOR,
+      hint: "首次写入 prompt cache",
+    });
+  }
+  if (caps.cacheRead) {
+    segments.push({
+      label: "命中 cache",
+      value: usage.cacheReadInput,
+      color: CACHE_READ_COLOR,
+      hint: "从 cache 回放（命中）",
+    });
+  }
+  const hitRate = input === 0 ? 0 : (usage.cacheReadInput / input) * 100;
   return (
-    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--fg)]">Codex 输入构成</h2>
-        <span className="text-xs text-[var(--fg-muted)]">
-          cache 命中率 {hitRate.toFixed(1)}%
-        </span>
-      </div>
-      {/* stacked proportion bar */}
-      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
-        {segments.map((s) => (
-          <div
-            key={s.label}
-            style={{
-              width: `${input === 0 ? 0 : (s.value / input) * 100}%`,
-              background: s.color,
-            }}
-            title={`${s.label} ${formatTokenCount(s.value)}`}
-          />
-        ))}
-      </div>
-      <table className="w-full text-sm tabular-nums">
-        <tbody>
-          {segments.map((s) => (
-            <tr key={s.label} className="text-[var(--fg)]">
-              <td className="py-1 text-left">
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-sm"
-                    style={{ background: s.color }}
-                  />
-                  {s.label}
-                  <span className="text-xs text-[var(--fg-muted)]">{s.hint}</span>
-                </span>
-              </td>
-              <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
-              <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
-                {input === 0 ? "0%" : `${((s.value / input) * 100).toFixed(1)}%`}
-              </td>
-            </tr>
-          ))}
-          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
-            <td className="py-1 text-left">输入合计</td>
-            <td className="py-1 text-right">{formatTokenCount(input)}</td>
-            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    <CompositionSection
+      title={`${SOURCE_META[sourceKey].label} 输入构成`}
+      hint={caps.cacheRead ? `cache 命中率 ${hitRate.toFixed(1)}%` : undefined}
+      total={input}
+      totalLabel="输入合计"
+      segments={segments}
+    />
   );
 }
 
 /**
- * Claude 输出构成 —— Claude 的 output_tokens 是单一未细分值：不像 Codex 输出能拆
- * reasoning，也不像 input 侧有 cache 拆分。这里只呈现输出合计 + 标注「无细分」，与
- * Codex 输出构成对称，消除「Claude 没有输出」的错觉（输出值本就在 2×3 矩阵里）。
- * Hidden when there is no Claude output in the window.
+ * 输出构成:推理 / 正常输出。
+ *
+ * ⚠️ **没有 reasoning 概念的源也要画**,只是不拆分 —— 否则读者会以为
+ * 「这个源没有输出」。这条是既有设计意图,写在测试名里:
+ * "renders Claude 输出构成 (single-value, no sub-split) so claude output
+ *  isn't perceived as absent"。归一时差点把它丢了。
  */
-function ClaudeOutputComposition({ totals }: { totals: Totals }) {
-  const output = totals.claudeOutputTokens;
-  if (output <= 0) return null;
-
+function OutputComposition({
+  sourceKey,
+  usage,
+  caps,
+}: {
+  sourceKey: TokenSourceKey;
+  usage: SourceUsage;
+  caps: SourceCapabilities;
+}) {
+  const reasoning = usage.reasoningOutput;
+  const normal = Math.max(0, usage.output - reasoning);
+  const rate = usage.output === 0 ? 0 : (reasoning / usage.output) * 100;
+  const segments = caps.reasoningOutput
+    ? [
+        { label: "推理", value: reasoning, color: REASONING_COLOR, hint: "thinking token" },
+        {
+          label: "正常输出",
+          value: normal,
+          color: SOURCE_META[sourceKey].color,
+          hint: "写给你看的正文",
+        },
+      ]
+    : [
+        {
+          label: "无细分",
+          value: usage.output,
+          color: SOURCE_META[sourceKey].color,
+          hint: "无推理 / 缓存细分",
+        },
+      ];
   return (
-    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--fg)]">Claude 输出构成</h2>
-        <span className="text-xs text-[var(--fg-muted)]">无细分</span>
-      </div>
-      {/* single-segment bar — Claude brand color (#d97757), NOT Codex blue. */}
-      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
-        <div
-          style={{ width: "100%", background: "#d97757" }}
-          title={`输出 ${formatTokenCount(output)}`}
-        />
-      </div>
-      <table className="w-full text-sm tabular-nums">
-        <tbody>
-          <tr className="text-[var(--fg)]">
-            <td className="py-1 text-left">
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-sm"
-                  style={{ background: "#d97757" }}
-                />
-                正常输出
-                <span className="text-xs text-[var(--fg-muted)]">
-                  Claude 输出无推理 / 缓存细分，即模型可见产出
-                </span>
-              </span>
-            </td>
-            <td className="py-1 text-right">{formatTokenCount(output)}</td>
-            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
-          </tr>
-          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
-            <td className="py-1 text-left">输出合计</td>
-            <td className="py-1 text-right">{formatTokenCount(output)}</td>
-            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-/**
- * Codex 输出构成 —— mirror of ClaudeInputComposition, on the output side.
- * Codex's output_tokens already includes reasoning (thinking) tokens, so we
- * split the total output into 推理 (reasoning) + 正常输出 (visible output =
- * output - reasoning). reasoning is a Codex-only concept (Claude has none),
- * so this lives in its own section, not the shared 2×3 matrix. 推理占比 =
- * reasoning / output. Hidden when there is no Codex output in the window.
- */
-function CodexOutputComposition({ totals }: { totals: Totals }) {
-  const output = totals.codexOutputTokens;
-  if (output <= 0) return null;
-  const reasoning = totals.codexReasoningOutputTokens;
-  const visible = Math.max(0, output - reasoning);
-  const reasoningRate = output === 0 ? 0 : (reasoning / output) * 100;
-
-  const segments: { label: string; value: number; color: string; hint: string }[] = [
-    { label: "正常输出", value: visible, color: "#2563eb", hint: "模型实际产出的可见输出" },
-    { label: "推理", value: reasoning, color: "#9ca3af", hint: "thinking / reasoning，已含在输出内" },
-  ];
-
-  return (
-    <section className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--fg)]">Codex 输出构成</h2>
-        <span className="text-xs text-[var(--fg-muted)]">
-          推理占比 {reasoningRate.toFixed(1)}%
-        </span>
-      </div>
-      {/* stacked proportion bar */}
-      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-sm">
-        {segments.map((s) => (
-          <div
-            key={s.label}
-            style={{
-              width: `${output === 0 ? 0 : (s.value / output) * 100}%`,
-              background: s.color,
-            }}
-            title={`${s.label} ${formatTokenCount(s.value)}`}
-          />
-        ))}
-      </div>
-      <table className="w-full text-sm tabular-nums">
-        <tbody>
-          {segments.map((s) => (
-            <tr key={s.label} className="text-[var(--fg)]">
-              <td className="py-1 text-left">
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-sm"
-                    style={{ background: s.color }}
-                  />
-                  {s.label}
-                  <span className="text-xs text-[var(--fg-muted)]">{s.hint}</span>
-                </span>
-              </td>
-              <td className="py-1 text-right">{formatTokenCount(s.value)}</td>
-              <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">
-                {output === 0 ? "0%" : `${((s.value / output) * 100).toFixed(1)}%`}
-              </td>
-            </tr>
-          ))}
-          <tr className="border-t border-[var(--border)] font-semibold text-[var(--fg)]">
-            <td className="py-1 text-left">输出合计</td>
-            <td className="py-1 text-right">{formatTokenCount(output)}</td>
-            <td className="py-1 pl-3 text-right text-xs text-[var(--fg-muted)]">100%</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    <CompositionSection
+      title={`${SOURCE_META[sourceKey].label} 输出构成`}
+      hint={caps.reasoningOutput ? `推理占比 ${rate.toFixed(1)}%` : undefined}
+      total={usage.output}
+      totalLabel="输出合计"
+      segments={segments}
+    />
   );
 }
 
@@ -567,32 +491,43 @@ type CustomTooltipProps = {
 function CustomTooltip({ active, payload, label, costMode }: CustomTooltipProps): React.ReactElement | null {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
-  const claude = costMode ? row.claudeCostUsd : row.claudeFullTokens;
-  const codex = costMode ? row.codexCostUsd : row.codexFullTokens;
-  const minimax = costMode ? row.minimaxCostUsd : row.minimaxFullTokens;
   const fmt = costMode ? formatUsd : formatTokenCount;
+  // 逐源遍历。state 不是 ok 的源单独标注 —— 0 与「查询失败」不能长得一样。
+  const shown = TOKEN_SOURCES.map((key) => ({
+    key,
+    label: SOURCE_META[key].label,
+    value: row[key],
+    state: row.bucket.sources[key].state,
+  })).filter((r) => r.state !== "absent");
+  const sum = shown.reduce((n, r) => n + r.value, 0);
+  const sessions = TOKEN_SOURCES.reduce(
+    (acc, key) => {
+      const u = row.bucket.sources[key];
+      acc.covered += u.coveredSessionCount;
+      acc.total += u.sessionCount;
+      acc.imperfect += u.unknownSessionCount + u.errorSessionCount;
+      return acc;
+    },
+    { covered: 0, total: 0, imperfect: 0 }
+  );
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 text-xs shadow-sm">
       <div className="mb-1 font-semibold text-[var(--fg)]">{label}</div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
-        <span className="text-[var(--fg-muted)]">Claude:</span>
-        <span className="text-right text-[var(--fg)]">{fmt(claude)}</span>
-        <span className="text-[var(--fg-muted)]">Codex:</span>
-        <span className="text-right text-[var(--fg)]">{fmt(codex)}</span>
-        {!costMode && (
-          <>
-            <span className="text-[var(--fg-muted)]">MiniMax:</span>
-            <span className="text-right text-[var(--fg)]">{fmt(minimax)}</span>
-          </>
-        )}
+        {shown.map((r) => (
+          <Fragment key={r.key}>
+            <span className="text-[var(--fg-muted)]">{r.label}:</span>
+            <span className="text-right text-[var(--fg)]">
+              {r.state === "failed" ? "查询失败" : fmt(r.value)}
+            </span>
+          </Fragment>
+        ))}
         <span className="text-[var(--fg-muted)]">合计:</span>
-        <span className="text-right font-semibold text-[var(--fg)]">
-          {fmt(claude + codex + minimax)}
-        </span>
+        <span className="text-right font-semibold text-[var(--fg)]">{fmt(sum)}</span>
       </div>
-      {(row.claudeUnknownSessionCount + row.codexUnknownSessionCount + row.claudeErrorSessionCount + row.codexErrorSessionCount) > 0 && (
+      {sessions.imperfect > 0 && (
         <div className="mt-2 border-t border-[var(--border)] pt-1 text-[10px] text-amber-700">
-          {row.claudeCoveredSessionCount + row.codexCoveredSessionCount} / {row.claudeSessionCount + row.codexSessionCount} session 有真实 token
+          {sessions.covered} / {sessions.total} session 有真实 token
         </div>
       )}
     </div>
@@ -662,30 +597,27 @@ function useStickyToggle(
  */
 function deriveTotals(totals: Totals, includeCache: boolean): Totals {
   if (includeCache) return totals;
-  const claudeCut = totals.claudeCacheReadInputTokens;
-  const codexCut = totals.codexCachedInputTokens;
-  // MiniMax: subtract BOTH cache kinds (read + create) — the clean caliber.
-  const minimaxCut =
-    totals.minimaxCacheReadInputTokens + totals.minimaxCacheCreationInputTokens;
-  const claudeTokens = Math.max(0, totals.claudeTokens - claudeCut);
-  const codexTokens = Math.max(0, totals.codexTokens - codexCut);
-  const minimaxTokens = Math.max(0, totals.minimaxTokens - minimaxCut);
-  const claudeInputTokens = Math.max(0, totals.claudeInputTokens - claudeCut);
-  const codexInputTokens = Math.max(0, totals.codexInputTokens - codexCut);
-  const minimaxInputTokens = Math.max(0, totals.minimaxInputTokens - minimaxCut);
-  const totalTokens = claudeTokens + codexTokens + minimaxTokens;
-  return {
-    ...totals,
-    claudeTokens,
-    codexTokens,
-    minimaxTokens,
-    claudeInputTokens,
-    codexInputTokens,
-    minimaxInputTokens,
-    totalTokens,
-    claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
-    codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
-  };
+  // 逐源扣掉各自的 cache 口径(T5 仍是旧的逐源不同语义,T6 统一)。
+  const sources = {} as Totals["sources"];
+  let grand = 0;
+  for (const key of TOKEN_SOURCES) {
+    const u = totals.sources[key];
+    const cut = cacheCutLegacy(u, key);
+    // 从 cacheRead 先扣,不够再扣 cacheCreation —— 保证分量非负且合计正确。
+    const readCut = Math.min(u.cacheReadInput, cut);
+    const creationCut = Math.min(u.cacheCreationInput, cut - readCut);
+    const next = {
+      ...u,
+      cacheReadInput: u.cacheReadInput - readCut,
+      cacheCreationInput: u.cacheCreationInput - creationCut,
+    };
+    sources[key] = { ...next, share: 0 };
+    grand += totalTokens(next);
+  }
+  for (const key of TOKEN_SOURCES) {
+    sources[key].share = grand === 0 ? 0 : totalTokens(sources[key]) / grand;
+  }
+  return { ...totals, sources, totalTokens: grand };
 }
 
 /** Header toggle: include Claude cache hits in the aggregate numbers. */
@@ -774,27 +706,23 @@ export function WorkTokensTrend() {
 
   const chartData = useMemo<ChartRow[]>(() => {
     if (!trend.data) return [];
-    return trend.data.buckets.map((b) => ({
-      ...b,
-      label: bucketLabel(b, trend.data!.bucketGranularity),
-      claudeFullTokens: includeCache
-        ? b.claudeTokens
-        : Math.max(0, b.claudeTokens - b.claudeCacheReadInputTokens),
-      codexFullTokens: includeCache
-        ? b.codexTokens
-        : Math.max(0, b.codexTokens - b.codexCachedInputTokens),
-      // MiniMax "exclude cache" subtracts BOTH cache kinds (read + create).
-      minimaxFullTokens: includeCache
-        ? b.minimaxTokens
-        : Math.max(
-            0,
-            b.minimaxTokens -
-              b.minimaxCacheReadInputTokens -
-              b.minimaxCacheCreationInputTokens
-          ),
-      minimaxCostUsd: 0,
-    }));
-  }, [trend.data, includeCache]);
+    return trend.data.buckets.map((b) => {
+      const row = {
+        label: bucketLabel(b, trend.data!.bucketGranularity),
+        bucket: b,
+      } as ChartRow;
+      for (const key of TOKEN_SOURCES) {
+        const u = b.sources[key];
+        const total = totalTokens(u);
+        row[key] = showCost
+          ? u.costUsd
+          : includeCache
+            ? total
+            : Math.max(0, total - cacheCutLegacy(u, key));
+      }
+      return row;
+    });
+  }, [trend.data, includeCache, showCost]);
 
   // Totals + 环比 under the cache toggle. Raw totals still feed the
   // "Claude 输入构成" explainer; everything aggregate uses the effective view.
@@ -805,18 +733,30 @@ export function WorkTokensTrend() {
   const effectivePrevTotal =
     trend.data?.mode === "window"
       ? includeCache
-        ? trend.data.previousWindowTotal
-        : Math.max(
+        ? trend.data.previousWindow.totalTokens
+        : // ⚠️ 归一之前这里**只减 claude 与 codex 的 cache-read,不减 minimax** ——
+          // 后端一直提供 minimax 的 cache 字段,前端从没接上。T5 只搬形状不改数,
+          // 所以原样保留这个口径;T6 统一成「四家都减 read + creation」时一并修。
+          Math.max(
             0,
-            trend.data.previousWindowTotal -
-              trend.data.previousWindowClaudeCacheReadInputTokens -
-              trend.data.previousWindowCodexCachedInputTokens
+            trend.data.previousWindow.totalTokens -
+              trend.data.previousWindow.bySource.claude.cacheReadInput -
+              trend.data.previousWindow.bySource.codex.cacheReadInput
           )
       : 0;
   const effectiveDeltaRatio =
     effectiveTotals && effectivePrevTotal > 0
       ? (effectiveTotals.totalTokens - effectivePrevTotal) / effectivePrevTotal
       : null;
+
+  /** 这个源此刻的状态。没有数据时当 absent(不画)。 */
+  const sourceState = (key: TokenSourceKey): SourceState =>
+    trend.data?.totals.sources[key].state ?? "absent";
+  /**
+   * 要画哪些源。`absent`(这台机器没这个源)不画 —— 画一根永远为 0 的柱子
+   * 会让人以为「用了但没花 token」。`failed` 要画并标注,那是坏了不是零。
+   */
+  const visibleSources = TOKEN_SOURCES.filter((key) => sourceState(key) !== "absent");
 
   const monthOptions = useMemo(
     () => buildMonthOptions(trend.data?.monthRange),
@@ -926,16 +866,16 @@ export function WorkTokensTrend() {
               value={formatTokenCount(effectiveTotals.totalTokens)}
               subtle={`${effectiveTotals.totalSessionCount} session`}
             />
-            <StatCard
-              label="Claude 占比"
-              value={`${(effectiveTotals.claudeShare * 100).toFixed(1)}%`}
-              subtle={formatTokenCount(effectiveTotals.claudeTokens)}
-            />
-            <StatCard
-              label="Codex 占比"
-              value={`${(effectiveTotals.codexShare * 100).toFixed(1)}%`}
-              subtle={formatTokenCount(effectiveTotals.codexTokens)}
-            />
+            {TOKEN_SOURCES.filter(
+              (key) => effectiveTotals.sources[key].state !== "absent"
+            ).map((key) => (
+              <StatCard
+                key={`share-${key}`}
+                label={`${SOURCE_META[key].label} 占比`}
+                value={`${(effectiveTotals.sources[key].share * 100).toFixed(1)}%`}
+                subtle={formatTokenCount(totalTokens(effectiveTotals.sources[key]))}
+              />
+            ))}
             {trend.data.mode === "window" ? (
               <StatCard
                 label="环比上一窗口"
@@ -967,14 +907,15 @@ export function WorkTokensTrend() {
                   value={formatUsd(trend.data.totals.totalCostUsd)}
                   subtle="按模型单价 · 含 cache 分段计价"
                 />
-                <StatCard
-                  label="Claude 成本"
-                  value={formatUsd(trend.data.totals.claudeCostUsd)}
-                />
-                <StatCard
-                  label="Codex 成本"
-                  value={formatUsd(trend.data.totals.codexCostUsd)}
-                />
+                {TOKEN_SOURCES.filter(
+                  (key) => trend.data!.totals.costState[key] !== "none"
+                ).map((key) => (
+                  <StatCard
+                    key={`cost-${key}`}
+                    label={`${SOURCE_META[key].label} 成本`}
+                    value={formatUsd(trend.data!.totals.sources[key].costUsd)}
+                  />
+                ))}
               </div>
               {trend.data.totals.unpricedTokenCount > 0 && (
                 <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
@@ -987,13 +928,23 @@ export function WorkTokensTrend() {
 
           <BreakdownMatrix totals={effectiveTotals} includeCache={includeCache} />
 
-          <ClaudeInputComposition totals={trend.data.totals} />
+          {TOKEN_SOURCES.map((key) => (
+            <InputComposition
+              key={`in-${key}`}
+              sourceKey={key}
+              usage={trend.data!.totals.sources[key]}
+              caps={trend.data!.capabilities[key]}
+            />
+          ))}
 
-          <CodexInputComposition totals={trend.data.totals} />
-
-          <ClaudeOutputComposition totals={trend.data.totals} />
-
-          <CodexOutputComposition totals={trend.data.totals} />
+          {TOKEN_SOURCES.map((key) => (
+            <OutputComposition
+              key={`out-${key}`}
+              sourceKey={key}
+              usage={trend.data!.totals.sources[key]}
+              caps={trend.data!.capabilities[key]}
+            />
+          ))}
 
           <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -1003,19 +954,21 @@ export function WorkTokensTrend() {
                   : `${WINDOWS.find((w) => w.value === currentWindow)?.label} 趋势`}
               </h2>
               <div className="flex items-center gap-3 text-xs text-[var(--fg-muted)]">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#d97757" }} />
-                  Claude
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#2563eb" }} />
-                  Codex
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#7c3aed" }} />
-                  MiniMax
-                  <span className="text-[10px] text-[var(--fg-muted)]">(账单 T+1)</span>
-                </span>
+                {visibleSources.map((key) => (
+                  <span key={`lg-${key}`} className="flex items-center gap-1">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-sm"
+                      style={{ background: SOURCE_META[key].color }}
+                    />
+                    {SOURCE_META[key].label}
+                    {key === "minimax" && (
+                      <span className="text-[10px] text-[var(--fg-muted)]">(账单 T+1)</span>
+                    )}
+                    {sourceState(key) === "failed" && (
+                      <span className="text-[10px] text-red-600">查询失败</span>
+                    )}
+                  </span>
+                ))}
               </div>
             </div>
             <div style={{ width: "100%", height: 280 }}>
@@ -1031,10 +984,16 @@ export function WorkTokensTrend() {
                     width={50}
                   />
                   <Tooltip content={<CustomTooltip costMode={showCost} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-                  <Bar dataKey={showCost ? "claudeCostUsd" : "claudeFullTokens"} stackId="tokens" fill="#d97757" radius={0} />
-                  <Bar dataKey={showCost ? "codexCostUsd" : "codexFullTokens"} stackId="tokens" fill="#2563eb" radius={0} />
-                  {/* MiniMax: remote billing history. No cost yet (subscription) → 0 in cost mode. */}
-                  <Bar dataKey={showCost ? "minimaxCostUsd" : "minimaxFullTokens"} stackId="tokens" fill="#7c3aed" radius={0} />
+                  {/* 逐源出柱。归一之前是三行写死的 <Bar>,加源要记得回来补一行。 */}
+                  {visibleSources.map((key) => (
+                    <Bar
+                      key={`bar-${key}`}
+                      dataKey={key}
+                      stackId="tokens"
+                      fill={SOURCE_META[key].color}
+                      radius={0}
+                    />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>

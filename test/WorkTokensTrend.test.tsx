@@ -49,6 +49,30 @@ afterEach(() => {
   globalThis.fetch = RAW_FETCH;
 });
 
+/** 归一后的形状:逐源原子分量 + capabilities。 */
+const usage = (o: Partial<Record<string, number>> = {}) => ({
+  state: "ok" as const,
+  freshInput: 0,
+  cacheReadInput: 0,
+  cacheCreationInput: 0,
+  output: 0,
+  reasoningOutput: 0,
+  costUsd: 0,
+  pricedTokens: 0,
+  unpricedTokens: 0,
+  sessionCount: 0,
+  coveredSessionCount: 0,
+  unknownSessionCount: 0,
+  errorSessionCount: 0,
+  ...o,
+});
+
+const CAPS = {
+  claude: { cacheRead: true, cacheCreation: true, reasoningOutput: false, sessionCounts: true },
+  codex: { cacheRead: true, cacheCreation: false, reasoningOutput: true, sessionCounts: true },
+  minimax: { cacheRead: true, cacheCreation: true, reasoningOutput: false, sessionCounts: false },
+};
+
 const WINDOW_OK = {
   ok: true,
   generatedAt: "2026-06-10T12:00:00Z",
@@ -56,48 +80,84 @@ const WINDOW_OK = {
   windowKey: "1w" as const,
   range: { from: "2026-06-03T04:00:00Z", to: "2026-06-10T04:00:00Z" },
   bucketGranularity: "day" as const,
+  capabilities: CAPS,
   buckets: [
     {
       bucketStart: "2026-06-03T16:00:00Z",
       bucketEnd: "2026-06-04T16:00:00Z",
-      claudeTokens: 12000,
-      codexTokens: 3000,
-      claudeSessionCount: 2,
-      codexSessionCount: 1,
-      claudeCoveredSessionCount: 2,
-      codexCoveredSessionCount: 1,
-      claudeUnknownSessionCount: 0,
-      codexUnknownSessionCount: 0,
-      claudeErrorSessionCount: 0,
-      codexErrorSessionCount: 0,
+      sources: {
+        // claude: input 11500 = fresh 500 + read 9000 + creation 2000;output 500
+        claude: usage({
+          freshInput: 500,
+          cacheReadInput: 9000,
+          cacheCreationInput: 2000,
+          output: 500,
+          sessionCount: 2,
+          coveredSessionCount: 2,
+        }),
+        // codex: input 2800 = fresh 1400 + read 1400(50% 命中);output 200,其中 reasoning 140
+        codex: usage({
+          freshInput: 1400,
+          cacheReadInput: 1400,
+          output: 200,
+          reasoningOutput: 140,
+          sessionCount: 1,
+          coveredSessionCount: 1,
+        }),
+        minimax: usage(),
+      },
     },
   ],
   totals: {
     totalTokens: 15000,
-    claudeTokens: 12000,
-    codexTokens: 3000,
-    claudeInputTokens: 11500,
-    claudeOutputTokens: 500,
-    codexInputTokens: 2800,
-    codexOutputTokens: 200,
-    claudeCacheReadInputTokens: 9000,
-    claudeCacheCreationInputTokens: 2000,
-    codexReasoningOutputTokens: 140, // subset of codexOutputTokens (200)
-    codexCachedInputTokens: 1400, // subset of codexInputTokens (2800) → 50% hit
+    sources: {
+      claude: {
+        ...usage({
+          freshInput: 500,
+          cacheReadInput: 9000,
+          cacheCreationInput: 2000,
+          output: 500,
+          costUsd: 1.0,
+          pricedTokens: 12000,
+          sessionCount: 2,
+          coveredSessionCount: 2,
+        }),
+        share: 0.8,
+      },
+      codex: {
+        ...usage({
+          freshInput: 1400,
+          cacheReadInput: 1400,
+          output: 200,
+          reasoningOutput: 140,
+          costUsd: 0.2345,
+          pricedTokens: 2500,
+          unpricedTokens: 500,
+          sessionCount: 1,
+          coveredSessionCount: 1,
+        }),
+        share: 0.2,
+      },
+      minimax: { ...usage({ state: "absent" as const }), share: 0 },
+    },
+    costState: { claude: "full" as const, codex: "partial" as const, minimax: "none" as const },
     totalCostUsd: 1.2345,
-    claudeCostUsd: 1.0,
-    codexCostUsd: 0.2345,
     unpricedTokenCount: 500,
     priceSnapshotDate: "2026-06-19",
-    claudeShare: 0.8,
-    codexShare: 0.2,
     coverage: "full" as const,
     coveredSessionCount: 3,
     unknownSessionCount: 0,
     errorSessionCount: 0,
     totalSessionCount: 3,
   },
-  previousWindowTotal: 10000,
+  previousWindow: {
+    totalTokens: 10000,
+    bySource: {
+      claude: { totalTokens: 8000, freshInput: 8000, cacheReadInput: 0, cacheCreationInput: 0 },
+      codex: { totalTokens: 2000, freshInput: 2000, cacheReadInput: 0, cacheCreationInput: 0 },
+      minimax: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
+    },
+  },
   deltaRatio: 0.5,
   monthRange: { earliest: "2025-01", latest: "2026-06" },
   diagnostics: [],
@@ -110,26 +170,19 @@ const MONTH_OK = {
   monthKey: "2026-05",
   range: { from: "2026-04-30T16:00:00Z", to: "2026-05-31T16:00:00Z" },
   bucketGranularity: "day" as const,
+  capabilities: CAPS,
   buckets: [],
   totals: {
     totalTokens: 0,
-    claudeTokens: 0,
-    codexTokens: 0,
-    claudeInputTokens: 0,
-    claudeOutputTokens: 0,
-    codexInputTokens: 0,
-    codexOutputTokens: 0,
-    claudeCacheReadInputTokens: 0,
-    claudeCacheCreationInputTokens: 0,
-    codexReasoningOutputTokens: 0,
-    codexCachedInputTokens: 0,
+    sources: {
+      claude: { ...usage(), share: 0 },
+      codex: { ...usage(), share: 0 },
+      minimax: { ...usage({ state: "absent" as const }), share: 0 },
+    },
+    costState: { claude: "none" as const, codex: "none" as const, minimax: "none" as const },
     totalCostUsd: 0,
-    claudeCostUsd: 0,
-    codexCostUsd: 0,
     unpricedTokenCount: 0,
     priceSnapshotDate: "2026-06-19",
-    claudeShare: 0,
-    codexShare: 0,
     coverage: "full" as const,
     coveredSessionCount: 0,
     unknownSessionCount: 0,
@@ -269,7 +322,16 @@ describe("WorkTokensTrend page", () => {
 
   it("hides Claude 输出构成 when there are no Claude output tokens", async () => {
     installFetchMock(async () =>
-      jsonResponse({ ...WINDOW_OK, totals: { ...WINDOW_OK.totals, claudeOutputTokens: 0 } })
+      jsonResponse({
+        ...WINDOW_OK,
+        totals: {
+          ...WINDOW_OK.totals,
+          sources: {
+            ...WINDOW_OK.totals.sources,
+            claude: { ...WINDOW_OK.totals.sources.claude, output: 0 },
+          },
+        },
+      })
     );
     renderPage();
     await waitFor(() => expect(screen.getByText("Claude 输入构成")).toBeInTheDocument());
@@ -282,7 +344,10 @@ describe("WorkTokensTrend page", () => {
         ...WINDOW_OK,
         totals: {
           ...WINDOW_OK.totals,
-          codexOutputTokens: 0,
+          sources: {
+            ...WINDOW_OK.totals.sources,
+            codex: { ...WINDOW_OK.totals.sources.codex, output: 0, reasoningOutput: 0 },
+          },
           codexReasoningOutputTokens: 0,
         },
       })
@@ -300,9 +365,15 @@ describe("WorkTokensTrend page", () => {
         ...WINDOW_OK,
         totals: {
           ...WINDOW_OK.totals,
-          claudeInputTokens: 0,
-          claudeCacheReadInputTokens: 0,
-          claudeCacheCreationInputTokens: 0,
+          sources: {
+            ...WINDOW_OK.totals.sources,
+            claude: {
+              ...WINDOW_OK.totals.sources.claude,
+              freshInput: 0,
+              cacheReadInput: 0,
+              cacheCreationInput: 0,
+            },
+          },
         },
       })
     );
@@ -321,12 +392,11 @@ describe("WorkTokensTrend page", () => {
         totals: {
           ...WINDOW_OK.totals,
           totalTokens: 0,
-          claudeTokens: 0,
-          codexTokens: 0,
-          claudeInputTokens: 0,
-          claudeOutputTokens: 0,
-          codexInputTokens: 0,
-          codexOutputTokens: 0,
+          sources: {
+            claude: { ...usage(), share: 0 },
+            codex: { ...usage(), share: 0 },
+            minimax: { ...usage({ state: "absent" as const }), share: 0 },
+          },
         },
       })
     );
