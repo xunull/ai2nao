@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
-import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
+import { generateTrend } from "../src/workTokensTrend/service.js";
 import { priceCostByBucket } from "../src/workTokensTrend/queries.js";
+import { totalTokens } from "../src/workTokensTrend/types.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {
@@ -120,11 +121,14 @@ describe("USD cost in tokens-trend", () => {
 
     // Claude sonnet: fresh=700×3e-6 + creation=200×3.75e-6 + read=100×3e-7 + out=500×1.5e-5
     // = 0.0021 + 0.00075 + 0.00003 + 0.0075 = 0.01038
-    expect(t.claudeCostUsd).toBeCloseTo(0.01038, 9);
+    expect(t.sources.claude.costUsd).toBeCloseTo(0.01038, 9);
     // gpt-5.5 unpriced → codex cost 0, its tokens (800+200=1000) counted unpriced.
-    expect(t.codexCostUsd).toBe(0);
+    expect(t.sources.codex.costUsd).toBe(0);
     expect(t.unpricedTokenCount).toBe(1000);
-    expect(t.totalCostUsd).toBeCloseTo(t.claudeCostUsd + t.codexCostUsd, 12);
+    expect(t.totalCostUsd).toBeCloseTo(
+      t.sources.claude.costUsd + t.sources.codex.costUsd,
+      12
+    );
     expect(t.priceSnapshotDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -136,16 +140,18 @@ describe("USD cost in tokens-trend", () => {
       output: 100,
       cached: 0,
     });
-    const { byBucket, unpricedTokenCount } = priceCostByBucket(
+    const { byBucket } = priceCostByBucket(
       db,
       new Date(2026, 5, 14, 0, 0, 0, 0),
       new Date(2026, 5, 16, 0, 0, 0, 0),
       "day"
     );
-    expect(unpricedTokenCount).toBe(0);
+    // 归一后 unpriced 是逐源的,不再有全局单值。
+    const day15 = byBucket.get("2026-06-15");
+    expect(day15?.codex.unpriced).toBe(0);
     // haiku: fresh=1000×1e-6 + out=100×5e-6 = 0.001 + 0.0005 = 0.0015
     const day = byBucket.get("2026-06-15");
-    expect(day?.codexCostUsd).toBeCloseTo(0.0015, 9);
+    expect(day?.codex.costUsd).toBeCloseTo(0.0015, 9);
   });
 
   it("cost is independent of token counts — pure pricing of components", () => {
@@ -162,8 +168,8 @@ describe("USD cost in tokens-trend", () => {
     });
     if (r.mode !== "month") throw new Error("type narrow");
     // null model → unpriced; tokens still counted in token totals, not cost.
-    expect(r.totals.claudeCostUsd).toBe(0);
+    expect(r.totals.sources.claude.costUsd).toBe(0);
     expect(r.totals.unpricedTokenCount).toBe(2_000_000);
-    expect(r.totals.claudeTokens).toBe(2_000_000);
+    expect(totalTokens(r.totals.sources.claude)).toBe(2_000_000);
   });
 });

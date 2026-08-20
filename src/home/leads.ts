@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { listProviders } from "../providers/store.js";
 import { listReplaySessions } from "../replay/queries.js";
 import { localDayRangeUtc, todayLocalDay } from "../timeWindow/bucket.js";
+import { TOKEN_SOURCES, totalTokens } from "../workTokensTrend/types.js";
 import type {
   WorkTokensTrendBucket,
   WorkTokensTrendResponse,
@@ -654,7 +655,7 @@ export function todaySummary(db: Database.Database, ctx: ProbeContext): TodaySum
 
   return {
     tokens: today ? bucketTotal(today) : 0,
-    costUsd: today ? today.claudeCostUsd + today.codexCostUsd : 0,
+    costUsd: today ? bucketCostUsd(today) : 0,
     commits: git.commits,
     projects: git.projects,
     messages: msg.n,
@@ -717,11 +718,16 @@ export function collectLeads(
 
 /**
  * 一个桶的三源合计。桶上没有 `totalTokens` —— 那个字段在 `totals` 上,桶是**按源分列**的
- * (claudeTokens / codexTokens / minimaxTokens)。这里显式相加,而不是去 totals 上取:
+ * 逐源相加(TOKEN_SOURCES 遍历,加源自动纳入)。这里显式相加,而不是去 totals 上取:
  * totals 是整窗合计,拿它算不出「今天 vs 前六天」。
  */
 function bucketTotal(b: WorkTokensTrendBucket): number {
-  return b.claudeTokens + b.codexTokens + b.minimaxTokens;
+  return TOKEN_SOURCES.reduce((n, k) => n + totalTokens(b.sources[k]), 0);
+}
+
+/** 成本同理逐源遍历 —— 归一之前这里只加了 claude + codex,加源会静默少算。 */
+function bucketCostUsd(b: WorkTokensTrendBucket): number {
+  return TOKEN_SOURCES.reduce((n, k) => n + b.sources[k].costUsd, 0);
 }
 
 /** 项目 key 是路径 slug,首页只需要末段。 */

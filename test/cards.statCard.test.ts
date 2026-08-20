@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PersonalRecords, StreakRhythm } from "../src/aiRhythm/queries.js";
 import type { AiToolView } from "../src/aiTools/types.js";
-import type { WorkTokensTrendTotals } from "../src/workTokensTrend/types.js";
+import { emptyUsage, type WorkTokensTrendTotals } from "../src/workTokensTrend/types.js";
 import { renderStatCard } from "../src/cards/statCard.js";
 import {
   renderAiToolsCard,
@@ -184,13 +184,23 @@ describe("renderKimiQuotaCard", () => {
 });
 
 describe("renderTokenCard", () => {
+  // 归一后的形状:逐源原子分量,总量/成本由卡片自己 reduce 出来。
+  // 用 freshInput 装全部输入是为了让 totalTokens() 直接等于目标值。
+  const src = (fresh: number, costUsd = 0) => ({
+    ...emptyUsage("ok" as const),
+    freshInput: fresh,
+    costUsd,
+    pricedTokens: fresh,
+    share: 0,
+  });
   const totals = {
     totalTokens: 12_300_000,
-    claudeTokens: 9_000_000,
-    codexTokens: 3_300_000,
-    minimaxTokens: 0,
-    claudeCostUsd: 40,
-    codexCostUsd: 5.5,
+    sources: {
+      claude: src(9_000_000, 40),
+      codex: src(3_300_000, 5.5),
+      minimax: src(0),
+    },
+    totalCostUsd: 45.5,
   } as unknown as WorkTokensTrendTotals;
 
   it("默认:总量(M)+ 各源,不露成本", () => {

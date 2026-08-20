@@ -9,8 +9,10 @@ import {
   parseChargeRecord,
   type MinimaxAmountFetch,
 } from "../src/minimaxTokenUsage/refresh.js";
-import { queryBucketsBySource } from "../src/workTokensTrend/queries.js";
-import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
+import {
+  generateTrendLegacy as generateTrend,
+  queryBucketsBySourceLegacy as queryBucketsBySource,
+} from "../src/workTokensTrend/legacyShape.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {

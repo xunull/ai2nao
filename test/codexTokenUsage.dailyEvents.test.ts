@@ -10,7 +10,7 @@ import {
 } from "../src/codexHistory/normalize.js";
 import { parseJsonlText } from "../src/localJsonl/parse.js";
 import { replaceCodexTokenUsageEvents } from "../src/codexTokenUsage/queries.js";
-import { queryBucketsBySource } from "../src/workTokensTrend/queries.js";
+import { queryBucketsBySourceLegacy as queryBucketsBySource } from "../src/workTokensTrend/legacyShape.js";
 
 /**
  * Regression (2026-06-18 /investigate): a Codex session resumed across many

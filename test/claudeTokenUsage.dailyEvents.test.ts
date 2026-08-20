@@ -10,7 +10,7 @@ import {
 } from "../src/claudeCodeHistory/normalize.js";
 import { parseJsonlText } from "../src/claudeCodeHistory/parseJsonl.js";
 import { replaceClaudeTokenUsageEvents } from "../src/claudeTokenUsage/queries.js";
-import { queryBucketsBySource } from "../src/workTokensTrend/queries.js";
+import { queryBucketsBySourceLegacy as queryBucketsBySource } from "../src/workTokensTrend/legacyShape.js";
 import type { ClaudeTokenEvent } from "../src/claudeCodeHistory/normalize.js";
 
 /**

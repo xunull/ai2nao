@@ -1,101 +1,162 @@
 import type Database from "better-sqlite3";
 import { computeCost, PRICE_SNAPSHOT_DATE } from "../cost/pricing.js";
 import { latestSyncedAt, loadPriceMap } from "../cost/priceStore.js";
-import { bucketExpr } from "./bucket.js";
+import { ADAPTERS, type SourceBucketRow } from "./adapters.js";
 import {
-  MINIMAX_METHOD_CACHE_READ,
-  MINIMAX_METHOD_CACHE_CREATE,
-} from "../minimaxTokenUsage/types.js";
-import type {
-  BucketGranularity,
-  MonthRange,
-  WorkTokensTrendBucket,
-  WorkTokensTrendCoverage,
-  WorkTokensTrendTotals,
+  emptyUsage,
+  TOKEN_SOURCES,
+  totalTokens,
+  type BucketGranularity,
+  type MonthRange,
+  type PreviousWindow,
+  type SourceCostState,
+  type SourceUsage,
+  type TokenSourceKey,
+  type WorkTokensTrendBucket,
+  type WorkTokensTrendCoverage,
+  type WorkTokensTrendTotals,
 } from "./types.js";
 
-type Source = "claude" | "codex";
-
 /**
- * Trend-read sources. `minimax` is a remote billing-history source with NO
- * per-session table (event-only), so it's a superset of `Source` used ONLY at
- * the trend-read entry point — the session-table (`TABLE`) and cost paths stay
- * on the narrow `Source`.
+ * 聚合层。SQL 全在 `adapters.ts` 里,这里只做「合并、补零、汇总、定价」。
+ *
+ * 归一之前这里有 800 行,其中一半是三个源各自的查询函数与
+ * `source === "claude" ? … : "0"` 这类拼 SQL 的三元。那些已经搬进各自的 adapter。
  */
-export type TrendSource = Source | "minimax";
 
-const TABLE: Record<Source, string> = {
-  claude: "claude_session_token_usage",
-  codex: "codex_session_token_usage",
-};
+/** 一个源在一个桶里的原始行,按 bucket_key 索引。 */
+export type BucketRowsBySource = Record<TokenSourceKey, Map<string, SourceBucketRow>>;
 
-/**
- * Per-(bucket, model) token components for USD cost pricing. Cost lives on a
- * SEPARATE path from token bucketing — the model dimension is only needed to
- * price, and pricing is done in TS (rates never enter SQL). Only token_status
- * = 'full' rows contribute (real tokens only). Codex pulls from the per-event
- * timeline (so multi-day costs land on the right day) and JOINs the session
- * table for the model.
- */
-export type CostComponentRow = {
-  bucket_key: string;
-  /** Empty string when the session has no model (→ unpriced downstream). */
-  model: string;
-  fresh: number;
-  cache_hit: number;
-  cache_creation: number;
-  output: number;
-};
-
-export function queryCostComponentsByBucket(
-  db: Database.Database,
-  source: Source,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): CostComponentRow[] {
-  const sql =
-    source === "claude"
-      ? `
-        SELECT
-          ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
-          COALESCE(s.model, '') AS model,
-          COALESCE(SUM(e.input_tokens - e.cache_read_input_tokens - e.cache_creation_input_tokens), 0) AS fresh,
-          COALESCE(SUM(e.cache_read_input_tokens), 0) AS cache_hit,
-          COALESCE(SUM(e.cache_creation_input_tokens), 0) AS cache_creation,
-          COALESCE(SUM(e.output_tokens), 0) AS output
-        FROM claude_token_usage_event e
-        JOIN claude_session_token_usage s ON s.session_id = e.session_id
-        WHERE e.event_at >= ? AND e.event_at < ?
-          AND s.missing_since IS NULL AND s.token_status = 'full'
-        GROUP BY bucket_key, model
-      `
-      : `
-        SELECT
-          ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
-          COALESCE(s.model, '') AS model,
-          COALESCE(SUM(e.input_tokens - e.cached_input_tokens), 0) AS fresh,
-          COALESCE(SUM(e.cached_input_tokens), 0) AS cache_hit,
-          0 AS cache_creation,
-          COALESCE(SUM(e.output_tokens), 0) AS output
-        FROM codex_token_usage_event e
-        JOIN codex_session_token_usage s ON s.session_id = e.session_id
-        WHERE e.event_at >= ? AND e.event_at < ?
-          AND s.missing_since IS NULL AND s.token_status = 'full'
-        GROUP BY bucket_key, model
-      `;
-  return db
-    .prepare(sql)
-    .all(from.toISOString(), to.toISOString()) as CostComponentRow[];
+/** 把 adapter 出的行转成 `SourceUsage`。`state` 由调用方决定(ok / failed / absent)。 */
+function rowToUsage(r: SourceBucketRow | undefined, state: SourceUsage["state"]): SourceUsage {
+  const u = emptyUsage(state);
+  if (!r) return u;
+  u.freshInput = r.fresh_input;
+  u.cacheReadInput = r.cache_read_input;
+  u.cacheCreationInput = r.cache_creation_input;
+  u.output = r.output;
+  u.reasoningOutput = r.reasoning_output;
+  u.sessionCount = r.session_count;
+  u.coveredSessionCount = r.full_count;
+  u.unknownSessionCount = r.unknown_count;
+  u.errorSessionCount = r.error_count;
+  return u;
 }
 
-export type BucketCost = { claudeCostUsd: number; codexCostUsd: number };
+/**
+ * 枚举出的桶 × 各源的行 → 完整的桶数组(缺的补零)。
+ *
+ * `states` 决定每个源在**所有**桶里的 state:查询抛了就是 `failed`,
+ * 这台机器没这个源就是 `absent`,否则 `ok`(哪怕这个窗口一行都没有)。
+ */
+export function mergeAndZeroFill(
+  bucketKeys: { key: string; start: Date; end: Date }[],
+  bySource: BucketRowsBySource,
+  states: Record<TokenSourceKey, SourceUsage["state"]>
+): WorkTokensTrendBucket[] {
+  return bucketKeys.map((b) => {
+    const sources = {} as Record<TokenSourceKey, SourceUsage>;
+    for (const key of TOKEN_SOURCES) {
+      sources[key] = rowToUsage(bySource[key].get(b.key), states[key]);
+    }
+    return {
+      bucketStart: b.start.toISOString(),
+      bucketEnd: b.end.toISOString(),
+      sources,
+    };
+  });
+}
+
+/** 逐源把桶里的分量加起来。 */
+function sumUsage(a: SourceUsage, b: SourceUsage): SourceUsage {
+  return {
+    // state 取「更坏」的那个:failed > absent > ok。桶之间理论上同 state,
+    // 这里的合并只是防御。
+    state: a.state === "failed" || b.state === "failed" ? "failed"
+      : a.state === "absent" || b.state === "absent" ? "absent"
+      : "ok",
+    freshInput: a.freshInput + b.freshInput,
+    cacheReadInput: a.cacheReadInput + b.cacheReadInput,
+    cacheCreationInput: a.cacheCreationInput + b.cacheCreationInput,
+    output: a.output + b.output,
+    reasoningOutput: a.reasoningOutput + b.reasoningOutput,
+    costUsd: a.costUsd + b.costUsd,
+    pricedTokens: a.pricedTokens + b.pricedTokens,
+    unpricedTokens: a.unpricedTokens + b.unpricedTokens,
+    sessionCount: a.sessionCount + b.sessionCount,
+    coveredSessionCount: a.coveredSessionCount + b.coveredSessionCount,
+    unknownSessionCount: a.unknownSessionCount + b.unknownSessionCount,
+    errorSessionCount: a.errorSessionCount + b.errorSessionCount,
+  };
+}
+
+/** 成本可信度:全定价 / 部分 / 一条都没有。布尔说不清中间那档。 */
+function costStateOf(u: SourceUsage): SourceCostState {
+  if (u.pricedTokens === 0) return "none";
+  return u.unpricedTokens === 0 ? "full" : "partial";
+}
+
+export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrendTotals {
+  const acc = {} as Record<TokenSourceKey, SourceUsage>;
+  for (const key of TOKEN_SOURCES) {
+    acc[key] = buckets.reduce(
+      (sum, b) => sumUsage(sum, b.sources[key]),
+      emptyUsage(buckets[0]?.sources[key].state ?? "ok")
+    );
+  }
+
+  const grand = TOKEN_SOURCES.reduce((n, k) => n + totalTokens(acc[k]), 0);
+
+  const sources = {} as WorkTokensTrendTotals["sources"];
+  const costState = {} as Record<TokenSourceKey, SourceCostState>;
+  let totalCostUsd = 0;
+  let unpricedTokenCount = 0;
+  let covered = 0;
+  let unknown = 0;
+  let errored = 0;
+
+  for (const key of TOKEN_SOURCES) {
+    const u = acc[key];
+    sources[key] = { ...u, share: grand === 0 ? 0 : totalTokens(u) / grand };
+    costState[key] = costStateOf(u);
+    totalCostUsd += u.costUsd;
+    unpricedTokenCount += u.unpricedTokens;
+    // ⚠️ 只累加有 session 概念的源。单位是 session。
+    if (ADAPTERS[key].capabilities.sessionCounts) {
+      covered += u.coveredSessionCount;
+      unknown += u.unknownSessionCount;
+      errored += u.errorSessionCount;
+    }
+  }
+  // 总数由三态相加得出,不用 COUNT(*) —— 与归一之前一致。
+  const sessionTotal = covered + unknown + errored;
+
+  // 四个分支,与归一之前逐字一致。特别是「零 session → full」:
+  // 没有会话就是「该记的都记了」,不是「不知道」。
+  let coverage: WorkTokensTrendCoverage;
+  if (sessionTotal === 0) coverage = "full";
+  else if (covered === sessionTotal) coverage = "full";
+  else if (covered === 0) coverage = "unknown";
+  else coverage = "partial";
+
+  return {
+    totalTokens: grand,
+    sources,
+    costState,
+    totalCostUsd,
+    unpricedTokenCount,
+    priceSnapshotDate: PRICE_SNAPSHOT_DATE,
+    coverage,
+    coveredSessionCount: covered,
+    unknownSessionCount: unknown,
+    errorSessionCount: errored,
+    totalSessionCount: sessionTotal,
+  };
+}
 
 /**
- * Price both sources per (bucket, model) and fold into per-bucket USD cost.
- * Returns the per-bucket cost map + total tokens whose model had no price
- * (surfaced, never summed into cost). Pricing is in TS via the vendored
- * snapshot; SQL only aggregated the token components.
+ * 定价。逐源逐 (桶, 模型) 算,没有价格条目的模型**不当成 $0**,
+ * 它的 token 进 `unpricedTokens`。没有 `queryCostRows` 的源(MiniMax)全部 unpriced。
  */
 export function priceCostByBucket(
   db: Database.Database,
@@ -103,698 +164,103 @@ export function priceCostByBucket(
   to: Date,
   granularity: BucketGranularity
 ): {
-  byBucket: Map<string, BucketCost>;
-  unpricedTokenCount: number;
+  /** bucket_key → 源 → {costUsd, priced, unpriced} */
+  byBucket: Map<string, Record<TokenSourceKey, { costUsd: number; priced: number; unpriced: number }>>;
   priceSnapshotDate: string;
 } {
-  const byBucket = new Map<string, BucketCost>();
-  let unpricedTokenCount = 0;
-  // Merge vendored snapshot ← synced DB prices (synced wins). One read per request.
+  const byBucket = new Map<
+    string,
+    Record<TokenSourceKey, { costUsd: number; priced: number; unpriced: number }>
+  >();
   const priceMap = loadPriceMap(db);
-  const apply = (source: Source) => {
-    for (const r of queryCostComponentsByBucket(db, source, from, to, granularity)) {
+
+  const slot = (bucketKey: string) => {
+    let cur = byBucket.get(bucketKey);
+    if (!cur) {
+      cur = {} as Record<TokenSourceKey, { costUsd: number; priced: number; unpriced: number }>;
+      for (const k of TOKEN_SOURCES) cur[k] = { costUsd: 0, priced: 0, unpriced: 0 };
+      byBucket.set(bucketKey, cur);
+    }
+    return cur;
+  };
+
+  for (const key of TOKEN_SOURCES) {
+    const adapter = ADAPTERS[key];
+    if (!adapter.queryCostRows) continue; // 无定价概念 → 由下方 unpriced 兜底
+    for (const r of adapter.queryCostRows(db, from, to, granularity)) {
+      const tokens = r.fresh + r.cache_hit + r.cache_creation + r.output;
       const result = computeCost(
-        {
-          fresh: r.fresh,
-          cacheHit: r.cache_hit,
-          cacheCreation: r.cache_creation,
-          output: r.output,
-        },
+        { fresh: r.fresh, cacheHit: r.cache_hit, cacheCreation: r.cache_creation, output: r.output },
         r.model || null,
         priceMap
       );
-      if (!result.priced) {
-        // input(fresh+hit+creation) + output tokens that we couldn't price.
-        unpricedTokenCount +=
-          r.fresh + r.cache_hit + r.cache_creation + r.output;
-        continue;
+      const cell = slot(r.bucket_key)[key];
+      if (result.priced) {
+        cell.costUsd += result.usd;
+        cell.priced += tokens;
+      } else {
+        cell.unpriced += tokens;
       }
-      const cur = byBucket.get(r.bucket_key) ?? {
-        claudeCostUsd: 0,
-        codexCostUsd: 0,
-      };
-      if (source === "claude") cur.claudeCostUsd += result.usd;
-      else cur.codexCostUsd += result.usd;
-      byBucket.set(r.bucket_key, cur);
-    }
-  };
-  apply("claude");
-  apply("codex");
-  // Snapshot date shown on the UI: latest sync, else the vendored snapshot.
-  const priceSnapshotDate = latestSyncedAt(db) ?? PRICE_SNAPSHOT_DATE;
-  return { byBucket, unpricedTokenCount, priceSnapshotDate };
-}
-
-type RawBucketRow = {
-  bucket_key: string;
-  total_tokens: number;
-  input_tokens: number;
-  output_tokens: number;
-  /** Claude-only prompt-cache split. Always 0 for codex (no such columns). */
-  cache_read_input_tokens: number;
-  cache_creation_input_tokens: number;
-  /** Codex-only reasoning output. Always 0 for claude (no such column). */
-  reasoning_output_tokens: number;
-  /** Codex-only cached input (cache-hit replay). Always 0 for claude. */
-  codex_cached_input_tokens: number;
-  session_count: number;
-  full_count: number;
-  unknown_count: number;
-  error_count: number;
-};
-
-/**
- * Per-source aggregate for a single `[from, to)` range bucketed by `granularity`.
- *
- * Claude reads straight from its per-session table (one short-lived session per
- * conversation, so per-session bucketing is already correct). **Codex is
- * special**: a session can be resumed across many days (Codex appends to one
- * rollout), so bucketing its total on `last_updated_at` collapses a week of
- * usage onto one day. For Codex the token sums come from the per-event timeline
- * (`codex_token_usage_event`, bucketed by `event_at`) while session counts /
- * coverage stay on the per-session table. See `queryCodexBuckets`.
- */
-export function queryBucketsBySource(
-  db: Database.Database,
-  source: TrendSource,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): RawBucketRow[] {
-  if (source === "minimax") {
-    return queryMinimaxBuckets(db, from, to, granularity);
-  }
-  if (source === "codex") {
-    return queryCodexBuckets(db, from, to, granularity);
-  }
-  if (source === "claude") {
-    return queryClaudeBuckets(db, from, to, granularity);
-  }
-  return querySessionTableBuckets(db, source, from, to, granularity);
-}
-
-/**
- * MiniMax bucket rows from the per-hour billing-history event table. No session
- * table exists (remote billing, not local sessions), so session counts are 0 —
- * a bucket carries tokens with `session_count = 0`, same shape as a codex
- * event-only bucket. `input_tokens` is FUSED (all methods' input = fresh +
- * cache-read + cache-create, mirroring claude's fused input). The two cache
- * kinds are classified BY METHOD into the shared cache columns so the "exclude
- * cache" toggle can subtract BOTH (unlike claude which only carries one). See
- * `docs/minimax-token-accounting.md`.
- */
-function queryMinimaxBuckets(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): RawBucketRow[] {
-  const sql = `
-    SELECT
-      ${bucketExpr(granularity, "event_at")} AS bucket_key,
-      COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
-      COALESCE(SUM(input_tokens), 0) AS input_tokens,
-      COALESCE(SUM(output_tokens), 0) AS output_tokens,
-      COALESCE(SUM(CASE WHEN method = ? THEN input_tokens ELSE 0 END), 0) AS cache_read_input_tokens,
-      COALESCE(SUM(CASE WHEN method = ? THEN input_tokens ELSE 0 END), 0) AS cache_creation_input_tokens,
-      0 AS reasoning_output_tokens,
-      0 AS codex_cached_input_tokens,
-      0 AS session_count,
-      0 AS full_count,
-      0 AS unknown_count,
-      0 AS error_count
-    FROM minimax_token_usage_event
-    WHERE event_at >= ?
-      AND event_at < ?
-    GROUP BY bucket_key
-    ORDER BY bucket_key ASC
-  `;
-  return db
-    .prepare(sql)
-    .all(
-      MINIMAX_METHOD_CACHE_READ,
-      MINIMAX_METHOD_CACHE_CREATE,
-      from.toISOString(),
-      to.toISOString()
-    ) as RawBucketRow[];
-}
-
-/**
- * Per-session-table aggregate, bucketed by `last_updated_at`.
- *
- * Filter rules (P11, single predicate for both SUM and count):
- *   - `last_updated_at` BETWEEN from AND to (half-open: < to)
- *   - `missing_since IS NULL` (exclude vanished sessions)
- *
- * **Token sum uses `token_status='full'` ONLY.** Sessions whose status is
- * `unknown` / `error` contribute to session counts (for coverage badge) but
- * NOT to the token sum. This is the ai2nao "real tokens only, never estimate"
- * convention — same as `buildWorkTokenRanking()`.
- */
-function querySessionTableBuckets(
-  db: Database.Database,
-  source: Source,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): RawBucketRow[] {
-  // Prompt-cache columns only exist on the Claude table. For Codex we emit
-  // literal 0 so the row shape stays uniform across sources.
-  const cacheReadExpr =
-    source === "claude"
-      ? "COALESCE(SUM(CASE WHEN token_status = 'full' THEN cache_read_input_tokens ELSE 0 END), 0)"
-      : "0";
-  const cacheCreationExpr =
-    source === "claude"
-      ? "COALESCE(SUM(CASE WHEN token_status = 'full' THEN cache_creation_input_tokens ELSE 0 END), 0)"
-      : "0";
-  // Mirror of the cache columns, opposite direction: reasoning_output_tokens
-  // only exists on the Codex table. For Claude emit literal 0.
-  const reasoningExpr =
-    source === "codex"
-      ? "COALESCE(SUM(CASE WHEN token_status = 'full' THEN reasoning_output_tokens ELSE 0 END), 0)"
-      : "0";
-  const sql = `
-    SELECT
-      ${bucketExpr(granularity)} AS bucket_key,
-      COALESCE(SUM(CASE WHEN token_status = 'full' THEN total_tokens ELSE 0 END), 0) AS total_tokens,
-      COALESCE(SUM(CASE WHEN token_status = 'full' THEN input_tokens ELSE 0 END), 0) AS input_tokens,
-      COALESCE(SUM(CASE WHEN token_status = 'full' THEN output_tokens ELSE 0 END), 0) AS output_tokens,
-      ${cacheReadExpr} AS cache_read_input_tokens,
-      ${cacheCreationExpr} AS cache_creation_input_tokens,
-      ${reasoningExpr} AS reasoning_output_tokens,
-      0 AS codex_cached_input_tokens,
-      COUNT(*) AS session_count,
-      SUM(CASE WHEN token_status = 'full' THEN 1 ELSE 0 END) AS full_count,
-      SUM(CASE WHEN token_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_count,
-      SUM(CASE WHEN token_status = 'error' THEN 1 ELSE 0 END) AS error_count
-    FROM ${TABLE[source]}
-    WHERE last_updated_at >= ?
-      AND last_updated_at < ?
-      AND missing_since IS NULL
-    GROUP BY bucket_key
-    ORDER BY bucket_key ASC
-  `;
-  const fromIso = from.toISOString();
-  const toIso = to.toISOString();
-  return db.prepare(sql).all(fromIso, toIso) as RawBucketRow[];
-}
-
-type CodexTokenSumRow = {
-  bucket_key: string;
-  total_tokens: number;
-  input_tokens: number;
-  output_tokens: number;
-  reasoning_output_tokens: number;
-  cached_input_tokens: number;
-};
-
-/**
- * Codex token sums bucketed by `event_at` (the per-event timeline), joined to
- * the per-session table so the same `token_status='full'` + `missing_since IS
- * NULL` filters apply. `total = input + output` (Codex/OpenAI semantics, same
- * as the session table's `total_tokens`); reasoning is a subset of output,
- * reported separately.
- */
-function queryCodexTokenSumsByBucket(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): CodexTokenSumRow[] {
-  const sql = `
-    SELECT
-      ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
-      COALESCE(SUM(e.input_tokens + e.output_tokens), 0) AS total_tokens,
-      COALESCE(SUM(e.input_tokens), 0) AS input_tokens,
-      COALESCE(SUM(e.output_tokens), 0) AS output_tokens,
-      COALESCE(SUM(e.reasoning_output_tokens), 0) AS reasoning_output_tokens,
-      COALESCE(SUM(e.cached_input_tokens), 0) AS cached_input_tokens
-    FROM codex_token_usage_event e
-    JOIN codex_session_token_usage s ON s.session_id = e.session_id
-    WHERE e.event_at >= ?
-      AND e.event_at < ?
-      AND s.missing_since IS NULL
-      AND s.token_status = 'full'
-    GROUP BY bucket_key
-    ORDER BY bucket_key ASC
-  `;
-  return db
-    .prepare(sql)
-    .all(from.toISOString(), to.toISOString()) as CodexTokenSumRow[];
-}
-
-/**
- * Codex bucket rows: token sums from the per-event timeline (bucketed by the
- * day each token was consumed), session counts / coverage from the per-session
- * table (bucketed by `last_updated_at`, unchanged). A bucket can therefore have
- * tokens with `session_count = 0` (a still-running session consumed tokens that
- * day but was last *touched* on a later day) — that's honest, and the per-bucket
- * session-count detail only surfaces in the tooltip when coverage is partial.
- */
-function queryCodexBuckets(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): RawBucketRow[] {
-  const byKey = new Map<string, RawBucketRow>();
-  // Counts / coverage from the session table; zero the token fields — they'll
-  // be replaced by the event-timeline sums below.
-  for (const c of querySessionTableBuckets(db, "codex", from, to, granularity)) {
-    byKey.set(c.bucket_key, {
-      ...c,
-      total_tokens: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      reasoning_output_tokens: 0,
-      codex_cached_input_tokens: 0,
-    });
-  }
-  // Token sums from the per-event timeline.
-  for (const t of queryCodexTokenSumsByBucket(db, from, to, granularity)) {
-    const existing = byKey.get(t.bucket_key);
-    if (existing) {
-      existing.total_tokens = t.total_tokens;
-      existing.input_tokens = t.input_tokens;
-      existing.output_tokens = t.output_tokens;
-      existing.reasoning_output_tokens = t.reasoning_output_tokens;
-      existing.codex_cached_input_tokens = t.cached_input_tokens;
-    } else {
-      byKey.set(t.bucket_key, {
-        bucket_key: t.bucket_key,
-        total_tokens: t.total_tokens,
-        input_tokens: t.input_tokens,
-        output_tokens: t.output_tokens,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-        reasoning_output_tokens: t.reasoning_output_tokens,
-        codex_cached_input_tokens: t.cached_input_tokens,
-        session_count: 0,
-        full_count: 0,
-        unknown_count: 0,
-        error_count: 0,
-      });
     }
   }
-  return [...byKey.values()].sort((a, b) =>
-    a.bucket_key < b.bucket_key ? -1 : a.bucket_key > b.bucket_key ? 1 : 0
-  );
-}
 
-type ClaudeTokenSumRow = {
-  bucket_key: string;
-  total_tokens: number;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens: number;
-  cache_creation_input_tokens: number;
-};
-
-/**
- * Claude token sums bucketed by `event_at` (the per-message-day timeline),
- * joined to the per-session table so the same `token_status='full'` +
- * `missing_since IS NULL` filters apply. Mirror of queryCodexTokenSumsByBucket.
- * `input_tokens` is FUSED (fresh + cache_read + cache_creation) — same as the
- * session column — so `total = input + output` matches `total_tokens` and a
- * per-bucket SUM reproduces the session-table semantics. cache_read/creation
- * are carried through (subsets of input) to power the cache toggle + breakdown.
- */
-function queryClaudeTokenSumsByBucket(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): ClaudeTokenSumRow[] {
-  const sql = `
-    SELECT
-      ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
-      COALESCE(SUM(e.input_tokens + e.output_tokens), 0) AS total_tokens,
-      COALESCE(SUM(e.input_tokens), 0) AS input_tokens,
-      COALESCE(SUM(e.output_tokens), 0) AS output_tokens,
-      COALESCE(SUM(e.cache_read_input_tokens), 0) AS cache_read_input_tokens,
-      COALESCE(SUM(e.cache_creation_input_tokens), 0) AS cache_creation_input_tokens
-    FROM claude_token_usage_event e
-    JOIN claude_session_token_usage s ON s.session_id = e.session_id
-    WHERE e.event_at >= ?
-      AND e.event_at < ?
-      AND s.missing_since IS NULL
-      AND s.token_status = 'full'
-    GROUP BY bucket_key
-    ORDER BY bucket_key ASC
-  `;
-  return db
-    .prepare(sql)
-    .all(from.toISOString(), to.toISOString()) as ClaudeTokenSumRow[];
+  return { byBucket, priceSnapshotDate: latestSyncedAt(db) ?? PRICE_SNAPSHOT_DATE };
 }
 
 /**
- * Claude bucket rows: token sums from the per-message-day timeline (bucketed by
- * the day each token was consumed), session counts / coverage from the
- * per-session table (bucketed by `last_updated_at`, unchanged). Mirror of
- * queryCodexBuckets. A bucket can therefore have tokens with `session_count = 0`
- * (a resumed session consumed tokens that day but was last *touched* on a later
- * day) — honest, same as Codex. This replaces the old per-session-table Claude
- * bucketing that dumped a resumed session's whole lifetime onto its last-touch
- * day (investigation 2026-07-01).
- */
-function queryClaudeBuckets(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  granularity: BucketGranularity
-): RawBucketRow[] {
-  const byKey = new Map<string, RawBucketRow>();
-  // Counts / coverage from the session table; zero the token fields — replaced
-  // by the event-timeline sums below.
-  for (const c of querySessionTableBuckets(db, "claude", from, to, granularity)) {
-    byKey.set(c.bucket_key, {
-      ...c,
-      total_tokens: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    });
-  }
-  // Token sums from the per-message-day timeline.
-  for (const t of queryClaudeTokenSumsByBucket(db, from, to, granularity)) {
-    const existing = byKey.get(t.bucket_key);
-    if (existing) {
-      existing.total_tokens = t.total_tokens;
-      existing.input_tokens = t.input_tokens;
-      existing.output_tokens = t.output_tokens;
-      existing.cache_read_input_tokens = t.cache_read_input_tokens;
-      existing.cache_creation_input_tokens = t.cache_creation_input_tokens;
-    } else {
-      byKey.set(t.bucket_key, {
-        bucket_key: t.bucket_key,
-        total_tokens: t.total_tokens,
-        input_tokens: t.input_tokens,
-        output_tokens: t.output_tokens,
-        cache_read_input_tokens: t.cache_read_input_tokens,
-        cache_creation_input_tokens: t.cache_creation_input_tokens,
-        reasoning_output_tokens: 0,
-        codex_cached_input_tokens: 0,
-        session_count: 0,
-        full_count: 0,
-        unknown_count: 0,
-        error_count: 0,
-      });
-    }
-  }
-  return [...byKey.values()].sort((a, b) =>
-    a.bucket_key < b.bucket_key ? -1 : a.bucket_key > b.bucket_key ? 1 : 0
-  );
-}
-
-/**
- * Zero-fill: take per-source raw rows + the enumerated continuous buckets,
- * and produce one `WorkTokensTrendBucket` per enumerated bucket. Buckets
- * with no row for a source default to 0 for every field of that source.
- */
-export function mergeAndZeroFill(
-  bucketKeys: { key: string; start: Date; end: Date }[],
-  claudeRows: RawBucketRow[],
-  codexRows: RawBucketRow[],
-  minimaxRows: RawBucketRow[] = []
-): WorkTokensTrendBucket[] {
-  const claudeMap = new Map(claudeRows.map((r) => [r.bucket_key, r]));
-  const codexMap = new Map(codexRows.map((r) => [r.bucket_key, r]));
-  const minimaxMap = new Map(minimaxRows.map((r) => [r.bucket_key, r]));
-  return bucketKeys.map((b) => {
-    const c = claudeMap.get(b.key);
-    const x = codexMap.get(b.key);
-    const mm = minimaxMap.get(b.key);
-    return {
-      bucketStart: b.start.toISOString(),
-      bucketEnd: b.end.toISOString(),
-      claudeTokens: c?.total_tokens ?? 0,
-      codexTokens: x?.total_tokens ?? 0,
-      minimaxTokens: mm?.total_tokens ?? 0,
-      claudeInputTokens: c?.input_tokens ?? 0,
-      claudeOutputTokens: c?.output_tokens ?? 0,
-      codexInputTokens: x?.input_tokens ?? 0,
-      codexOutputTokens: x?.output_tokens ?? 0,
-      minimaxInputTokens: mm?.input_tokens ?? 0,
-      minimaxOutputTokens: mm?.output_tokens ?? 0,
-      claudeCacheReadInputTokens: c?.cache_read_input_tokens ?? 0,
-      claudeCacheCreationInputTokens: c?.cache_creation_input_tokens ?? 0,
-      codexReasoningOutputTokens: x?.reasoning_output_tokens ?? 0,
-      codexCachedInputTokens: x?.codex_cached_input_tokens ?? 0,
-      // MiniMax: both cache kinds classified by method (exclude-cache subtracts both).
-      minimaxCacheReadInputTokens: mm?.cache_read_input_tokens ?? 0,
-      minimaxCacheCreationInputTokens: mm?.cache_creation_input_tokens ?? 0,
-      // Cost is patched in by the service after pricing (separate path).
-      claudeCostUsd: 0,
-      codexCostUsd: 0,
-      claudeSessionCount: c?.session_count ?? 0,
-      codexSessionCount: x?.session_count ?? 0,
-      claudeCoveredSessionCount: c?.full_count ?? 0,
-      codexCoveredSessionCount: x?.full_count ?? 0,
-      claudeUnknownSessionCount: c?.unknown_count ?? 0,
-      codexUnknownSessionCount: x?.unknown_count ?? 0,
-      claudeErrorSessionCount: c?.error_count ?? 0,
-      codexErrorSessionCount: x?.error_count ?? 0,
-    };
-  });
-}
-
-/**
- * Aggregate the per-bucket DTOs into the standalone Totals card.
- *
- * Coverage derivation (3-state, F2):
- *   - all sessions full (or zero sessions) → "full"
- *   - some full + some not  → "partial"
- *   - no full sessions       → "unknown"
- *
- * "error" sessions count as non-full for coverage purposes (they don't have
- * usable token numbers), but they're reported separately so the UI can
- * distinguish "we don't know" from "the parser broke".
- */
-export function computeTotals(
-  buckets: WorkTokensTrendBucket[]
-): WorkTokensTrendTotals {
-  let claudeTokens = 0;
-  let codexTokens = 0;
-  let minimaxTokens = 0;
-  let claudeInputTokens = 0;
-  let claudeOutputTokens = 0;
-  let codexInputTokens = 0;
-  let codexOutputTokens = 0;
-  let minimaxInputTokens = 0;
-  let minimaxOutputTokens = 0;
-  let claudeCacheReadInputTokens = 0;
-  let claudeCacheCreationInputTokens = 0;
-  let codexReasoningOutputTokens = 0;
-  let codexCachedInputTokens = 0;
-  let minimaxCacheReadInputTokens = 0;
-  let minimaxCacheCreationInputTokens = 0;
-  let claudeCostUsd = 0;
-  let codexCostUsd = 0;
-  let coveredSessionCount = 0;
-  let unknownSessionCount = 0;
-  let errorSessionCount = 0;
-  for (const b of buckets) {
-    claudeTokens += b.claudeTokens;
-    codexTokens += b.codexTokens;
-    // minimax fields are guarded (`?? 0`): a bucket produced before minimax
-    // existed (or a partial test fixture) must not NaN-poison the totals.
-    minimaxTokens += b.minimaxTokens ?? 0;
-    claudeInputTokens += b.claudeInputTokens;
-    claudeOutputTokens += b.claudeOutputTokens;
-    codexInputTokens += b.codexInputTokens;
-    codexOutputTokens += b.codexOutputTokens;
-    minimaxInputTokens += b.minimaxInputTokens ?? 0;
-    minimaxOutputTokens += b.minimaxOutputTokens ?? 0;
-    claudeCacheReadInputTokens += b.claudeCacheReadInputTokens;
-    claudeCacheCreationInputTokens += b.claudeCacheCreationInputTokens;
-    codexReasoningOutputTokens += b.codexReasoningOutputTokens;
-    codexCachedInputTokens += b.codexCachedInputTokens;
-    minimaxCacheReadInputTokens += b.minimaxCacheReadInputTokens ?? 0;
-    minimaxCacheCreationInputTokens += b.minimaxCacheCreationInputTokens ?? 0;
-    claudeCostUsd += b.claudeCostUsd;
-    codexCostUsd += b.codexCostUsd;
-    coveredSessionCount +=
-      b.claudeCoveredSessionCount + b.codexCoveredSessionCount;
-    unknownSessionCount +=
-      b.claudeUnknownSessionCount + b.codexUnknownSessionCount;
-    errorSessionCount +=
-      b.claudeErrorSessionCount + b.codexErrorSessionCount;
-  }
-  const totalTokens = claudeTokens + codexTokens + minimaxTokens;
-  const totalSessionCount =
-    coveredSessionCount + unknownSessionCount + errorSessionCount;
-
-  let coverage: WorkTokensTrendCoverage;
-  if (totalSessionCount === 0) {
-    coverage = "full"; // zero sessions = trivially fully accounted for
-  } else if (coveredSessionCount === totalSessionCount) {
-    coverage = "full";
-  } else if (coveredSessionCount === 0) {
-    coverage = "unknown";
-  } else {
-    coverage = "partial";
-  }
-
-  return {
-    totalTokens,
-    claudeTokens,
-    codexTokens,
-    minimaxTokens,
-    claudeInputTokens,
-    claudeOutputTokens,
-    codexInputTokens,
-    codexOutputTokens,
-    minimaxInputTokens,
-    minimaxOutputTokens,
-    claudeCacheReadInputTokens,
-    claudeCacheCreationInputTokens,
-    codexReasoningOutputTokens,
-    codexCachedInputTokens,
-    minimaxCacheReadInputTokens,
-    minimaxCacheCreationInputTokens,
-    totalCostUsd: claudeCostUsd + codexCostUsd,
-    claudeCostUsd,
-    codexCostUsd,
-    // unpricedTokenCount is patched in by the service (cross-cutting, not
-    // derivable from per-bucket DTOs); default 0 here.
-    unpricedTokenCount: 0,
-    priceSnapshotDate: PRICE_SNAPSHOT_DATE,
-    claudeShare: totalTokens === 0 ? 0 : claudeTokens / totalTokens,
-    codexShare: totalTokens === 0 ? 0 : codexTokens / totalTokens,
-    minimaxShare: totalTokens === 0 ? 0 : minimaxTokens / totalTokens,
-    coverage,
-    coveredSessionCount,
-    unknownSessionCount,
-    errorSessionCount,
-    totalSessionCount,
-  };
-}
-
-/**
- * Strictly-preceding equal-length window total. Returns 0 (never null) when
- * the prior range has no qualifying sessions — design doc F2 / Open Questions.
- *
- * Also returns the Claude `cache_read_input_tokens` summed over the SAME prior
- * window so the frontend "exclude cache hits" toggle can recompute the
- * comparison total (prev − cacheRead) consistently with the rest of the page.
- */
-export function computePreviousWindowTotal(
-  db: Database.Database,
-  from: Date,
-  to: Date
-): {
-  total: number;
-  claudeCacheReadInputTokens: number;
-  codexCachedInputTokens: number;
-  minimaxCacheTokens: number;
-} {
-  const span = to.getTime() - from.getTime();
-  const prevFrom = new Date(from.getTime() - span);
-  const prevTo = new Date(from.getTime());
-
-  // Claude from its per-session table (bucketed by last_updated_at); Codex and
-  // MiniMax from their per-event timelines (bucketed by event_at) so the
-  // comparison window matches how the bars distribute tokens by consumption
-  // time. MiniMax "cache" = both cache-read + cache-create (classified by method).
-  const sql = `
-    SELECT
-      COALESCE(SUM(total_tokens), 0) AS total,
-      COALESCE(SUM(claude_cache_read), 0) AS claude_cache_read,
-      COALESCE(SUM(codex_cached), 0) AS codex_cached,
-      COALESCE(SUM(minimax_cache), 0) AS minimax_cache
-    FROM (
-      SELECT total_tokens,
-             cache_read_input_tokens AS claude_cache_read,
-             0 AS codex_cached,
-             0 AS minimax_cache
-        FROM claude_session_token_usage
-       WHERE last_updated_at >= ?
-         AND last_updated_at < ?
-         AND missing_since IS NULL
-         AND token_status = 'full'
-      UNION ALL
-      SELECT (e.input_tokens + e.output_tokens) AS total_tokens,
-             0 AS claude_cache_read,
-             e.cached_input_tokens AS codex_cached,
-             0 AS minimax_cache
-        FROM codex_token_usage_event e
-        JOIN codex_session_token_usage s ON s.session_id = e.session_id
-       WHERE e.event_at >= ?
-         AND e.event_at < ?
-         AND s.missing_since IS NULL
-         AND s.token_status = 'full'
-      UNION ALL
-      SELECT (input_tokens + output_tokens) AS total_tokens,
-             0 AS claude_cache_read,
-             0 AS codex_cached,
-             CASE WHEN method IN (?, ?) THEN input_tokens ELSE 0 END AS minimax_cache
-        FROM minimax_token_usage_event
-       WHERE event_at >= ?
-         AND event_at < ?
-    )
-  `;
-  const fromIso = prevFrom.toISOString();
-  const toIso = prevTo.toISOString();
-  const row = db
-    .prepare(sql)
-    .get(
-      fromIso,
-      toIso,
-      fromIso,
-      toIso,
-      MINIMAX_METHOD_CACHE_READ,
-      MINIMAX_METHOD_CACHE_CREATE,
-      fromIso,
-      toIso
-    ) as {
-    total: number;
-    claude_cache_read: number;
-    codex_cached: number;
-    minimax_cache: number;
-  };
-  return {
-    total: row.total,
-    claudeCacheReadInputTokens: row.claude_cache_read,
-    codexCachedInputTokens: row.codex_cached,
-    minimaxCacheTokens: row.minimax_cache,
-  };
-}
-
-/**
- * MIN / MAX of `last_updated_at` across both token tables, projected to local
- * YYYY-MM strings. When both tables are empty, fall back to the current local
- * month so the picker still has a usable lower bound.
+ * 全部源的自然月并集范围。每个 adapter 出自己的 min/max,JS 折叠 ——
+ * 上一版是一条写死三张表的 UNION,加源必须改 SQL(实测还慢 40ms)。
  */
 export function computeMonthRange(
   db: Database.Database,
   now: Date = new Date()
 ): MonthRange {
-  const sql = `
-    SELECT
-      MIN(local_month) AS earliest,
-      MAX(local_month) AS latest
-    FROM (
-      SELECT strftime('%Y-%m', last_updated_at, 'localtime') AS local_month
-        FROM claude_session_token_usage
-       WHERE missing_since IS NULL
-      UNION ALL
-      SELECT strftime('%Y-%m', last_updated_at, 'localtime') AS local_month
-        FROM codex_session_token_usage
-       WHERE missing_since IS NULL
-      UNION ALL
-      SELECT strftime('%Y-%m', event_at, 'localtime') AS local_month
-        FROM minimax_token_usage_event
-    )
-  `;
-  const row = db.prepare(sql).get() as {
-    earliest: string | null;
-    latest: string | null;
-  };
-  if (row.earliest && row.latest) {
-    return { earliest: row.earliest, latest: row.latest };
+  let earliest: string | null = null;
+  let latest: string | null = null;
+  for (const key of TOKEN_SOURCES) {
+    const r = ADAPTERS[key].queryMonthRange(db);
+    if (!r) continue;
+    if (earliest === null || r.earliest < earliest) earliest = r.earliest;
+    if (latest === null || r.latest > latest) latest = r.latest;
   }
+  if (earliest && latest) return { earliest, latest };
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   return { earliest: currentMonth, latest: currentMonth };
+}
+
+/**
+ * 上一个等长窗口,逐源给原子分量。
+ *
+ * 逐 adapter 隔离:上一版是一条跨源 UNION,任一表失败会把**所有源**的环比
+ * 一起弄成 0 或 null。现在一家挂掉只影响它自己那一格。
+ */
+export function computePreviousWindow(
+  db: Database.Database,
+  from: Date,
+  to: Date,
+  onError?: (key: TokenSourceKey, message: string) => void
+): PreviousWindow {
+  const span = to.getTime() - from.getTime();
+  const prevFrom = new Date(from.getTime() - span);
+  const prevTo = new Date(from.getTime());
+
+  const bySource = {} as PreviousWindow["bySource"];
+  let total = 0;
+  for (const key of TOKEN_SOURCES) {
+    let row = { fresh_input: 0, cache_read_input: 0, cache_creation_input: 0, output: 0 };
+    try {
+      row = ADAPTERS[key].queryPrevWindow(db, prevFrom, prevTo);
+    } catch (e) {
+      onError?.(key, e instanceof Error ? e.message : String(e));
+    }
+    const t = row.fresh_input + row.cache_read_input + row.cache_creation_input + row.output;
+    bySource[key] = {
+      totalTokens: t,
+      freshInput: row.fresh_input,
+      cacheReadInput: row.cache_read_input,
+      cacheCreationInput: row.cache_creation_input,
+    };
+    total += t;
+  }
+  return { totalTokens: total, bySource };
 }

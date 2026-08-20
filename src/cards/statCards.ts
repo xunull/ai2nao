@@ -8,7 +8,12 @@ import type {
   PersonalRecords,
 } from "../aiRhythm/queries.js";
 import type { AiToolKind, AiToolView } from "../aiTools/types.js";
-import type { WorkTokensTrendTotals } from "../workTokensTrend/types.js";
+import {
+  SOURCE_LABELS,
+  TOKEN_SOURCES,
+  totalTokens,
+  type WorkTokensTrendTotals,
+} from "../workTokensTrend/types.js";
 import { renderStatCard } from "./statCard.js";
 import { formatCompact } from "./svgUtil.js";
 
@@ -125,15 +130,16 @@ export function renderTokenCard(
   opts: { cost?: boolean; asOfIso: string }
 ): string {
   const stats: { label: string; value: string }[] = [];
-  if (t.claudeTokens > 0)
-    stats.push({ label: "Claude", value: formatCompact(t.claudeTokens) });
-  if (t.codexTokens > 0)
-    stats.push({ label: "Codex", value: formatCompact(t.codexTokens) });
-  if (t.minimaxTokens > 0)
-    stats.push({ label: "MiniMax", value: formatCompact(t.minimaxTokens) });
+  // 逐源遍历 —— 归一之前这里是三个写死的 if,加源要记得回来补一行,漏了就静默少一格。
+  for (const key of TOKEN_SOURCES) {
+    const tokens = totalTokens(t.sources[key]);
+    if (tokens > 0) stats.push({ label: SOURCE_LABELS[key], value: formatCompact(tokens) });
+  }
   if (opts.cost) {
-    const usd = t.claudeCostUsd + t.codexCostUsd;
-    stats.push({ label: "≈ 成本", value: `$${usd.toFixed(2)}` });
+    // totalCostUsd 已经是逐源累加(只含真被定价的部分)。
+    // 这张卡会渲染成 SVG 发到 GitHub 主页 —— 「部分源无定价」的标注是 T7 的事,
+    // 本次只做「加源不再静默漏加」。
+    stats.push({ label: "≈ 成本", value: `$${t.totalCostUsd.toFixed(2)}` });
   }
   return renderStatCard({
     title: "Token 用量",

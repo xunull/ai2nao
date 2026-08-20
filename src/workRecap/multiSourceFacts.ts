@@ -1,5 +1,10 @@
 import type Database from "better-sqlite3";
 import { enumerateAndAggregate } from "../workTokensTrend/service.js";
+import {
+  TOKEN_SOURCES,
+  tokensExcludingCache,
+  type TokenSourceKey,
+} from "../workTokensTrend/types.js";
 import { getTopicStreamMatrix } from "../topicStream/queries.js";
 import {
   WORK_RECAP_TOPIC_TOP_N,
@@ -33,25 +38,19 @@ export function gatherTokenFacts(
     if (totals.totalSessionCount === 0 && totals.totalTokens === 0) {
       return { status: "empty" };
     }
-    const shares: Array<["claude" | "codex" | "minimax", number]> = [
-      ["claude", totals.claudeShare],
-      ["codex", totals.codexShare],
-      ["minimax", totals.minimaxShare],
-    ];
+    // 逐源遍历 —— 加一个源自动纳入,不用记得回来改这里。
+    const shares = TOKEN_SOURCES.map(
+      (k) => [k, totals.sources[k].share] as [TokenSourceKey, number]
+    );
     const dominant = shares.reduce((a, b) => (b[1] > a[1] ? b : a));
-    // Headline caliber = input+output MINUS cache (matches the workbench headline;
-    // cache_read can dwarf real work by ~8x, so totalTokens would mislead).
-    const headlineTokens =
-      totals.claudeInputTokens -
-      totals.claudeCacheReadInputTokens -
-      totals.claudeCacheCreationInputTokens +
-      totals.claudeOutputTokens +
-      (totals.codexInputTokens - totals.codexCachedInputTokens) +
-      totals.codexOutputTokens +
-      (totals.minimaxInputTokens -
-        totals.minimaxCacheReadInputTokens -
-        totals.minimaxCacheCreationInputTokens) +
-      totals.minimaxOutputTokens;
+    // Headline caliber = 真实新增 + 输出(不含两种 cache)。cache_read 能把真实
+    // 工作量盖掉约 8 倍,拿 totalTokens 当标题会误导。
+    // 归一之前这里是三段手写减法,三个源各减各的;展开后三段都等于 fresh + output,
+    // 所以换成 tokensExcludingCache() 是**行为不变**的简化。
+    const headlineTokens = TOKEN_SOURCES.reduce(
+      (n, k) => n + tokensExcludingCache(totals.sources[k]),
+      0
+    );
     return {
       status: "ok",
       data: {
@@ -61,8 +60,8 @@ export function gatherTokenFacts(
         priceSnapshotDate: totals.priceSnapshotDate,
         headlineTokens: Math.max(0, headlineTokens),
         dominantProvider: totals.totalTokens === 0 ? "none" : dominant[0],
-        claudeShare: totals.claudeShare,
-        codexShare: totals.codexShare,
+        claudeShare: totals.sources.claude.share,
+        codexShare: totals.sources.codex.share,
       },
     };
   } catch (e) {

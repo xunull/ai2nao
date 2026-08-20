@@ -2,6 +2,7 @@ import DatabaseCtor from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PROBES, type Probe, type ProbeContext } from "../src/home/leads.js";
+import { emptyUsage } from "../src/workTokensTrend/types.js";
 import { migrate } from "../src/store/migrations.js";
 
 let db: Database.Database;
@@ -25,7 +26,11 @@ function ctxWithTokens(tokens: number, now = NOW): ProbeContext {
   const bucket = {
     bucketStart: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
     bucketEnd: new Date(now.getTime() + 86_400_000).toISOString(),
-    claudeTokens: tokens,
+    sources: {
+      claude: { ...emptyUsage("ok" as const), freshInput: tokens },
+      codex: emptyUsage("ok" as const),
+      minimax: emptyUsage("ok" as const),
+    },
     codexTokens: 0,
     minimaxTokens: 0,
   } as never;

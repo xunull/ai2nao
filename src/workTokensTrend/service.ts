@@ -6,19 +6,24 @@ import {
   previousWindowRange,
   windowToRange,
 } from "./bucket.js";
+import { ADAPTERS, type SourceBucketRow } from "./adapters.js";
 import {
   computeMonthRange,
-  computePreviousWindowTotal,
+  computePreviousWindow,
   computeTotals,
   mergeAndZeroFill,
   priceCostByBucket,
-  queryBucketsBySource,
+  type BucketRowsBySource,
 } from "./queries.js";
 import {
   isMonthKey,
   isWindowKey,
+  TOKEN_SOURCES,
   windowToGranularity,
   type MonthKey,
+  type SourceCapabilities,
+  type SourceState,
+  type TokenSourceKey,
   type WindowKey,
   type WorkTokensTrendDiagnostic,
   type WorkTokensTrendResponse,
@@ -31,32 +36,32 @@ export type GenerateTrendArgs = {
   now?: Date;
 };
 
+/** 各源具备哪些维度。从 adapter 注册表读,不手写。 */
+function capabilitiesOf(): Record<TokenSourceKey, SourceCapabilities> {
+  const out = {} as Record<TokenSourceKey, SourceCapabilities>;
+  for (const key of TOKEN_SOURCES) out[key] = ADAPTERS[key].capabilities;
+  return out;
+}
+
 /**
- * Orchestrate one trend response.
+ * 组装一次趋势响应。
  *
- * Param contract:
- *   - exactly one of `window` / `month` should be provided
- *   - if both arrive, `month` wins (matches design doc Open Questions)
- *   - if neither, default to `window: "1w"` (page default)
- *   - invalid values → `Error` (route handler turns into 400)
+ * 参数契约:
+ *   - `window` / `month` 恰好给一个
+ *   - 两个都给 → `month` 胜
+ *   - 都不给 → 默认 `window: "1w"`(页面默认)
+ *   - 非法值 → 抛 `Error`(路由转 400)
  *
- * Each source query is wrapped in try/catch so one failing table (e.g.
- * Codex schema drift) does not 500 the whole route. The other source's
- * data still surfaces with a diagnostic.
+ * 每个源的查询各自 try/catch:一家的表坏了不会 500 掉整个路由,
+ * 而且**失败会以 `state: "failed"` 出现在响应里**,不是静静地变成 0。
  */
 export function generateTrend(
   db: Database.Database,
   args: GenerateTrendArgs
 ): WorkTokensTrendResponse {
   const now = args.now ?? new Date();
-
-  // Month-mode wins if both provided.
-  if (args.month !== undefined) {
-    return generateMonth(db, args.month, now);
-  }
-  if (args.window !== undefined) {
-    return generateWindow(db, args.window, now);
-  }
+  if (args.month !== undefined) return generateMonth(db, args.month, now);
+  if (args.window !== undefined) return generateWindow(db, args.window, now);
   return generateWindow(db, "1w", now);
 }
 
@@ -74,7 +79,7 @@ function generateMonth(
   assertMonthInDepth(monthKey, now);
   const { from, to } = monthToRange(monthKey);
   const granularity = "day" as const;
-  const buckets = enumerateAndAggregate(db, from, to, granularity);
+  const agg = enumerateAndAggregate(db, from, to, granularity);
   return {
     ok: true,
     generatedAt: now.toISOString(),
@@ -82,10 +87,11 @@ function generateMonth(
     monthKey,
     range: { from: from.toISOString(), to: to.toISOString() },
     bucketGranularity: granularity,
-    buckets: buckets.data,
-    totals: buckets.totals,
-    monthRange: safeMonthRange(db, now, buckets.diagnostics),
-    diagnostics: buckets.diagnostics,
+    buckets: agg.data,
+    totals: agg.totals,
+    capabilities: capabilitiesOf(),
+    monthRange: safeMonthRange(db, now, agg.diagnostics),
+    diagnostics: agg.diagnostics,
   };
 }
 
@@ -102,13 +108,17 @@ function generateWindow(
   const windowKey = rawWindow;
   const granularity = windowToGranularity(windowKey);
   const { from, to } = windowToRange(windowKey, now);
-  const buckets = enumerateAndAggregate(db, from, to, granularity);
-  const prev = safePreviousWindowTotal(db, from, to, buckets.diagnostics);
-  const previousWindowTotal = prev.total;
+  const agg = enumerateAndAggregate(db, from, to, granularity);
+  const previousWindow = computePreviousWindow(db, from, to, (key, msg) => {
+    agg.diagnostics.push({
+      severity: "warning",
+      kind: "previous_window_query_failed",
+      message: `${key} previous window query failed: ${msg}`,
+    });
+  });
+  const prevTotal = previousWindow.totalTokens;
   const deltaRatio =
-    previousWindowTotal === 0
-      ? null
-      : (buckets.totals.totalTokens - previousWindowTotal) / previousWindowTotal;
+    prevTotal === 0 ? null : (agg.totals.totalTokens - prevTotal) / prevTotal;
   return {
     ok: true,
     generatedAt: now.toISOString(),
@@ -116,15 +126,13 @@ function generateWindow(
     windowKey,
     range: { from: from.toISOString(), to: to.toISOString() },
     bucketGranularity: granularity,
-    buckets: buckets.data,
-    totals: buckets.totals,
-    previousWindowTotal,
-    previousWindowClaudeCacheReadInputTokens: prev.claudeCacheReadInputTokens,
-    previousWindowCodexCachedInputTokens: prev.codexCachedInputTokens,
-    previousWindowMinimaxCacheTokens: prev.minimaxCacheTokens,
+    buckets: agg.data,
+    totals: agg.totals,
+    capabilities: capabilitiesOf(),
+    previousWindow,
     deltaRatio,
-    monthRange: safeMonthRange(db, now, buckets.diagnostics),
-    diagnostics: buckets.diagnostics,
+    monthRange: safeMonthRange(db, now, agg.diagnostics),
+    diagnostics: agg.diagnostics,
   };
 }
 
@@ -160,42 +168,61 @@ export function enumerateAndAggregate(
   const diagnostics: WorkTokensTrendDiagnostic[] = [];
   const bucketKeys = iterateBuckets(from, to, granularity);
 
-  const claudeRows = safeQuery(db, "claude", from, to, granularity, diagnostics);
-  const codexRows = safeQuery(db, "codex", from, to, granularity, diagnostics);
-  // MiniMax is a remote billing-history source; isolated like the others so a
-  // failed/absent endpoint never 500s the local sources' trend.
-  const minimaxRows = safeQuery(db, "minimax", from, to, granularity, diagnostics);
+  const bySource = {} as BucketRowsBySource;
+  const states = {} as Record<TokenSourceKey, SourceState>;
 
-  // Key conversion: SQL bucketExpr emits local-time string keys; we already
-  // matched the format in `bucket.fmtLocal()` via `iterateBuckets().key`, so
-  // bucketKeys[i].key === claudeRows[j].bucket_key when they refer to the
-  // same bucket. mergeAndZeroFill maps them.
+  for (const key of TOKEN_SOURCES) {
+    const adapter = ADAPTERS[key];
+    // presence 先判:「查不到数据」与「这台机器没这个源」是两件事,
+    // 空数组区分不了(没装 / 装了但没会话 / 同步没跑 / 扫描失败留下空表)。
+    //
+    // presence 探测**本身抛异常**属于第三种情况:表被删了或 schema 漂移。
+    // 那是 failed,不是 absent —— 把损坏报成「你不用这个源」比不报还糟。
+    let rows: SourceBucketRow[] = [];
+    let state: SourceState;
+    try {
+      state = adapter.probePresence(db) ? "ok" : "absent";
+      if (state === "ok") rows = adapter.queryBuckets(db, from, to, granularity);
+    } catch (e) {
+      state = "failed";
+      rows = [];
+      diagnostics.push({
+        severity: "error",
+        kind: "source_query_failed",
+        message: `${key} token table query failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      });
+    }
+    states[key] = state;
+    bySource[key] = new Map(rows.map((r) => [r.bucket_key, r]));
+  }
+
   const data = mergeAndZeroFill(
     bucketKeys.map((b) => ({ key: b.key, start: b.start, end: b.end })),
-    claudeRows,
-    codexRows,
-    minimaxRows
+    bySource,
+    states
   );
 
-  // USD cost: priced separately (per bucket+model via the static snapshot), then
-  // patched onto each bucket DTO. Isolated so a pricing error can't 500 tokens.
-  let unpricedTokenCount = 0;
+  // 定价单独隔离:算不出成本不能拖垮 token 数字。
   let priceSnapshotDate: string | null = null;
   try {
     const cost = priceCostByBucket(db, from, to, granularity);
-    unpricedTokenCount = cost.unpricedTokenCount;
     priceSnapshotDate = cost.priceSnapshotDate;
-    // cost.byBucket is keyed by the local-time bucketExpr key; the DTO carries
-    // bucketStart (ISO). Remap via the enumerated bucketKeys.
-    const keyByStart = new Map(
-      bucketKeys.map((b) => [b.start.toISOString(), b.key])
-    );
+    const keyByStart = new Map(bucketKeys.map((b) => [b.start.toISOString(), b.key]));
     for (const b of data) {
       const costKey = keyByStart.get(b.bucketStart);
-      const c = costKey ? cost.byBucket.get(costKey) : undefined;
-      if (c) {
-        b.claudeCostUsd = c.claudeCostUsd;
-        b.codexCostUsd = c.codexCostUsd;
+      const cell = costKey ? cost.byBucket.get(costKey) : undefined;
+      for (const key of TOKEN_SOURCES) {
+        const c = cell?.[key];
+        if (c) {
+          b.sources[key].costUsd = c.costUsd;
+          b.sources[key].pricedTokens = c.priced;
+          b.sources[key].unpricedTokens = c.unpriced;
+        }
+        // 注意:没有定价概念的源(MiniMax)这里**暂不**把 token 计进 unpriced。
+        // 那是 T7(X4)的改动 —— 它会改变 totals.unpricedTokenCount,属于
+        // 「故意改数」,必须与黄金快照的层二差异清单一起落,不能混进 T3。
       }
     }
   } catch (e) {
@@ -207,59 +234,8 @@ export function enumerateAndAggregate(
   }
 
   const totals = computeTotals(data);
-  totals.unpricedTokenCount = unpricedTokenCount;
   if (priceSnapshotDate) totals.priceSnapshotDate = priceSnapshotDate;
   return { data, totals, diagnostics };
-}
-
-function safeQuery(
-  db: Database.Database,
-  source: "claude" | "codex" | "minimax",
-  from: Date,
-  to: Date,
-  granularity: ReturnType<typeof windowToGranularity> | "day",
-  diagnostics: WorkTokensTrendDiagnostic[]
-): ReturnType<typeof queryBucketsBySource> {
-  try {
-    return queryBucketsBySource(db, source, from, to, granularity);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    diagnostics.push({
-      severity: "error",
-      kind: "source_query_failed",
-      message: `${source} token table query failed: ${msg}`,
-    });
-    return [];
-  }
-}
-
-function safePreviousWindowTotal(
-  db: Database.Database,
-  from: Date,
-  to: Date,
-  diagnostics: WorkTokensTrendDiagnostic[]
-): {
-  total: number;
-  claudeCacheReadInputTokens: number;
-  codexCachedInputTokens: number;
-  minimaxCacheTokens: number;
-} {
-  try {
-    return computePreviousWindowTotal(db, from, to);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    diagnostics.push({
-      severity: "warning",
-      kind: "previous_window_query_failed",
-      message: `previous window total query failed: ${msg}`,
-    });
-    return {
-      total: 0,
-      claudeCacheReadInputTokens: 0,
-      codexCachedInputTokens: 0,
-      minimaxCacheTokens: 0,
-    };
-  }
 }
 
 /** Exposed for tests so they can stub clock + ranges. */
