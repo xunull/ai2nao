@@ -1,3 +1,4 @@
+import type { KimiProjectTokenUsage } from "../kimiTokenUsage/queries.js";
 import type { Diagnostic } from "../util/diagnostics.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import type { ClaudeProjectTokenUsage, ClaudeTokenUsageStatus } from "../claudeTokenUsage/types.js";
@@ -8,7 +9,7 @@ import type {
 } from "../opencodeTokenUsage/types.js";
 import type { WorkProjectDurationUsage } from "../workDuration/types.js";
 
-export const DASHBOARD_SOURCES = ["claude-code", "codex", "opencode"] as const;
+export const DASHBOARD_SOURCES = ["claude-code", "codex", "opencode", "kimi"] as const;
 
 export type DashboardSource = (typeof DASHBOARD_SOURCES)[number];
 
@@ -176,6 +177,11 @@ export type DashboardCollectors = {
     projectKeys: string[];
     from: Date | null;
   }) => Promise<Map<string, OpencodeProjectTokenUsage>>;
+  /** kimi 的计数单位是 **agent 文件**,不是 session —— 见 KimiProjectTokenUsage。 */
+  listKimiProjectTokenUsage?: (args: {
+    projectKeys: string[];
+    from: Date | null;
+  }) => Promise<Map<string, KimiProjectTokenUsage>>;
   getCodexTokenUsageStatus?: () => Promise<CodexTokenUsageStatus>;
   getClaudeTokenUsageStatus?: () => Promise<ClaudeTokenUsageStatus>;
   getOpencodeTokenUsageStatus?: () => Promise<OpencodeTokenUsageStatus>;

@@ -1,3 +1,4 @@
+import { DASHBOARD_SOURCES, type DashboardSource } from "../src/workDashboard/types.js";
 import { describe, expect, it } from "vitest";
 import type { ChatSession, ChatSessionSummary } from "../src/cursorHistory/types.js";
 import {
@@ -65,6 +66,21 @@ function collectors(overrides: Partial<DashboardCollectors> = {}): DashboardColl
   };
 }
 
+
+/**
+ * 期望的 sourceCounts —— 以 DASHBOARD_SOURCES 铺零基底,只写非零的那几个。
+ *
+ * 直接写字面量的话,每加一个源这三条断言都会撞(kimi 就撞了一次)。
+ * 铺零基底既保留穷尽性(某个源静默消失仍会红),又不会被加源撞。
+ */
+function counts(nonZero: Partial<Record<DashboardSource, number>>): Record<DashboardSource, number> {
+  const base = Object.fromEntries(DASHBOARD_SOURCES.map((s) => [s, 0])) as Record<
+    DashboardSource,
+    number
+  >;
+  return { ...base, ...nonZero };
+}
+
 describe("workDashboard aggregate", () => {
   it("reads Claude token usage from the index without parsing transcripts", async () => {
     const root = process.cwd();
@@ -118,7 +134,7 @@ describe("workDashboard aggregate", () => {
       new Date("2026-06-07T00:00:00.000Z")
     );
     expect(dashboard.projects).toHaveLength(1);
-    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 1, codex: 1, opencode: 0 });
+    expect(dashboard.projects[0].sourceCounts).toEqual(counts({ "claude-code": 1, codex: 1 }));
     expect(dashboard.projects[0].recentSessions.map((s) => s.id)).toEqual(["x1", "c1"]);
     expect(dashboard.projects[0].tokenUsage).toMatchObject({
       inputTokens: 120,
@@ -172,7 +188,7 @@ describe("workDashboard aggregate", () => {
     // canonicalizePath(directory) === canonicalizePath(workspacePath) → one project.
     expect(dashboard.projects).toHaveLength(1);
     const project = dashboard.projects[0];
-    expect(project.sourceCounts).toEqual({ "claude-code": 1, codex: 1, opencode: 1 });
+    expect(project.sourceCounts).toEqual(counts({ "claude-code": 1, codex: 1, opencode: 1 }));
     // opencode is always indexed (never file-scanned), so its detail is not loaded;
     // scanned claude(100/50)+codex(20/10) plus indexed opencode(400/100).
     expect(project.tokenUsage.inputTokens).toBe(520);
@@ -190,7 +206,7 @@ describe("workDashboard aggregate", () => {
       collectors(),
       new Date("2026-06-07T00:00:00.000Z")
     );
-    expect(dashboard.projects[0].sourceCounts).toEqual({ "claude-code": 0, codex: 1, opencode: 0 });
+    expect(dashboard.projects[0].sourceCounts).toEqual(counts({ codex: 1 }));
     expect(dashboard.totals.sessionCount).toBe(1);
   });
 

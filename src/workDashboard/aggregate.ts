@@ -24,6 +24,7 @@ import {
   getOpencodeTokenUsageStatus,
   listOpencodeProjectTokenUsage,
 } from "../opencodeTokenUsage/queries.js";
+import { listKimiProjectTokenUsage } from "../kimiTokenUsage/queries.js";
 import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
 import type { WorkDurationSource } from "../workDuration/types.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
@@ -266,6 +267,10 @@ const DETAIL_HREF_BUILDERS: Record<
   },
   codex: (summary) => `/codex-history/s/${encodeURIComponent(summary.id)}`,
   opencode: (summary) => `/opencode-history/s/${encodeURIComponent(summary.id)}`,
+  // kimi 在看板里是**只出 token 的源**:它不往 recentSessions 里塞会话,
+  // 所以这个 builder 实际不会被调到。留在这里是为了让 Record<DashboardSource, …>
+  // 完整 —— 将来真做了 kimi 会话详情页,编译器会提醒这里要改。
+  kimi: (summary) => `/agent-messages?source=kimi&q=${encodeURIComponent(summary.id)}`,
 };
 
 function detailHref(source: DashboardSource, summary: ChatSessionSummary): string {
@@ -514,6 +519,9 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     listOpencode: collectDefaultOpencode,
     listOpencodeProjectTokenUsage: async ({ projectKeys, from }) =>
       listOpencodeProjectTokenUsage(undefined, { projectKeys, from }),
+    listKimiProjectTokenUsage: db
+      ? async ({ projectKeys, from }) => listKimiProjectTokenUsage(db, { projectKeys, from })
+      : undefined,
     getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(undefined),
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
@@ -684,6 +692,7 @@ function totalTokenUsage(projects: DashboardProject[], scanLimit: number) {
 type IndexedCodexUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listCodexProjectTokenUsage"]>>>;
 type IndexedClaudeUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listClaudeProjectTokenUsage"]>>>;
 type IndexedOpencodeUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listOpencodeProjectTokenUsage"]>>>;
+type IndexedKimiUsage = Awaited<ReturnType<NonNullable<DashboardCollectors["listKimiProjectTokenUsage"]>>>;
 
 export async function buildWorkDashboard(
   partialOptions: Partial<WorkDashboardOptions> = {},
@@ -837,10 +846,27 @@ export async function buildWorkDashboard(
       });
     }
   }
+  let indexedKimiByProject: IndexedKimiUsage | undefined;
+  if (options.sources.includes("kimi") && deps.listKimiProjectTokenUsage) {
+    try {
+      indexedKimiByProject = await deps.listKimiProjectTokenUsage({
+        projectKeys: projects.map((project) => project.key),
+        from: range.from,
+      });
+    } catch (e) {
+      diagnostics.push({
+        source: "kimi",
+        severity: "warning",
+        kind: "kimi-token-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
   const indexedUsageBySource: IndexedUsageBySource = {
     "claude-code": indexedClaudeByProject,
     codex: indexedCodexByProject,
     opencode: indexedOpencodeByProject,
+    kimi: indexedKimiByProject,
   };
   for (const project of projects) {
     project.recentSessions = project.recentSessions

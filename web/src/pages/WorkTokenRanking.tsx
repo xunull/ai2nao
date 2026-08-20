@@ -8,7 +8,7 @@ import { Page } from "../components/Page";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatActiveDuration, formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
 
-type DashboardSource = "claude-code" | "codex" | "opencode";
+type DashboardSource = "claude-code" | "codex" | "opencode" | "kimi";
 
 type TokenRankingProject = {
   key: string;
