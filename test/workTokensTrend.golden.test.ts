@@ -70,30 +70,36 @@ function buildLayer1(): Record<string, unknown> {
 }
 
 /**
- * 层二:复刻前端 `WorkTokensTrend.tsx:780-794` 当前的「不含缓存」公式。
+ * 层二:复刻前端 `WorkTokensTrend.tsx` 的「不含缓存」公式。
  *
- * ⚠️ 三个源现在**三种含义**:claude 与 codex 只减 cache-read,minimax 减 read + creation。
- * 这正是 5A 要统一掉的不一致。T6 改完之后这里的公式与 golden-layer2.json 一起更新,
- * 差异必须与设计文档里列出的清单逐条吻合。
+ * **T6 起四个源统一**:不含缓存 = fresh + output(两种 cache 都不算真实新增)。
+ * 归一之前 claude / codex 只减 cache-read、minimax 减 read + create ——
+ * 同一个开关三种含义。
+ *
+ * T6 落地时层二的实测差异(改之前预先算出来核对过,逐条命中):
+ *   claude   19 个值变化,每一个都恰好减少该桶的 cacheCreationInput,合计 15300
+ *   codex    0 个变化(它没有 cache 写入概念,cacheCreation 恒 0)
+ *   minimax  0 个变化(它本来就是两种都减)
  */
 function derivedForBucket(b: LegacyBucket, includeCache: boolean) {
+  const excl = (total: number, read: number, creation: number) =>
+    includeCache ? total : Math.max(0, total - read - creation);
   return {
-    claudeFullTokens: includeCache
-      ? b.claudeTokens
-      : Math.max(0, b.claudeTokens - b.claudeCacheReadInputTokens),
-    codexFullTokens: includeCache
-      ? b.codexTokens
-      : Math.max(0, b.codexTokens - b.codexCachedInputTokens),
-    minimaxFullTokens: includeCache
-      ? b.minimaxTokens
-      : Math.max(
-          0,
-          b.minimaxTokens - b.minimaxCacheReadInputTokens - b.minimaxCacheCreationInputTokens
-        ),
-    // 前端把 MiniMax 成本硬编码成 0 并照样堆进成本柱 —— 页面在说
-    // 「MiniMax 不花钱」,真相是「不知道」。4A 要修的就是它。
+    claudeFullTokens: excl(
+      b.claudeTokens,
+      b.claudeCacheReadInputTokens,
+      b.claudeCacheCreationInputTokens
+    ),
+    // codex 没有 cache 写入概念 → creation 传 0
+    codexFullTokens: excl(b.codexTokens, b.codexCachedInputTokens, 0),
+    minimaxFullTokens: excl(
+      b.minimaxTokens,
+      b.minimaxCacheReadInputTokens,
+      b.minimaxCacheCreationInputTokens
+    ),
     claudeCostUsd: b.claudeCostUsd,
     codexCostUsd: b.codexCostUsd,
+    // MiniMax 无定价 —— T7 会把它从成本柱里拿掉并标注,这里先保留 0 以隔离改动。
     minimaxCostUsd: 0,
   };
 }
@@ -117,13 +123,34 @@ function buildLayer2(): Record<string, unknown> {
   }
 }
 
+/**
+ * 稳定序列化 —— 递归排序对象键。
+ *
+ * 快照的职责是钉**数值**,不是键序。不排序的话,重构改了对象构造顺序就会产生
+ * 上千行「什么都没变」的 diff(T6 实测:层一 1204 行变化、0 处语义差异),
+ * 而真出问题时那个 diff 里没人看得出来。
+ */
+function stableStringify(v: unknown): string {
+  const sortKeys = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(sortKeys);
+    if (x === null || typeof x !== "object") return x;
+    const o = x as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(o)
+        .sort()
+        .map((k) => [k, sortKeys(o[k])])
+    );
+  };
+  return `${JSON.stringify(sortKeys(v), null, 2)}\n`;
+}
+
 function loadOrWrite(path: string, build: () => Record<string, unknown>): {
   actual: Record<string, unknown>;
   expected: Record<string, unknown> | null;
 } {
   const actual = build();
   if (UPDATING || !existsSync(path)) {
-    writeFileSync(path, `${JSON.stringify(actual, null, 2)}\n`);
+    writeFileSync(path, stableStringify(actual));
     return { actual, expected: null };
   }
   return { actual, expected: JSON.parse(readFileSync(path, "utf-8")) };
@@ -143,7 +170,7 @@ describe("token 趋势页黄金快照", () => {
   });
 
   it("fixture 是确定性的 —— 连造两次,层一逐字节一致", () => {
-    expect(JSON.stringify(buildLayer1())).toBe(JSON.stringify(buildLayer1()));
+    expect(stableStringify(buildLayer1())).toBe(stableStringify(buildLayer1()));
   });
 
   it("层一:后端全部数字与快照逐个相等(硬断言)", () => {

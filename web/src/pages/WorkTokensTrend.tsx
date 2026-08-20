@@ -82,14 +82,15 @@ const inputTokens = (u: SourceUsage): number =>
 const totalTokens = (u: SourceUsage): number => inputTokens(u) + u.output;
 
 /**
- * 当前(T5)的「不含缓存」口径 —— **逐源不同,这是历史遗留**:
- *   claude / codex  只减 cache-read
- *   minimax         read + create 都减
- * T6 会统一成「都减」(即 `freshInput + output`)。T5 只搬形状不改数,
- * 所以这里原样复刻旧语义。
+ * 「不含缓存」的量 = 真实新增 + 输出。**四个源统一**,两种 cache 都不算真实新增。
+ *
+ * 归一之前这里逐源不同:claude / codex 只减 cache-read,minimax 减 read + create ——
+ * 同一个开关对三根柱子含义不同,读图的人无从得知。而且 types.ts 里 claude totals
+ * 的注释写的又是「两个都减」,图表与文档自相矛盾。
+ *
+ * 注意它是**加法**不是减法。减法形式("total - 这些")正是逐源漂移的来源。
  */
-const cacheCutLegacy = (u: SourceUsage, key: TokenSourceKey): number =>
-  key === "minimax" ? u.cacheReadInput + u.cacheCreationInput : u.cacheReadInput;
+const tokensExcludingCache = (u: SourceUsage): number => u.freshInput + u.output;
 
 type Bucket = {
   bucketStart: string;
@@ -597,20 +598,12 @@ function useStickyToggle(
  */
 function deriveTotals(totals: Totals, includeCache: boolean): Totals {
   if (includeCache) return totals;
-  // 逐源扣掉各自的 cache 口径(T5 仍是旧的逐源不同语义,T6 统一)。
+  // 统一口径:两种 cache 都不算「真实新增」,直接归零,剩下 fresh + output。
   const sources = {} as Totals["sources"];
   let grand = 0;
   for (const key of TOKEN_SOURCES) {
     const u = totals.sources[key];
-    const cut = cacheCutLegacy(u, key);
-    // 从 cacheRead 先扣,不够再扣 cacheCreation —— 保证分量非负且合计正确。
-    const readCut = Math.min(u.cacheReadInput, cut);
-    const creationCut = Math.min(u.cacheCreationInput, cut - readCut);
-    const next = {
-      ...u,
-      cacheReadInput: u.cacheReadInput - readCut,
-      cacheCreationInput: u.cacheCreationInput - creationCut,
-    };
+    const next = { ...u, cacheReadInput: 0, cacheCreationInput: 0 };
     sources[key] = { ...next, share: 0 };
     grand += totalTokens(next);
   }
@@ -718,7 +711,7 @@ export function WorkTokensTrend() {
           ? u.costUsd
           : includeCache
             ? total
-            : Math.max(0, total - cacheCutLegacy(u, key));
+            : tokensExcludingCache(u);
       }
       return row;
     });
@@ -734,15 +727,19 @@ export function WorkTokensTrend() {
     trend.data?.mode === "window"
       ? includeCache
         ? trend.data.previousWindow.totalTokens
-        : // ⚠️ 归一之前这里**只减 claude 与 codex 的 cache-read,不减 minimax** ——
-          // 后端一直提供 minimax 的 cache 字段,前端从没接上。T5 只搬形状不改数,
-          // 所以原样保留这个口径;T6 统一成「四家都减 read + creation」时一并修。
-          Math.max(
-            0,
-            trend.data.previousWindow.totalTokens -
-              trend.data.previousWindow.bySource.claude.cacheReadInput -
-              trend.data.previousWindow.bySource.codex.cacheReadInput
-          )
+        : // 与柱子同一把尺:四家都减掉两种 cache。
+          // (归一之前这里只减 claude 与 codex 的 cache-read —— 后端一直提供
+          //  minimax 的 cache 字段,前端从没接上。T6 一并修好。)
+          TOKEN_SOURCES.reduce((n, key) => {
+            const p =
+              trend.data!.mode === "window"
+                ? trend.data!.previousWindow.bySource[key]
+                : null;
+            if (!p) return n;
+            return (
+              n + Math.max(0, p.totalTokens - p.cacheReadInput - p.cacheCreationInput)
+            );
+          }, 0)
       : 0;
   const effectiveDeltaRatio =
     effectiveTotals && effectivePrevTotal > 0
