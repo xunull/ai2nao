@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
 import { canonicalizePath } from "../path/canonical.js";
 
-export type WorkProjectSource = "claude-code" | "codex" | "opencode";
+export type WorkProjectSource = "claude-code" | "codex" | "opencode" | "kimi";
 
 export type WorkProjectIdentityInput = {
   source: WorkProjectSource;
