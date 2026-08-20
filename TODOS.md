@@ -1603,3 +1603,92 @@ LIKE 兜底 —— 这个设计本身是对的（`queries.ts:99` 的 D4 注释�
 **Effort:** M(human ~4h / CC ~30min) **Priority:** P3
 
 ---
+
+## opencode 接进 token 趋势页(第 5 个源)
+
+**What:** `/dashboard/tokens-trend` 现在有 claude / codex / minimax / kimi,唯独没有 opencode —— 而 `/dashboard/tokens` 排行页有它。归一成 source 维度之后,加它的边际成本降到「一个 adapter + 一行注册」。
+
+**Why:** 两个 token 页面源集不一致,用户在排行页看到 opencode、切到趋势页它消失了,没有任何提示。这跟「少一家 = 页面在说谎」是同一类问题。
+
+**Pros:**
+- 两个页面源集终于一致
+- 归一重构之后成本很低,不做等于浪费了刚建好的 adapter 机制
+
+**Cons:**
+- opencode 只有 **session 级** `tokens_input` / `tokens_output`(直接来自 `opencode.db` 的 `session` 表),**没有逐事件时间轴**
+- 塞进按时间分桶的页面必须先决定「一个 session 的 token 记在哪个桶」:全记在 `time_updated` 那个桶?按 session 时长均摊?两种都会让柱子形状失真,且与另外四家的口径不同
+- `capabilities` 里要多一个「无事件级时间分辨率」的维度,否则页面无法诚实表达这个差别
+
+**Context:** 来自 `/plan-eng-review`(2026-08-20)对 token 归一重构的 Open Questions。当轮明确不做,因为分桶归属这个决定本身需要一次独立讨论,塞进已经 32 文件的 PR 里会失焦。相关代码:`src/opencodeTokenUsage/queries.ts`(144 行,无 refresh、无索引表,直接查 opencode.db)。
+
+**Depends on / blocked by:** token 趋势页归一成 source 维度落地。
+
+**Effort:** M(human ~4h / CC ~40min) **Priority:** P2
+
+---
+
+## 查清 kimi 的 inputCacheCreation 为什么恒为 0
+
+**What:** kimi 的 `usage.record` 事件有四个 token 桶,其中 `inputCacheCreation` 在全量 5269 条里**无一例外都是 0**,而 `inputCacheRead` 占了 97.7%(1448.7M)。
+
+**Why:** 决定趋势页「输入构成」要不要给 kimi 画第三段。如果 kimi 真的不写 cache(只读),那第三段应当隐藏;如果只是这个字段没被 kimi 填、cache 写入混在 `inputOther` 里,那 kimi 的「真实新增」被高估了,29.9M 里有一部分其实是 cache 写入。
+
+**Pros:**
+- 查清了才能决定 `capabilities.cacheCreation` 对 kimi 该是 true 还是 false
+- 顺带验证 `inputOther` 的语义,它是「真实新增」这个口径的唯一来源
+
+**Cons:**
+- kimi 没有公开的 usage 字段文档,大概率只能靠对账推断(比如拿套餐消耗量与入库量比)
+- 结论可能是「无法确定」,那就维持现状(字段存在、值为 0、画一段 0 高度)
+
+**Context:** 来自 `/plan-eng-review`(2026-08-20)。当轮按 `capabilities.cacheCreation = true` + 值为 0 处理,与 claude 同构,是安全的默认。可查的地方:kimi 的 `llm.request` 事件(2316 条)里也许有请求侧的 cache 控制参数;`usage.record` 的 `usageScope` 目前只有 `"turn"` 一种,别的 scope 可能有别的桶。
+
+**Depends on / blocked by:** kimi token 入库落地(要有数据才好对账)。
+
+**Effort:** S(human ~2h / CC ~20min) **Priority:** P3
+
+---
+
+## codex / minimax 的 event 时间索引升级成复合索引
+
+**What:** `codex_token_usage_event` 与 `minimax_token_usage_event` 的时间索引是裸 `(event_at)`,而 `claude_token_usage_event` 是复合 `(event_at, session_id)`。新建的 kimi 表按复合建(eng review 9A)。
+
+**Why:** 趋势页的分桶查询是 `FROM event e JOIN session s ON s.session_id = e.session_id WHERE e.event_at >= ? AND e.event_at < ?`。复合索引能覆盖 join 键,裸列索引每命中一行都要回表取 `session_id`。codex 有 65200 行、minimax 有 65200 行。
+
+**Pros:**
+- 四家索引形状统一,以后照抄不会抄错
+- 分桶查询免回表
+
+**Cons:**
+- 需要一个新的 `applyVNN`(已 applied 的不可改,CLAUDE.md 铁律)
+- 现在这个数据量下大概率测不出差别,属于「趁着统一顺手做」而不是「有性能问题要修」
+- minimax 表没有 session 表可 join,它的复合索引收益比 codex 小
+
+**Context:** 来自 `/plan-eng-review`(2026-08-20)Section 4 性能审查。当轮只给新建的 kimi 表定了复合索引,没动已上线的两张表,避免把 migration 面扩大到本次范围之外。
+
+**Depends on / blocked by:** 无。
+
+**Effort:** S(human ~1h / CC ~15min) **Priority:** P3
+
+---
+
+## pricing.ts 的注释说 Codex 无定价,实际有
+
+**What:** `src/cost/pricing.ts` 的注释写着「intentionally absent → Codex cost shows as unpriced until a real rate is added」,`MODEL_PRICES` 里也确实只有 claude 系列 + 一行 `// "gpt-5.5": fill from OpenAI pricing`。但实际运行时价格来自 DB 覆盖表 `model_prices`(56 行,models.dev 同步),里面 `gpt-5.5` / `gpt-5.6-sol` / `gpt-5.6-terra` 都有价。
+
+**Why:** 注释会让下一个人以为 codex 的成本恒为 0,从而做出错误的设计决定 —— 本轮 eng review 我就是先信了注释、差点把 `capabilities.cost` 写成源级硬编码布尔,实测才发现两家都只有**模型级**的无价空洞(claude 有 18 个 session 的 model 为 null、codex 有 49 个是 `codex-auto-review`)。
+
+**Pros:**
+- 改注释,零风险
+- 避免下一个人重复踩
+
+**Cons:**
+- 纯注释改动,没有行为变化
+
+**Context:** 来自 `/plan-eng-review`(2026-08-20)Section 1 的 4A。vendored 快照是 fallback,DB 覆盖表才是运行时真相(`priceFor` 接受一个 PriceMap,趋势层传的是 DB 覆盖后的 map)。注释应当说明这个两层结构。
+
+**Depends on / blocked by:** 无。
+
+**Effort:** XS(human ~10min / CC ~2min) **Priority:** P3
+
+---

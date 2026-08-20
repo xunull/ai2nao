@@ -93,8 +93,17 @@ export function scanKimiWireFiles(opts?: {
 }
 
 /**
- * 读会话级元数据。CLI 与桌面沙箱都在会话目录下放 `state.json`,形状相同 ——
+ * 读会话级元数据。CLI 与桌面沙箱都在会话目录下放 `state.json` ——
  * 所以桌面侧的项目归属也不需要去开 conversations.sqlite(实测两者逐条吻合)。
+ *
+ * **`state.json` 有两种格式,工作目录的字段名不同**(2026-08-20 实测 57 个会话):
+ *
+ *   旧格式  `workDir`,无 `version` 字段   34 个会话(CLI + 桌面)
+ *   v2      `cwd`,   `version: 2`        23 个会话(仅 CLI)
+ *
+ * 只读 `workDir` 会让 v2 那 23 个会话的项目归属全丢 —— 按 token 加权是 54.5%,
+ * 真库里 `agent_user_messages` 的 kimi 行曾有 1331/2188(61%)`project` 为 null。
+ * 两个字段语义相同,取先有的那个。
  */
 export function readKimiSessionMeta(wireFilePath: string): KimiSessionMeta {
   // <session>/agents/<agent>/wire.jsonl → <session>/state.json
@@ -102,13 +111,14 @@ export function readKimiSessionMeta(wireFilePath: string): KimiSessionMeta {
   try {
     const raw = JSON.parse(readFileSync(join(sessionDir, "state.json"), "utf-8")) as {
       workDir?: unknown;
+      cwd?: unknown;
       title?: unknown;
       createdAt?: unknown;
       updatedAt?: unknown;
     };
     const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
     return {
-      workDir: str(raw.workDir),
+      workDir: str(raw.workDir) ?? str(raw.cwd),
       title: str(raw.title),
       createdAt: str(raw.createdAt),
       updatedAt: str(raw.updatedAt),
