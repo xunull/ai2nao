@@ -801,8 +801,8 @@ export function WorkTokensTrend() {
         <div>
           <h1 className="text-xl font-semibold text-[var(--fg)]">Token 趋势</h1>
           <p className="mt-1 text-xs text-[var(--fg-muted)]">
-            按时间维度回看本机 Claude Code / Codex 的真实 token 消耗。数字来自
-            两张已索引 session 表的 SUM；不估算成本，不猜测缺失值。
+            按时间维度回看本机各 AI 编码工具的真实 token 消耗。数字来自
+            各源已索引表的 SUM；不估算成本，不猜测缺失值。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

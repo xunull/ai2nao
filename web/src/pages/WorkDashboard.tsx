@@ -239,7 +239,7 @@ export function WorkDashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--fg)]">最近工作</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            从 Claude Code 与 Codex 本机会话判断最近活跃项目。
+            从本机 AI 编码工具的会话判断最近活跃项目。
           </p>
         </div>
         <div className="text-right text-xs text-[var(--muted)]">
@@ -382,7 +382,7 @@ export function WorkDashboard() {
             <section className="border-t border-[var(--border)] pt-3">
               {!selectedProject ? (
                 <div className="rounded-lg border border-dashed border-neutral-300 bg-white/60 py-20 text-center text-sm text-[var(--muted)]">
-                  当前范围内没有 Claude Code 或 Codex 项目。
+                  当前范围内没有任何项目。
                 </div>
               ) : (
                 <div className="rounded-lg border border-[var(--border)] bg-white px-5 py-4 shadow-sm">

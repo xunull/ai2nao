@@ -102,7 +102,7 @@ export function WorkTokenRanking() {
   return (
     <Page
       title="Token 排行"
-      subtitle="按项目汇总 Claude Code 与 Codex 能统计到的真实 token。"
+      subtitle="按项目汇总本机各 AI 编码工具能统计到的真实 token。"
       actions={
         <div className="text-right text-xs text-[var(--muted)]">
           <div>本机只读 · 不估算 token</div>
@@ -213,8 +213,8 @@ export function WorkTokenRanking() {
               </div>
               <div className="mt-1 flex items-center justify-between gap-3 text-xs font-medium text-[var(--muted)]">
                 <span>token</span>
-                <span title="由 Claude Code / Codex 本地 JSONL 时间戳推断">
-                  活跃 {formatActiveDuration(project.activeMs)}
+                <span title="仅统计 Claude Code 与 Codex（由本地 JSONL 时间戳推断）；opencode 与 Kimi 尚未接入 work_session_duration">
+                  Claude/Codex 活跃 {formatActiveDuration(project.activeMs)}
                 </span>
               </div>
               <div className="mt-4 truncate font-mono text-[11px] text-neutral-500" title={project.path}>

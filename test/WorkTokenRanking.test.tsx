@@ -54,7 +54,7 @@ describe("WorkTokenRanking", () => {
     expect(screen.getByText("2 个项目")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
     expect(screen.getByText("1.5M")).toBeInTheDocument();
-    expect(screen.getByText("活跃 2 小时 15 分钟")).toBeInTheDocument();
+    expect(screen.getByText("Claude/Codex 活跃 2 小时 15 分钟")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "用 VS Code 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 Cursor 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 Warp 打开项目" })).toHaveLength(2);
