@@ -1,4 +1,5 @@
 import type { KimiProjectTokenUsage } from "../kimiTokenUsage/queries.js";
+import type { KimiTokenUsageStatus } from "../kimiTokenUsage/types.js";
 import type { Diagnostic } from "../util/diagnostics.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import type { ClaudeProjectTokenUsage, ClaudeTokenUsageStatus } from "../claudeTokenUsage/types.js";
@@ -192,6 +193,7 @@ export type DashboardCollectors = {
     from: Date | null;
   }) => Promise<Map<string, KimiProjectTokenUsage>>;
   getCodexTokenUsageStatus?: () => Promise<CodexTokenUsageStatus>;
+  getKimiTokenUsageStatus?: () => Promise<KimiTokenUsageStatus>;
   getClaudeTokenUsageStatus?: () => Promise<ClaudeTokenUsageStatus>;
   getOpencodeTokenUsageStatus?: () => Promise<OpencodeTokenUsageStatus>;
   listWorkProjectDurationUsage?: (args: {

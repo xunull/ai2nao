@@ -24,7 +24,10 @@ import {
   getOpencodeTokenUsageStatus,
   listOpencodeProjectTokenUsage,
 } from "../opencodeTokenUsage/queries.js";
-import { listKimiProjectTokenUsage } from "../kimiTokenUsage/queries.js";
+import {
+  getKimiTokenUsageStatus,
+  listKimiProjectTokenUsage,
+} from "../kimiTokenUsage/queries.js";
 import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
 import type { WorkDurationSource } from "../workDuration/types.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
@@ -522,6 +525,9 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     listKimiProjectTokenUsage: db
       ? async ({ projectKeys, from }) => listKimiProjectTokenUsage(db, { projectKeys, from })
       : undefined,
+    getKimiTokenUsageStatus: db
+      ? async () => getKimiTokenUsageStatus(db)
+      : undefined,
     getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(undefined),
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
@@ -849,6 +855,18 @@ export async function buildWorkDashboard(
   let indexedKimiByProject: IndexedKimiUsage | undefined;
   if (options.sources.includes("kimi") && deps.listKimiProjectTokenUsage) {
     try {
+      const status = deps.getKimiTokenUsageStatus
+        ? await deps.getKimiTokenUsageStatus()
+        : null;
+      if (status && !status.fresh) {
+        diagnostics.push({
+          source: "kimi",
+          severity: "warning",
+          kind: "kimi-token-index-stale",
+          message: `kimi token index is stale: ${status.staleReasons.join(", ")}`,
+          count: status.state?.indexed_agent_count,
+        });
+      }
       indexedKimiByProject = await deps.listKimiProjectTokenUsage({
         projectKeys: projects.map((project) => project.key),
         from: range.from,
@@ -861,6 +879,15 @@ export async function buildWorkDashboard(
         message: e instanceof Error ? e.message : String(e),
       });
     }
+  } else if (options.sources.includes("kimi")) {
+    // 点了 kimi 却没有收集器 —— 说出来。原先这里什么都不做,于是
+    // 「请求了这个源」与「这个源没数据」在页面上长得一模一样。
+    diagnostics.push({
+      source: "kimi",
+      severity: "warning",
+      kind: "kimi-token-index-unavailable",
+      message: "kimi token index is not configured",
+    });
   }
   const indexedUsageBySource: IndexedUsageBySource = {
     "claude-code": indexedClaudeByProject,
@@ -1069,6 +1096,54 @@ export async function buildWorkTokenRanking(
       severity: "warning",
       kind: "opencode-token-index-unavailable",
       message: "opencode token index is not configured",
+    });
+  }
+
+  // kimi。这个块是 T12 漏掉的那个 —— 当时只在 buildWorkDashboard 里加了 kimi,
+  // 而排行页是与它**并列的独立函数**,里面 kimi 出现 0 次,于是只有 kimi 活动的
+  // 项目(meng1、gongren-pipeline)根本不在榜上。
+  // 计数单位是 agent 文件,不是 session(见 KimiProjectTokenUsage)。
+  if (options.sources.includes("kimi") && deps.listKimiProjectTokenUsage) {
+    try {
+      const status = deps.getKimiTokenUsageStatus
+        ? await deps.getKimiTokenUsageStatus()
+        : null;
+      if (status && !status.fresh) {
+        diagnostics.push({
+          source: "kimi",
+          severity: "warning",
+          kind: "kimi-token-index-stale",
+          message: `kimi token index is stale: ${status.staleReasons.join(", ")}`,
+          count: status.state?.indexed_agent_count,
+        });
+      }
+      const kimiUsage = await deps.listKimiProjectTokenUsage({
+        projectKeys: [],
+        from: range.from,
+      });
+      for (const usage of kimiUsage.values()) {
+        addRankingTokens(
+          projectsByKey,
+          usage.projectKey,
+          usage.projectPath,
+          usage.totalTokens,
+          range.to
+        );
+      }
+    } catch (e) {
+      diagnostics.push({
+        source: "kimi",
+        severity: "warning",
+        kind: "kimi-token-index-unavailable",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  } else if (options.sources.includes("kimi")) {
+    diagnostics.push({
+      source: "kimi",
+      severity: "warning",
+      kind: "kimi-token-index-unavailable",
+      message: "kimi token index is not configured",
     });
   }
 

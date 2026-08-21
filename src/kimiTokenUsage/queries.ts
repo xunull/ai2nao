@@ -1,4 +1,55 @@
 import type Database from "better-sqlite3";
+import {
+  KIMI_TOKEN_USAGE_RULE_VERSION,
+  type KimiTokenUsageStateRow,
+  type KimiTokenUsageStatus,
+} from "./types.js";
+
+/**
+ * kimi token 索引的新鲜度。与 `getClaudeTokenUsageStatus` 逐行同构。
+ *
+ * 在此之前 claude / codex / opencode 都有这个函数而 kimi 没有,于是 kimi 的数字
+ * 在「从没刷新过」「刷新出错」「解析规则变了」三种情况下都会安静地显示陈旧或 0 ——
+ * 另外三家会在页面上给出一条陈旧警告,kimi 什么都不说。V55 建的
+ * `kimi_token_usage_state` 一直有这三个字段且 refresh 一直在写,只是没人读。
+ */
+export function getKimiTokenUsageState(
+  db: Database.Database
+): KimiTokenUsageStateRow | null {
+  return (
+    (db
+      .prepare(
+        `SELECT id, rule_version, last_rebuilt_at, last_error,
+                source_agent_count, indexed_agent_count,
+                token_known_agent_count, token_unknown_agent_count,
+                error_agent_count, skipped_unchanged_count,
+                duration_ms, updated_at
+         FROM kimi_token_usage_state
+         WHERE id = 1`
+      )
+      .get() as KimiTokenUsageStateRow | undefined) ?? null
+  );
+}
+
+export function getKimiTokenUsageStatus(
+  db: Database.Database
+): KimiTokenUsageStatus {
+  let state: KimiTokenUsageStateRow | null = null;
+  const staleReasons: string[] = [];
+  try {
+    state = getKimiTokenUsageState(db);
+  } catch (e) {
+    // 表不在(旧库)不等于「没用过 kimi」,是索引不可用 —— 说出来,别静默当 0。
+    staleReasons.push("state_unavailable");
+    return { state: null, fresh: false, staleReasons };
+  }
+  if (!state) staleReasons.push("not_built");
+  if (state && state.rule_version !== KIMI_TOKEN_USAGE_RULE_VERSION) {
+    staleReasons.push("rule_version_mismatch");
+  }
+  if (state?.last_error) staleReasons.push("last_refresh_error");
+  return { state, fresh: staleReasons.length === 0, staleReasons };
+}
 
 /**
  * 按项目聚合 kimi 的 token,供工作看板 / token 排行页合并。
