@@ -35,10 +35,12 @@ import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js"
 import {
   normalizeWorkProjectIdentity,
 } from "../workProjects/identity.js";
-import { DASHBOARD_SOURCES, isDashboardSource } from "./types.js";
+import { DASHBOARD_SOURCES, isDashboardSource, SOURCE_COVERAGE_UNITS } from "./types.js";
 import type {
   DashboardCollectorSession,
   DashboardCollectors,
+  DashboardCoverageBreakdown,
+  DashboardCoverageUnit,
   DashboardDiagnostic,
   DashboardProject,
   DashboardSession,
@@ -200,6 +202,8 @@ function emptyTokenUsage(totalSessions: number, scanLimit: number): DashboardTok
     outputTokens: 0,
     totalTokens: 0,
     coverage: "unknown",
+    coverageUnit: null,
+    coverageBreakdown: {},
     coveredSessions: 0,
     totalSessions,
     scannedSessions: 0,
@@ -678,6 +682,16 @@ async function applyTokenUsage(
   let totalSessions = 0;
   let indexedScanned = 0;
   let truncated = false;
+  // 只登记**真正贡献了计数**的源的单位 —— 注册了但这个项目下没有数据的源
+  // 不该把单位打成 mixed。
+  const breakdown: DashboardCoverageBreakdown = {};
+  const bump = (source: DashboardSource, covered: number, total: number): void => {
+    if (total <= 0) return;
+    const unit = SOURCE_COVERAGE_UNITS[source];
+    const slot = (breakdown[unit] ??= { covered: 0, total: 0 });
+    slot.covered += covered;
+    slot.total += total;
+  };
   for (const source of DASHBOARD_SOURCES) {
     const idx = indexedForProject(source);
     if (idx) {
@@ -687,12 +701,21 @@ async function applyTokenUsage(
       if (idx.coverage === "partial") anyIndexPartial = true;
       totalSessions += idx.totalSessions;
       indexedScanned += idx.totalSessions;
+      bump(source, idx.coveredSessions, idx.totalSessions);
     } else {
+      // 没有索引的源:这个项目下该源的会话数进分母,覆盖数由上面的逐场扫描累加,
+      // 无法按源拆分 —— 所以小计里只记分母,covered 记 0(宁可少算不可多算)。
       const count = project.sourceCounts[source];
       totalSessions += count;
       if (count > scanLimit) truncated = true;
+      bump(source, 0, count);
     }
   }
+  // 只登记**真正贡献了计数**的源的单位 —— 注册了但这个项目下没有数据的源
+  // 不该把单位打成 mixed。
+  const units = Object.keys(breakdown) as ("session" | "agent")[];
+  const coverageUnit: DashboardCoverageUnit =
+    units.length === 0 ? null : units.length > 1 ? "mixed" : units[0];
 
   project.tokenUsage = {
     inputTokens,
@@ -706,6 +729,8 @@ async function applyTokenUsage(
           : coveredSessions === totalSessions && !truncated
             ? "full"
             : "partial",
+    coverageUnit,
+    coverageBreakdown: breakdown,
     coveredSessions,
     totalSessions,
     scannedSessions: indexedScanned + toScan.length,
@@ -741,7 +766,17 @@ function totalTokenUsage(projects: DashboardProject[], scanLimit: number) {
       out.coverage = "partial";
     }
     if (project.tokenUsage.coverage === "partial") out.coverage = "partial";
+    // 总计的单位由各项目的单位合并而来:只要有两种不同的单位出现,总计就是 mixed。
+    for (const [unit, slot] of Object.entries(project.tokenUsage.coverageBreakdown)) {
+      const key = unit as "session" | "agent";
+      const into = (out.coverageBreakdown[key] ??= { covered: 0, total: 0 });
+      into.covered += slot.covered;
+      into.total += slot.total;
+    }
   }
+  const outUnits = Object.keys(out.coverageBreakdown) as ("session" | "agent")[];
+  out.coverageUnit =
+    outUnits.length === 0 ? null : outUnits.length > 1 ? "mixed" : outUnits[0];
   if (out.coveredSessions === 0) out.coverage = "unknown";
   return out;
 }

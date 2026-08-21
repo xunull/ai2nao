@@ -62,6 +62,10 @@ describe("WorkDashboard", () => {
     expect(screen.queryByText("状态")).not.toBeInTheDocument();
     expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Codex").length).toBeGreaterThan(0);
+    // 混合单位的项目分开列覆盖率。把会话数与 agent 文件数加成一个分数
+    // (这里会是 2/3)是没有统计意义的数字。
+    expect(screen.getByText(/1\/2 会话 · 1\/1 agent/)).toBeInTheDocument();
+    expect(screen.queryByText(/^2\/3/)).not.toBeInTheDocument();
   });
 
   it("updates query params when filters change", async () => {
@@ -155,6 +159,13 @@ function dashboardResponse() {
           outputTokens: 500,
           totalTokens: 1500,
           coverage: "partial",
+          // 混合单位:会话制的源 + agent 制的 kimi。页面必须分开列,
+          // 而不是把 1/2 和 1/1 加成一个 2/3。
+          coverageUnit: "mixed",
+          coverageBreakdown: {
+            session: { covered: 1, total: 2 },
+            agent: { covered: 1, total: 1 },
+          },
           coveredSessions: 1,
           totalSessions: 2,
           scannedSessions: 1,

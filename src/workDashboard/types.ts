@@ -20,11 +20,44 @@ export function isDashboardSource(value: unknown): value is DashboardSource {
 
 export type DashboardTokenCoverage = "full" | "partial" | "unknown";
 
+/**
+ * `coveredSessions/totalSessions` 这个分数用什么计量。
+ *
+ * claude-code / codex / opencode 数的是**会话**,kimi 数的是 **agent 文件**
+ * (一个会话下有 N 个 `agents/<x>/wire.jsonl`)。两者相加没有统计意义 ——
+ * 3 场 claude 加 1 场含 4 个 agent 的 kimi 会得到「7/7」,那个数不表示任何东西。
+ * 所以混在一起时报 `mixed`,由前端分开列,而不是给一个合计分数。
+ * 与 `src/workTokensTrend/types.ts` 的 `coverageUnit` 同一口径。
+ */
+export type DashboardCoverageUnit = "session" | "agent" | "mixed" | null;
+
+/**
+ * 逐单位的覆盖率小计。`coverageUnit === "mixed"` 时前端据此分开列
+ * (「3/3 会话 · 4/4 agent」),而不是显示一个把两种单位加起来的合计分数。
+ */
+export type DashboardCoverageBreakdown = {
+  session?: { covered: number; total: number };
+  agent?: { covered: number; total: number };
+};
+
+/**
+ * 每个源的覆盖率计量单位。穷尽 Record —— 加源时必须在这里表态,
+ * 不能靠默认值蒙混。
+ */
+export const SOURCE_COVERAGE_UNITS: Record<DashboardSource, "session" | "agent"> = {
+  "claude-code": "session",
+  codex: "session",
+  opencode: "session",
+  kimi: "agent",
+};
+
 export type DashboardTokenUsage = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   coverage: DashboardTokenCoverage;
+  coverageUnit: DashboardCoverageUnit;
+  coverageBreakdown: DashboardCoverageBreakdown;
   coveredSessions: number;
   totalSessions: number;
   scannedSessions: number;

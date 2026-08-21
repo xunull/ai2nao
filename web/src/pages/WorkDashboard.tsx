@@ -16,11 +16,25 @@ import {
 
 type TokenCoverage = "full" | "partial" | "unknown";
 
+/**
+ * 覆盖率的计量单位。claude/codex/opencode 数会话,kimi 数 agent 文件
+ * (一个会话下有 N 个 wire.jsonl)。两者相加没有意义,所以混在一起时后端报
+ * mixed,这里分开列而不是显示一个合计分数。
+ */
+type CoverageUnit = "session" | "agent" | "mixed" | null;
+
+type CoverageBreakdown = {
+  session?: { covered: number; total: number };
+  agent?: { covered: number; total: number };
+};
+
 type TokenUsage = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   coverage: TokenCoverage;
+  coverageUnit: CoverageUnit;
+  coverageBreakdown: CoverageBreakdown;
   coveredSessions: number;
   totalSessions: number;
   scannedSessions: number;
@@ -96,6 +110,26 @@ function qs(params: Record<string, string | undefined>): string {
   }
   const q = p.toString();
   return q ? `?${q}` : "";
+}
+
+const UNIT_NAMES: Record<"session" | "agent", string> = {
+  session: "会话",
+  agent: "agent",
+};
+
+/**
+ * 覆盖率文案。单一单位时是「8/8 agent」;混合时分开列成
+ * 「3/3 会话 · 4/4 agent」—— 把两种单位加成一个 7/7 是没有意义的数字。
+ */
+function coverageText(usage: TokenUsage): string {
+  const parts = (["session", "agent"] as const)
+    .map((unit) => {
+      const slot = usage.coverageBreakdown?.[unit];
+      return slot ? `${slot.covered}/${slot.total} ${UNIT_NAMES[unit]}` : null;
+    })
+    .filter((part): part is string => part !== null);
+  if (parts.length === 0) return `${usage.coveredSessions}/${usage.totalSessions}`;
+  return parts.join(" · ");
 }
 
 function coverageClass(coverage: TokenCoverage): string {
@@ -382,7 +416,7 @@ export function WorkDashboard() {
                     <div>
                       <div className="text-xs text-[var(--muted)]">覆盖</div>
                       <div className="mt-1 text-sm font-semibold">
-                        {selectedProject.tokenUsage.coveredSessions}/{selectedProject.tokenUsage.totalSessions}
+                        {coverageText(selectedProject.tokenUsage)}
                         {selectedProject.tokenUsage.truncated ? " · 部分扫描" : ""}
                       </div>
                     </div>
