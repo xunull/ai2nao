@@ -28,6 +28,7 @@ import {
   getKimiTokenUsageStatus,
   listKimiProjectTokenUsage,
 } from "../kimiTokenUsage/queries.js";
+import { listKimiDashboardSessions } from "../kimiHistory/sessions.js";
 import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
 import type { WorkDurationSource } from "../workDuration/types.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
@@ -451,6 +452,55 @@ async function collectDefaultCodex(limits: {
   }
 }
 
+/**
+ * kimi 的会话收集器。身份直接沿用 token 索引里算好的 project_key/path
+ * (走 metadata.indexed),这样看板的项目行与 token 查询聚合在**同一个键**上,
+ * 不会因为两处各自 normalize 而漂移 —— 与 collectIndexedClaude 同一个做法。
+ */
+function collectIndexedKimi(db: Database.Database): {
+  sessions: DashboardCollectorSession[];
+  diagnostics: DashboardDiagnostic[];
+} {
+  const { sessions: rows, diagnostics: raw } = listKimiDashboardSessions(db);
+  const sessions: DashboardCollectorSession[] = rows.map((r, index) => ({
+    source: "kimi",
+    summary: {
+      id: r.sessionId,
+      index,
+      title: r.title,
+      createdAt: new Date(r.createdAt),
+      lastUpdatedAt: new Date(r.lastUpdatedAt),
+      // 数的是真人提问 —— 见 kimiHistory/sessions.ts 顶部关于计数单位的说明。
+      messageCount: r.humanMessageCount,
+      workspaceId: r.projectKey,
+      workspacePath: r.projectPath,
+      preview: r.preview,
+      source: "kimi",
+      metadata: {
+        indexed: {
+          key: r.projectKey,
+          path: r.projectPath,
+          confidence: r.identityConfidence,
+        },
+        model: r.model,
+        agentCount: r.agentCount,
+        totalMessageCount: r.totalMessageCount,
+      },
+    },
+    decodedWorkspacePath: r.projectPath,
+  }));
+  return {
+    sessions,
+    diagnostics: raw.map((d) => ({
+      source: "kimi" as const,
+      severity: "warning" as const,
+      kind: d.kind,
+      message: d.message,
+      count: d.count,
+    })),
+  };
+}
+
 async function collectDefaultOpencode(): Promise<{
   sessions: DashboardCollectorSession[];
   diagnostics: DashboardDiagnostic[];
@@ -522,6 +572,7 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     listOpencode: collectDefaultOpencode,
     listOpencodeProjectTokenUsage: async ({ projectKeys, from }) =>
       listOpencodeProjectTokenUsage(undefined, { projectKeys, from }),
+    listKimi: db ? async () => collectIndexedKimi(db) : undefined,
     listKimiProjectTokenUsage: db
       ? async ({ projectKeys, from }) => listKimiProjectTokenUsage(db, { projectKeys, from })
       : undefined,
@@ -728,6 +779,14 @@ export async function buildWorkDashboard(
   }
   if (options.sources.includes("opencode") && deps.listOpencode) {
     const res = await deps.listOpencode();
+    collected.push(...res.sessions);
+    diagnostics.push(...res.diagnostics);
+  }
+  if (options.sources.includes("kimi") && deps.listKimi) {
+    // 这一块决定了「只有 kimi 活动的项目」能不能被发现 —— 总览页的项目行是按
+    // session 建的,没有会话收集器时 meng1 / gongren-pipeline 这类项目
+    // 永远进不了列表(哪怕它们的 token 已经进了排行页)。
+    const res = await deps.listKimi();
     collected.push(...res.sessions);
     diagnostics.push(...res.diagnostics);
   }

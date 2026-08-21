@@ -187,6 +187,16 @@ export type DashboardCollectors = {
     projectKeys: string[];
     from: Date | null;
   }) => Promise<Map<string, OpencodeProjectTokenUsage>>;
+  /**
+   * kimi 的会话列表。与 listOpencode 一样不接参数 —— 数据已在 index.db 里,
+   * 一次 JOIN 拿全,由 buildWorkDashboard 按 range 过滤。
+   * 注意与下面 listKimiProjectTokenUsage 的**单位不同**:这里一行是一个会话,
+   * 那里一行的计数单位是 agent 文件。
+   */
+  listKimi?: () => Promise<{
+    sessions: DashboardCollectorSession[];
+    diagnostics: DashboardDiagnostic[];
+  }>;
   /** kimi 的计数单位是 **agent 文件**,不是 session —— 见 KimiProjectTokenUsage。 */
   listKimiProjectTokenUsage?: (args: {
     projectKeys: string[];

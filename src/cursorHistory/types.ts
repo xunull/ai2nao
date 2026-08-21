@@ -55,7 +55,7 @@ export interface ChatSession {
   workspaceId: string;
   workspacePath?: string;
   /** Source data completeness: full global bubbles or degraded workspace fallback */
-  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex' | 'cherry-studio' | 'opencode';
+  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex' | 'cherry-studio' | 'opencode' | 'kimi';
   /** Source-specific metadata. Keep shared fields above; put per-agent details here. */
   metadata?: Record<string, unknown>;
   /** Session-level token usage summary (optional, when available) */
@@ -180,7 +180,7 @@ export interface ChatSessionSummary {
   workspaceId: string;
   workspacePath: string;
   preview: string;
-  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex' | 'cherry-studio' | 'opencode';
+  source?: 'global' | 'workspace-fallback' | 'claude-code' | 'codex' | 'cherry-studio' | 'opencode' | 'kimi';
   metadata?: Record<string, unknown>;
 }
 
