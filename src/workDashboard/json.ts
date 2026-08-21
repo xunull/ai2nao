@@ -47,6 +47,8 @@ export function dashboardResponseToJson(r: WorkDashboardResponse) {
       to: r.range.to.toISOString(),
       days: r.range.days,
     },
+    sources: r.sources,
+    availableSources: r.availableSources,
     diagnostics: r.diagnostics,
     totals: r.totals,
     projects: r.projects.map(dashboardProjectToJson),
@@ -63,6 +65,7 @@ export function tokenRankingResponseToJson(r: WorkTokenRankingResponse) {
       months: r.range.months,
     },
     sources: r.sources,
+    availableSources: r.availableSources,
     diagnostics: r.diagnostics,
     projects: r.projects,
   };

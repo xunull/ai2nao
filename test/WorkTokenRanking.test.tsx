@@ -46,8 +46,11 @@ describe("WorkTokenRanking", () => {
 
     expect(await screen.findByRole("heading", { name: "Token 排行" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("最近 6 个月")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Claude + Codex + opencode")).toBeInTheDocument();
     expect(await screen.findByText("ai2nao")).toBeInTheDocument();
+    // 来源下拉的选项来自响应的 availableSources,所以要等数据到了才断言。
+    // fixture 里后端回显的是 claude-code,codex —— 不等于任何一个标准选项,
+    // 于是下拉把它补成一个「Claude + Codex」选项(否则会静默显示错的那项)。
+    expect(screen.getByDisplayValue("Claude + Codex")).toBeInTheDocument();
     expect(screen.getByText("2 个项目")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
     expect(screen.getByText("1.5M")).toBeInTheDocument();
@@ -57,7 +60,9 @@ describe("WorkTokenRanking", () => {
     expect(screen.getAllByRole("button", { name: "用 Warp 打开项目" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "用 iTerm2 打开项目" })).toHaveLength(2);
     expect(screen.queryByText("部分 token")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/work-dashboard/token-projects?rangeMonths=6&sources=claude-code%2Ccodex%2Copencode");
+    // 无 URL 参数时**不发** sources —— 这样后端的 DEFAULT_*_OPTIONS.sources
+    // 才真正生效。前端一旦自带 fallback 字面量,改后端默认值就是空操作。
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/work-dashboard/token-projects?rangeMonths=6");
   });
 
   it("opens a ranked project with the selected opener", async () => {
@@ -99,7 +104,7 @@ describe("WorkTokenRanking", () => {
 
     await screen.findByText("ai2nao");
     await userEvent.selectOptions(screen.getByDisplayValue("最近 6 个月"), "all");
-    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex + opencode"), "codex");
+    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex"), "codex");
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("rangeMonths=all"))).toBe(true);
@@ -118,6 +123,7 @@ function tokenRankingResponse() {
       months: 6,
     },
     sources: ["claude-code", "codex"],
+    availableSources: ["claude-code", "codex", "opencode", "kimi"],
     diagnostics: [],
     projects: [
       {

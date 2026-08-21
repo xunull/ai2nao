@@ -8,8 +8,12 @@ import {
   formatTokenCount,
   formatTokenCoverage,
 } from "../util/formatDisplay";
+import {
+  buildSourceOptions,
+  sourceLabel,
+  type DashboardSource,
+} from "../util/sourceLabels";
 
-type DashboardSource = "claude-code" | "codex" | "opencode";
 type TokenCoverage = "full" | "partial" | "unknown";
 
 type TokenUsage = {
@@ -64,6 +68,10 @@ type DashboardResponse = {
   ok: true;
   generatedAt: string;
   range: { from: string | null; to: string; days: number | "all" };
+  /** 后端这次实际采用的源 —— 下拉选中态读它。 */
+  sources: DashboardSource[];
+  /** 后端支持的全部源 —— 下拉选项读它,前端不再自己维护一份列表。 */
+  availableSources: DashboardSource[];
   diagnostics: Diagnostic[];
   totals: {
     projectCount: number;
@@ -81,13 +89,6 @@ const rangeOptions = [
   { value: "all", label: "全部时间" },
 ];
 
-const sourceOptions = [
-  { value: "claude-code,codex,opencode", label: "Claude + Codex + opencode" },
-  { value: "claude-code", label: "仅 Claude" },
-  { value: "codex", label: "仅 Codex" },
-  { value: "opencode", label: "仅 opencode" },
-];
-
 function qs(params: Record<string, string | undefined>): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -95,12 +96,6 @@ function qs(params: Record<string, string | undefined>): string {
   }
   const q = p.toString();
   return q ? `?${q}` : "";
-}
-
-function sourceLabel(source: DashboardSource): string {
-  if (source === "claude-code") return "Claude";
-  if (source === "codex") return "Codex";
-  return "opencode";
 }
 
 function coverageClass(coverage: TokenCoverage): string {
@@ -160,7 +155,9 @@ export function WorkDashboard() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const rangeDays = searchParams.get("rangeDays") ?? "30";
-  const sources = searchParams.get("sources") ?? "claude-code,codex,opencode";
+  // 不带 fallback 字面量 —— 前端一旦总是显式发送,后端的 DEFAULT_*_OPTIONS.sources
+  // 就永远不会生效。无参时交给后端定,下拉的选中态从响应回显读。
+  const sources = searchParams.get("sources") ?? undefined;
   const [projectQuery, setProjectQuery] = useState("");
   const apiSuffix = useMemo(() => qs({ rangeDays, sources }), [rangeDays, sources]);
 
@@ -180,6 +177,12 @@ export function WorkDashboard() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectedProject =
     filteredProjects.find((p) => p.key === selectedKey) ?? filteredProjects[0] ?? null;
+  // URL 上有就用 URL 的(尊重老书签),否则用后端这次实际采用的那组。
+  const selectedSources = sources ?? dashboard.data?.sources.join(",") ?? "";
+  const sourceOptions = buildSourceOptions(
+    dashboard.data?.availableSources ?? [],
+    selectedSources
+  );
   const blockingDiagnostics = (dashboard.data?.diagnostics ?? []).filter(isBlockingDiagnostic);
   const secondaryDiagnostics = (dashboard.data?.diagnostics ?? []).filter(
     (diagnostic) => !isBlockingDiagnostic(diagnostic)
@@ -240,7 +243,7 @@ export function WorkDashboard() {
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">来源</span>
           <select
-            value={sources}
+            value={selectedSources}
             onChange={(e) => setParam("sources", e.target.value)}
             className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm"
           >
@@ -322,15 +325,16 @@ export function WorkDashboard() {
                         <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">
                           {metricLabel(project.sessionCount, "会话")}
                         </span>
-                        {project.sourceCounts["claude-code"] > 0 && (
-                          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">Claude</span>
-                        )}
-                        {project.sourceCounts.codex > 0 && (
-                          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">Codex</span>
-                        )}
-                        {project.sourceCounts.opencode > 0 && (
-                          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]">opencode</span>
-                        )}
+                        {Object.entries(project.sourceCounts)
+                          .filter(([, count]) => count > 0)
+                          .map(([source]) => (
+                            <span
+                              key={source}
+                              className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px]"
+                            >
+                              {sourceLabel(source)}
+                            </span>
+                          ))}
                         <span className={`rounded-full border px-2 py-0.5 text-[11px] ${coverageClass(project.tokenUsage.coverage)}`}>
                           {formatTokenCoverage(project.tokenUsage.coverage)}
                         </span>

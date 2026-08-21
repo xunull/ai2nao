@@ -49,7 +49,7 @@ import type {
 
 export const DEFAULT_WORK_DASHBOARD_OPTIONS: WorkDashboardOptions = {
   rangeDays: 30,
-  sources: ["claude-code", "codex", "opencode"],
+  sources: [...DASHBOARD_SOURCES],
   limitProjects: 80,
   sessionsPerProject: 5,
   tokenSessionsPerProject: 5,
@@ -72,7 +72,7 @@ const MAX_LIMITS = {
 
 export const DEFAULT_WORK_TOKEN_RANKING_OPTIONS: WorkTokenRankingOptions = {
   rangeMonths: 6,
-  sources: ["claude-code", "codex", "opencode"],
+  sources: [...DASHBOARD_SOURCES],
   limit: 100,
   claudeProjectLimit: 300,
   claudeSessionsPerProject: 100,
@@ -894,6 +894,8 @@ export async function buildWorkDashboard(
     ok: true,
     generatedAt: now,
     range,
+    sources: options.sources,
+    availableSources: [...DASHBOARD_SOURCES],
     diagnostics,
     totals: {
       projectCount: projects.length,
@@ -1108,6 +1110,7 @@ export async function buildWorkTokenRanking(
     generatedAt: now,
     range,
     sources: options.sources,
+    availableSources: [...DASHBOARD_SOURCES],
     diagnostics,
     projects,
   };

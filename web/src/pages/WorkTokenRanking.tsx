@@ -7,8 +7,11 @@ import { apiGet } from "../api";
 import { Page } from "../components/Page";
 import { ProjectOpenActions } from "../components/ProjectOpenActions";
 import { formatActiveDuration, formatFileTimeMs, formatTokenCount } from "../util/formatDisplay";
-
-type DashboardSource = "claude-code" | "codex" | "opencode" | "kimi";
+import {
+  buildSourceOptions,
+  sourceLabel,
+  type DashboardSource,
+} from "../util/sourceLabels";
 
 type TokenRankingProject = {
   key: string;
@@ -27,6 +30,8 @@ type TokenRankingResponse = {
     months: 1 | 3 | 6 | 12 | "all";
   };
   sources: DashboardSource[];
+  /** 后端支持的全部源 —— 下拉选项读它,前端不再自己维护一份列表。 */
+  availableSources: DashboardSource[];
   diagnostics: Array<{
     source: DashboardSource;
     severity: "info" | "warning" | "error";
@@ -42,13 +47,6 @@ const rangeOptions = [
   { value: "6", label: "最近 6 个月" },
   { value: "12", label: "最近 1 年" },
   { value: "all", label: "时间不限" },
-];
-
-const sourceOptions = [
-  { value: "claude-code,codex,opencode", label: "Claude + Codex + opencode" },
-  { value: "codex", label: "Codex" },
-  { value: "claude-code", label: "Claude" },
-  { value: "opencode", label: "opencode" },
 ];
 
 function qs(params: Record<string, string | undefined>): string {
@@ -69,7 +67,9 @@ export function WorkTokenRanking() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const rangeMonths = searchParams.get("rangeMonths") ?? "6";
-  const sources = searchParams.get("sources") ?? "claude-code,codex,opencode";
+  // 不带 fallback 字面量 —— 前端一旦总是显式发送,后端的 DEFAULT_*_OPTIONS.sources
+  // 就永远不会生效。无参时交给后端定,下拉的选中态从响应回显读。
+  const sources = searchParams.get("sources") ?? undefined;
   const apiSuffix = useMemo(
     () => qs({ rangeMonths, sources }),
     [rangeMonths, sources]
@@ -80,6 +80,13 @@ export function WorkTokenRanking() {
     queryFn: () =>
       apiGet<TokenRankingResponse>(`/api/work-dashboard/token-projects${apiSuffix}`),
   });
+
+  // URL 上有就用 URL 的(尊重老书签),否则用后端这次实际采用的那组。
+  const selectedSources = sources ?? ranking.data?.sources.join(",") ?? "";
+  const sourceOptions = buildSourceOptions(
+    ranking.data?.availableSources ?? [],
+    selectedSources
+  );
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -123,7 +130,7 @@ export function WorkTokenRanking() {
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-[var(--muted)]">来源</span>
           <select
-            value={sources}
+            value={selectedSources}
             onChange={(e) => setParam("sources", e.target.value)}
             className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm"
           >
@@ -158,11 +165,7 @@ export function WorkTokenRanking() {
           <ul className="mt-2 space-y-1">
             {ranking.data.diagnostics.map((diagnostic, idx) => (
               <li key={`${diagnostic.source}-${diagnostic.kind}-${idx}`}>
-                {diagnostic.source === "claude-code"
-                  ? "Claude"
-                  : diagnostic.source === "codex"
-                    ? "Codex"
-                    : "opencode"}{" "}
+                {sourceLabel(diagnostic.source)}{" "}
                 · {diagnostic.message}
               </li>
             ))}

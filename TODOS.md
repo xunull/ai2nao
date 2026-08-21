@@ -1669,3 +1669,62 @@ LIKE 兜底 —— 这个设计本身是对的（`queries.ts:99` 的 D4 注释�
 **Effort:** XS(human ~10min / CC ~2min) **Priority:** P3
 
 ---
+
+## 看板两个入口函数抽成源适配器注册表
+
+What: `buildWorkDashboard`（`aggregate.ts:698`）与 `buildWorkTokenRanking`（`aggregate.ts:932`）各自维护一套 `options.sources.includes(...)` 逐源块。接完 kimi 后总览页 8 个、排行页 4 个（每个还带一条 else-if 兜底），共 12 个近乎同构的块。抽成一张 `SOURCE_ADAPTERS` 注册表，两个函数改为遍历。
+
+Why: T12 漏接排行页的根因就是「必须两边都记得」——我只在 `buildWorkDashboard` 里加了 kimi 块，排行页那个并列函数里 kimi 出现 0 次，而 commit message 却声称排行页已经有 kimi 了。`TODOS.md` 里点名的 Cursor / Cherry / AI Chat 三个未来源，每个都要把这 12 个块再走一遍。
+
+Pros:
+- 加一个源变成加一行配置，而不是记住 12 个位置
+- 逐源块的差异（哪些源有 token、哪些有会话）变成注册表里的显式声明
+
+Cons:
+- 两边 token 块写回去的形状不同：总览页写进 `slot()` 建的格子，排行页调 `addRankingTokens`。适配器得吐一个中间形式再各自落地，不是纯粹的复制粘贴
+- 是 1100 行文件里的真重构，`aggregate.test.ts` 现有 12 个用例都要重跑
+
+Context: 2026-08-21 的 eng review 里评估过，当时选了更便宜的兜底方案——新增 `test/workDashboard.sourceCoverage.test.ts`，遍历 `DASHBOARD_SOURCES` 断言「DB 背景的源有种子就必须出行且无 warning 诊断，文件系统源不许静默」。那个测试会在加第五个源却忘了接排行页时变红。重构本身仍然值得做，但不再是唯一防线。
+
+Depends on: 无
+
+Priority: Phase 2
+
+## work_session_duration 纳入 opencode / kimi
+
+What: 排行页的「活跃时长」列只统计 `claude-code` 与 `codex`。`aggregate.ts:533` 把源硬过滤成这两个，`work_session_duration` 表的约束也是 `CHECK (source IN ('claude-code', 'codex'))`。
+
+Why: kimi-only 的项目时长为空；混合项目显示的数字不含 opencode 与 kimi，却读起来像项目总时长。opencode 从上线起就一直漏，不是 kimi 特有的问题。
+
+Pros:
+- 那一列才真正配得上「项目活跃时长」这个名字
+- MCP 工具（`src/mcp/tools.ts:86`）消费同一份数据，一并受益
+
+Cons:
+- SQLite 改不了 CHECK，要 `applyV56` 重建表。好消息是这张表只有 573 行，重建是毫秒级（对比 `agent_user_messages` 的 232 MB）
+- `transcript_path TEXT NOT NULL` 假设一个会话一个转写文件，而 kimi 一个会话有 N 个 agent 文件。接入前必须先定口径：取哪个文件，还是造合成路径，还是把列改成 nullable
+- 需要新写 kimi 与 opencode 的时长推导流程
+
+Context: 2026-08-21 的 eng review 里由 codex outside voice 提出。本次只把列头改成「Claude/Codex 活跃时长」并加了 title 说明，止住误导，没有真正接入。
+
+Depends on: 无
+
+Priority: Phase 2
+
+## DB 背景的会话收集器缺 range/limit
+
+What: `listOpencode()` 与新增的 `listKimi()` 都不接参数，全量拉回后由 `buildWorkDashboard` 按 range 过滤。而 `listClaude` 带 `projectLimit`/`sessionsPerProject`、`listCodex` 带 `sessionLimit`/`fallbackFiles`。
+
+Why: 历史只增不减，而 `rangeDays` 默认只看 30 天——拉回全部再丢掉绝大部分，随使用时长线性变差。两个 DB 背景的收集器共同欠这笔账，不是 kimi 特有的。
+
+Pros:
+- 排除掉一类「今天快、两年后卡」的退化，而这类退化通常要等到用户抱怨才被发现
+
+Cons:
+- 收集器接口要改，两个实现加上测试里所有手搭的 mock deps 都要跟
+
+Context: 2026-08-21 的 eng review 里由 codex outside voice 提出。当时实测 kimi 是 31 个会话 / 2493 行 / 17 ms（命中 UNIQUE 约束的隐式索引，且是覆盖索引）——基数太小，这个测速不能当作长期保证。
+
+Depends on: 无
+
+Priority: Phase 3

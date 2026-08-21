@@ -89,6 +89,13 @@ export type WorkDashboardResponse = {
   ok: true;
   generatedAt: Date;
   range: DashboardRange;
+  /** 本次请求实际用的源 —— 前端下拉的选中态读这个,而不是自己记一份。 */
+  sources: DashboardSource[];
+  /**
+   * 后端代码支持的全部源。前端据此渲染下拉选项:`web/` 与 `src/` 是两个
+   * tsconfig,编译期共享不到 `DASHBOARD_SOURCES`,所以走运行时下发。
+   */
+  availableSources: DashboardSource[];
   diagnostics: DashboardDiagnostic[];
   totals: {
     projectCount: number;
@@ -128,6 +135,8 @@ export type WorkTokenRankingResponse = {
   generatedAt: Date;
   range: WorkTokenRankingRange;
   sources: DashboardSource[];
+  /** 见 WorkDashboardResponse.availableSources。 */
+  availableSources: DashboardSource[];
   diagnostics: DashboardDiagnostic[];
   projects: WorkTokenRankingProject[];
 };

@@ -76,7 +76,7 @@ describe("WorkDashboard", () => {
 
     await screen.findByText("dashboard 首页设计");
     await userEvent.selectOptions(screen.getByDisplayValue("最近 30 天"), "90");
-    await userEvent.selectOptions(screen.getByDisplayValue("Claude + Codex + opencode"), "codex");
+    await userEvent.selectOptions(screen.getByDisplayValue("全部来源"), "codex");
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("rangeDays=90"))).toBe(true);
@@ -114,6 +114,8 @@ function dashboardResponse() {
       to: "2026-06-07T10:00:00.000Z",
       days: 30,
     },
+    sources: ["claude-code", "codex", "opencode", "kimi"],
+    availableSources: ["claude-code", "codex", "opencode", "kimi"],
     diagnostics: [
       {
         source: "codex",
