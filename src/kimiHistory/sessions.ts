@@ -208,3 +208,46 @@ export function getKimiDashboardSession(
   const { sessions } = listKimiDashboardSessions(db);
   return sessions.find((s) => s.sessionId === sessionId) ?? null;
 }
+
+/** 详情页的一条消息。 */
+export type KimiSessionMessage = {
+  id: number;
+  role: "user" | "assistant";
+  eventAtUtc: string;
+  text: string;
+};
+
+/**
+ * 一场 kimi 会话的全部正文,按时序。
+ *
+ * 与 `userMessageList` 不同:那个是时间窗口制且硬过滤 `is_human = 1`,
+ * 详情页要的是单场会话里人和 AI 的完整往返。
+ *
+ * 筛子是 `role = 'assistant' OR is_human = 1`,不是简单的 `is_human = 1`
+ * (那会连 AI 正文一起丢掉),也不是全取(那会混进工具噪音)。`role` 与 `is_human`
+ * 是两个不同的列:`<bash-input>` / `<bash-stdout>` 这类控制标签结构上是 role='user'
+ * 但 is_human=0。真库里有一场会话的全部 2 条消息都是这种噪音,它在列表页显示
+ * 「问了 0 次」,详情页也应该是空态 —— 两处口径必须一致。
+ *
+ * 不分页 —— 真库里最长的一场是 469 条,一次取完远比翻页简单;页面用固定视口
+ * 加内部滚动来满足「不许堆出超长纵向页面」的约束,而不是靠少取数据。
+ */
+export function listKimiSessionMessages(
+  db: Database.Database,
+  sessionId: string
+): KimiSessionMessage[] {
+  try {
+    return db
+      .prepare(
+        `SELECT id, role, event_at_utc AS eventAtUtc, cleaned_text AS text
+         FROM agent_user_messages
+         WHERE source = 'kimi' AND source_session_id = ?
+           AND (role = 'assistant' OR is_human = 1)
+         ORDER BY event_at_utc ASC, id ASC`
+      )
+      .all(sessionId) as KimiSessionMessage[];
+  } catch {
+    // 旧库没有 role 列之类 —— 详情页显示空态,不整页崩掉。
+    return [];
+  }
+}

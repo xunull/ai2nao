@@ -51,6 +51,8 @@ export const ROUTE_PATHS = [
   "/codex-history/s/:sessionId",
   "/opencode-history",
   "/opencode-history/s/:sessionId",
+  "/kimi-history",
+  "/kimi-history/s/:sessionId",
   "/ai-chat",
   "/bash-permissions",
   "/bash-sandbox",

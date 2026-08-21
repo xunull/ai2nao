@@ -275,10 +275,13 @@ const DETAIL_HREF_BUILDERS: Record<
   },
   codex: (summary) => `/codex-history/s/${encodeURIComponent(summary.id)}`,
   opencode: (summary) => `/opencode-history/s/${encodeURIComponent(summary.id)}`,
-  // kimi 在看板里是**只出 token 的源**:它不往 recentSessions 里塞会话,
-  // 所以这个 builder 实际不会被调到。留在这里是为了让 Record<DashboardSource, …>
-  // 完整 —— 将来真做了 kimi 会话详情页,编译器会提醒这里要改。
-  kimi: (summary) => `/agent-messages?source=kimi&q=${encodeURIComponent(summary.id)}`,
+  // 这里原先指向 `/agent-messages?source=kimi&q=<session_id>`,注释写着「实际不会
+  // 被调到」。kimi 现在有会话收集器了,它**会**被调到 —— 而 `q=` 是对正文的全文
+  // 搜索,拿 session id 去搜什么也搜不到。
+  //
+  // 那条注释还说「编译器会提醒这里要改」,那是错的:Record 的穷尽性只挡缺键,
+  // 不挡陈旧的值。键一直在,编译一直过,只是指向一个坏链接。
+  kimi: (summary) => `/kimi-history/s/${encodeURIComponent(summary.id)}`,
 };
 
 function detailHref(source: DashboardSource, summary: ChatSessionSummary): string {
