@@ -5,12 +5,20 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
 import { computeMonthRange } from "../src/workTokensTrend/queries.js";
+import { ADAPTERS } from "../src/workTokensTrend/adapters.js";
 import {
-  computePreviousWindowTotalLegacy as computePreviousWindowTotal,
-  computeTotalsLegacy as computeTotals,
-  mergeAndZeroFillLegacy as mergeAndZeroFill,
-  queryBucketsBySourceLegacy as queryBucketsBySource,
-} from "../src/workTokensTrend/legacyShape.js";
+  computePreviousWindow,
+  computeTotals,
+  mergeAndZeroFill,
+} from "../src/workTokensTrend/queries.js";
+import { inputTokens, totalTokens, TOKEN_SOURCES } from "../src/workTokensTrend/types.js";
+import { rowInput, rowTotal } from "./fixtures/sourceRow.js";
+import type { SourceBucketRow } from "../src/workTokensTrend/adapters.js";
+import {
+  emptyUsage,
+  type SourceUsage,
+  type WorkTokensTrendBucket,
+} from "../src/workTokensTrend/types.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {
@@ -52,8 +60,8 @@ let seq = 0;
 function seedSession(db: Database.Database, row: SeedRow): void {
   seq += 1;
   const id = row.session_id ?? `s-${seq}-${row.source}`;
-  const inputTokens = row.input ?? row.total;
-  const outputTokens = row.output ?? 0;
+  const seedInput = row.input ?? row.total;
+  const seedOutput = row.output ?? 0;
   const cacheRead = row.cacheRead ?? 0;
   const cacheCreation = row.cacheCreation ?? 0;
   const table =
@@ -79,8 +87,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
       row.project_key ?? "/tmp/test",
       row.project_path ?? "/tmp/test",
       row.updated,
-      inputTokens,
-      outputTokens,
+      seedInput,
+      seedOutput,
       row.total,
       cacheRead,
       cacheCreation,
@@ -98,7 +106,7 @@ function seedSession(db: Database.Database, row: SeedRow): void {
          (session_id, message_id, event_at, input_tokens, output_tokens,
           cache_read_input_tokens, cache_creation_input_tokens)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, `${id}-m`, row.updated, inputTokens, outputTokens, cacheRead, cacheCreation);
+    ).run(id, `${id}-m`, row.updated, seedInput, seedOutput, cacheRead, cacheCreation);
     return;
   }
   // Codex
@@ -118,8 +126,8 @@ function seedSession(db: Database.Database, row: SeedRow): void {
     row.project_key ?? "/tmp/test",
     row.project_path ?? "/tmp/test",
     row.updated,
-    inputTokens,
-    outputTokens,
+    seedInput,
+    seedOutput,
     row.total,
     row.reasoning ?? 0,
     row.status ?? "full",
@@ -135,7 +143,7 @@ function seedSession(db: Database.Database, row: SeedRow): void {
     `INSERT INTO codex_token_usage_event
        (session_id, event_at, input_tokens, output_tokens, reasoning_output_tokens)
      VALUES (?, ?, ?, ?, ?)`
-  ).run(id, row.updated, inputTokens, outputTokens, row.reasoning ?? 0);
+  ).run(id, row.updated, seedInput, seedOutput, row.reasoning ?? 0);
   void table;
 }
 
@@ -152,16 +160,15 @@ describe("queryBucketsBySource", () => {
     // Codex same day, should not appear in claude rows
     seedSession(db, { source: "codex", total: 9999, updated: "2026-06-09T17:00:00Z" });
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].bucket_key).toBe("2026-06-10");
-    expect(rows[0].total_tokens).toBe(1500);
+    expect(rowTotal(rows[0]!)).toBe(1500);
     expect(rows[0].session_count).toBe(2);
     expect(rows[0].full_count).toBe(2);
   });
@@ -172,15 +179,14 @@ describe("queryBucketsBySource", () => {
     seedSession(db, { source: "claude", total: 0, status: "error", updated: "2026-06-09T16:40:00Z" });
     seedSession(db, { source: "claude", total: 0, status: "error", updated: "2026-06-09T16:45:00Z" });
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].total_tokens).toBe(1000); // only `full` contributes
+    expect(rowTotal(rows[0]!)).toBe(1000); // only `full` contributes
     expect(rows[0].full_count).toBe(1);
     expect(rows[0].unknown_count).toBe(1);
     expect(rows[0].error_count).toBe(2);
@@ -196,21 +202,19 @@ describe("queryBucketsBySource", () => {
       missingSince: "2026-06-10T01:00:00Z",
     });
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
-    expect(rows[0].total_tokens).toBe(1000);
+    expect(rowTotal(rows[0]!)).toBe(1000);
     expect(rows[0].session_count).toBe(1);
   });
 
   it("T-B2 (F8): empty result returns empty array, does not throw", () => {
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
@@ -222,115 +226,82 @@ describe("queryBucketsBySource", () => {
     // Boundary: row exactly at the cutoff should NOT appear.
     seedSession(db, { source: "claude", total: 100, updated: "2026-06-09T16:00:00Z" });
     seedSession(db, { source: "claude", total: 200, updated: "2026-06-10T16:00:00Z" });
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
-    expect(rows[0].total_tokens).toBe(100);
+    expect(rowTotal(rows[0]!)).toBe(100);
   });
 });
 
 describe("mergeAndZeroFill", () => {
-  it("fills missing buckets with zeros for the missing source", () => {
-    const buckets = [
-      { key: "2026-06-10", start: new Date(2026, 5, 10), end: new Date(2026, 5, 11) },
-      { key: "2026-06-11", start: new Date(2026, 5, 11), end: new Date(2026, 5, 12) },
-    ];
+  const buckets = [
+    { key: "2026-06-10", start: new Date("2026-06-10T00:00:00Z"), end: new Date("2026-06-11T00:00:00Z") },
+    { key: "2026-06-11", start: new Date("2026-06-11T00:00:00Z"), end: new Date("2026-06-12T00:00:00Z") },
+  ];
+  const row = (o: Partial<SourceBucketRow> & { bucket_key: string }): SourceBucketRow => ({
+    fresh_input: 0, cache_read_input: 0, cache_creation_input: 0, output: 0,
+    reasoning_output: 0, session_count: 0, full_count: 0, unknown_count: 0, error_count: 0,
+    ...o,
+  });
+  const empty = () => new Map<string, SourceBucketRow>();
+  const allOk = { claude: "ok", codex: "ok", minimax: "ok", kimi: "ok" } as const;
+
+  it("某个源缺某个桶时补零,不是丢桶", () => {
     const merged = mergeAndZeroFill(
       buckets,
-      [
-        {
-          bucket_key: "2026-06-10",
-          total_tokens: 1000,
-          input_tokens: 800,
-          output_tokens: 200,
-          session_count: 2,
-          full_count: 2,
-          unknown_count: 0,
-          error_count: 0,
-        },
-      ],
-      []
+      {
+        claude: new Map([["2026-06-10", row({ bucket_key: "2026-06-10", fresh_input: 800, output: 200, session_count: 2, full_count: 2 })]]),
+        codex: empty(),
+        minimax: empty(),
+        kimi: empty(),
+      },
+      allOk
     );
     expect(merged).toHaveLength(2);
-    expect(merged[0].claudeTokens).toBe(1000);
-    expect(merged[0].codexTokens).toBe(0);
-    expect(merged[1].claudeTokens).toBe(0);
-    expect(merged[1].codexTokens).toBe(0);
+    expect(totalTokens(merged[0]!.sources.claude)).toBe(1000);
+    expect(totalTokens(merged[0]!.sources.codex)).toBe(0);
+    // 第二个桶两个源都没有 → 全零,但桶还在
+    expect(totalTokens(merged[1]!.sources.claude)).toBe(0);
+    expect(merged[1]!.bucketStart).toBe(buckets[1]!.start.toISOString());
   });
 
-  it("carries input/output split per source and zero-fills the missing one", () => {
-    const buckets = [
-      { key: "2026-06-10", start: new Date(2026, 5, 10), end: new Date(2026, 5, 11) },
-    ];
+  it("逐源分量各自带过来,互不串味", () => {
     const merged = mergeAndZeroFill(
       buckets,
-      [
-        {
-          bucket_key: "2026-06-10",
-          total_tokens: 1000,
-          input_tokens: 800,
-          output_tokens: 200,
-          session_count: 1,
-          full_count: 1,
-          unknown_count: 0,
-          error_count: 0,
-        },
-      ],
-      [
-        {
-          bucket_key: "2026-06-10",
-          total_tokens: 60,
-          input_tokens: 50,
-          output_tokens: 10,
-          session_count: 1,
-          full_count: 1,
-          unknown_count: 0,
-          error_count: 0,
-        },
-      ]
+      {
+        claude: new Map([["2026-06-10", row({ bucket_key: "2026-06-10", fresh_input: 300, cache_read_input: 400, cache_creation_input: 100, output: 200 })]]),
+        codex: new Map([["2026-06-10", row({ bucket_key: "2026-06-10", fresh_input: 250, cache_read_input: 300, output: 50, reasoning_output: 20 })]]),
+        minimax: empty(),
+        kimi: empty(),
+      },
+      allOk
     );
-    expect(merged[0].claudeInputTokens).toBe(800);
-    expect(merged[0].claudeOutputTokens).toBe(200);
-    expect(merged[0].codexInputTokens).toBe(50);
-    expect(merged[0].codexOutputTokens).toBe(10);
-    // per-bucket invariant: input + output == tokens
-    expect(merged[0].claudeInputTokens + merged[0].claudeOutputTokens).toBe(
-      merged[0].claudeTokens
-    );
-    expect(merged[0].codexInputTokens + merged[0].codexOutputTokens).toBe(
-      merged[0].codexTokens
-    );
+    const c = merged[0]!.sources.claude;
+    const x = merged[0]!.sources.codex;
+    expect(inputTokens(c)).toBe(800);
+    expect(c.cacheCreationInput).toBe(100);
+    expect(inputTokens(x)).toBe(550);
+    // codex 没有 cache 写入概念 —— 这里是 0 且 capabilities 会说明它不适用
+    expect(x.cacheCreationInput).toBe(0);
+    expect(x.reasoningOutput).toBe(20);
+    // claude 不该沾上 codex 的 reasoning
+    expect(c.reasoningOutput).toBe(0);
   });
 
-  it("zero-fills input/output to 0 for a source with no row", () => {
-    const buckets = [
-      { key: "2026-06-10", start: new Date(2026, 5, 10), end: new Date(2026, 5, 11) },
-    ];
+  it("state 逐源带下去 —— failed 不会被补零成 ok", () => {
     const merged = mergeAndZeroFill(
       buckets,
-      [
-        {
-          bucket_key: "2026-06-10",
-          total_tokens: 1000,
-          input_tokens: 800,
-          output_tokens: 200,
-          session_count: 1,
-          full_count: 1,
-          unknown_count: 0,
-          error_count: 0,
-        },
-      ],
-      [] // no codex
+      { claude: empty(), codex: empty(), minimax: empty(), kimi: empty() },
+      { claude: "ok", codex: "failed", minimax: "absent", kimi: "absent" }
     );
-    expect(merged[0].codexInputTokens).toBe(0);
-    expect(merged[0].codexOutputTokens).toBe(0);
+    expect(merged[0]!.sources.claude.state).toBe("ok");
+    expect(merged[0]!.sources.codex.state).toBe("failed");
+    expect(merged[0]!.sources.minimax.state).toBe("absent");
   });
 });
-
 describe("input/output breakdown (2×3 matrix data)", () => {
   let db: Database.Database;
   beforeEach(() => {
@@ -355,26 +326,24 @@ describe("input/output breakdown (2×3 matrix data)", () => {
       updated: "2026-06-09T17:00:00Z",
     });
 
-    const claudeRows = queryBucketsBySource(
+    const claudeRows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
-    expect(claudeRows[0].cache_read_input_tokens).toBe(22924);
-    expect(claudeRows[0].cache_creation_input_tokens).toBe(47655);
+    expect(claudeRows[0].cache_read_input).toBe(22924);
+    expect(claudeRows[0].cache_creation_input).toBe(47655);
 
-    const codexRows = queryBucketsBySource(
+    const codexRows = ADAPTERS.codex.queryBuckets(
       db,
-      "codex",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
     // codex table has no cache columns → literal 0
-    expect(codexRows[0].cache_read_input_tokens).toBe(0);
-    expect(codexRows[0].cache_creation_input_tokens).toBe(0);
+    expect(codexRows[0].cache_read_input).toBe(0);
+    expect(codexRows[0].cache_creation_input).toBe(0);
   });
 
   it("queryBucketsBySource sums Codex reasoning; claude returns 0", () => {
@@ -395,24 +364,22 @@ describe("input/output breakdown (2×3 matrix data)", () => {
       updated: "2026-06-09T16:30:00Z",
     });
 
-    const codexRows = queryBucketsBySource(
+    const codexRows = ADAPTERS.codex.queryBuckets(
       db,
-      "codex",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
-    expect(codexRows[0].reasoning_output_tokens).toBe(200);
+    expect(codexRows[0].reasoning_output).toBe(200);
 
-    const claudeRows = queryBucketsBySource(
+    const claudeRows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
     // claude table has no reasoning column → literal 0
-    expect(claudeRows[0].reasoning_output_tokens).toBe(0);
+    expect(claudeRows[0].reasoning_output).toBe(0);
   });
 
   it("queryBucketsBySource sums input/output split, full-only", () => {
@@ -440,214 +407,158 @@ describe("input/output breakdown (2×3 matrix data)", () => {
       updated: "2026-06-09T17:30:00Z",
     });
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 10, 0, 0, 0, 0),
       new Date(2026, 5, 11, 0, 0, 0, 0),
       "day"
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].input_tokens).toBe(1380); // 900 + 480
-    expect(rows[0].output_tokens).toBe(120); // 100 + 20
-    expect(rows[0].total_tokens).toBe(1500);
+    expect(rowInput(rows[0]!)).toBe(1380); // 900 + 480
+    expect(rows[0].output).toBe(120); // 100 + 20
+    expect(rowTotal(rows[0]!)).toBe(1500);
     // bucket-level invariant
-    expect(rows[0].input_tokens + rows[0].output_tokens).toBe(
-      rows[0].total_tokens
+    expect(rowInput(rows[0]!) + rows[0]!.output).toBe(
+      rowTotal(rows[0]!)
     );
   });
 
-  it("computeTotals sums the 2×3 matrix and the grand invariant holds", () => {
+  it("computeTotals 逐源汇总,且 totalTokens == 各源之和", () => {
+    const mk = (o: Partial<SourceUsage>): SourceUsage => ({ ...emptyUsage("ok"), ...o });
     const t = computeTotals([
       {
         bucketStart: "x",
         bucketEnd: "y",
-        claudeTokens: 1000,
-        codexTokens: 600,
-        claudeInputTokens: 900,
-        claudeOutputTokens: 100,
-        codexInputTokens: 550,
-        codexOutputTokens: 50,
-        claudeCacheReadInputTokens: 500,
-        claudeCacheCreationInputTokens: 300,
-        codexReasoningOutputTokens: 20,
-        claudeSessionCount: 1,
-        codexSessionCount: 1,
-        claudeCoveredSessionCount: 1,
-        codexCoveredSessionCount: 1,
-        claudeUnknownSessionCount: 0,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 0,
-        codexErrorSessionCount: 0,
-      },
-      {
-        bucketStart: "x2",
-        bucketEnd: "y2",
-        claudeTokens: 200,
-        codexTokens: 0,
-        claudeInputTokens: 180,
-        claudeOutputTokens: 20,
-        codexInputTokens: 0,
-        codexOutputTokens: 0,
-        claudeCacheReadInputTokens: 100,
-        claudeCacheCreationInputTokens: 50,
-        codexReasoningOutputTokens: 0,
-        claudeSessionCount: 1,
-        codexSessionCount: 0,
-        claudeCoveredSessionCount: 1,
-        codexCoveredSessionCount: 0,
-        claudeUnknownSessionCount: 0,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 0,
-        codexErrorSessionCount: 0,
+        sources: {
+          claude: mk({ freshInput: 900, output: 100 }),
+          codex: mk({ freshInput: 550, output: 50 }),
+          minimax: mk({}),
+          kimi: mk({}),
+        },
       },
     ]);
-    expect(t.claudeInputTokens).toBe(1080); // 900 + 180
-    expect(t.claudeOutputTokens).toBe(120); // 100 + 20
-    expect(t.codexInputTokens).toBe(550);
-    expect(t.codexOutputTokens).toBe(50);
-    // grand invariant: 4 fields sum to totalTokens
-    expect(
-      t.claudeInputTokens +
-        t.claudeOutputTokens +
-        t.codexInputTokens +
-        t.codexOutputTokens
-    ).toBe(t.totalTokens);
+    expect(inputTokens(t.sources.claude)).toBe(900);
+    expect(t.sources.claude.output).toBe(100);
+    expect(inputTokens(t.sources.codex)).toBe(550);
+    expect(t.sources.codex.output).toBe(50);
+    // 不变式:合计 == 逐源 totalTokens 之和(加源自动成立)
+    expect(t.totalTokens).toBe(
+      TOKEN_SOURCES.reduce((n, k) => n + totalTokens(t.sources[k]), 0)
+    );
+    expect(t.totalTokens).toBe(1600);
   });
-
   it("empty input → all-zero matrix, no NaN", () => {
     const t = computeTotals([]);
-    expect(t.claudeInputTokens).toBe(0);
-    expect(t.claudeOutputTokens).toBe(0);
-    expect(t.codexInputTokens).toBe(0);
-    expect(t.codexOutputTokens).toBe(0);
-    expect(Number.isNaN(t.claudeInputTokens)).toBe(false);
+    expect(inputTokens(t.sources.claude)).toBe(0);
+    expect(t.sources.claude.output).toBe(0);
+    expect(inputTokens(t.sources.codex)).toBe(0);
+    expect(t.sources.codex.output).toBe(0);
+    expect(Number.isNaN(inputTokens(t.sources.claude))).toBe(false);
   });
 });
 
-describe("computeTotals (3-state coverage)", () => {
-  it("returns coverage='full' when all sessions have token_status='full'", () => {
+describe("computeTotals —— 三态覆盖", () => {
+  /** 造一个只有 claude/codex 计数的桶。省掉不关心的分量。 */
+  const bucket = (
+    c: Partial<SourceUsage>,
+    x: Partial<SourceUsage> = {}
+  ): WorkTokensTrendBucket => ({
+    bucketStart: "x",
+    bucketEnd: "y",
+    sources: {
+      claude: { ...emptyUsage("ok"), ...c },
+      codex: { ...emptyUsage("ok"), ...x },
+      minimax: emptyUsage("absent"),
+      kimi: emptyUsage("absent"),
+    },
+  });
+
+  it("全部 full → coverage=full", () => {
     const t = computeTotals([
-      {
-        bucketStart: "x",
-        bucketEnd: "y",
-        claudeTokens: 1000,
-        codexTokens: 500,
-        claudeInputTokens: 1000,
-        claudeOutputTokens: 0,
-        codexInputTokens: 500,
-        codexOutputTokens: 0,
-        claudeSessionCount: 1,
-        codexSessionCount: 1,
-        claudeCoveredSessionCount: 1,
-        codexCoveredSessionCount: 1,
-        claudeUnknownSessionCount: 0,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 0,
-        codexErrorSessionCount: 0,
-      },
+      bucket(
+        { freshInput: 1000, sessionCount: 1, coveredSessionCount: 1 },
+        { freshInput: 500, sessionCount: 1, coveredSessionCount: 1 }
+      ),
     ]);
     expect(t.coverage).toBe("full");
     expect(t.totalTokens).toBe(1500);
-    expect(t.claudeShare).toBeCloseTo(2 / 3);
+    expect(t.sources.claude.share).toBeCloseTo(2 / 3);
     expect(t.coveredSessionCount).toBe(2);
-    expect(t.unknownSessionCount).toBe(0);
-    expect(t.errorSessionCount).toBe(0);
     expect(t.totalSessionCount).toBe(2);
   });
 
-  it("returns coverage='partial' when mixed", () => {
+  it("混合 → coverage=partial", () => {
     const t = computeTotals([
-      {
-        bucketStart: "x",
-        bucketEnd: "y",
-        claudeTokens: 1000,
-        codexTokens: 0,
-        claudeInputTokens: 1000,
-        claudeOutputTokens: 0,
-        codexInputTokens: 0,
-        codexOutputTokens: 0,
-        claudeSessionCount: 2,
-        codexSessionCount: 0,
-        claudeCoveredSessionCount: 1,
-        codexCoveredSessionCount: 0,
-        claudeUnknownSessionCount: 1,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 0,
-        codexErrorSessionCount: 0,
-      },
+      bucket(
+        { freshInput: 1000, sessionCount: 1, coveredSessionCount: 1 },
+        { sessionCount: 1, unknownSessionCount: 1 }
+      ),
     ]);
     expect(t.coverage).toBe("partial");
-    expect(t.totalSessionCount).toBe(2);
     expect(t.coveredSessionCount).toBe(1);
     expect(t.unknownSessionCount).toBe(1);
   });
 
-  it("returns coverage='unknown' when zero covered sessions but some sessions exist", () => {
+  it("有会话但零覆盖 → coverage=unknown", () => {
     const t = computeTotals([
-      {
-        bucketStart: "x",
-        bucketEnd: "y",
-        claudeTokens: 0,
-        codexTokens: 0,
-        claudeInputTokens: 0,
-        claudeOutputTokens: 0,
-        codexInputTokens: 0,
-        codexOutputTokens: 0,
-        claudeSessionCount: 1,
-        codexSessionCount: 0,
-        claudeCoveredSessionCount: 0,
-        codexCoveredSessionCount: 0,
-        claudeUnknownSessionCount: 1,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 0,
-        codexErrorSessionCount: 0,
-      },
+      bucket({ sessionCount: 2, unknownSessionCount: 1, errorSessionCount: 1 }),
     ]);
     expect(t.coverage).toBe("unknown");
+    expect(t.coveredSessionCount).toBe(0);
   });
 
-  it("invariant: totalSessionCount = covered + unknown + error", () => {
+  it("零会话 → coverage=full(该记的都记了,不是「不知道」)", () => {
+    const t = computeTotals([bucket({})]);
+    expect(t.coverage).toBe("full");
+    expect(t.totalSessionCount).toBe(0);
+  });
+
+  it("不变式:totalSessionCount == covered + unknown + error", () => {
     const t = computeTotals([
-      {
-        bucketStart: "x",
-        bucketEnd: "y",
-        claudeTokens: 0,
-        codexTokens: 0,
-        claudeInputTokens: 0,
-        claudeOutputTokens: 0,
-        codexInputTokens: 0,
-        codexOutputTokens: 0,
-        claudeSessionCount: 3,
-        codexSessionCount: 2,
-        claudeCoveredSessionCount: 1,
-        codexCoveredSessionCount: 1,
-        claudeUnknownSessionCount: 1,
-        codexUnknownSessionCount: 0,
-        claudeErrorSessionCount: 1,
-        codexErrorSessionCount: 1,
-      },
+      bucket(
+        { sessionCount: 3, coveredSessionCount: 1, unknownSessionCount: 1, errorSessionCount: 1 },
+        { sessionCount: 2, coveredSessionCount: 2 }
+      ),
     ]);
     expect(t.totalSessionCount).toBe(
       t.coveredSessionCount + t.unknownSessionCount + t.errorSessionCount
     );
+    expect(t.totalSessionCount).toBe(5);
+  });
+
+  it("只有 session 单位的源参与汇总 —— minimax 没有覆盖概念", () => {
+    const t = computeTotals([
+      {
+        bucketStart: "x",
+        bucketEnd: "y",
+        sources: {
+          claude: { ...emptyUsage("ok"), sessionCount: 1, coveredSessionCount: 1 },
+          codex: emptyUsage("ok"),
+          // 即使给了计数也不该进汇总:它的 coverageUnit 是 null
+          minimax: { ...emptyUsage("ok"), sessionCount: 99, coveredSessionCount: 99 },
+          kimi: emptyUsage("absent"),
+        },
+      },
+    ]);
+    expect(t.totalSessionCount).toBe(1);
+    expect(t.coverageUnit).toBe("session");
   });
 });
 
-describe("computePreviousWindowTotal (T-A5)", () => {
+describe("computePreviousWindow (T-A5)", () => {
   let db: Database.Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   it("returns 0 (not null) when no prior sessions exist", () => {
-    const t = computePreviousWindowTotal(
+    const t = computePreviousWindow(
       db,
       new Date(2026, 5, 3),
       new Date(2026, 5, 10)
     );
-    expect(t.total).toBe(0);
-    expect(t.claudeCacheReadInputTokens).toBe(0);
+    expect(t.totalTokens).toBe(0);
+    expect(t.bySource.claude.cacheReadInput).toBe(0);
   });
 
   it("strictly non-overlapping: counts only sessions in [from-span, from)", () => {
@@ -655,12 +566,12 @@ describe("computePreviousWindowTotal (T-A5)", () => {
     seedSession(db, { source: "claude", total: 200, updated: "2026-05-30T10:00:00Z" }); // prev
     seedSession(db, { source: "codex", total: 300, updated: "2026-06-01T10:00:00Z" }); // prev
     seedSession(db, { source: "claude", total: 999, updated: "2026-06-05T10:00:00Z" }); // CURRENT, must be excluded
-    const t = computePreviousWindowTotal(
+    const t = computePreviousWindow(
       db,
       new Date(2026, 5, 3),
       new Date(2026, 5, 10)
     );
-    expect(t.total).toBe(500);
+    expect(t.totalTokens).toBe(500);
   });
 
   it("also returns Claude cache_read summed over the prior window (cache toggle)", () => {
@@ -672,13 +583,13 @@ describe("computePreviousWindowTotal (T-A5)", () => {
       updated: "2026-05-30T10:00:00Z",
     });
     seedSession(db, { source: "codex", total: 300, updated: "2026-06-01T10:00:00Z" }); // no cache field
-    const t = computePreviousWindowTotal(
+    const t = computePreviousWindow(
       db,
       new Date(2026, 5, 3),
       new Date(2026, 5, 10)
     );
-    expect(t.total).toBe(1300);
-    expect(t.claudeCacheReadInputTokens).toBe(700); // only Claude contributes
+    expect(t.totalTokens).toBe(1300);
+    expect(t.bySource.claude.cacheReadInput).toBe(700); // only Claude contributes
   });
 });
 

@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
+import { generateTrend } from "../src/workTokensTrend/service.js";
 import { WINDOW_KEYS } from "../src/workTokensTrend/types.js";
-import type { LegacyBucket } from "../src/workTokensTrend/legacyShape.js";
+import { tokensExcludingCache, totalTokens, TOKEN_SOURCES } from "../src/workTokensTrend/types.js";
+import type { WorkTokensTrendBucket } from "../src/workTokensTrend/types.js";
 import {
   assertFixtureCoverage,
   buildTokensTrendFixture,
@@ -70,38 +71,21 @@ function buildLayer1(): Record<string, unknown> {
 }
 
 /**
- * 层二:复刻前端 `WorkTokensTrend.tsx` 的「不含缓存」公式。
+ * 层二:复刻前端 `WorkTokensTrend.tsx` 的显示口径。
  *
- * **T6 起四个源统一**:不含缓存 = fresh + output(两种 cache 都不算真实新增)。
- * 归一之前 claude / codex 只减 cache-read、minimax 减 read + create ——
- * 同一个开关三种含义。
- *
- * T6 落地时层二的实测差异(改之前预先算出来核对过,逐条命中):
- *   claude   19 个值变化,每一个都恰好减少该桶的 cacheCreationInput,合计 15300
- *   codex    0 个变化(它没有 cache 写入概念,cacheCreation 恒 0)
- *   minimax  0 个变化(它本来就是两种都减)
+ * 「不含缓存」四个源统一 = `fresh + output`(T6)。归一之前是逐源三种含义。
+ * 成本按 `costState`:`none` 的源根本不画柱(T7),所以这里给 null 而不是 0 ——
+ * 0 会被读成「这个源不花钱」,而真相是「不知道」。
  */
-function derivedForBucket(b: LegacyBucket, includeCache: boolean) {
-  const excl = (total: number, read: number, creation: number) =>
-    includeCache ? total : Math.max(0, total - read - creation);
-  return {
-    claudeFullTokens: excl(
-      b.claudeTokens,
-      b.claudeCacheReadInputTokens,
-      b.claudeCacheCreationInputTokens
-    ),
-    // codex 没有 cache 写入概念 → creation 传 0
-    codexFullTokens: excl(b.codexTokens, b.codexCachedInputTokens, 0),
-    minimaxFullTokens: excl(
-      b.minimaxTokens,
-      b.minimaxCacheReadInputTokens,
-      b.minimaxCacheCreationInputTokens
-    ),
-    claudeCostUsd: b.claudeCostUsd,
-    codexCostUsd: b.codexCostUsd,
-    // MiniMax 无定价 —— T7 会把它从成本柱里拿掉并标注,这里先保留 0 以隔离改动。
-    minimaxCostUsd: 0,
-  };
+function derivedForBucket(b: WorkTokensTrendBucket, includeCache: boolean) {
+  const out: Record<string, number | null> = {};
+  for (const key of TOKEN_SOURCES) {
+    const u = b.sources[key];
+    out[`${key}Tokens`] = includeCache ? totalTokens(u) : tokensExcludingCache(u);
+    // 无定价的源在成本模式下不出现 —— null 而非 0
+    out[`${key}CostUsd`] = u.pricedTokens > 0 ? u.costUsd : null;
+  }
+  return out;
 }
 
 function buildLayer2(): Record<string, unknown> {

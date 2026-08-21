@@ -9,10 +9,10 @@ import {
   parseChargeRecord,
   type MinimaxAmountFetch,
 } from "../src/minimaxTokenUsage/refresh.js";
-import {
-  generateTrendLegacy as generateTrend,
-  queryBucketsBySourceLegacy as queryBucketsBySource,
-} from "../src/workTokensTrend/legacyShape.js";
+import { generateTrend } from "../src/workTokensTrend/service.js";
+import { ADAPTERS } from "../src/workTokensTrend/adapters.js";
+import { totalTokens } from "../src/workTokensTrend/types.js";
+import { rowInput, rowTotal } from "./fixtures/sourceRow.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {
@@ -222,9 +222,8 @@ describe("queryMinimaxBuckets (via queryBucketsBySource) — caliber", () => {
   it("input is FUSED; cache split by method; total=input+output", async () => {
     const db = freshDb();
     await seed(db);
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.minimax.queryBuckets(
       db,
-      "minimax",
       new Date("2026-06-28T00:00:00+08:00"),
       new Date("2026-06-30T00:00:00+08:00"),
       "day"
@@ -232,11 +231,11 @@ describe("queryMinimaxBuckets (via queryBucketsBySource) — caliber", () => {
     expect(rows).toHaveLength(1);
     const b = rows[0];
     // FUSED input = 271167 + 4969344 + 19374
-    expect(b.input_tokens).toBe(271167 + 4969344 + 19374);
-    expect(b.output_tokens).toBe(10698);
-    expect(b.total_tokens).toBe(b.input_tokens + b.output_tokens);
-    expect(b.cache_read_input_tokens).toBe(4969344);
-    expect(b.cache_creation_input_tokens).toBe(19374);
+    expect(rowInput(b)).toBe(271167 + 4969344 + 19374);
+    expect(b.output).toBe(10698);
+    expect(rowTotal(b)).toBe(rowInput(b) + b.output);
+    expect(b.cache_read_input).toBe(4969344);
+    expect(b.cache_creation_input).toBe(19374);
     // no sessions for a remote billing source
     expect(b.session_count).toBe(0);
   });
@@ -244,24 +243,23 @@ describe("queryMinimaxBuckets (via queryBucketsBySource) — caliber", () => {
   it("exclude-cache = fresh + output (subtract BOTH cache kinds)", async () => {
     const db = freshDb();
     await seed(db);
-    const [b] = queryBucketsBySource(
+    const [b] = ADAPTERS.minimax.queryBuckets(
       db,
-      "minimax",
       new Date("2026-06-28T00:00:00+08:00"),
       new Date("2026-06-30T00:00:00+08:00"),
       "day"
     );
     const excludeCache =
-      b.total_tokens - b.cache_read_input_tokens - b.cache_creation_input_tokens;
+      // 归一后「不含缓存」就是 fresh + output —— 加法,不是减法
+      b.fresh_input + b.output;
     // = fresh input (271167) + output (10698); the two caches are gone
     expect(excludeCache).toBe(271167 + 10698);
   });
 
   it("empty range → no rows", () => {
     const db = freshDb();
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.minimax.queryBuckets(
       db,
-      "minimax",
       new Date("2020-01-01T00:00:00+08:00"),
       new Date("2020-01-02T00:00:00+08:00"),
       "day"
@@ -283,11 +281,11 @@ describe("trend integration (regression: minimax as 4th source)", () => {
       now: new Date(2026, 6, 2, 12, 0, 0, 0),
     });
     if (r.mode !== "month") throw new Error("type narrow");
-    expect(r.totals.minimaxTokens).toBe(1100);
+    expect(totalTokens(r.totals.sources.minimax)).toBe(1100);
     expect(r.totals.totalTokens).toBe(1100); // claude/codex empty
-    expect(r.totals.minimaxShare).toBeCloseTo(1);
+    expect(r.totals.sources.minimax.share).toBeCloseTo(1);
     // claude/codex untouched
-    expect(r.totals.claudeTokens).toBe(0);
-    expect(r.totals.codexTokens).toBe(0);
+    expect(totalTokens(r.totals.sources.claude)).toBe(0);
+    expect(totalTokens(r.totals.sources.codex)).toBe(0);
   });
 });

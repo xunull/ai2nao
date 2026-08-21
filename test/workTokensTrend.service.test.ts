@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../src/store/open.js";
-import { generateTrendLegacy as generateTrend } from "../src/workTokensTrend/legacyShape.js";
+import { generateTrend } from "../src/workTokensTrend/service.js";
+import { inputTokens, totalTokens } from "../src/workTokensTrend/types.js";
 
 const PRIOR_TZ = process.env.TZ;
 beforeAll(() => {
@@ -126,7 +127,7 @@ describe("generateTrend — window mode (happy)", () => {
       now: new Date(2026, 5, 10, 12, 0, 0, 0),
     });
     if (r.mode !== "window") throw new Error("type narrow");
-    expect(r.previousWindowTotal).toBe(0);
+    expect(r.previousWindow.totalTokens).toBe(0);
     expect(r.deltaRatio).toBeNull();
   });
 });
@@ -172,15 +173,15 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 10, 12, 0, 0, 0),
     });
     if (r.mode !== "window") throw new Error("type narrow");
-    expect(r.totals.claudeInputTokens).toBe(900);
-    expect(r.totals.claudeOutputTokens).toBe(100);
-    expect(r.totals.codexInputTokens).toBe(550);
-    expect(r.totals.codexOutputTokens).toBe(50);
+    expect(inputTokens(r.totals.sources.claude)).toBe(900);
+    expect(r.totals.sources.claude.output).toBe(100);
+    expect(inputTokens(r.totals.sources.codex)).toBe(550);
+    expect(r.totals.sources.codex.output).toBe(50);
     expect(
-      r.totals.claudeInputTokens +
-        r.totals.claudeOutputTokens +
-        r.totals.codexInputTokens +
-        r.totals.codexOutputTokens
+      inputTokens(r.totals.sources.claude) +
+        r.totals.sources.claude.output +
+        inputTokens(r.totals.sources.codex) +
+        r.totals.sources.codex.output
     ).toBe(r.totals.totalTokens);
   });
 
@@ -194,10 +195,10 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 11, 12, 0, 0, 0),
     });
     if (r.mode !== "month") throw new Error("type narrow");
-    expect(r.totals.claudeInputTokens).toBe(800);
-    expect(r.totals.claudeOutputTokens).toBe(200);
-    expect(r.totals.codexInputTokens).toBe(0);
-    expect(r.totals.codexOutputTokens).toBe(0);
+    expect(inputTokens(r.totals.sources.claude)).toBe(800);
+    expect(r.totals.sources.claude.output).toBe(200);
+    expect(inputTokens(r.totals.sources.codex)).toBe(0);
+    expect(r.totals.sources.codex.output).toBe(0);
   });
 
   it("empty DB: breakdown is all-zero, no NaN", () => {
@@ -206,9 +207,9 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 10, 12, 0, 0, 0),
     });
     if (r.mode !== "window") throw new Error("type narrow");
-    expect(r.totals.claudeInputTokens).toBe(0);
-    expect(r.totals.codexOutputTokens).toBe(0);
-    expect(Number.isNaN(r.totals.claudeInputTokens)).toBe(false);
+    expect(inputTokens(r.totals.sources.claude)).toBe(0);
+    expect(r.totals.sources.codex.output).toBe(0);
+    expect(Number.isNaN(inputTokens(r.totals.sources.claude))).toBe(false);
   });
 
   it("Claude cache split surfaces in totals; codex contributes 0", () => {
@@ -229,19 +230,19 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 10, 12, 0, 0, 0),
     });
     if (r.mode !== "window") throw new Error("type narrow");
-    expect(r.totals.claudeCacheReadInputTokens).toBe(22924);
-    expect(r.totals.claudeCacheCreationInputTokens).toBe(47655);
+    expect(r.totals.sources.claude.cacheReadInput).toBe(22924);
+    expect(r.totals.sources.claude.cacheCreationInput).toBe(47655);
     // 真实新增 = claudeInput - read - creation
     const fresh =
-      r.totals.claudeInputTokens -
-      r.totals.claudeCacheReadInputTokens -
-      r.totals.claudeCacheCreationInputTokens;
+      inputTokens(r.totals.sources.claude) -
+      r.totals.sources.claude.cacheReadInput -
+      r.totals.sources.claude.cacheCreationInput;
     expect(fresh).toBe(6);
     // cache fields are a subset of claude input (never exceed it)
     expect(
-      r.totals.claudeCacheReadInputTokens +
-        r.totals.claudeCacheCreationInputTokens
-    ).toBeLessThanOrEqual(r.totals.claudeInputTokens);
+      r.totals.sources.claude.cacheReadInput +
+        r.totals.sources.claude.cacheCreationInput
+    ).toBeLessThanOrEqual(inputTokens(r.totals.sources.claude));
   });
 
   it("Codex reasoning surfaces in totals; claude contributes 0", () => {
@@ -261,13 +262,13 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 10, 12, 0, 0, 0),
     });
     if (r.mode !== "window") throw new Error("type narrow");
-    expect(r.totals.codexReasoningOutputTokens).toBe(200);
+    expect(r.totals.sources.codex.reasoningOutput).toBe(200);
     // reasoning is a subset of codex output (never exceeds it)
-    expect(r.totals.codexReasoningOutputTokens).toBeLessThanOrEqual(
-      r.totals.codexOutputTokens
+    expect(r.totals.sources.codex.reasoningOutput).toBeLessThanOrEqual(
+      r.totals.sources.codex.output
     );
     // 正常输出 = output - reasoning
-    expect(r.totals.codexOutputTokens - r.totals.codexReasoningOutputTokens).toBe(400);
+    expect(r.totals.sources.codex.output - r.totals.sources.codex.reasoningOutput).toBe(400);
   });
 
   it("month mode also exposes Codex reasoning", () => {
@@ -281,7 +282,7 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 11, 12, 0, 0, 0),
     });
     if (r.mode !== "month") throw new Error("type narrow");
-    expect(r.totals.codexReasoningOutputTokens).toBe(250);
+    expect(r.totals.sources.codex.reasoningOutput).toBe(250);
   });
 
   it("month mode also exposes Claude cache split", () => {
@@ -296,8 +297,8 @@ describe("generateTrend — input/output breakdown totals", () => {
       now: new Date(2026, 5, 11, 12, 0, 0, 0),
     });
     if (r.mode !== "month") throw new Error("type narrow");
-    expect(r.totals.claudeCacheReadInputTokens).toBe(600);
-    expect(r.totals.claudeCacheCreationInputTokens).toBe(300);
+    expect(r.totals.sources.claude.cacheReadInput).toBe(600);
+    expect(r.totals.sources.claude.cacheCreationInput).toBe(300);
   });
 });
 

@@ -10,7 +10,8 @@ import {
 } from "../src/codexHistory/normalize.js";
 import { parseJsonlText } from "../src/localJsonl/parse.js";
 import { replaceCodexTokenUsageEvents } from "../src/codexTokenUsage/queries.js";
-import { queryBucketsBySourceLegacy as queryBucketsBySource } from "../src/workTokensTrend/legacyShape.js";
+import { ADAPTERS } from "../src/workTokensTrend/adapters.js";
+import { rowInput, rowTotal } from "./fixtures/sourceRow.js";
 
 /**
  * Regression (2026-06-18 /investigate): a Codex session resumed across many
@@ -128,9 +129,8 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
       { session_id: "long-1", event_at: "2026-06-18T01:00:00Z", input_tokens: 50, output_tokens: 10, reasoning_output_tokens: 2, cached_input_tokens: 20 },
     ]);
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.codex.queryBuckets(
       db,
-      "codex",
       new Date(2026, 5, 15, 0, 0, 0, 0),
       new Date(2026, 5, 19, 0, 0, 0, 0),
       "day"
@@ -138,20 +138,20 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
     const byDay = new Map(rows.map((r) => [r.bucket_key, r]));
 
     // 6/15: 100+20, 6/16: 200+30, 6/18: 50+10 — NOT all collapsed onto 6/18.
-    expect(byDay.get("2026-06-15")?.total_tokens).toBe(120);
-    expect(byDay.get("2026-06-16")?.total_tokens).toBe(230);
-    expect(byDay.get("2026-06-18")?.total_tokens).toBe(60);
+    expect(rowTotal(byDay.get("2026-06-15")!)).toBe(120);
+    expect(rowTotal(byDay.get("2026-06-16")!)).toBe(230);
+    expect(rowTotal(byDay.get("2026-06-18")!)).toBe(60);
     // 6/17 had no events → absent from rows (zero-filled later by the service).
     expect(byDay.has("2026-06-17")).toBe(false);
 
     // input/output/reasoning split is preserved per day.
-    expect(byDay.get("2026-06-16")?.input_tokens).toBe(200);
-    expect(byDay.get("2026-06-16")?.output_tokens).toBe(30);
-    expect(byDay.get("2026-06-16")?.reasoning_output_tokens).toBe(7);
-    expect(byDay.get("2026-06-16")?.codex_cached_input_tokens).toBe(120);
+    expect(rowInput(byDay.get("2026-06-16")!)).toBe(200);
+    expect(byDay.get("2026-06-16")!.output).toBe(30);
+    expect(byDay.get("2026-06-16")!.reasoning_output).toBe(7);
+    expect(byDay.get("2026-06-16")!.cache_read_input).toBe(120);
 
     // grand total across days equals the session's full consumption.
-    const grand = rows.reduce((a, r) => a + r.total_tokens, 0);
+    const grand = rows.reduce((a, r) => a + rowTotal(r), 0);
     expect(grand).toBe(120 + 230 + 60);
   });
 
@@ -165,14 +165,13 @@ describe("queryBucketsBySource — Codex multi-day session spreads by event day"
       { session_id: "gone", event_at: "2026-06-16T02:00:00Z", input_tokens: 999, output_tokens: 9, reasoning_output_tokens: 0, cached_input_tokens: 0 },
     ]);
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.codex.queryBuckets(
       db,
-      "codex",
       new Date(2026, 5, 15, 0, 0, 0, 0),
       new Date(2026, 5, 19, 0, 0, 0, 0),
       "day"
     );
-    const total = rows.reduce((a, r) => a + r.total_tokens, 0);
+    const total = rows.reduce((a, r) => a + rowTotal(r), 0);
     expect(total).toBe(0);
   });
 });

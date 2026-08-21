@@ -10,7 +10,8 @@ import {
 } from "../src/claudeCodeHistory/normalize.js";
 import { parseJsonlText } from "../src/claudeCodeHistory/parseJsonl.js";
 import { replaceClaudeTokenUsageEvents } from "../src/claudeTokenUsage/queries.js";
-import { queryBucketsBySourceLegacy as queryBucketsBySource } from "../src/workTokensTrend/legacyShape.js";
+import { ADAPTERS } from "../src/workTokensTrend/adapters.js";
+import { rowInput, rowTotal } from "./fixtures/sourceRow.js";
 import type { ClaudeTokenEvent } from "../src/claudeCodeHistory/normalize.js";
 
 /**
@@ -156,33 +157,32 @@ describe("queryBucketsBySource — Claude multi-day session spreads by event day
       ev("long-1", "2026-06-18T01:00:00Z", 50, 10, 20, 2),
     ]);
 
-    const rows = queryBucketsBySource(
+    const rows = ADAPTERS.claude.queryBuckets(
       db,
-      "claude",
       new Date(2026, 5, 15, 0, 0, 0, 0),
       new Date(2026, 5, 19, 0, 0, 0, 0),
       "day"
     );
     const byDay = new Map(rows.map((r) => [r.bucket_key, r]));
     // NOT all collapsed onto 6/18.
-    expect(byDay.get("2026-06-15")?.total_tokens).toBe(120);
-    expect(byDay.get("2026-06-16")?.total_tokens).toBe(230);
-    expect(byDay.get("2026-06-18")?.total_tokens).toBe(60);
+    expect(rowTotal(byDay.get("2026-06-15")!)).toBe(120);
+    expect(rowTotal(byDay.get("2026-06-16")!)).toBe(230);
+    expect(rowTotal(byDay.get("2026-06-18")!)).toBe(60);
     expect(byDay.has("2026-06-17")).toBe(false);
     // cache split preserved per day (powers the cache toggle + breakdown).
-    expect(byDay.get("2026-06-16")?.input_tokens).toBe(200);
-    expect(byDay.get("2026-06-16")?.cache_read_input_tokens).toBe(120);
-    expect(byDay.get("2026-06-16")?.cache_creation_input_tokens).toBe(7);
+    expect(rowInput(byDay.get("2026-06-16")!)).toBe(200);
+    expect(byDay.get("2026-06-16")!.cache_read_input).toBe(120);
+    expect(byDay.get("2026-06-16")!.cache_creation_input).toBe(7);
   });
 
   it("token>0 with session_count=0 when the session was last touched in a later bucket", () => {
     const db = freshDb();
     seedClaudeSession(db, "long-2", "2026-06-20T09:00:00Z"); // last-updated 6/20
     replaceClaudeTokenUsageEvents(db, "long-2", [ev("long-2", "2026-06-15T02:00:00Z", 100, 20)]);
-    const rows = queryBucketsBySource(db, "claude", new Date(2026, 5, 15, 0), new Date(2026, 5, 16, 0), "day");
+    const rows = ADAPTERS.claude.queryBuckets(db, new Date(2026, 5, 15, 0), new Date(2026, 5, 16, 0), "day");
     const d15 = rows.find((r) => r.bucket_key === "2026-06-15");
-    expect(d15?.total_tokens).toBe(120);
-    expect(d15?.session_count).toBe(0); // last touched 6/20, not 6/15 — honest
+    expect(rowTotal(d15!)).toBe(120);
+    expect(d15!.session_count).toBe(0); // last touched 6/20, not 6/15 — honest
   });
 
   it("excludes events of missing / non-full sessions (JOIN re-applies filters)", () => {
@@ -191,8 +191,8 @@ describe("queryBucketsBySource — Claude multi-day session spreads by event day
     seedClaudeSession(db, "errored", "2026-06-16T09:00:00Z", { tokenStatus: "error" });
     replaceClaudeTokenUsageEvents(db, "gone", [ev("gone", "2026-06-16T02:00:00Z", 999, 9)]);
     replaceClaudeTokenUsageEvents(db, "errored", [ev("errored", "2026-06-16T02:00:00Z", 888, 8)]);
-    const rows = queryBucketsBySource(db, "claude", new Date(2026, 5, 15, 0), new Date(2026, 5, 19, 0), "day");
-    expect(rows.reduce((a, r) => a + r.total_tokens, 0)).toBe(0);
+    const rows = ADAPTERS.claude.queryBuckets(db, new Date(2026, 5, 15, 0), new Date(2026, 5, 19, 0), "day");
+    expect(rows.reduce((a, r) => a + rowTotal(r), 0)).toBe(0);
   });
 
   it("replace is idempotent — re-inserting a session's events does not double-count", () => {
@@ -201,7 +201,7 @@ describe("queryBucketsBySource — Claude multi-day session spreads by event day
     const events = [ev("s", "2026-06-15T02:00:00Z", 100, 20)];
     replaceClaudeTokenUsageEvents(db, "s", events);
     replaceClaudeTokenUsageEvents(db, "s", events); // second refresh, same data
-    const rows = queryBucketsBySource(db, "claude", new Date(2026, 5, 15, 0), new Date(2026, 5, 16, 0), "day");
-    expect(rows.find((r) => r.bucket_key === "2026-06-15")?.total_tokens).toBe(120);
+    const rows = ADAPTERS.claude.queryBuckets(db, new Date(2026, 5, 15, 0), new Date(2026, 5, 16, 0), "day");
+    expect(rowTotal(rows.find((r) => r.bucket_key === "2026-06-15")!)).toBe(120);
   });
 });
