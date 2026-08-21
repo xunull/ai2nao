@@ -1,42 +1,123 @@
 # TODOS
 
-## 后续优先级
+## 索引
 
-1. 证据可回看层
-2. stale cache 的 UI 体验
-3. README / LM Studio 使用文档
-4. 跨天工作线程
-5. Chrome 下载镜像 v2（URL 链与可点击源 URL）
-6. Chrome 下载镜像设计文档（`docs`）
-7. Cursor 对话镜像 + FTS（`index.db`）
-8. Cursor 集成：LICENSE / NOTICE 与上游署名
-9. Cursor 设计文档修订（仅 `src/` 实现）
-10. Cursor opened projects：显示关联 chat session counts
-11. RAG：Evidence 载荷与「证据可回看层」DTO 对齐（与每日摘要合流前的类型约定）
-12. Claude Code 本地对话 v1：只读扫描 + jsonl 解析 + Web 刷新（无 SQLite；项目根见下节）
-13. Homebrew 清单：Brewfile 导出
-14. 软件清单：Mac App 与 Homebrew Cask 关联
-15. Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
-16. Chrome History 域名透视 v2：CSV 导出
-17. Chrome History 域名透视 v2：真正增量派生
-18. Chrome History 微信文章正文索引
-19. Chrome History 搜索命中原因展示
-22. VS Code terminal dirs 工作信号（显式 opt-in）
-23. CopilotKit 自定义 AI Studio UI
-24. Work Dashboard 快照表 + scheduler 自动刷新
-25. Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
-26. Work Dashboard 项目摘要解释层
-27. Work Dashboard 全量 token 历史统计
-28. ai2nao apiKey 明文存储隐患（`~/.ai2nao/rag.json` 等）：迁移至 keychain / env var
-29. Cosmos 本地 embedding fallback（让 "local-first" 叙事完整）
-30. workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N
-31. Codex / Cursor 历史页也按最近活跃排序（与 Claude 项目列表平行）
-32. MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
-33. token-vs-git v2：per-commit churn + 降噪 config + 子目录二级粒度 + 精确剔除非 AI 提交
-34. 全站本地日分桶表达式统一走 `bucketExpr`（存量 5 文件 27 处手写）
+**这一节 2026-08-21 重写过。** 原先是一个编号 1–34 的优先级列表，已经不可信：
+编号跳过 20/21；列表的 34 与正文的 `## 34.` 指的不是同一件事；正文的 `## 35.`
+以及此后新增的约 35 条（agent_user_messages、kimi、opencode、注意力层等）
+它一条都没有。改成按性质分组、与正文小节一一对应，不再编号 —— 编号是上一版
+失准的直接原因。
 
-说明:
-前四项里，前两项直接提升“这东西靠不靠谱”的体感。第三项降低未来使用成本。第四项价值很高，但明显更像下一阶段产品路线，而不是顺手补完。第五、六项依赖 Chrome 下载镜像 v1（`chrome_downloads` 表与同步）落地后再做；第五项补全重定向链展示，第六项与 `docs/downloads-design.md` 对齐、降低后续维护成本。第七至九项来自 `/gstack-plan-eng-review`（Cursor 本地对话接入）：第七项在 `src/cursorHistory` 的 DTO 与只读路径稳定后再做，用于性能与联合检索；第八项在从参考目录移植算法时落实合规；第九项把 `~/.gstack/projects/.../you-feat-cursor-history-design-*.md` 中与「workspace 依赖 cursor-history」不一致的段落改成「仅在 `src/` 实现、参考目录不 import」。**第十项**来自 `/plan-ceo-review` + `/plan-eng-review`（Cursor opened projects）：在 `/cursor-projects` v1 与 Cursor chat DTO/性能边界稳定后再做。**第十一至十三项**来自 `/plan-ceo-review`（RAG hybrid）：在 v1 引用与双写链路稳后再做，避免和首版抢复杂度。**第十四项**（Claude Code v1）：只读；落库与 FTS 与 Cursor 侧第 7 项一并规划 Phase 2。**第二十八项**来自 `/plan-eng-review`（Activity Cosmos 评审旁支发现）：rag.json apiKey 当前明文，没在 cosmos scope 但属 solo 项目的隐患，后续重构成 keychain 或 env var 即可。**第二十九项**来自 `/plan-eng-review`（Activity Cosmos）：首版 cosmos 用 DashScope 远端 embedding，要支持 "truly local-first" 叙事需补一条本地 embedding fallback (LMStudio nomic-embed / Ollama bge)；不阻塞 MVP ship，作 Phase 2 跟踪。
+下面 67 条按性质分组（含末尾 2 条已完成待归档），组内不排先后。**加粗**的是我建议优先看的。
+
+### 正确性（代码与事实不符，5）
+- **recleanClaude 是死代码** —— `cleaner_version` 回填机制实际不工作
+- **pricing.ts 的注释说 Codex 无定价，实际有**
+- 搜索两条路径的排序规则不一致
+- 停更的同步任务审计
+- 用户消息清洗：`bash-*` 三个标签的口径分叉
+
+### 安全姿态（2）
+- **`serve` 非-loopback 绑定** —— `--host` 加写接口无认证
+- **RAG apiKey 明文落盘** —— `~/.ai2nao/rag.json` 的 `embedding.apiKey`，
+  `src/rag/config.ts:111` 明文读取。文件是 0600，靠文件权限而非加密。
+  *（此条只在旧列表里出现过，正文没有详细段落）*
+
+### 数据缺口 / 待查清（6）
+- **opencode 的 AI 正文尚未入库**
+- opencode 的 `raw_payload_json` 把附件全文内联了（最大一条 3.77 MB 换 553 字提问）
+- codex 的 subagent 会话：4325 条 AI 回答搜得到但看不出在回答什么
+- kimi 的 origin 为 null 是什么原因
+- 查清 kimi 的 `inputCacheCreation` 为什么恒为 0
+- Agent 用户消息：周期性全 id 对账 sweep（源删除检测）
+
+### 归一 / 技术债（8）
+- 看板两个入口函数抽成源适配器注册表 　*（2026-08-21 加）*
+- `work_session_duration` 纳入 opencode / kimi 　*（2026-08-21 加）*
+- DB 背景的会话收集器缺 range/limit 　*（2026-08-21 加）*
+- file-mtime 水位状态机已经有三份
+- 外部只读数据源：抽公共同步状态机（等第三个源）
+- 全站本地日分桶表达式统一走 `bucketExpr` 　*（原记 5 文件 27 处；2026-08-21 实测剩 6 处，已迁走大半）*
+- clampLimit 跨项目 DRY 整合
+- 其余页面增量迁移到 `<Page>` 框架
+
+### 性能（3）
+- index.db WAL checkpoint 策略
+- codex / minimax 的 event 时间索引升级成复合索引
+- 会话详情页：给另外四个来源上虚拟化
+
+### 接更多源 / 打通（4）
+- opencode 接进 token 趋势页（第 5 个源）
+- MiniMax 成本（pay-as-you-go）定价接入
+- Agent 用户消息统一库（agent_user_messages）
+- Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
+
+### Work Dashboard（3）
+- Work Dashboard 快照表 + scheduler 自动刷新 　*（2026-08-21 实测：无快照表，未做）*
+- Work Dashboard 项目摘要解释层
+- Work Dashboard 全量 token 历史统计
+
+### Chrome History / 下载（8）
+- Chrome History 域名透视 v2：Public Suffix List / `registrable_domain`
+- Chrome History 域名透视 v2：CSV 导出
+- Chrome History 域名透视 v2：真正增量派生
+- Chrome History 微信文章正文索引
+- Chrome History 搜索命中原因展示
+- Chrome 下载镜像 v2：`downloads_url_chains` 与可点击源 URL
+- Chrome 下载镜像：设计文档（docs）
+- 下载目录索引：下载过程中 birthtime / mtime 抖动
+
+### Cursor 接入（4）
+- Cursor 对话镜像 + FTS（`index.db`） 　*（2026-08-21 实测：index.db 里 0 张 cursor 表，未做）*
+- Cursor 集成：LICENSE / NOTICE 与上游署名
+- Cursor 设计文档修订（仅 `src/` 实现）
+- Cursor opened projects：显示关联 chat session counts
+
+### AI Chat Web Search（4）
+- 网页正文抽取
+- 专用 Evidence Strip / Panel UI
+- 持久搜索缓存与 citation provenance
+- freshness / 时间范围搜索参数
+
+### 注意力层 / Atuin（4）
+- 注意力层：零权限采样作为 knowledgeC 的降级路径
+- 注意力层：shell 命令的交叉证据（Atuin 原始历史）
+- Atuin 目录活动：repo 归属
+- Atuin 目录活动：接入每日摘要证据层
+
+### 会话与消息体验（4）
+- Codex 对话详情：单会话内搜索
+- claude-code-history 跨 session「提问流 / 消息搜索」
+- AI 对话时间线：共享 AgentMessageTimeline 组件
+- Codex / Cursor 历史页也按最近活跃排序 　*（2026-08-21 实测：cursor 仍按 `createdAt` 倒序，`storage.ts:995`，未做）*
+
+### 其他（10）
+- 证据可回看层
+- stale cache 的 UI 体验
+- 跨天工作线程
+- README / LM Studio 使用文档
+- CopilotKit 自定义 AI Studio UI
+- MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
+- token-vs-git v2
+- 首页线索的曝光 / 点击日志
+- Cosmos 本地 embedding fallback 　*（2026-08-21 实测：0 处本地 embedding 代码，未做。此条只在旧列表里，正文没有段落）*
+- RAG：Evidence 载荷与「证据可回看层」DTO 对齐 　*（同上，只有一句话）*
+
+### 待归档（正文还在，但已实测完成）
+- **Claude Code 本地对话（v1）** —— `/claude-code-history` 与
+  `/claude-code-history/s/:sessionId` 都已上线（`web/src/routes.ts:48-49`）。
+  正文的「已定约束」段落可能仍有参考价值，没有径自删除，等你定。
+- **workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N** ——
+  `aggregate.ts:866-867` 已是 `.sort(按 lastUpdatedAt 倒序).slice(0, limitProjects)`。
+
+### 旧优先级列表的排序说明（存档）
+
+原列表附有一段说明，解释了若干条目之间的依赖与先后。其中仍然成立的部分：
+Chrome 下载镜像 v2 与其设计文档依赖 v1（`chrome_downloads` 表与同步）落地；
+Cursor 的 FTS 入库要等 `src/cursorHistory` 的 DTO 与只读路径稳定；
+LICENSE / NOTICE 要在从参考目录移植算法时落实；设计文档修订是把
+「workspace 依赖 cursor-history」的段落改成「仅在 `src/` 实现、参考目录不 import」；
+RAG 的 Evidence DTO 对齐要等 v1 引用与双写链路稳，避免与首版抢复杂度。
 
 ## Claude Code 本地对话（v1）
 
@@ -334,6 +415,26 @@ Depends on / blocked by:
 Priority: Phase 2/3
 
 ## Completed
+
+### 趋势页「不算缓存」应同时扣 cache_creation（口径 bug）
+
+**Completed:** 2026-08-20（作为原子分量重写的副产品，不是单独修的）
+
+原问题：「计入缓存命中」开关 OFF 时只减 `cache_read`、没减 `cache_creation`，而
+07-01 的 off 柱 164M 里 cache_creation 占 147.6M ≈ 90%，开关名不副实。
+
+怎么没了的：趋势页归一时（X1）把存储改成**只存原子分量**
+（`freshInput` / `cacheReadInput` / `cacheCreationInput` / `output`），
+派生值一律现算。`tokensExcludingCache` 因此从减法变成**加法**：
+
+```ts
+// src/workTokensTrend/types.ts:158
+export function tokensExcludingCache(u: SourceUsage): number {
+  return u.freshInput + u.output;   // cache_creation 是另一个分量,结构上进不来
+}
+```
+
+减法形式正是逐源漂移与负值的来源；改成加法之后这个 bug 没有藏身之处了。
 
 ### RAG：双路检索调试视图
 
@@ -1052,24 +1153,6 @@ Depends on / blocked by:
 **Effort estimate:** L（human ~2-3天 / CC ~2-3h,含建表/迁移/重扫/搜索 UI)
 
 **Priority:** P3（独立大特性,不阻塞抽屉)
-
----
-
-## 趋势页「不算缓存」应同时扣 cache_creation（口径 bug）
-
-**What:** tokens-trend 的「计入缓存命中」开关 OFF 时,只从 claude 减 `cache_read`,没减 `cache_creation`(写入 cache)。
-
-**Why:** 实测 07-01 的 off 柱合计 164M,其中 cache_creation 147.6M ≈ **90%**。长会话每次 5 分钟缓存 TTL 过期后把同一份上下文反复重写 → cache_creation 是重复机械量,不是"真实新增"。开关标签「不算缓存」名不副实,数字仍虚高。而代码自己的输入构成卡已定义 `真实新增 = input − cache_read − cache_creation`,开关漏减 creation,自相矛盾。
-
-**Pros:** OFF 变成真正的"真实新增+输出"(今天 164M→16.4M);与输入构成卡口径自洽。
-**Cons:** 改变开关语义,标签要从「计入缓存命中」改「计入缓存」;需同步 `deriveTotals`(web/src/pages/WorkTokensTrend.tsx:645)+ `chartData` map(:753)两处 + 回归测试。
-
-**Context:** 2026-07-01 investigate + plan-eng-review(claude 按天归属修复)中浮现,列为归属修复的 NOT-in-scope。归属 bug 与口径 bug 是两件事,分开做更干净。归属修复文档:`~/.gstack/projects/xunull-ai2nao/20260701-main-design-claude-daily-bucketing.md`。
-
-**Depends on / blocked by:** 建议在 claude 按天归属修复(per-day event 表)落地后再做,因为 event 表也带 cache_creation 列,口径改动要在 per-bucket 上一致生效。
-
-**Effort estimate:** S（human ~1h / CC ~15min,两处扣减 + 标签 + 回归测试)
-**Priority:** P2（用户已明确报告"数字明显不对",体验优先)
 
 ---
 
