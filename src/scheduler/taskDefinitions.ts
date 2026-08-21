@@ -22,6 +22,7 @@ import { ingestOpencodeUserMessages } from "../agentUserMessages/opencodeIngest.
 import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "../agentUserMessages/kimiIngest.js";
+import { refreshKimiTokenUsage } from "../kimiTokenUsage/refresh.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
 import { syncAllReposChurn } from "../gitChurn/sync.js";
@@ -325,6 +326,38 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           summary: result,
           errorSummary: result.errors[0] ?? null,
         };
+      },
+    },
+    {
+      // kimi 的 token 用量。本地 wire.jsonl 源、常开、无 key ——
+      // 与 agent_user_messages.kimi.sync 是**两件事**:那个抽对话正文,
+      // 这个抽 usage.record 事件。两者共用 scanKimiWireFiles() 的文件发现口径。
+      key: "kimi.tokens.refresh",
+      label: "kimi token 统计刷新",
+      description:
+        "扫描 kimi 会话 wire.jsonl 的 usage.record 事件,刷新 agent 级 token 索引(供 Token 趋势页与排行页)。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "high",
+      run: (ctx) => {
+        const full = Boolean(ctx.config.full);
+        const result = refreshKimiTokenUsage(ctx.db, { full });
+        // 目录列举失败 = 这一轮结果不完整,报 failed;
+        // 单个 agent 文件读不了只是 partial —— 其他 agent 的 token 照常入库(X2)。
+        const status = result.dirListFailure
+          ? "failed"
+          : result.errorAgents > 0
+            ? "partial"
+            : "success";
+        return Promise.resolve({
+          status,
+          summary: result,
+          errorSummary: result.dirListFailure
+            ? "kimi 会话目录列举失败,本轮结果不完整"
+            : result.errorAgents > 0
+              ? `${result.errorAgents} 个 agent 文件读不了(其余照常入库)`
+              : null,
+        });
       },
     },
     {
