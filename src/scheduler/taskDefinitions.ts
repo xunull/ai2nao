@@ -573,13 +573,13 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
       },
     },
     {
-      // OpenCode「我发的消息」入库(供全文搜索)。本地源、常开、无 key/opt-in。
+      // opencode「我发的消息」与 AI 正文入库(供全文搜索)。本地源、常开、无 key/opt-in。
       // 增量:按 message.time_created 水位分批 upsert;db 缺失/被锁 → 干净跳过/失败,
       // 不影响其它任务。设计:docs/agent-user-messages-design.md。
       key: "agent_user_messages.opencode.sync",
-      label: "OpenCode 用户消息入库",
+      label: "opencode 消息入库",
       description:
-        "把 opencode 会话里「我发的消息」抽取并去注入后写入 agent_user_messages,供跨 agent 全文搜索。",
+        "把 opencode 会话里「我发的消息」与 AI 正文抽取后写入 agent_user_messages,并把逐消息 token 写入事件表。",
       category: "local_inventory",
       defaultIntervalSeconds: oneHour,
       sensitivity: "low",

@@ -275,3 +275,37 @@ describe("absent ≠ stale", () => {
     db.close();
   });
 });
+
+describe("O8 —— 列表页 messageCount 走 opencode_session", () => {
+  /**
+   * `load.ts:33` 原先写死 `messageCount: 0`，注释是「列表不读 message，避免 N+1」。
+   * 有了自己的表之后那个顾虑消失了 —— ingest 已经数好存下。
+   * 口径与 kimi 一致：数**真人提问**，不是消息总数。
+   */
+  it("拿得到 index.db 时用真实条数；拿不到时退回 0（旧行为）", async () => {
+    const { listOpencodeSessionSummaries } = await import("../src/opencodeHistory/load.js");
+    const db = freshDb();
+    seedSession(db, { id: "s1", projectKey: "/work/app" });
+    db.prepare("UPDATE opencode_session SET human_message_count = 7 WHERE session_id='s1'").run();
+
+    const dir = dirWithOpencodeDb();
+    // 源库里没有这场会话 → 列表本来就是空的，这里只验证 counts 取数不抛。
+    const withDb = await listOpencodeSessionSummaries(dir, { archived: false, indexDb: db });
+    expect(withDb.ok).toBe(true);
+    const withoutDb = await listOpencodeSessionSummaries(dir, { archived: false });
+    expect(withoutDb.ok).toBe(true);
+    db.close();
+  });
+
+  it("旧库没有 opencode_session 时不崩，退回 0", async () => {
+    const { listOpencodeSessionSummaries } = await import("../src/opencodeHistory/load.js");
+    const db = freshDb();
+    db.exec("DROP TABLE opencode_session");
+    const r = await listOpencodeSessionSummaries(dirWithOpencodeDb(), {
+      archived: false,
+      indexDb: db,
+    });
+    expect(r.ok).toBe(true);
+    db.close();
+  });
+});

@@ -23,14 +23,20 @@ import type {
   OpencodeSessionRow,
 } from "./types.js";
 
-function summaryFromRow(row: OpencodeSessionRow): ChatSessionSummary {
+function summaryFromRow(
+  row: OpencodeSessionRow,
+  humanMessageCount = 0
+): ChatSessionSummary {
   return {
     id: row.id,
     index: 0,
     title: row.title || "无标题会话",
     createdAt: row.createdAt,
     lastUpdatedAt: row.lastUpdatedAt,
-    messageCount: 0, // 列表不读 message，避免 N+1；详情页才有真实条数。
+    // 真人提问条数,取自 `opencode_session`(V58)—— 与 kimi 同口径,不是消息总数。
+    // 原先写死 0 是因为「列表不读 message,避免 N+1」;有了自己的表之后
+    // 那个顾虑消失了,ingest 已经数好存下。拿不到 index.db 时仍退回 0。
+    messageCount: humanMessageCount,
     workspaceId: row.projectId,
     workspacePath: row.directory,
     preview: "",
@@ -80,10 +86,27 @@ export async function listOpencodeProjects(
   }
 }
 
+/** 从 index.db 取每场的真人提问数。表不在或没给 db → 空 Map,列表退回 0。 */
+function humanCountsFromIndex(indexDb: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  const db = indexDb as { prepare?: (sql: string) => { all: () => unknown[] } } | undefined;
+  if (!db?.prepare) return out;
+  try {
+    const rows = db
+      .prepare("SELECT session_id AS id, human_message_count AS n FROM opencode_session")
+      .all() as { id: string; n: number }[];
+    for (const r of rows) out.set(r.id, r.n);
+  } catch {
+    // 旧库没有这张表 —— 退回 0,不崩。
+  }
+  return out;
+}
+
 export async function listOpencodeSessionSummaries(
   rawDataDir: string | undefined,
   filters: OpencodeListFilters
 ): Promise<OpencodeListResult> {
+  const counts = humanCountsFromIndex(filters.indexDb);
   const dataDir = resolveOpencodeDataDir(rawDataDir);
   const dbPath = opencodeDbPath(dataDir);
   const diagnostics: OpencodeDiagnostic[] = [];
@@ -107,7 +130,7 @@ export async function listOpencodeSessionSummaries(
       source: "sqlite",
       dbPath,
       diagnostics,
-      sessions: rows.map(summaryFromRow),
+      sessions: rows.map((r) => summaryFromRow(r, counts.get(r.id) ?? 0)),
     };
   } catch (e) {
     diagnostics.push(diagnosticFromError(e));

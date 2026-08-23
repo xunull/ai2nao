@@ -464,9 +464,9 @@ export function AgentMessages() {
       <header className="mb-5">
         <h1 className="text-xl font-semibold text-[var(--fg)]">对话搜索</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
-          默认搜你自己发的消息（已过滤注入）。切到「AI 说的」可以搜 Claude
-          的回答——它按「只看对话」的口径入库，工具调用和系统事件不收。中文 2 字词走
-          LIKE、≥3 字走 trigram 全文索引。收录 OpenCode / Claude / Codex 三个 agent。
+          默认搜你自己发的消息（已过滤注入）。切到「AI 说的」可以搜各源
+          的回答——按「只看对话」的口径入库，工具调用和系统事件不收。中文 2 字词走
+          LIKE、≥3 字走 trigram 全文索引。收录本机各 AI 编码工具的消息。
         </p>
       </header>
 

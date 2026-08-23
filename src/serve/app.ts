@@ -951,6 +951,7 @@ export function createApp(opts: ServeOptions): Hono {
   app.get("/api/opencode-history/sessions", async (c) => {
     try {
       const result = await listOpencodeSessionSummaries(c.req.query("opencodeRoot"), {
+        indexDb: db,
         projectId: c.req.query("projectId"),
         agent: c.req.query("agent"),
         model: c.req.query("model"),

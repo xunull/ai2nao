@@ -508,14 +508,14 @@ function collectIndexedKimi(db: Database.Database): {
   };
 }
 
-async function collectDefaultOpencode(): Promise<{
+async function collectDefaultOpencode(db?: Database.Database): Promise<{
   sessions: DashboardCollectorSession[];
   diagnostics: DashboardDiagnostic[];
 }> {
   try {
     // opencode list is a single SQLite read (bounded by stateDb's own LIMIT);
     // exclude archived to match the token query's `time_archived IS NULL`.
-    const result = await listOpencodeSessionSummaries(undefined, { archived: false });
+    const result = await listOpencodeSessionSummaries(undefined, { archived: false, indexDb: db });
     // A missing opencode.db means the user doesn't use opencode — a normal state
     // for most users of a default source, not a warning. Drop it (surface only
     // real problems like schema incompatibility).
@@ -576,7 +576,8 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
       : undefined,
     // opencode token/status query its own opencode.db (not the index db), so
     // these are wired regardless of `db`.
-    listOpencode: collectDefaultOpencode,
+    // 传 db 是为了让列表页的 messageCount 走 opencode_session(V58)而不是写死 0。
+    listOpencode: async () => collectDefaultOpencode(db),
     // 改读 index.db(V57 事件表 + V58 会话表)—— 不再每次看板加载都打开
     // 那个 3.2 GB 的外部库,也不再漏算 cache。
     listOpencodeProjectTokenUsage: db

@@ -8,6 +8,12 @@ export type OpencodeListFilters = {
   model?: string;
   archived?: boolean;
   limit?: number;
+  /**
+   * ai2nao 的 index.db。给了就用 `opencode_session`(V58)补上真实的 messageCount ——
+   * 那张表是 ingest 写的,数一次就存下来,不需要为列表页逐会话回源(原先的 N+1 顾虑)。
+   * 不给就退回 0,与旧行为一致。
+   */
+  indexDb?: unknown;
 };
 
 /** opencode session 一行（已从 DB 取出，未读 message/part）。 */
