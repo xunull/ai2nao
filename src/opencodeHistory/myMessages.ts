@@ -220,6 +220,93 @@ export function extractOpencodeUserMessage(
   };
 }
 
+/** assistant 轮抽出来的一行 + 它的 token 向量。 */
+export type ExtractedOpencodeAssistantMessage = {
+  messageId: string;
+  eventAtMs: number;
+  /** 逐字拼接的 text part。**不含 reasoning** —— 与另外三家一致,不存思考正文。 */
+  text: string;
+  /** `message.data.tokens`。opencode 是四个源里唯一逐消息带完整向量的。 */
+  tokens: OpencodeMessageTokens | null;
+};
+
+/** 原子分量,不含任何可派生的量。全 0 表示这条消息没有 token 信息。 */
+export type OpencodeMessageTokens = {
+  freshInput: number;
+  cacheReadInput: number;
+  cacheCreationInput: number;
+  output: number;
+  reasoningOutput: number;
+};
+
+function num(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * 抽 assistant 轮。与 `extractOpencodeUserMessage` 分开而不是给它加 role 参数 ——
+ * 那个函数被「我的输入」抽屉(`load.ts:175`)与 ingest 共用,就地放宽会让抽屉
+ * 开始渲染 AI 消息。
+ *
+ * **正文只取 `text` part。** assistant 的 `tool` part 序列化后是 166.29 MB
+ * (实测),把它们也留底会往库里加 184 MB —— 比正在修的 58 MB 问题糟三倍。
+ * 所以照 claude 的做法(`claudeCodeHistory/myMessages.ts:172`),
+ * `raw_payload_json` 只存正文本身。
+ *
+ * 返回 null 的两种情况:非 assistant 轮、或没有可读正文(纯 tool/step 的轮)。
+ * 后者**整行不写** —— 与 claude 的「纯 thinking 行跳过而不是写空串」同一条规矩,
+ * 否则空正文会污染 FTS。
+ */
+export function extractOpencodeAssistantMessage(
+  message: OpencodeRawMessage,
+  rawParts: OpencodeRawPart[]
+): ExtractedOpencodeAssistantMessage | null {
+  let role: string | undefined;
+  let eventAtMs = message.timeCreated;
+  let tokens: OpencodeMessageTokens | null = null;
+  try {
+    const d = JSON.parse(message.data) as {
+      role?: string;
+      time?: { created?: number };
+      tokens?: {
+        input?: number;
+        output?: number;
+        reasoning?: number;
+        cache?: { read?: number; write?: number };
+      };
+    };
+    role = d.role;
+    if (typeof d.time?.created === "number" && d.time.created > 0) {
+      eventAtMs = d.time.created;
+    }
+    if (d.tokens) {
+      tokens = {
+        freshInput: num(d.tokens.input),
+        cacheReadInput: num(d.tokens.cache?.read),
+        cacheCreationInput: num(d.tokens.cache?.write),
+        output: num(d.tokens.output),
+        reasoningOutput: num(d.tokens.reasoning),
+      };
+    }
+  } catch {
+    return null; // 坏 JSON:role 未知 → 不当 assistant 处理
+  }
+  if (role !== "assistant") return null;
+
+  const text = rawParts
+    .map((p) => parsePartData(p.data))
+    .filter((pd) => pd.type === "text" && typeof pd.text === "string")
+    .map((pd) => pd.text as string)
+    .join("\n\n");
+
+  // 没有正文的轮(纯 tool / step)整行不写,但 token 仍要入事件表 ——
+  // 调用方据此区分:正文侧 2260 条,事件侧 7430 条。
+  if (!text.trim()) {
+    return tokens ? { messageId: message.id, eventAtMs, text: "", tokens } : null;
+  }
+  return { messageId: message.id, eventAtMs, text, tokens };
+}
+
 /**
  * 从 raw_payload_json 重算 cleaned/is_human(D10 cleaner_version 回填用)。
  * payload = extractOpencodeUserMessage 存的「原始 part.data 数组」,故重清洗输入与

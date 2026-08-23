@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import {
   CLEANER_VERSION,
   PARSER_VERSION,
+  extractOpencodeAssistantMessage,
   extractOpencodeUserMessage,
   groupRawPartsByMessage,
 } from "../opencodeHistory/myMessages.js";
@@ -22,6 +23,11 @@ import {
 } from "../opencodeHistory/stateDb.js";
 import { slugFromPath } from "./projectKey.js";
 import { getSyncState, setSyncState, upsertUserMessagesBatch } from "./store.js";
+import {
+  setOpencodeTokenUsageState,
+  upsertOpencodeTokenEvents,
+  type OpencodeTokenEvent,
+} from "../opencodeTokenUsage/events.js";
 import type { UpsertUserMessageInput } from "./types.js";
 
 /** 每 N 个 session 一事务(D9:分批,不锁大事务)。 */
@@ -41,8 +47,9 @@ export type OpencodeIngestResult = {
  *
  * 1 = 修掉水位 bug 后的口径。此前消息级过滤器读一个在批循环里被改写的水位,
  *     导致「早创建、晚更新」的 session 的老消息被永久跳过(真库丢了 550/1934 条)。
+ * 2 = 收 assistant 正文 + 逐消息 token 事件。此前 role 门只放 user 过。
  */
-const OPENCODE_INGEST_VERSION = 1;
+export const OPENCODE_INGEST_VERSION = 2;
 
 export function ingestOpencodeUserMessages(
   db: Database.Database, // index.db(写)
@@ -83,6 +90,9 @@ export function ingestOpencodeUserMessages(
 
   let scanned = 0;
   let upserted = 0;
+  let sourceMessages = 0;
+  let tokenEvents = 0;
+  const startedAt = Date.now();
   try {
     const sessions = listAllSessionsForIngest(src, dbPath);
     // 只处理活跃 >= 水位的 session(未变的旧 session 不重读);升序以便水位单调推进。
@@ -91,6 +101,7 @@ export function ingestOpencodeUserMessages(
     for (let i = 0; i < todo.length; i += BATCH_SESSIONS) {
       const batch = todo.slice(i, i + BATCH_SESSIONS);
       const rows: UpsertUserMessageInput[] = [];
+      const batchEvents: OpencodeTokenEvent[] = [];
       // 水位只跟 session 的 timeUpdated —— 与上面 todo 的筛子同一个时钟。
       let batchMaxMs = watermark;
 
@@ -101,14 +112,58 @@ export function ingestOpencodeUserMessages(
         const project = slugFromPath(s.directory);
         const { messages, parts } = loadSessionMessagesAndParts(src, dbPath, s.id);
         const byMsg = groupRawPartsByMessage(parts);
+        // answering_user_key:AI 那条回的是上一条 user。messages 已按时间升序,
+        // 顺序扫一遍即可 —— 与 claude 侧同一做法。
+        let lastUserKey: string | null = null;
+        const events: OpencodeTokenEvent[] = [];
         for (const m of messages) {
+          sourceMessages++;
           // 这里原先有一个 `if (m.timeCreated < watermark) continue`。删掉了:
           // session 筛子用的是 timeUpdated,消息过滤器却用 timeCreated,而 watermark
           // 在批循环内被改写 —— 两套时钟交叉,「早创建、晚更新」的 session 的老消息
           // 被永久跳过且不自愈。本文件 D9 头注早已论证过重处理在幂等 upsert 下免费,
           // 所以直接不过滤,只靠 session 级水位。
+          const asst = extractOpencodeAssistantMessage(m, byMsg.get(m.id) ?? []);
+          if (asst) {
+            // token 事件:**全部** assistant 轮都要(真库 7430 条),
+            // 哪怕这一轮没有可读正文 —— 量挂在消息上,不挂在正文上。
+            if (asst.tokens) {
+              events.push({
+                sessionId: s.id,
+                messageId: asst.messageId,
+                eventAtIso: new Date(asst.eventAtMs).toISOString(),
+                tokens: asst.tokens,
+              });
+            }
+            // 正文侧只收有正文的(真库 2260 条)。空正文整行不写 ——
+            // 与 claude 的「纯 thinking 行跳过而不是写空串」同一条规矩,
+            // 否则空行会污染 FTS。
+            if (asst.text.trim()) {
+              rows.push({
+                source: "opencode",
+                sourceSessionId: s.id,
+                sourceMessageKey: asst.messageId,
+                project,
+                eventAtUtc: new Date(asst.eventAtMs).toISOString(),
+                rawText: asst.text,
+                // 只存正文本身 —— assistant 的 tool part 实测 166.29 MB,
+                // 全留底会往库里加 184 MB。照 claude 的做法。
+                rawPayloadJson: JSON.stringify(asst.text),
+                // AI 输出不经清洗:它不会往自己嘴里塞 system-reminder。
+                cleanedText: asst.text,
+                isHuman: false,
+                role: "assistant",
+                answeringUserKey: lastUserKey,
+                cleanerVersion: CLEANER_VERSION,
+                parserVersion: PARSER_VERSION,
+                sourcePath: dbPath,
+              });
+            }
+            continue;
+          }
           const ex = extractOpencodeUserMessage(m, byMsg.get(m.id) ?? []);
           if (!ex) continue; // 非 user 轮
+          lastUserKey = ex.messageId;
           rows.push({
             source: "opencode",
             sourceSessionId: s.id,
@@ -124,10 +179,12 @@ export function ingestOpencodeUserMessages(
             sourcePath: dbPath,
           });
         }
+        batchEvents.push(...events);
       }
 
       // 一批一事务:upsert + FTS 同步;成功后推水位(部分失败该批回滚、水位不进 → 下轮重扫)。
       upserted += upsertUserMessagesBatch(db, rows, nowIso);
+      tokenEvents += upsertOpencodeTokenEvents(db, batchEvents);
       if (batchMaxMs > watermark) {
         watermark = batchMaxMs;
         setSyncState(db, "opencode", {
@@ -148,6 +205,13 @@ export function ingestOpencodeUserMessages(
       lastError: null,
       // 只有整轮跑完才推进版本号。
       ingestVersion: OPENCODE_INGEST_VERSION,
+    });
+    setOpencodeTokenUsageState(db, {
+      sourceMessageCount: sourceMessages,
+      indexedEventCount: tokenEvents,
+      durationMs: Date.now() - startedAt,
+      lastError: null,
+      nowIso,
     });
     return { status: "success", scannedSessions: scanned, upserted, watermarkMs: watermark };
   } catch (e) {

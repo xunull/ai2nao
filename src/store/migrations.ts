@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 56;
+export const SCHEMA_VERSION = 57;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -73,6 +73,7 @@ export function migrate(db: Database.Database): void {
     applyV54(db);
     applyV55(db);
     applyV56(db);
+    applyV57(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -135,6 +136,7 @@ export function migrate(db: Database.Database): void {
   if (v < 54) applyV54(db);
   if (v < 55) applyV55(db);
   if (v < 56) applyV56(db);
+  if (v < 57) applyV57(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2852,5 +2854,70 @@ function applyV56(db: Database.Database): void {
         ADD COLUMN ingest_version INTEGER NOT NULL DEFAULT 0;
     `);
     db.exec("UPDATE meta_schema SET version = 56 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V57 —— opencode 的 token 事件表 + state 表。
+ *
+ * opencode 此前在 index.db 里**一张源专属表都没有**,每次看板加载实时读那个
+ * 3.2 GB 的外部库。跨源功能全在 index.db 里 join,它不在里面,所以每个跨源功能
+ * 都要为它写特例 —— 而没人愿意写,于是它每次都被跳过(趋势页、活跃时长、
+ * 排行页少算 89%,全是这个的症状)。
+ *
+ * **列名刻意不叫 `input_tokens`。** 那个名字在本仓库已经承载「融合」语义:
+ * `claude_session_token_usage.input_tokens` 是 fresh + cache_read + cache_creation
+ * 的融合值(见 :1816 的 FUSED 注释,以及 :2726「映射写反会得到大负数」的警告)。
+ * opencode 的 `message.data.tokens` 是**分离**的,所以照 `kimi_token_usage_event`
+ * 的原子分量命名,加第五个分量 reasoning_output。
+ *
+ * 事件键是 (session_id, message_id) —— opencode 的 message.id 是主键,天然稳定,
+ * 不需要像 kimi 那样自造 ordinal。
+ *
+ * state 表的用途:趋势页 adapter 的 everPresent() 探测「这个源到底有没有被用过」,
+ * 它同时看 state 表与数据表(缺一不可 —— 有数据没 state 行、有 state 行没数据,
+ * 是两种不同的真实状态)。
+ */
+function applyV57(db: Database.Database): void {
+  const exists = db
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='opencode_token_usage_event'"
+    )
+    .get();
+  if (exists) {
+    db.exec("UPDATE meta_schema SET version = 57 WHERE id = 1;");
+    return;
+  }
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE opencode_token_usage_event (
+        session_id           TEXT NOT NULL,
+        message_id           TEXT NOT NULL,
+        event_at             TEXT NOT NULL,
+        -- 原子分量:不存任何可派生的量。融合值一律现算。
+        fresh_input          INTEGER NOT NULL DEFAULT 0,
+        cache_read_input     INTEGER NOT NULL DEFAULT 0,
+        cache_creation_input INTEGER NOT NULL DEFAULT 0,
+        output               INTEGER NOT NULL DEFAULT 0,
+        reasoning_output     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, message_id)
+      );
+
+      -- 复合索引:时间范围查询要能只走索引拿到 join 键,与 kimi/claude 一致。
+      CREATE INDEX idx_opencode_token_event_at
+        ON opencode_token_usage_event(event_at, session_id, message_id);
+
+      CREATE TABLE opencode_token_usage_state (
+        id                    INTEGER PRIMARY KEY CHECK (id = 1),
+        rule_version          INTEGER NOT NULL,
+        last_rebuilt_at       TEXT,
+        last_error            TEXT,
+        source_message_count  INTEGER NOT NULL DEFAULT 0,
+        indexed_event_count   INTEGER NOT NULL DEFAULT 0,
+        duration_ms           INTEGER,
+        updated_at            TEXT NOT NULL
+      );
+    `);
+    db.exec("UPDATE meta_schema SET version = 57 WHERE id = 1;");
   })();
 }

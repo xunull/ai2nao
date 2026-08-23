@@ -4,7 +4,10 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../src/store/migrations.js";
-import { ingestOpencodeUserMessages } from "../src/agentUserMessages/opencodeIngest.js";
+import {
+  ingestOpencodeUserMessages,
+  OPENCODE_INGEST_VERSION,
+} from "../src/agentUserMessages/opencodeIngest.js";
 import { getSyncState, setSyncState } from "../src/agentUserMessages/store.js";
 
 /**
@@ -182,7 +185,8 @@ describe("opencode ingest 水位", () => {
       const db = indexDb();
 
       ingestOpencodeUserMessages(db, { dataDir: dir });
-      expect(getSyncState(db, "opencode")!.ingestVersion).toBe(1);
+      // 锚在常量上而不是写死数字 —— 上一版写了 toBe(1),口径一 bump 就假红。
+      expect(getSyncState(db, "opencode")!.ingestVersion).toBe(OPENCODE_INGEST_VERSION);
       db.close();
     });
 
@@ -198,7 +202,7 @@ describe("opencode ingest 水位", () => {
         lastRunAt: new Date(T0).toISOString(),
         lastStatus: "success",
         lastError: null,
-        ingestVersion: 1,
+        ingestVersion: OPENCODE_INGEST_VERSION,
       });
 
       const r = ingestOpencodeUserMessages(db, { dataDir: dir });
