@@ -35,6 +35,15 @@ export type OpencodeIngestResult = {
   error?: string;
 };
 
+/**
+ * ingest 口径的版本号。改动「收哪些行 / 怎么算水位 / payload 存什么」时 +1,
+ * 已入库的装机会在下一轮自动全量重扫。
+ *
+ * 1 = 修掉水位 bug 后的口径。此前消息级过滤器读一个在批循环里被改写的水位,
+ *     导致「早创建、晚更新」的 session 的老消息被永久跳过(真库丢了 550/1934 条)。
+ */
+const OPENCODE_INGEST_VERSION = 1;
+
 export function ingestOpencodeUserMessages(
   db: Database.Database, // index.db(写)
   opts?: { dataDir?: string; now?: Date }
@@ -49,7 +58,11 @@ export function ingestOpencodeUserMessages(
   }
 
   const state = getSyncState(db, "opencode");
-  let watermark = state?.watermarkMs ?? 0;
+  const storedVersion = state?.ingestVersion ?? 0;
+  // 口径变了就本轮强制全量 —— 与五个 token refresh 的 rule_version 同一套家法
+  // (claudeTokenUsage/refresh.ts:216-220)。光改代码不够:水位会挡住重扫。
+  const versionStale = storedVersion !== OPENCODE_INGEST_VERSION;
+  let watermark = versionStale ? 0 : (state?.watermarkMs ?? 0);
 
   let src: Database.Database;
   try {
@@ -62,6 +75,8 @@ export function ingestOpencodeUserMessages(
       lastRunAt: nowIso,
       lastStatus: "failed",
       lastError: error,
+      // 库都没打开,什么都没做 —— 保留旧版本号,下轮仍会触发全量。
+      ingestVersion: storedVersion,
     });
     return { status: "failed", scannedSessions: 0, upserted: 0, watermarkMs: watermark, error };
   }
@@ -76,16 +91,22 @@ export function ingestOpencodeUserMessages(
     for (let i = 0; i < todo.length; i += BATCH_SESSIONS) {
       const batch = todo.slice(i, i + BATCH_SESSIONS);
       const rows: UpsertUserMessageInput[] = [];
+      // 水位只跟 session 的 timeUpdated —— 与上面 todo 的筛子同一个时钟。
       let batchMaxMs = watermark;
 
       for (const s of batch) {
         scanned++;
+        if (s.timeUpdatedMs > batchMaxMs) batchMaxMs = s.timeUpdatedMs;
         // 从 session directory 回填 project(slug,与 claude 对齐;供对话↔提交桥归属)。
         const project = slugFromPath(s.directory);
         const { messages, parts } = loadSessionMessagesAndParts(src, dbPath, s.id);
         const byMsg = groupRawPartsByMessage(parts);
         for (const m of messages) {
-          if (m.timeCreated < watermark) continue; // D9: >= watermark(跳过已入库)
+          // 这里原先有一个 `if (m.timeCreated < watermark) continue`。删掉了:
+          // session 筛子用的是 timeUpdated,消息过滤器却用 timeCreated,而 watermark
+          // 在批循环内被改写 —— 两套时钟交叉,「早创建、晚更新」的 session 的老消息
+          // 被永久跳过且不自愈。本文件 D9 头注早已论证过重处理在幂等 upsert 下免费,
+          // 所以直接不过滤,只靠 session 级水位。
           const ex = extractOpencodeUserMessage(m, byMsg.get(m.id) ?? []);
           if (!ex) continue; // 非 user 轮
           rows.push({
@@ -102,7 +123,6 @@ export function ingestOpencodeUserMessages(
             parserVersion: PARSER_VERSION,
             sourcePath: dbPath,
           });
-          if (m.timeCreated > batchMaxMs) batchMaxMs = m.timeCreated;
         }
       }
 
@@ -115,6 +135,8 @@ export function ingestOpencodeUserMessages(
           lastRunAt: nowIso,
           lastStatus: "success",
           lastError: null,
+          // 逐批不推版本号 —— 中途崩掉时剩下的 session 还要靠它触发重扫。
+          ingestVersion: storedVersion,
         });
       }
     }
@@ -124,6 +146,8 @@ export function ingestOpencodeUserMessages(
       lastRunAt: nowIso,
       lastStatus: "success",
       lastError: null,
+      // 只有整轮跑完才推进版本号。
+      ingestVersion: OPENCODE_INGEST_VERSION,
     });
     return { status: "success", scannedSessions: scanned, upserted, watermarkMs: watermark };
   } catch (e) {
@@ -133,6 +157,8 @@ export function ingestOpencodeUserMessages(
       lastRunAt: nowIso,
       lastStatus: "failed",
       lastError: error,
+      // 中途出错 = 这一轮不完整,保留旧版本号让下轮重来。
+      ingestVersion: storedVersion,
     });
     return {
       status: upserted > 0 ? "partial" : "failed",

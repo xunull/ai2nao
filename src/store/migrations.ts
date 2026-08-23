@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 55;
+export const SCHEMA_VERSION = 56;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -72,6 +72,7 @@ export function migrate(db: Database.Database): void {
     applyV53(db);
     applyV54(db);
     applyV55(db);
+    applyV56(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -133,6 +134,7 @@ export function migrate(db: Database.Database): void {
   if (v < 53) applyV53(db);
   if (v < 54) applyV54(db);
   if (v < 55) applyV55(db);
+  if (v < 56) applyV56(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2805,5 +2807,50 @@ function applyV55(db: Database.Database): void {
       );
     `);
     db.exec("UPDATE meta_schema SET version = 55 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V56 —— `agent_user_messages_sync_state` 加 `ingest_version`。
+ *
+ * 为什么需要它:ingest 的口径改了之后,**光改代码不够** —— 已入库的行不会重算,
+ * 而水位会挡住重扫。仓库对这件事早有家法:五个 token refresh 都是
+ * 「读 state 里的版本号,与代码常量比对,不符就本轮强制 full」
+ * (见 `claudeTokenUsage/refresh.ts:216-220`)。这一列把同一套机制给到四个
+ * `agent_user_messages` 的 ingest。
+ *
+ * 直接触发它的是 opencode ingest 的水位 bug:消息级过滤器读一个在批循环里被
+ * 改写的水位,导致「早创建、晚更新」的 session 的老消息被永久跳过,
+ * 真库实测丢了 550/1934 条(28.4%)。修完代码后,既有装机仍需重扫一次才能回填 ——
+ * 而重扫正是靠这一列触发的。
+ *
+ * 默认 0:另外三个 ingest 目前没有版本方案,写 0 表示「未启用」,不是「版本 0 已生效」。
+ */
+function applyV56(db: Database.Database): void {
+  // 表还不在(某些测试手工构造的部分旧库)→ 只推版本号。真实迁移链里它由更早的
+  // migration 建好,走不到这一支;PRAGMA 对不存在的表返回空数组而不是抛,
+  // 所以必须显式判存在,否则会一路走到 ALTER TABLE 才炸。
+  const tableExists = db
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_user_messages_sync_state'"
+    )
+    .get();
+  if (!tableExists) {
+    db.exec("UPDATE meta_schema SET version = 56 WHERE id = 1;");
+    return;
+  }
+  const cols = db
+    .prepare("PRAGMA table_info(agent_user_messages_sync_state)")
+    .all() as { name: string }[];
+  if (cols.some((c) => c.name === "ingest_version")) {
+    db.exec("UPDATE meta_schema SET version = 56 WHERE id = 1;");
+    return;
+  }
+  db.transaction(() => {
+    db.exec(`
+      ALTER TABLE agent_user_messages_sync_state
+        ADD COLUMN ingest_version INTEGER NOT NULL DEFAULT 0;
+    `);
+    db.exec("UPDATE meta_schema SET version = 56 WHERE id = 1;");
   })();
 }

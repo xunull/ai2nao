@@ -74,4 +74,13 @@ export type AgentUserMessageSyncState = {
   lastRunAt: string | null;
   lastStatus: string | null;
   lastError: string | null;
+  /**
+   * 该源 ingest 口径的版本号（V56）。与代码里的常量比对,不符则本轮强制全量重扫 ——
+   * 与五个 token refresh 的 `rule_version` 同一套家法
+   * (`claudeTokenUsage/refresh.ts:216-220`)。
+   *
+   * 可选:目前只有 opencode 启用了版本方案,另外三个 ingest 写 0,
+   * 含义是「未启用」而不是「版本 0 已生效」。
+   */
+  ingestVersion?: number;
 };

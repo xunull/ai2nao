@@ -113,7 +113,8 @@ export function getSyncState(
   const r = db
     .prepare(
       `SELECT watermark_ms AS watermarkMs, last_run_at AS lastRunAt,
-              last_status AS lastStatus, last_error AS lastError
+              last_status AS lastStatus, last_error AS lastError,
+              ingest_version AS ingestVersion
        FROM agent_user_messages_sync_state WHERE source = ?`
     )
     .get(source) as
@@ -122,6 +123,7 @@ export function getSyncState(
         lastRunAt: string | null;
         lastStatus: string | null;
         lastError: string | null;
+        ingestVersion: number | null;
       }
     | undefined;
   if (!r) return null;
@@ -130,6 +132,7 @@ export function getSyncState(
     lastRunAt: r.lastRunAt,
     lastStatus: r.lastStatus,
     lastError: r.lastError,
+    ingestVersion: r.ingestVersion ?? 0,
   };
 }
 
@@ -140,18 +143,21 @@ export function setSyncState(
 ): void {
   db.prepare(
     `INSERT INTO agent_user_messages_sync_state
-       (source, watermark_ms, last_run_at, last_status, last_error)
-     VALUES (@source, @watermarkMs, @lastRunAt, @lastStatus, @lastError)
+       (source, watermark_ms, last_run_at, last_status, last_error, ingest_version)
+     VALUES (@source, @watermarkMs, @lastRunAt, @lastStatus, @lastError, @ingestVersion)
      ON CONFLICT(source) DO UPDATE SET
         watermark_ms = excluded.watermark_ms,
         last_run_at = excluded.last_run_at,
         last_status = excluded.last_status,
-        last_error = excluded.last_error`
+        last_error = excluded.last_error,
+        ingest_version = excluded.ingest_version`
   ).run({
     source,
     watermarkMs: state.watermarkMs,
     lastRunAt: state.lastRunAt,
     lastStatus: state.lastStatus,
     lastError: state.lastError,
+    // 未启用版本方案的源写 0 —— 见 AgentUserMessageSyncState.ingestVersion。
+    ingestVersion: state.ingestVersion ?? 0,
   });
 }
