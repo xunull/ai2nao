@@ -14,6 +14,7 @@
  */
 
 import type { OpencodeRawMessage, OpencodeRawPart } from "./stateDb.js";
+import { parseDataUri, putBlob } from "../blobStore.js";
 
 export type ParsedPart = {
   type?: string;
@@ -121,6 +122,41 @@ export function parsePartData(data: string): ParsedPart {
 }
 
 /**
+ * 把 `file` part 里内联的 `data:` URI 抽进 blob 仓,原地换成一个引用桩。
+ *
+ * 真库实测:129 段内联附件共 53.2 MB(平均 422 KB / 最大 3.6 MB),让 1934 行
+ * opencode 消息的 `raw_payload_json` 占到 65.8 MB,而真正的正文只有 12 MB。
+ *
+ * 只动 `data:` 开头的 —— `file://` 那种是本地路径引用,本身就几个字节,动它没收益。
+ *
+ * **返回的仍然是 JSON 字符串**,因为载荷是「字符串数组的 JSON」,
+ * 而 `recleanOpencodeFromPayload` 做的是 `arr.map(x => String(x))` 再 parse。
+ * 塞一个对象进去会变成 `"[object Object]"`,往返就断了。
+ *
+ * blob 写失败时**原样返回**:宁可继续占地方,也不能出现「正文剥了、blob 没写成」
+ * 那种两头落空的行。
+ */
+export function slimPartData(data: string): string {
+  let parsed: ParsedPart & { url?: unknown; mime?: unknown; filename?: unknown };
+  try {
+    parsed = JSON.parse(data) as typeof parsed;
+  } catch {
+    return data; // 坏 JSON 原样留底,重清洗时自会跳过
+  }
+  if (parsed.type !== "file" || typeof parsed.url !== "string") return data;
+  const decoded = parseDataUri(parsed.url);
+  if (!decoded) return data; // file:// 引用或坏 URI —— 不动
+
+  const ref = putBlob(decoded.bytes, decoded.mime ?? (typeof parsed.mime === "string" ? parsed.mime : null));
+  if (!ref) return data; // 写不成就不剥
+
+  const stub: Record<string, unknown> = { ...parsed };
+  delete stub.url;
+  stub.blob = { sha256: ref.sha256, bytes: ref.bytes, mime: ref.mime };
+  return JSON.stringify(stub);
+}
+
+/**
  * oh-my-opencode 斜杠命令展开:`/graphify` 展成 ~2000 字模板,清洗后的正文**开头**是
  * `<auto-slash-command>` 标记 + `# /<name> Command` 头。抽屉据此折叠。
  *
@@ -208,7 +244,9 @@ export function extractOpencodeUserMessage(
     .filter((pd) => pd.type === "text" && typeof pd.text === "string")
     .map((pd) => pd.text as string)
     .join("\n\n");
-  const rawPayloadJson = JSON.stringify(rawParts.map((p) => p.data));
+  // 附件本体不进载荷 —— 见 slimPartData 的注释。写不成 blob 就原样保留,
+  // 绝不在没写成的情况下把正文剥掉。
+  const rawPayloadJson = JSON.stringify(rawParts.map((p) => slimPartData(p.data)));
   const cleanedText = cleanOpencodeUserMessageParts(parsed);
   return {
     messageId: message.id,

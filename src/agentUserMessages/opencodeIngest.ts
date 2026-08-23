@@ -48,8 +48,10 @@ export type OpencodeIngestResult = {
  * 1 = 修掉水位 bug 后的口径。此前消息级过滤器读一个在批循环里被改写的水位,
  *     导致「早创建、晚更新」的 session 的老消息被永久跳过(真库丢了 550/1934 条)。
  * 2 = 收 assistant 正文 + 逐消息 token 事件。此前 role 门只放 user 过。
+ * 3 = 内联附件抽进 blob 仓,载荷只留引用桩。此前 129 段 data: URI 共 53.2 MB
+ *     原样躺在 raw_payload_json 里。
  */
-export const OPENCODE_INGEST_VERSION = 2;
+export const OPENCODE_INGEST_VERSION = 3;
 
 export function ingestOpencodeUserMessages(
   db: Database.Database, // index.db(写)
