@@ -288,22 +288,40 @@ export function loadSessionMessagesAndParts(
 export function listAllSessionsForIngest(
   db: Database.Database,
   dbPath: string
-): { id: string; timeUpdatedMs: number; directory: string }[] {
+): {
+  id: string;
+  timeUpdatedMs: number;
+  timeCreatedMs: number | null;
+  timeArchivedMs: number | null;
+  directory: string;
+  title: string | null;
+}[] {
   assertSchema(db, dbPath);
   let rows: Record<string, unknown>[];
   try {
+    // title / time_created / time_archived 供 `opencode_session`(V58)——
+    // 事件表只有 session_id,项目与归档状态得从这里带出去。
     rows = db
       .prepare(
-        `SELECT id, time_updated AS t, directory FROM session ORDER BY time_updated ASC, id ASC`
+        `SELECT id, time_updated AS t, time_created AS c, time_archived AS a,
+                directory, title
+         FROM session ORDER BY time_updated ASC, id ASC`
       )
       .all() as Record<string, unknown>[];
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new OpencodeHistoryError("schema-incompatible", msg, dbPath);
   }
+  const ms = (v: unknown): number | null => {
+    const n = Number(v ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
   return rows.map((r) => ({
     id: String(r.id ?? ""),
     timeUpdatedMs: Number(r.t ?? 0),
+    timeCreatedMs: ms(r.c),
+    timeArchivedMs: ms(r.a),
     directory: String(r.directory ?? ""),
+    title: typeof r.title === "string" && r.title.trim() ? r.title : null,
   }));
 }

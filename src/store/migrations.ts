@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 57;
+export const SCHEMA_VERSION = 58;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -74,6 +74,7 @@ export function migrate(db: Database.Database): void {
     applyV55(db);
     applyV56(db);
     applyV57(db);
+    applyV58(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -137,6 +138,7 @@ export function migrate(db: Database.Database): void {
   if (v < 55) applyV55(db);
   if (v < 56) applyV56(db);
   if (v < 57) applyV57(db);
+  if (v < 58) applyV58(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2919,5 +2921,58 @@ function applyV57(db: Database.Database): void {
       );
     `);
     db.exec("UPDATE meta_schema SET version = 57 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V58 —— opencode 的会话级表。
+ *
+ * V57 的事件表只有 `session_id`,没有项目 —— 而看板的一切聚合都按项目。
+ * index.db 里唯一带 opencode 项目信息的是 `agent_user_messages.project`,
+ * 但那是 **slug**(`/` → `-`),而看板用的是**规范路径**。slug 不可逆:
+ * 目录名本身带 `-` 的(如 `clash-verge-rev`)反解不回来。所以必须单独存。
+ *
+ * `project_key` 在 ingest 里用 `canonicalizePath(directory, {bestEffort})` 算好 ——
+ * 它要 `realpathSync`,进不了 SQL,与 claude/codex/kimi 同一口径。
+ *
+ * 这张表一次解开三件事:
+ *   - 排行页:事件表 join 出项目(O5)
+ *   - 趋势页:每个时间桶的 session 计数,coverage 三态才有分母(O6)
+ *   - 列表页:`messageCount` 不再写死 0(O8)
+ */
+function applyV58(db: Database.Database): void {
+  const exists = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='opencode_session'")
+    .get();
+  if (exists) {
+    db.exec("UPDATE meta_schema SET version = 58 WHERE id = 1;");
+    return;
+  }
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE opencode_session (
+        session_id     TEXT PRIMARY KEY,
+        directory      TEXT NOT NULL,
+        -- canonicalizePath(directory) —— 与 claude/codex/kimi 的 project_key 同口径
+        project_key    TEXT NOT NULL,
+        project_path   TEXT NOT NULL,
+        title          TEXT,
+        created_at     TEXT,
+        last_updated_at TEXT NOT NULL,
+        -- opencode 的 time_archived。查询侧默认排除已归档,与它自己的列表口径一致。
+        archived_at    TEXT,
+        -- 真人提问条数。与 kimi 同口径(is_human=1),不是消息总数。
+        human_message_count INTEGER NOT NULL DEFAULT 0,
+        -- 含 AI 正文的全部入库条数。用于分辨「零提问」与「正文没入库」。
+        total_message_count INTEGER NOT NULL DEFAULT 0,
+        updated_at     TEXT NOT NULL
+      );
+
+      CREATE INDEX idx_opencode_session_project
+        ON opencode_session(project_key, last_updated_at);
+      CREATE INDEX idx_opencode_session_updated
+        ON opencode_session(last_updated_at);
+    `);
+    db.exec("UPDATE meta_schema SET version = 58 WHERE id = 1;");
   })();
 }

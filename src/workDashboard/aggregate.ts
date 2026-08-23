@@ -577,8 +577,11 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     // opencode token/status query its own opencode.db (not the index db), so
     // these are wired regardless of `db`.
     listOpencode: collectDefaultOpencode,
-    listOpencodeProjectTokenUsage: async ({ projectKeys, from }) =>
-      listOpencodeProjectTokenUsage(undefined, { projectKeys, from }),
+    // 改读 index.db(V57 事件表 + V58 会话表)—— 不再每次看板加载都打开
+    // 那个 3.2 GB 的外部库,也不再漏算 cache。
+    listOpencodeProjectTokenUsage: db
+      ? async ({ projectKeys, from }) => listOpencodeProjectTokenUsage(db, { projectKeys, from })
+      : undefined,
     listKimi: db ? async () => collectIndexedKimi(db) : undefined,
     listKimiProjectTokenUsage: db
       ? async ({ projectKeys, from }) => listKimiProjectTokenUsage(db, { projectKeys, from })
@@ -586,7 +589,7 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     getKimiTokenUsageStatus: db
       ? async () => getKimiTokenUsageStatus(db)
       : undefined,
-    getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(undefined),
+    getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(db),
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
           // Duration is a separate round with its own claude|codex union — drop

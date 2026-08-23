@@ -28,6 +28,10 @@ import {
   upsertOpencodeTokenEvents,
   type OpencodeTokenEvent,
 } from "../opencodeTokenUsage/events.js";
+import {
+  upsertOpencodeSessions,
+  type OpencodeSessionRow,
+} from "../opencodeTokenUsage/sessions.js";
 import type { UpsertUserMessageInput } from "./types.js";
 
 /** 每 N 个 session 一事务(D9:分批,不锁大事务)。 */
@@ -50,8 +54,9 @@ export type OpencodeIngestResult = {
  * 2 = 收 assistant 正文 + 逐消息 token 事件。此前 role 门只放 user 过。
  * 3 = 内联附件抽进 blob 仓,载荷只留引用桩。此前 129 段 data: URI 共 53.2 MB
  *     原样躺在 raw_payload_json 里。
+ * 4 = 写 opencode_session(V58)。事件表只有 session_id,项目得从这里 join。
  */
-export const OPENCODE_INGEST_VERSION = 3;
+export const OPENCODE_INGEST_VERSION = 4;
 
 export function ingestOpencodeUserMessages(
   db: Database.Database, // index.db(写)
@@ -104,6 +109,7 @@ export function ingestOpencodeUserMessages(
       const batch = todo.slice(i, i + BATCH_SESSIONS);
       const rows: UpsertUserMessageInput[] = [];
       const batchEvents: OpencodeTokenEvent[] = [];
+      const batchSessions: OpencodeSessionRow[] = [];
       // 水位只跟 session 的 timeUpdated —— 与上面 todo 的筛子同一个时钟。
       let batchMaxMs = watermark;
 
@@ -117,6 +123,8 @@ export function ingestOpencodeUserMessages(
         // answering_user_key:AI 那条回的是上一条 user。messages 已按时间升序,
         // 顺序扫一遍即可 —— 与 claude 侧同一做法。
         let lastUserKey: string | null = null;
+        let humanCount = 0;
+        let totalCount = 0;
         const events: OpencodeTokenEvent[] = [];
         for (const m of messages) {
           sourceMessages++;
@@ -141,6 +149,7 @@ export function ingestOpencodeUserMessages(
             // 与 claude 的「纯 thinking 行跳过而不是写空串」同一条规矩,
             // 否则空行会污染 FTS。
             if (asst.text.trim()) {
+              totalCount++;
               rows.push({
                 source: "opencode",
                 sourceSessionId: s.id,
@@ -166,6 +175,8 @@ export function ingestOpencodeUserMessages(
           const ex = extractOpencodeUserMessage(m, byMsg.get(m.id) ?? []);
           if (!ex) continue; // 非 user 轮
           lastUserKey = ex.messageId;
+          totalCount++;
+          if (ex.isHuman) humanCount++;
           rows.push({
             source: "opencode",
             sourceSessionId: s.id,
@@ -182,11 +193,23 @@ export function ingestOpencodeUserMessages(
           });
         }
         batchEvents.push(...events);
+        batchSessions.push({
+          sessionId: s.id,
+          directory: s.directory,
+          title: s.title,
+          createdAtIso: s.timeCreatedMs ? new Date(s.timeCreatedMs).toISOString() : null,
+          lastUpdatedAtIso: new Date(s.timeUpdatedMs).toISOString(),
+          archivedAtIso: s.timeArchivedMs ? new Date(s.timeArchivedMs).toISOString() : null,
+          // 与 kimi 同口径:messageCount 数真人提问,不是消息总数。
+          humanMessageCount: humanCount,
+          totalMessageCount: totalCount,
+        });
       }
 
       // 一批一事务:upsert + FTS 同步;成功后推水位(部分失败该批回滚、水位不进 → 下轮重扫)。
       upserted += upsertUserMessagesBatch(db, rows, nowIso);
       tokenEvents += upsertOpencodeTokenEvents(db, batchEvents);
+      upsertOpencodeSessions(db, batchSessions, nowIso);
       if (batchMaxMs > watermark) {
         watermark = batchMaxMs;
         setSyncState(db, "opencode", {
