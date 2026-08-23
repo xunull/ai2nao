@@ -33,7 +33,7 @@
       "codexCostUsd": null,
       "codexTokens": 0,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 690,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
@@ -50,7 +50,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 350
     },
     {
       "bucketStart": "2026-08-19T08:00:00.000Z",
@@ -347,7 +347,7 @@
       "codexCostUsd": null,
       "codexTokens": 0,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 5690,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
@@ -364,7 +364,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 5150
     },
     {
       "bucketStart": "2026-08-19T08:00:00.000Z",
@@ -977,7 +977,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -986,11 +986,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 2200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 225
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -999,11 +999,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 2400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 690,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 350
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -1369,7 +1369,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -1378,11 +1378,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 3200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 400,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1725
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -1391,11 +1391,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 8400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 5690,
       "minimaxCostUsd": null,
       "minimaxTokens": 1660,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 5150
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -1462,7 +1462,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -1471,11 +1471,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 2200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 225
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -1484,11 +1484,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 2400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 690,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 350
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -1555,7 +1555,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -1564,11 +1564,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 3200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 400,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1725
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -1577,11 +1577,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 8400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 5690,
       "minimaxCostUsd": null,
       "minimaxTokens": 1660,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 5150
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -1739,7 +1739,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -1748,11 +1748,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 2200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 225
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -1761,11 +1761,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 2400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 690,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 350
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -1923,7 +1923,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T16:00:00.000Z",
@@ -1932,11 +1932,11 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 3200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 400,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1725
     },
     {
       "bucketStart": "2026-08-18T16:00:00.000Z",
@@ -1945,11 +1945,11 @@
       "codexCostUsd": 0.0092,
       "codexTokens": 8400,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 5690,
       "minimaxCostUsd": null,
       "minimaxTokens": 1660,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 5150
     },
     {
       "bucketStart": "2026-08-19T16:00:00.000Z",
@@ -2003,7 +2003,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T13:00:00.000Z",
@@ -2090,7 +2090,7 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 2200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
@@ -2107,7 +2107,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 225
     },
     {
       "bucketStart": "2026-08-18T13:00:00.000Z",
@@ -2181,7 +2181,7 @@
       "codexCostUsd": null,
       "codexTokens": 0,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 690,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
@@ -2198,7 +2198,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 350
     },
     {
       "bucketStart": "2026-08-19T10:00:00.000Z",
@@ -2317,7 +2317,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 165
     },
     {
       "bucketStart": "2026-08-17T13:00:00.000Z",
@@ -2404,7 +2404,7 @@
       "codexCostUsd": 0.0062,
       "codexTokens": 3200,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 440,
       "minimaxCostUsd": null,
       "minimaxTokens": 400,
       "opencodeCostUsd": null,
@@ -2421,7 +2421,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1725
     },
     {
       "bucketStart": "2026-08-18T13:00:00.000Z",
@@ -2495,7 +2495,7 @@
       "codexCostUsd": null,
       "codexTokens": 0,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 5690,
       "minimaxCostUsd": null,
       "minimaxTokens": 1660,
       "opencodeCostUsd": null,
@@ -2512,7 +2512,7 @@
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 5150
     },
     {
       "bucketStart": "2026-08-19T10:00:00.000Z",
@@ -2627,11 +2627,11 @@
       "codexCostUsd": 0.00273,
       "codexTokens": 975,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 280,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 200
     },
     {
       "bucketStart": "2026-06-14T16:00:00.000Z",
@@ -2757,11 +2757,11 @@
       "codexCostUsd": 0.0175,
       "codexTokens": 5370,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 1130,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 740
     }
   ],
   "window:3m/includeCache=true": [
@@ -2798,11 +2798,11 @@
       "codexCostUsd": 0.00273,
       "codexTokens": 1875,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 1480,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1200
     },
     {
       "bucketStart": "2026-06-14T16:00:00.000Z",
@@ -2928,11 +2928,11 @@
       "codexCostUsd": 0.0175,
       "codexTokens": 12370,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 6130,
       "minimaxCostUsd": null,
       "minimaxTokens": 2060,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 7040
     }
   ],
   "window:6m/includeCache=false": [
@@ -3138,11 +3138,11 @@
       "codexCostUsd": 0.00273,
       "codexTokens": 975,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 280,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 200
     },
     {
       "bucketStart": "2026-06-14T16:00:00.000Z",
@@ -3268,11 +3268,11 @@
       "codexCostUsd": 0.0175,
       "codexTokens": 5370,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 1130,
       "minimaxCostUsd": null,
       "minimaxTokens": 960,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 740
     }
   ],
   "window:6m/includeCache=true": [
@@ -3478,11 +3478,11 @@
       "codexCostUsd": 0.00273,
       "codexTokens": 1875,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 1480,
       "minimaxCostUsd": null,
       "minimaxTokens": 0,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 1200
     },
     {
       "bucketStart": "2026-06-14T16:00:00.000Z",
@@ -3608,11 +3608,11 @@
       "codexCostUsd": 0.0175,
       "codexTokens": 12370,
       "kimiCostUsd": null,
-      "kimiTokens": 0,
+      "kimiTokens": 6130,
       "minimaxCostUsd": null,
       "minimaxTokens": 2060,
       "opencodeCostUsd": null,
-      "opencodeTokens": 0
+      "opencodeTokens": 7040
     }
   ]
 }

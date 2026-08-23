@@ -155,6 +155,68 @@ function seedMinimax(db: Database.Database, r: MinimaxSeed): void {
   ).run(r.at, r.method, r.model, r.input, r.output);
 }
 
+type KimiSeed = {
+  session: string;
+  agent: string;
+  updated: string;
+  status: "full" | "unknown" | "error";
+  /** 原子分量 —— kimi 不存融合值。 */
+  fresh: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  missingSince?: string | null;
+};
+
+/** kimi 是 **agent 粒度**:主表按 (session_id, agent) 建,覆盖率分母是 agent 文件数。 */
+function seedKimi(db: Database.Database, r: KimiSeed): void {
+  db.prepare(
+    `INSERT INTO kimi_agent_token_usage
+       (session_id, agent, file_path, file_mtime_ms, file_size_bytes, root_kind,
+        cwd, project_key, project_path, identity_confidence, title, model,
+        created_at, last_updated_at, token_status, parse_error, missing_since,
+        source_seen_at, updated_at)
+     VALUES (?, ?, ?, 0, 0, 'cli', '/fx/p', '/fx/p', '/fx/p', 'high', null,
+             'kimi-code/k3', null, ?, ?, null, ?, ?, ?)`
+  ).run(r.session, r.agent, `/fx/${r.session}/${r.agent}`, r.updated, r.status,
+        r.missingSince ?? null, r.updated, r.updated);
+  db.prepare(
+    `INSERT INTO kimi_token_usage_event
+       (session_id, agent, event_ordinal, event_at,
+        fresh_input, cache_read_input, cache_creation_input, output)
+     VALUES (?, ?, 0, ?, ?, ?, ?, ?)`
+  ).run(r.session, r.agent, r.updated, r.fresh, r.cacheRead, r.cacheCreation, r.output);
+}
+
+type OpencodeSeed = {
+  session: string;
+  updated: string;
+  fresh: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  archived?: boolean;
+};
+
+/**
+ * opencode 是 **session 粒度**,且没有「解析失败」这一档 —— token 由它自己
+ * 算好写在 message.data 里,拿到就是 full。所以没有 status 参数。
+ */
+function seedOpencode(db: Database.Database, r: OpencodeSeed): void {
+  db.prepare(
+    `INSERT INTO opencode_session
+       (session_id, directory, project_key, project_path, title, created_at,
+        last_updated_at, archived_at, human_message_count, total_message_count, updated_at)
+     VALUES (?, '/fx/oc', '/fx/oc', '/fx/oc', 'fx 会话', ?, ?, ?, 1, 2, ?)`
+  ).run(r.session, r.updated, r.updated, r.archived ? r.updated : null, r.updated);
+  db.prepare(
+    `INSERT INTO opencode_token_usage_event
+       (session_id, message_id, event_at, fresh_input, cache_read_input,
+        cache_creation_input, output, reasoning_output)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+  ).run(r.session, `${r.session}-m`, r.updated, r.fresh, r.cacheRead, r.cacheCreation, r.output);
+}
+
 /**
  * 造一个确定性的 fixture 库。
  *
@@ -214,6 +276,31 @@ export function buildTokensTrendFixture(): Database.Database {
   seedMinimax(db, { at: "2026-08-18T08:00:00.000Z", method: MINIMAX_METHOD_CACHE_CREATE, model: "fx-mm", input: 400, output: 0 });
   seedMinimax(db, { at: "2026-07-16T04:00:00.000Z", method: "Text API", model: "fx-mm", input: 300, output: 20 });
 
+  // ── kimi ────────────────────────────────────────────────────────────────
+  // agent 粒度:同一会话两个 agent,其中一个坏掉 —— X2 的落点
+  // (坏 agent 不贡献 token,同会话另一个照常计入)。
+  seedKimi(db, { session: "k-s1", agent: "main", updated: "2026-08-19T06:00:00.000Z", status: "full", fresh: 600, output: 90, cacheRead: 5000, cacheCreation: 0 });
+  seedKimi(db, { session: "k-s1", agent: "agent-0", updated: "2026-08-19T06:30:00.000Z", status: "error", fresh: 999999, output: 999999, cacheRead: 0, cacheCreation: 0 });
+  // 无 cache 的分支
+  seedKimi(db, { session: "k-s2", agent: "main", updated: "2026-08-18T09:00:00.000Z", status: "full", fresh: 400, output: 40, cacheRead: 0, cacheCreation: 0 });
+  // unknown:进 agent 计数,不进 token SUM
+  seedKimi(db, { session: "k-s3", agent: "main", updated: "2026-08-17T11:00:00.000Z", status: "unknown", fresh: 888888, output: 888888, cacheRead: 0, cacheCreation: 0 });
+  // missing_since:整行排除,连分母都不进
+  seedKimi(db, { session: "k-s4", agent: "main", updated: "2026-08-13T07:00:00.000Z", status: "full", fresh: 777777, output: 777777, cacheRead: 0, cacheCreation: 0, missingSince: "2026-08-14T00:00:00.000Z" });
+  // 跨月:让 monthRange 也有 kimi 的份
+  seedKimi(db, { session: "k-jun", agent: "main", updated: "2026-06-12T05:00:00.000Z", status: "full", fresh: 250, output: 30, cacheRead: 1200, cacheCreation: 0 });
+
+  // ── opencode ────────────────────────────────────────────────────────────
+  // 三个原子分量都非零(主力形状)
+  seedOpencode(db, { session: "o-s1", updated: "2026-08-19T07:00:00.000Z", fresh: 300, output: 50, cacheRead: 4000, cacheCreation: 800 });
+  // cacheCreation 为 0 的分支
+  seedOpencode(db, { session: "o-s2", updated: "2026-08-18T10:00:00.000Z", fresh: 200, output: 25, cacheRead: 1500, cacheCreation: 0 });
+  // 完全无 cache
+  seedOpencode(db, { session: "o-s3", updated: "2026-08-17T12:00:00.000Z", fresh: 150, output: 15, cacheRead: 0, cacheCreation: 0 });
+  // 已归档:整场排除(与 opencode 自己的列表口径一致)
+  seedOpencode(db, { session: "o-archived", updated: "2026-08-15T05:00:00.000Z", fresh: 666666, output: 666666, cacheRead: 0, cacheCreation: 0, archived: true });
+  seedOpencode(db, { session: "o-jun", updated: "2026-06-13T06:00:00.000Z", fresh: 180, output: 20, cacheRead: 900, cacheCreation: 100 });
+
   // 2026-08-16 整天没有任何源的数据 —— 空桶分支,zero-fill 必须补出这一格。
   return db;
 }
@@ -269,12 +356,30 @@ export function assertFixtureCoverage(db: Database.Database): CoverageCombo[] {
     one("minimax/普通 method", `SELECT COUNT(*) n FROM minimax_token_usage_event WHERE method NOT IN (?, ?)`, MINIMAX_METHOD_CACHE_READ, MINIMAX_METHOD_CACHE_CREATE),
     one("minimax/cache-read", `SELECT COUNT(*) n FROM minimax_token_usage_event WHERE method=?`, MINIMAX_METHOD_CACHE_READ),
     one("minimax/cache-create", `SELECT COUNT(*) n FROM minimax_token_usage_event WHERE method=?`, MINIMAX_METHOD_CACHE_CREATE),
+    // kimi × agent 粒度三态 —— 分母是 agent 文件数,不是 session
+    one("kimi/status=full", `SELECT COUNT(*) n FROM kimi_agent_token_usage WHERE token_status='full' AND missing_since IS NULL`),
+    one("kimi/status=unknown", `SELECT COUNT(*) n FROM kimi_agent_token_usage WHERE token_status='unknown' AND missing_since IS NULL`),
+    one("kimi/status=error", `SELECT COUNT(*) n FROM kimi_agent_token_usage WHERE token_status='error' AND missing_since IS NULL`),
+    one("kimi/missing_since 非空", `SELECT COUNT(*) n FROM kimi_agent_token_usage WHERE missing_since IS NOT NULL`),
+    // 同会话多 agent —— X2 的落点:坏 agent 不贡献,同会话另一个照常计入
+    one("kimi/同会话 ≥2 个 agent", `SELECT COUNT(*) n FROM (SELECT session_id FROM kimi_agent_token_usage GROUP BY session_id HAVING COUNT(*) >= 2)`),
+    one("kimi/cacheRead 非零", `SELECT COUNT(*) n FROM kimi_token_usage_event WHERE cache_read_input > 0`),
+    one("kimi/完全无 cache", `SELECT COUNT(*) n FROM kimi_token_usage_event WHERE cache_read_input = 0 AND cache_creation_input = 0`),
+    // opencode × session 粒度。它没有「解析失败」这一档 —— token 由源自己算好,
+    // 拿到就是 full,所以这里没有 status 组合,取而代之的是归档分支。
+    one("opencode/未归档", `SELECT COUNT(*) n FROM opencode_session WHERE archived_at IS NULL`),
+    one("opencode/已归档", `SELECT COUNT(*) n FROM opencode_session WHERE archived_at IS NOT NULL`),
+    one("opencode/三分量都非零", `SELECT COUNT(*) n FROM opencode_token_usage_event WHERE fresh_input>0 AND cache_read_input>0 AND cache_creation_input>0`),
+    one("opencode/cacheCreation 为零", `SELECT COUNT(*) n FROM opencode_token_usage_event WHERE cache_read_input>0 AND cache_creation_input=0`),
+    one("opencode/完全无 cache", `SELECT COUNT(*) n FROM opencode_token_usage_event WHERE cache_read_input=0 AND cache_creation_input=0`),
     // 跨月:monthRange 与月模式要有多个月可选
     one("跨月/至少 4 个不同的自然月", `
       SELECT COUNT(*) n FROM (
         SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') m FROM claude_session_token_usage
         UNION SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') FROM codex_session_token_usage
         UNION SELECT DISTINCT strftime('%Y-%m', event_at, 'localtime') FROM minimax_token_usage_event
+        UNION SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') FROM kimi_agent_token_usage WHERE missing_since IS NULL
+        UNION SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') FROM opencode_session WHERE archived_at IS NULL
       ) WHERE m IS NOT NULL`),
     // 价格表本身
     one("price/model_prices 有行", `SELECT COUNT(*) n FROM model_prices`),
