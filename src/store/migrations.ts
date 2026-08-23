@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 58;
+export const SCHEMA_VERSION = 59;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -75,6 +75,7 @@ export function migrate(db: Database.Database): void {
     applyV56(db);
     applyV57(db);
     applyV58(db);
+    applyV59(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -139,6 +140,7 @@ export function migrate(db: Database.Database): void {
   if (v < 56) applyV56(db);
   if (v < 57) applyV57(db);
   if (v < 58) applyV58(db);
+  if (v < 59) applyV59(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2974,5 +2976,122 @@ function applyV58(db: Database.Database): void {
         ON opencode_session(last_updated_at);
     `);
     db.exec("UPDATE meta_schema SET version = 58 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V59 —— 两张 duration 表去掉 `source` 的 CHECK。
+ *
+ * `work_session_duration` 与 `work_duration_state` 的 CHECK 都只有
+ * `('claude-code','codex')` —— 所以「活跃时长」那一列**从来只算两个源**,
+ * opencode 与 kimi 都不在里面。排行页上它读起来像项目总时长,其实不是。
+ *
+ * SQLite 改不了 CHECK,只能重建。两张表都要 —— 只改一张会在首次写入另一张时炸
+ * (这是对抗性复审抓到的:原计划只写了 work_session_duration)。
+ *
+ * 改成**不设 CHECK**,而不是把值列全:约束下沉到写入边界(`WORK_DURATION_SOURCES`),
+ * 第五个源加进来时不用再动 schema。表很小(claude 216 + codex 362 = 578 行),
+ * 重建是毫秒级。
+ *
+ * 重建的四条纪律(见 learnings `sqlite-rebuild-what-survives`):
+ *   1. 显式列名,不用 `SELECT *` —— 列序错位是完全静默的
+ *   2. 四个索引随表消失,必须显式重建
+ *   3. 无触发器需要重建(已核对 sqlite_master)
+ *   4. 整个过程包 db.transaction
+ */
+function applyV59(db: Database.Database): void {
+  const hasCheck = (table: string): boolean => {
+    const row = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+      .get(table) as { sql?: string } | undefined;
+    return Boolean(row?.sql && /CHECK\s*\(\s*source\s+IN/i.test(row.sql));
+  };
+  if (!hasCheck("work_session_duration") && !hasCheck("work_duration_state")) {
+    db.exec("UPDATE meta_schema SET version = 59 WHERE id = 1;");
+    return;
+  }
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE work_session_duration_new (
+        source TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        -- 源产物的身份与变更信号。文件型源(claude/codex)填转写文件的路径/mtime/大小;
+        -- 库型源(opencode)填源库路径 + session 的 time_updated + 消息条数 ——
+        -- 语义都是「这个会话的原始材料变了没有」。
+        transcript_path TEXT NOT NULL,
+        transcript_mtime_ms INTEGER NOT NULL,
+        transcript_size_bytes INTEGER NOT NULL,
+        cwd TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        identity_confidence TEXT NOT NULL CHECK (identity_confidence IN ('high', 'low')),
+        title TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        wall_ms INTEGER NOT NULL DEFAULT 0,
+        active_ms INTEGER NOT NULL DEFAULT 0,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        idle_threshold_ms INTEGER NOT NULL,
+        duration_status TEXT NOT NULL CHECK (duration_status IN ('full', 'unknown', 'error')),
+        parse_error TEXT,
+        missing_since TEXT,
+        source_seen_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (source, session_id)
+      );
+
+      -- 显式列名。SELECT * 在列序错位时完全静默 —— 仓库吃过这个亏。
+      INSERT INTO work_session_duration_new
+        (source, session_id, transcript_path, transcript_mtime_ms, transcript_size_bytes,
+         cwd, project_key, project_path, identity_confidence, title, started_at, ended_at,
+         wall_ms, active_ms, event_count, idle_threshold_ms, duration_status, parse_error,
+         missing_since, source_seen_at, updated_at)
+      SELECT
+         source, session_id, transcript_path, transcript_mtime_ms, transcript_size_bytes,
+         cwd, project_key, project_path, identity_confidence, title, started_at, ended_at,
+         wall_ms, active_ms, event_count, idle_threshold_ms, duration_status, parse_error,
+         missing_since, source_seen_at, updated_at
+      FROM work_session_duration;
+
+      DROP TABLE work_session_duration;
+      ALTER TABLE work_session_duration_new RENAME TO work_session_duration;
+
+      -- 四个索引随表消失,逐个重建。
+      CREATE INDEX idx_work_duration_project_ended
+        ON work_session_duration(project_key, ended_at DESC);
+      CREATE INDEX idx_work_duration_source_session
+        ON work_session_duration(source, session_id);
+      CREATE INDEX idx_work_duration_transcript
+        ON work_session_duration(transcript_path);
+      CREATE INDEX idx_work_duration_missing
+        ON work_session_duration(missing_since);
+
+      CREATE TABLE work_duration_state_new (
+        source TEXT PRIMARY KEY,
+        rule_version INTEGER NOT NULL,
+        last_rebuilt_at TEXT,
+        last_error TEXT,
+        source_session_count INTEGER NOT NULL DEFAULT 0,
+        indexed_session_count INTEGER NOT NULL DEFAULT 0,
+        duration_known_session_count INTEGER NOT NULL DEFAULT 0,
+        duration_unknown_session_count INTEGER NOT NULL DEFAULT 0,
+        error_session_count INTEGER NOT NULL DEFAULT 0,
+        skipped_unchanged_count INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO work_duration_state_new
+        (source, rule_version, last_rebuilt_at, last_error, source_session_count,
+         indexed_session_count, duration_known_session_count, duration_unknown_session_count,
+         error_session_count, skipped_unchanged_count, duration_ms, updated_at)
+      SELECT
+         source, rule_version, last_rebuilt_at, last_error, source_session_count,
+         indexed_session_count, duration_known_session_count, duration_unknown_session_count,
+         error_session_count, skipped_unchanged_count, duration_ms, updated_at
+      FROM work_duration_state;
+      DROP TABLE work_duration_state;
+      ALTER TABLE work_duration_state_new RENAME TO work_duration_state;
+    `);
+    db.exec("UPDATE meta_schema SET version = 59 WHERE id = 1;");
   })();
 }

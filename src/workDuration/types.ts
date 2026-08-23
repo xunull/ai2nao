@@ -1,7 +1,17 @@
 export const WORK_DURATION_RULE_VERSION = 1;
 export const WORK_DURATION_IDLE_THRESHOLD_MS = 10 * 60 * 1000;
 
-export type WorkDurationSource = "claude-code" | "codex";
+/**
+ * 接入活跃时长的源。**这就是 V59 去掉 CHECK 之后的写入边界** ——
+ * 约束从 schema 下沉到这里,加第五个源不用再重建表。
+ */
+export const WORK_DURATION_SOURCES = ["claude-code", "codex", "opencode"] as const;
+
+export type WorkDurationSource = (typeof WORK_DURATION_SOURCES)[number];
+
+export function isWorkDurationSource(v: unknown): v is WorkDurationSource {
+  return (WORK_DURATION_SOURCES as readonly string[]).includes(v as string);
+}
 
 export type WorkDurationStatus = "full" | "unknown" | "error";
 
@@ -64,6 +74,7 @@ export type WorkDurationCombinedRefreshResult = {
   status: "success" | "partial" | "failed";
   claude: WorkDurationRefreshResult;
   codex: WorkDurationRefreshResult;
+  opencode: WorkDurationRefreshResult;
   errors: string[];
 };
 

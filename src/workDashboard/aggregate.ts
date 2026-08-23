@@ -30,7 +30,7 @@ import {
 } from "../kimiTokenUsage/queries.js";
 import { listKimiDashboardSessions } from "../kimiHistory/sessions.js";
 import { listWorkProjectDurationUsage } from "../workDuration/queries.js";
-import type { WorkDurationSource } from "../workDuration/types.js";
+import { isWorkDurationSource, type WorkDurationSource } from "../workDuration/types.js";
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import {
   normalizeWorkProjectIdentity,
@@ -592,14 +592,14 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     getOpencodeTokenUsageStatus: async () => getOpencodeTokenUsageStatus(db),
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
-          // Duration is a separate round with its own claude|codex union — drop
-          // opencode at the boundary rather than passing it an unknown source.
+          // V59 去掉了两张 duration 表的 CHECK,约束下沉到 WORK_DURATION_SOURCES。
+          // opencode 自 O7b 起有真实时长;kimi 仍未接入(它一个会话 N 个 agent,
+          // 单文件模型装不下,见 TODOS),所以这里仍要过滤而不是直接透传。
           listWorkProjectDurationUsage(db, {
             projectKeys,
             from,
-            sources: sources.filter(
-              (source): source is WorkDurationSource =>
-                source === "claude-code" || source === "codex"
+            sources: sources.filter((source): source is WorkDurationSource =>
+              isWorkDurationSource(source)
             ),
           })
       : undefined,

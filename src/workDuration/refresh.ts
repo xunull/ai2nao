@@ -591,18 +591,196 @@ export async function refreshCodexWorkDuration(
   };
 }
 
+/**
+ * opencode 的活跃时长。
+ *
+ * **与另外两家结构不同,而且小得多。** claude/codex 要遍历 JSONL、按 mtime 跳过
+ * 未变的文件、解析每一行拿时间戳;opencode 的时间戳在 O3/O5 之后已经全在
+ * index.db 里了,一条 SQL 就够:
+ *
+ * ```
+ *   opencode_token_usage_event.event_at        7430 条(全部 assistant 轮)
+ *   agent_user_messages(role='user').event_at_utc  1934 条
+ *   —— 合计 9364,与源库的 message 总数一条不差
+ * ```
+ *
+ * 所以这里**不碰那个 3.2 GB 的外部库**。跳过未变的判据也换成会话自己的
+ * `last_updated_at`(存进 transcript_mtime_ms 那一列,语义是「原始材料变了没有」)。
+ *
+ * 空闲阈值口径与另外两家完全一致 —— 复用同一个 `computeSessionDuration`,
+ * 不另写一套,否则三个源的「活跃」不是一个意思。
+ */
+export function refreshOpencodeWorkDuration(
+  db: Database.Database,
+  options: RefreshWorkDurationOptions = {}
+): WorkDurationRefreshResult {
+  const startedAt = Date.now();
+  const now = nowIso();
+  const source = "opencode" as const;
+  const errors: string[] = [];
+  let indexed = 0;
+  let known = 0;
+  let unknown = 0;
+  let skipped = 0;
+
+  let sessions: Array<{
+    sessionId: string;
+    directory: string;
+    projectKey: string;
+    projectPath: string;
+    title: string | null;
+    lastUpdatedAt: string;
+  }>;
+  try {
+    sessions = db
+      .prepare(
+        `SELECT session_id AS sessionId, directory, project_key AS projectKey,
+                project_path AS projectPath, title, last_updated_at AS lastUpdatedAt
+           FROM opencode_session
+          WHERE archived_at IS NULL`
+      )
+      .all() as typeof sessions;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    upsertWorkDurationState(db, {
+      source,
+      rule_version: WORK_DURATION_RULE_VERSION,
+      last_rebuilt_at: now,
+      last_error: msg,
+      source_session_count: 0,
+      indexed_session_count: 0,
+      duration_known_session_count: 0,
+      duration_unknown_session_count: 0,
+      error_session_count: 0,
+      skipped_unchanged_count: 0,
+      duration_ms: Date.now() - startedAt,
+      updated_at: now,
+    });
+    return {
+      ok: false,
+      status: "failed",
+      source,
+      sourceSessionCount: 0,
+      indexedSessionCount: 0,
+      durationKnownSessionCount: 0,
+      durationUnknownSessionCount: 0,
+      errorSessionCount: 0,
+      skippedUnchangedCount: 0,
+      missingMarkedCount: 0,
+      durationMs: Date.now() - startedAt,
+      errors: [msg],
+    };
+  }
+
+  // 一次取全部时间戳,按 session 分组 —— 逐会话查会是 964 次往返。
+  const stampRows = db
+    .prepare(
+      `SELECT session_id AS sid, event_at AS at FROM opencode_token_usage_event
+       UNION ALL
+       SELECT source_session_id AS sid, event_at_utc AS at
+         FROM agent_user_messages
+        WHERE source = 'opencode' AND role = 'user'`
+    )
+    .all() as { sid: string; at: string }[];
+  const bySession = new Map<string, string[]>();
+  for (const r of stampRows) {
+    const list = bySession.get(r.sid);
+    if (list) list.push(r.at);
+    else bySession.set(r.sid, [r.at]);
+  }
+
+  for (const s of sessions) {
+    const stamps = bySession.get(s.sessionId) ?? [];
+    const mtimeMs = Date.parse(s.lastUpdatedAt) || 0;
+    const existing = getWorkDurationRow(db, source, s.sessionId);
+    // 跳过未变:会话没更新过、条数也没变 —— 与 claude/codex 的 mtime+size 同义。
+    if (
+      !options.full &&
+      existing &&
+      existing.transcript_mtime_ms === mtimeMs &&
+      existing.transcript_size_bytes === stamps.length &&
+      existing.missing_since === null
+    ) {
+      markWorkDurationRowSeen(db, source, s.sessionId, now);
+      skipped++;
+      if (existing.duration_status === "full") known++;
+      else unknown++;
+      indexed++;
+      continue;
+    }
+    const row = rowFromDuration({
+      source,
+      sessionId: s.sessionId,
+      // 库型源:源库路径 + 会话更新时间 + 消息条数,语义同「原始材料变了没有」。
+      transcriptPath: s.directory,
+      transcriptMtimeMs: mtimeMs,
+      transcriptSizeBytes: stamps.length,
+      cwd: s.directory,
+      projectKey: s.projectKey,
+      projectPath: s.projectPath,
+      // project_key 在 ingest 里已用 canonicalizePath 算好,与另外三家同口径。
+      identityConfidence: "high",
+      title: s.title,
+      timestamps: stamps.map((x) => new Date(x)),
+      error: null,
+      nowIso: now,
+    });
+    upsertWorkDurationRow(db, row);
+    indexed++;
+    if (row.duration_status === "full") known++;
+    else unknown++;
+  }
+
+  const missingMarked = markUnseenWorkDurationRowsMissing(
+    db,
+    source,
+    new Set(sessions.map((x) => x.sessionId)),
+    now
+  );
+  const durationMs = Date.now() - startedAt;
+  upsertWorkDurationState(db, {
+    source,
+    rule_version: WORK_DURATION_RULE_VERSION,
+    last_rebuilt_at: now,
+    last_error: errors[0] ?? null,
+    source_session_count: sessions.length,
+    indexed_session_count: indexed,
+    duration_known_session_count: known,
+    duration_unknown_session_count: unknown,
+    error_session_count: 0,
+    skipped_unchanged_count: skipped,
+    duration_ms: durationMs,
+    updated_at: now,
+  });
+  return {
+    ok: true,
+    status: "success",
+    source,
+    sourceSessionCount: sessions.length,
+    indexedSessionCount: indexed,
+    durationKnownSessionCount: known,
+    durationUnknownSessionCount: unknown,
+    errorSessionCount: 0,
+    skippedUnchangedCount: skipped,
+    missingMarkedCount: missingMarked,
+    durationMs,
+    errors,
+  };
+}
+
 export async function refreshWorkDuration(
   db: Database.Database,
   options: RefreshWorkDurationOptions = {}
 ): Promise<WorkDurationCombinedRefreshResult> {
   const codex = await refreshCodexWorkDuration(db, options);
   const claude = await refreshClaudeWorkDuration(db, options);
-  const status =
-    codex.status === "failed" || claude.status === "failed"
-      ? "failed"
-      : codex.status === "partial" || claude.status === "partial"
-        ? "partial"
-        : "success";
-  const errors = [...codex.errors, ...claude.errors];
-  return { ok: status !== "failed", status, claude, codex, errors };
+  const opencode = refreshOpencodeWorkDuration(db, options);
+  const all = [codex, claude, opencode];
+  const status = all.some((r) => r.status === "failed")
+    ? "failed"
+    : all.some((r) => r.status === "partial")
+      ? "partial"
+      : "success";
+  const errors = all.flatMap((r) => r.errors);
+  return { ok: status !== "failed", status, claude, codex, opencode, errors };
 }
