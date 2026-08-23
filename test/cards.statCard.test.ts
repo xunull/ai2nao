@@ -200,6 +200,7 @@ describe("renderTokenCard", () => {
       codex: src(3_300_000, 5.5),
       minimax: src(0),
       kimi: src(0),
+      opencode: src(0),
     },
     totalCostUsd: 45.5,
   } as unknown as WorkTokensTrendTotals;

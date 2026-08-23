@@ -247,7 +247,7 @@ describe("mergeAndZeroFill", () => {
     ...o,
   });
   const empty = () => new Map<string, SourceBucketRow>();
-  const allOk = { claude: "ok", codex: "ok", minimax: "ok", kimi: "ok" } as const;
+  const allOk = { claude: "ok", codex: "ok", minimax: "ok", kimi: "ok", opencode: "ok" } as const;
 
   it("某个源缺某个桶时补零,不是丢桶", () => {
     const merged = mergeAndZeroFill(
@@ -257,6 +257,7 @@ describe("mergeAndZeroFill", () => {
         codex: empty(),
         minimax: empty(),
         kimi: empty(),
+        opencode: empty(),
       },
       allOk
     );
@@ -276,6 +277,7 @@ describe("mergeAndZeroFill", () => {
         codex: new Map([["2026-06-10", row({ bucket_key: "2026-06-10", fresh_input: 250, cache_read_input: 300, output: 50, reasoning_output: 20 })]]),
         minimax: empty(),
         kimi: empty(),
+        opencode: empty(),
       },
       allOk
     );
@@ -294,7 +296,7 @@ describe("mergeAndZeroFill", () => {
   it("state 逐源带下去 —— failed 不会被补零成 ok", () => {
     const merged = mergeAndZeroFill(
       buckets,
-      { claude: empty(), codex: empty(), minimax: empty(), kimi: empty() },
+      { claude: empty(), codex: empty(), minimax: empty(), kimi: empty(), opencode: empty() },
       { claude: "ok", codex: "failed", minimax: "absent", kimi: "absent" }
     );
     expect(merged[0]!.sources.claude.state).toBe("ok");
@@ -434,6 +436,7 @@ describe("input/output breakdown (2×3 matrix data)", () => {
           codex: mk({ freshInput: 550, output: 50 }),
           minimax: mk({}),
           kimi: mk({}),
+          opencode: mk({}),
         },
       },
     ]);
@@ -470,6 +473,7 @@ describe("computeTotals —— 三态覆盖", () => {
       codex: { ...emptyUsage("ok"), ...x },
       minimax: emptyUsage("absent"),
       kimi: emptyUsage("absent"),
+      opencode: emptyUsage("absent"),
     },
   });
 
@@ -537,6 +541,7 @@ describe("computeTotals —— 三态覆盖", () => {
           // 即使给了计数也不该进汇总:它的 coverageUnit 是 null
           minimax: { ...emptyUsage("ok"), sessionCount: 99, coveredSessionCount: 99 },
           kimi: emptyUsage("absent"),
+          opencode: emptyUsage("absent"),
         },
       },
     ]);

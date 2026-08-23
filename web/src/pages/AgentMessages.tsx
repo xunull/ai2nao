@@ -40,7 +40,7 @@ type RawResp = {
 
 const SOURCES = [
   { value: "", label: "全部来源" },
-  { value: "opencode", label: "OpenCode" },
+  { value: "opencode", label: "opencode" },
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
   { value: "kimi", label: "kimi" },
@@ -62,7 +62,8 @@ const ROLE_FILTERS = [
 const SOURCE_META: Record<string, { label: string; color: string }> = {
   claude: { label: "Claude", color: "#d97757" },
   codex: { label: "Codex", color: "#2563eb" },
-  opencode: { label: "OpenCode", color: "#7c3aed" },
+  // 青,与趋势页同色。原来是 #7c3aed,与趋势页的 minimax 撞色。
+  opencode: { label: "opencode", color: "#0d9488" },
   kimi: { label: "kimi", color: "#16a34a" },
 };
 

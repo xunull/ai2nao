@@ -72,6 +72,7 @@ const CAPS = {
   codex: { cacheRead: true, cacheCreation: false, reasoningOutput: true, coverageUnit: "session" },
   minimax: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: null },
   kimi: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: "agent" },
+  opencode: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: "session" },
 };
 
 const WINDOW_OK = {
@@ -107,6 +108,7 @@ const WINDOW_OK = {
         }),
         minimax: usage(),
         kimi: usage({ state: "absent" as const }),
+        opencode: usage({ state: "absent" as const }),
       },
     },
   ],
@@ -142,12 +144,14 @@ const WINDOW_OK = {
       },
       minimax: { ...usage({ state: "absent" as const }), share: 0 },
       kimi: { ...usage({ state: "absent" as const }), share: 0 },
+      opencode: { ...usage({ state: "absent" as const }), share: 0 },
     },
     costState: {
       claude: "full" as const,
       codex: "partial" as const,
       minimax: "none" as const,
       kimi: "none" as const,
+      opencode: "none" as const,
     },
     coverageUnit: "session" as const,
     totalCostUsd: 1.2345,
@@ -166,6 +170,7 @@ const WINDOW_OK = {
       codex: { totalTokens: 2000, freshInput: 2000, cacheReadInput: 0, cacheCreationInput: 0 },
       minimax: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
       kimi: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
+      opencode: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
     },
   },
   deltaRatio: 0.5,
@@ -189,12 +194,14 @@ const MONTH_OK = {
       codex: { ...usage(), share: 0 },
       minimax: { ...usage({ state: "absent" as const }), share: 0 },
       kimi: { ...usage({ state: "absent" as const }), share: 0 },
+      opencode: { ...usage({ state: "absent" as const }), share: 0 },
     },
     costState: {
       claude: "none" as const,
       codex: "none" as const,
       minimax: "none" as const,
       kimi: "none" as const,
+      opencode: "none" as const,
     },
     coverageUnit: null,
     totalCostUsd: 0,
@@ -414,6 +421,7 @@ describe("WorkTokensTrend page", () => {
             codex: { ...usage(), share: 0 },
             minimax: { ...usage({ state: "absent" as const }), share: 0 },
             kimi: { ...usage({ state: "absent" as const }), share: 0 },
+      opencode: { ...usage({ state: "absent" as const }), share: 0 },
           },
         },
       })

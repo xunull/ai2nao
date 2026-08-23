@@ -65,6 +65,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -129,6 +144,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -197,6 +227,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -261,6 +306,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -329,6 +389,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -393,6 +468,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -461,6 +551,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -525,6 +630,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -593,6 +713,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -657,6 +792,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -725,6 +875,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -789,6 +954,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -857,6 +1037,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -921,6 +1116,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -989,6 +1199,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1053,6 +1278,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1121,6 +1361,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1185,6 +1440,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1253,6 +1523,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1317,6 +1602,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1385,6 +1685,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1449,6 +1764,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1517,6 +1847,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1581,6 +1926,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1649,6 +2009,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1713,6 +2088,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1781,6 +2171,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1845,6 +2250,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -1913,6 +2333,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -1977,6 +2412,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2045,6 +2495,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -2073,6 +2538,12 @@
         "cacheRead": true,
         "coverageUnit": null,
         "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
+        "reasoningOutput": false
       }
     },
     "diagnostics": [],
@@ -2092,7 +2563,8 @@
         "claude": "full",
         "codex": "none",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": "session",
@@ -2161,6 +2633,22 @@
           "sessionCount": 0,
           "share": 0,
           "state": "ok",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
           "unknownSessionCount": 0,
           "unpricedTokens": 0
         }
@@ -2238,6 +2726,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2302,6 +2805,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2370,6 +2888,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2434,6 +2967,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2502,6 +3050,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2566,6 +3129,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2634,6 +3212,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2698,6 +3291,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2766,6 +3374,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2830,6 +3453,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -2898,6 +3536,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -2962,6 +3615,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3030,6 +3698,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3094,6 +3777,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3162,6 +3860,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3226,6 +3939,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3294,6 +4022,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3358,6 +4101,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3426,6 +4184,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3490,6 +4263,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3558,6 +4346,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3622,6 +4425,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3690,6 +4508,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3754,6 +4587,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3822,6 +4670,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -3886,6 +4749,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -3954,6 +4832,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4018,6 +4911,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -4086,6 +4994,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4152,6 +5075,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -4180,6 +5118,12 @@
         "cacheRead": true,
         "coverageUnit": null,
         "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
+        "reasoningOutput": false
       }
     },
     "diagnostics": [],
@@ -4199,7 +5143,8 @@
         "claude": "full",
         "codex": "full",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": "session",
@@ -4268,6 +5213,22 @@
           "sessionCount": 0,
           "share": 0,
           "state": "ok",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
           "unknownSessionCount": 0,
           "unpricedTokens": 0
         }
@@ -4345,6 +5306,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4409,6 +5385,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -4477,6 +5468,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4541,6 +5547,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -4609,6 +5630,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4673,6 +5709,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -4741,6 +5792,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4805,6 +5871,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -4873,6 +5954,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -4937,6 +6033,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5005,6 +6116,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5069,6 +6195,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5137,6 +6278,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5201,6 +6357,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5269,6 +6440,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5335,6 +6521,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 320
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5399,6 +6600,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5467,6 +6683,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5531,6 +6762,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5599,6 +6845,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5663,6 +6924,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5731,6 +7007,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5795,6 +7086,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5863,6 +7169,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -5927,6 +7248,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -5995,6 +7331,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6059,6 +7410,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -6127,6 +7493,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6191,6 +7572,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -6259,6 +7655,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6325,6 +7736,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -6353,6 +7779,12 @@
         "cacheRead": true,
         "coverageUnit": null,
         "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
+        "reasoningOutput": false
       }
     },
     "diagnostics": [],
@@ -6372,7 +7804,8 @@
         "claude": "full",
         "codex": "none",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": "session",
@@ -6443,6 +7876,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 320
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0034799999999999996,
@@ -6518,6 +7967,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6582,6 +8046,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -6650,6 +8129,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6714,6 +8208,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -6782,6 +8291,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6846,6 +8370,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -6914,6 +8453,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -6978,6 +8532,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7046,6 +8615,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7110,6 +8694,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7178,6 +8777,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7242,6 +8856,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7310,6 +8939,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7374,6 +9018,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7442,6 +9101,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7506,6 +9180,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7574,6 +9263,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7640,6 +9344,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 400
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7706,6 +9425,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 1660
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7770,6 +9504,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7838,6 +9587,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -7902,6 +9666,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -7970,6 +9749,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8034,6 +9828,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -8102,6 +9911,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8166,6 +9990,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -8234,6 +10073,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8298,6 +10152,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -8366,6 +10235,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8430,6 +10314,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -8498,6 +10397,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -8526,6 +10440,12 @@
         "cacheRead": true,
         "coverageUnit": null,
         "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
+        "reasoningOutput": false
       }
     },
     "diagnostics": [],
@@ -8545,7 +10465,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "partial",
       "coverageUnit": "session",
@@ -8616,6 +10537,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2060
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0357,
@@ -8691,6 +10628,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 960
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8757,6 +10709,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 700
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8821,6 +10788,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -8889,6 +10871,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -8953,6 +10950,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9021,6 +11033,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9085,6 +11112,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9153,6 +11195,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9217,6 +11274,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9285,6 +11357,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9349,6 +11436,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9417,6 +11519,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9481,6 +11598,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9549,6 +11681,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9613,6 +11760,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9681,6 +11843,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9745,6 +11922,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9813,6 +12005,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -9877,6 +12084,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -9945,6 +12167,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10009,6 +12246,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10077,6 +12329,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10141,6 +12408,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10209,6 +12491,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -10236,6 +12533,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -10272,6 +12575,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 400
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 27450
@@ -10285,7 +12594,8 @@
         "claude": "none",
         "codex": "none",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": null,
@@ -10356,6 +12666,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 1660
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0,
@@ -10432,6 +12758,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10496,6 +12837,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10564,6 +12920,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10628,6 +12999,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10696,6 +13082,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10760,6 +13161,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10828,6 +13244,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -10892,6 +13323,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -10960,6 +13406,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11024,6 +13485,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11092,6 +13568,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11156,6 +13647,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11224,6 +13730,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11288,6 +13809,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11356,6 +13892,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11420,6 +13971,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11488,6 +14054,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11552,6 +14133,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11620,6 +14216,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11684,6 +14295,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11752,6 +14378,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11816,6 +14457,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -11884,6 +14540,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -11948,6 +14619,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -12016,6 +14702,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12080,6 +14781,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -12148,6 +14864,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12214,6 +14945,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 400
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12280,6 +15026,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 1660
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12346,6 +15107,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -12373,6 +15149,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -12409,6 +15191,12 @@
           "cacheReadInput": 0,
           "freshInput": 300,
           "totalTokens": 320
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 2820
@@ -12422,7 +15210,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "partial",
       "coverageUnit": "session",
@@ -12493,6 +15282,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2060
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0357,
@@ -12569,6 +15374,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12633,6 +15453,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -12701,6 +15536,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12765,6 +15615,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -12833,6 +15698,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 400
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12899,6 +15779,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 1660
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -12965,6 +15860,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -12992,6 +15902,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -13028,6 +15944,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 0
@@ -13041,7 +15963,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": "session",
@@ -13112,6 +16035,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2060
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0357,
@@ -13188,6 +16127,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13252,6 +16206,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -13320,6 +16289,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13384,6 +16368,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -13452,6 +16451,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13516,6 +16530,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -13584,6 +16613,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13648,6 +16692,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -13716,6 +16775,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13780,6 +16854,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -13848,6 +16937,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13914,6 +17018,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 400
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -13980,6 +17099,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 1660
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14046,6 +17180,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -14073,6 +17222,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -14109,6 +17264,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 0
@@ -14122,7 +17283,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "partial",
       "coverageUnit": "session",
@@ -14193,6 +17355,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2060
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0357,
@@ -14269,6 +17447,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14333,6 +17526,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -14401,6 +17609,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14465,6 +17688,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -14533,6 +17771,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14597,6 +17850,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -14665,6 +17933,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14729,6 +18012,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -14797,6 +18095,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14863,6 +18176,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 400
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -14927,6 +18255,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -14995,6 +18338,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15059,6 +18417,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -15127,6 +18500,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15191,6 +18579,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -15259,6 +18662,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15325,6 +18743,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 1660
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15389,6 +18822,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -15457,6 +18905,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15521,6 +18984,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -15589,6 +19067,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15653,6 +19146,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -15721,6 +19229,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -15787,6 +19310,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -15814,6 +19352,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -15850,6 +19394,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 7965
@@ -15863,7 +19413,8 @@
         "claude": "full",
         "codex": "full",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "full",
       "coverageUnit": "session",
@@ -15934,6 +19485,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2060
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.0357,
@@ -16010,6 +19577,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16074,6 +19656,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -16142,6 +19739,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16206,6 +19818,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -16274,6 +19901,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16338,6 +19980,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -16406,6 +20063,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16472,6 +20144,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 320
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16536,6 +20223,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -16604,6 +20306,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16668,6 +20385,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -16736,6 +20468,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -16802,6 +20549,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 2060
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -16829,6 +20591,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -16865,6 +20633,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 2080
@@ -16878,7 +20652,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "partial",
       "coverageUnit": "session",
@@ -16949,6 +20724,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2380
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.045045,
@@ -17025,6 +20816,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17089,6 +20895,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17157,6 +20978,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17221,6 +21057,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17289,6 +21140,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17353,6 +21219,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17421,6 +21302,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17485,6 +21381,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17553,6 +21464,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17617,6 +21543,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17685,6 +21626,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17749,6 +21705,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17817,6 +21788,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -17881,6 +21867,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -17949,6 +21950,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18013,6 +22029,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -18081,6 +22112,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18145,6 +22191,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -18213,6 +22274,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18277,6 +22353,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -18345,6 +22436,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 320
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18409,6 +22515,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -18477,6 +22598,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18541,6 +22677,21 @@
             "reasoningOutput": 0,
             "sessionCount": 0,
             "state": "ok",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
           }
@@ -18609,6 +22760,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 0
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       },
@@ -18675,6 +22841,21 @@
             "state": "ok",
             "unknownSessionCount": 0,
             "unpricedTokens": 2060
+          },
+          "opencode": {
+            "cacheCreationInput": 0,
+            "cacheReadInput": 0,
+            "costUsd": 0,
+            "coveredSessionCount": 0,
+            "errorSessionCount": 0,
+            "freshInput": 0,
+            "output": 0,
+            "pricedTokens": 0,
+            "reasoningOutput": 0,
+            "sessionCount": 0,
+            "state": "absent",
+            "unknownSessionCount": 0,
+            "unpricedTokens": 0
           }
         }
       }
@@ -18702,6 +22883,12 @@
         "cacheCreation": true,
         "cacheRead": true,
         "coverageUnit": null,
+        "reasoningOutput": false
+      },
+      "opencode": {
+        "cacheCreation": true,
+        "cacheRead": true,
+        "coverageUnit": "session",
         "reasoningOutput": false
       }
     },
@@ -18738,6 +22925,12 @@
           "cacheReadInput": 0,
           "freshInput": 0,
           "totalTokens": 0
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "freshInput": 0,
+          "totalTokens": 0
         }
       },
       "totalTokens": 0
@@ -18751,7 +22944,8 @@
         "claude": "partial",
         "codex": "partial",
         "kimi": "none",
-        "minimax": "none"
+        "minimax": "none",
+        "opencode": "none"
       },
       "coverage": "partial",
       "coverageUnit": "session",
@@ -18822,6 +23016,22 @@
           "state": "ok",
           "unknownSessionCount": 0,
           "unpricedTokens": 2380
+        },
+        "opencode": {
+          "cacheCreationInput": 0,
+          "cacheReadInput": 0,
+          "costUsd": 0,
+          "coveredSessionCount": 0,
+          "errorSessionCount": 0,
+          "freshInput": 0,
+          "output": 0,
+          "pricedTokens": 0,
+          "reasoningOutput": 0,
+          "sessionCount": 0,
+          "share": 0,
+          "state": "absent",
+          "unknownSessionCount": 0,
+          "unpricedTokens": 0
         }
       },
       "totalCostUsd": 0.047835,

@@ -531,10 +531,104 @@ const kimiAdapter: TokenSourceAdapter = {
   // 它的 token 全部计入 unpriced,而不是当成 $0。
 };
 
+const opencodeAdapter: TokenSourceAdapter = {
+  key: "opencode",
+  capabilities: {
+    cacheRead: true,
+    cacheCreation: true,
+    // opencode 的 message.data.tokens 带 reasoning 字段,但真库实测**全量恒 0**
+    // (5097 段 reasoning 文本只有内容、没有计数)。字段在、值为 0 ——
+    // 与 kimi 的 inputCacheCreation 是同一种情形,如实标 false 而不是假装有维度。
+    reasoningOutput: false,
+    // session。opencode 一个会话就是一个 session,与 claude/codex 同尺;
+    // 只有 kimi 的 agent 是另一把尺。
+    coverageUnit: "session",
+  },
+  probePresence: (db) =>
+    everPresent(db, "opencode_token_usage_state", "opencode_token_usage_event"),
+
+  queryBuckets(db, from, to, granularity) {
+    // 原子分量直接就是列 —— 与 kimi 一样不需要在 SQL 里做减法。
+    // opencode 的 message.data.tokens 本身就是分离的(claude 的 input_tokens
+    // 是融合值,那边才要减)。
+    //
+    // JOIN 会话表是为了排除已归档 —— 与 opencode 自己的列表口径一致。
+    const tokenRows = db
+      .prepare(
+        `SELECT ${bucketExpr(granularity, "e.event_at")} AS bucket_key,
+                COALESCE(SUM(e.fresh_input), 0) AS fresh_input,
+                COALESCE(SUM(e.cache_read_input), 0) AS cache_read_input,
+                COALESCE(SUM(e.cache_creation_input), 0) AS cache_creation_input,
+                COALESCE(SUM(e.output), 0) AS output,
+                0 AS reasoning_output
+           FROM opencode_token_usage_event e
+           JOIN opencode_session s ON s.session_id = e.session_id
+          WHERE e.event_at >= ? AND e.event_at < ?
+            AND s.archived_at IS NULL
+          GROUP BY bucket_key
+          ORDER BY bucket_key ASC`
+      )
+      .all(from.toISOString(), to.toISOString()) as SourceBucketRow[];
+
+    // 三态计数。opencode 没有「解析失败」这一档:token 由它自己算好写在
+    // message.data 里,我们只是搬运,拿到就是 full。所以 unknown/error 恒 0 ——
+    // 这是**如实反映**,不是没实现。
+    const counts = db
+      .prepare(
+        `SELECT ${bucketExpr(granularity, "last_updated_at")} AS bucket_key,
+                COUNT(*) AS session_count,
+                COUNT(*) AS full_count,
+                0 AS unknown_count,
+                0 AS error_count
+           FROM opencode_session
+          WHERE last_updated_at >= ? AND last_updated_at < ? AND archived_at IS NULL
+          GROUP BY bucket_key`
+      )
+      .all(from.toISOString(), to.toISOString()) as {
+      bucket_key: string;
+      session_count: number;
+      full_count: number;
+      unknown_count: number;
+      error_count: number;
+    }[];
+    return mergeTokensAndCounts(tokenRows, new Map(counts.map((r) => [r.bucket_key, r])));
+  },
+
+  queryPrevWindow(db, from, to) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(SUM(e.fresh_input), 0) AS fresh_input,
+                COALESCE(SUM(e.cache_read_input), 0) AS cache_read_input,
+                COALESCE(SUM(e.cache_creation_input), 0) AS cache_creation_input,
+                COALESCE(SUM(e.output), 0) AS output
+           FROM opencode_token_usage_event e
+           JOIN opencode_session s ON s.session_id = e.session_id
+          WHERE e.event_at >= ? AND e.event_at < ? AND s.archived_at IS NULL`
+      )
+      .get(from.toISOString(), to.toISOString()) as SourcePrevWindowRow;
+    return row ?? ZERO_PREV;
+  },
+
+  queryMonthRange(db) {
+    return monthRangeOf(
+      db,
+      `SELECT MIN(strftime('%Y-%m', last_updated_at, 'localtime')) AS earliest,
+              MAX(strftime('%Y-%m', last_updated_at, 'localtime')) AS latest
+         FROM opencode_session
+        WHERE archived_at IS NULL`
+    );
+  },
+  // **没有 queryCostRows(OQ4 的显式表态)。** opencode.db 的 session 表有 cost 列,
+  // 但真库实测 964 场里只有 1 场有值,合计 $0.6745,逐消息 cost 全是 0 ——
+  // 用户跑的是订阅制/本地模型,成本没被记录。把 $0.67 当作 964 场会话的成本
+  // 展示出来比不显示更误导。所以 token 全部计入 unpriced,与 kimi/minimax 一致。
+};
+
 /** 注册表。**顺序 = 前端柱子的堆叠顺序,也是 `TOKEN_SOURCES` 的顺序。** */
 export const ADAPTERS: Record<TokenSourceKey, TokenSourceAdapter> = {
   claude: claudeAdapter,
   codex: codexAdapter,
   minimax: minimaxAdapter,
   kimi: kimiAdapter,
+  opencode: opencodeAdapter,
 };
