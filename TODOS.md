@@ -416,6 +416,38 @@ Priority: Phase 2/3
 
 ## Completed
 
+### work_session_duration 纳入 opencode / kimi
+
+**Completed:** opencode 2026-08-23（O7a/O7b）、kimi 2026-08-25
+
+原问题：排行页的「活跃时长」列只统计 `claude-code` 与 `codex`，`work_session_duration`
+的 CHECK 也写死这两个。kimi-only 的项目时长为空，混合项目的数字不含另两家，
+却读起来像项目总时长。
+
+怎么没了的：V59 去掉两张表的 CHECK，约束下沉到 `WORK_DURATION_SOURCES` 这个写入边界；
+opencode 与 kimi 各写一个收集器，都只读 `index.db`，**不碰各自的外部库**。
+
+当初记的那条阻碍——「`transcript_path` 假设一个会话一个文件，而 kimi 一个会话有 N 个
+agent 文件，接入前必须先定口径」——**前半句被证伪**：V59 已把那三个字段泛化成
+「这个会话的原始材料变了没有」，全仓库无人对 `transcript_path` 做 `existsSync`，
+填 `MIN(file_path)` 即可。**后半句是对的，而且是全部难点所在**：
+
+```
+32 场会话，9 场是多 agent（最多一场 12 个）
+按会话合并      89.50 h      ← 选定
+按 agent 相加   99.58 h      +11%
+最坏一场        110.4 → 454.8 分钟   4.12×
+```
+
+那一场是一次派多个 subagent 并行跑 —— 并行 subagent 不会让人多出时间。
+
+真库结果：kimi 32/32 场有时长、0 unknown（比 opencode 的 954/964 还全），
+**14 个项目从「一行 duration 都没有」变成有值**，合计 41.34 h，
+含 `meng1`(15.05h) 与 `gongren-pipeline`(12.49h)。
+
+顺带修掉：`WorkTokenRanking.tsx:216` 那句 title「opencode 与 Kimi 尚未接入
+work_session_duration」—— 它在 opencode 接入后就已经是错的。
+
 ### 趋势页「不算缓存」应同时扣 cache_creation（口径 bug）
 
 **Completed:** 2026-08-20（作为原子分量重写的副产品，不是单独修的）
@@ -1773,26 +1805,44 @@ Depends on: 无
 
 Priority: Phase 2
 
-## work_session_duration 纳入 opencode / kimi
+## `WORK_DURATION_RULE_VERSION` 不分源
 
-What: 排行页的「活跃时长」列只统计 `claude-code` 与 `codex`。`aggregate.ts:533` 把源硬过滤成这两个，`work_session_duration` 表的约束也是 `CHECK (source IN ('claude-code', 'codex'))`。
+What: `src/workDuration/types.ts` 的 `WORK_DURATION_RULE_VERSION` 是一个全局常量（当前 `1`），四个源共用。
 
-Why: kimi-only 的项目时长为空；混合项目显示的数字不含 opencode 与 kimi，却读起来像项目总时长。opencode 从上线起就一直漏，不是 kimi 特有的问题。
+Why: 将来若只想改其中一个源的口径（比如 kimi 从「按会话合并」改成别的），bump 它会**强制四个源全部全量重建** —— claude 219 行要重新遍历 JSONL，codex 362 行同理。反过来若不 bump，已入库的行不会重算，改口径等于没改。另外三家的 token refresh 都是每源一个 `rule_version`，只有时长这里是全局的。
 
 Pros:
-- 那一列才真正配得上「项目活跃时长」这个名字
-- MCP 工具（`src/mcp/tools.ts:86`）消费同一份数据，一并受益
+- 改单源口径不再牵连另外三家
+- 与 token 侧的 `*_TOKEN_RULE_VERSION` 家法一致
 
 Cons:
-- SQLite 改不了 CHECK，要 `applyV56` 重建表。好消息是这张表只有 573 行，重建是毫秒级（对比 `agent_user_messages` 的 232 MB）
-- `transcript_path TEXT NOT NULL` 假设一个会话一个转写文件，而 kimi 一个会话有 N 个 agent 文件。接入前必须先定口径：取哪个文件，还是造合成路径，还是把列改成 nullable
-- 需要新写 kimi 与 opencode 的时长推导流程
+- `work_duration_state` 已经是每源一行、自带 `rule_version` 列，所以是纯代码改动，不动 schema
+- 今天没有实际痛点（四源口径都还没改过），属于欠账不是 bug
 
-Context: 2026-08-21 的 eng review 里由 codex outside voice 提出。本次只把列头改成「Claude/Codex 活跃时长」并加了 title 说明，止住误导，没有真正接入。
+Context: 2026-08-25 接入 kimi 时发现。首次构建不受影响（没有存量 kimi 行）。
 
 Depends on: 无
 
-Priority: Phase 2
+Priority: Phase 3
+
+## `work_session_duration.identity_confidence` 是只写列
+
+What: 该列有写入者（四个收集器都填），但**没有任何读取者**。`listWorkProjectDurationUsage`（`queries.ts:204-213`）根本不 SELECT 它；唯一 SELECT 它的是 `queries.ts:19` 的整行取回，而跳过判据不比较它。`aggregate.ts:862` 读的是 dashboard session 对象的同名字段，不是这张表。
+
+Why: 写反了没有任何可观测后果 —— 这正是危险的地方。kimi 接入时 `MIN(identity_confidence)` vs `MAX` 差一个字就反向（`'high'` 字典序小于 `'low'`），而没有任何断言能抓到。要么给它找个消费者（排行页标出「路径推断不确定」的项目），要么承认它是死列并删掉。
+
+Pros:
+- 少一个能静默写错的字段
+- 或者：low confidence 的项目在排行页上标出来，本来就是有用的信息（真库 8 个 `kimi:conv-*` 伪项目全是 low）
+
+Cons:
+- 删列要重建表；加消费者要动排行页 UI
+
+Context: 2026-08-25 接入 kimi 时由对抗性冷读发现。真库 32 场 kimi 会话没有一场各 agent confidence 分歧，所以连数据都测不出来。
+
+Depends on: 无
+
+Priority: Phase 3
 
 ## DB 背景的会话收集器缺 range/limit
 

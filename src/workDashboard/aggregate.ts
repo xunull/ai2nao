@@ -594,8 +594,10 @@ export function defaultDashboardCollectors(db?: Database.Database): DashboardCol
     listWorkProjectDurationUsage: db
       ? async ({ projectKeys, from, sources }) =>
           // V59 去掉了两张 duration 表的 CHECK,约束下沉到 WORK_DURATION_SOURCES。
-          // opencode 自 O7b 起有真实时长;kimi 仍未接入(它一个会话 N 个 agent,
-          // 单文件模型装不下,见 TODOS),所以这里仍要过滤而不是直接透传。
+          // 四个源(claude-code/codex/opencode/kimi)现在都有真实时长,而
+          // DASHBOARD_SOURCES 恰好就是这四个 —— **所以这个 filter 今天是恒真的 no-op**。
+          // 留着它不是因为它现在挡住了谁(minimax 只在 TOKEN_SOURCES 里,压根到不了这);
+          // 是为了将来 DASHBOARD_SOURCES 长出 cursor/cherry 时能挡住它们。
           listWorkProjectDurationUsage(db, {
             projectKeys,
             from,

@@ -363,7 +363,8 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
     {
       key: "work.tokens.refresh",
       label: "工作项目统计刷新",
-      description: "刷新 Claude Code 与 Codex 项目级真实 token 和活跃时长派生索引。",
+      description:
+        "刷新项目级真实 token（Claude Code / Codex）与活跃时长（Claude Code / Codex / opencode / Kimi）派生索引。",
       category: "derived",
       defaultIntervalSeconds: oneHour,
       sensitivity: "high",

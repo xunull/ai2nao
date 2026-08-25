@@ -213,8 +213,8 @@ export function WorkTokenRanking() {
               </div>
               <div className="mt-1 flex items-center justify-between gap-3 text-xs font-medium text-[var(--muted)]">
                 <span>token</span>
-                <span title="仅统计 Claude Code 与 Codex（由本地 JSONL 时间戳推断）；opencode 与 Kimi 尚未接入 work_session_duration">
-                  Claude/Codex 活跃 {formatActiveDuration(project.activeMs)}
+                <span title="Claude Code / Codex / opencode / Kimi 四个源合计；claude 与 codex 由本地 JSONL 时间戳推断，opencode 与 Kimi 由 index.db 事件时间戳推断。跨源相加，同时开两个 agent 的那段墙钟会被计两次。">
+                  活跃 {formatActiveDuration(project.activeMs)}
                 </span>
               </div>
               <div className="mt-4 truncate font-mono text-[11px] text-neutral-500" title={project.path}>

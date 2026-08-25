@@ -112,10 +112,12 @@ describe("O7a —— 两张表都去掉 source 的 CHECK", () => {
         )
         .run(iso(0))
     ).not.toThrow();
-    // 而写入边界仍然只认已接入的三个。
-    expect(WORK_DURATION_SOURCES).toEqual(["claude-code", "codex", "opencode"]);
-    expect(isWorkDurationSource("kimi")).toBe(false); // 尚未接入,见 TODOS
+    // 而写入边界仍然只认已接入的四个。
+    expect(WORK_DURATION_SOURCES).toEqual(["claude-code", "codex", "opencode", "kimi"]);
     expect(isWorkDurationSource("opencode")).toBe(true);
+    expect(isWorkDurationSource("kimi")).toBe(true); // 已接入,见 workDuration.kimi.test.ts
+    // minimax 只在 TOKEN_SOURCES 里 —— 它是 API 用量账单,没有会话概念,不该有时长。
+    expect(isWorkDurationSource("minimax")).toBe(false);
     db.close();
   });
 

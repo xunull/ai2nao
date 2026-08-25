@@ -768,6 +768,202 @@ export function refreshOpencodeWorkDuration(
   };
 }
 
+/**
+ * kimi 的时长收集器。
+ *
+ * 与另外三家的结构差别只有一处：**一场会话有 N 个 agent**
+ * （真库 32 场里 9 场是多 agent，最多一场 12 个）。口径是**按会话合并** ——
+ * N 个 agent 的时间戳并成一条时间轴，一场会话一行。
+ * 真库实测合并 89.50h、按 agent 相加 99.58h（+11%），最坏一场 4.12×；
+ * 那一场是一次派多个 subagent 并行跑，而**并行 subagent 不会让人多出时间**。
+ *
+ * 与 opencode 的 O7b 同构：时间戳全在 index.db 里，一条 SQL 就够，
+ * **不碰 `~/.kimi-code` 的任何文件**。
+ */
+export function refreshKimiWorkDuration(
+  db: Database.Database,
+  options: RefreshWorkDurationOptions = {}
+): WorkDurationRefreshResult {
+  const startedAt = Date.now();
+  const now = nowIso();
+  const source = "kimi" as const;
+  const errors: string[] = [];
+  let indexed = 0;
+  let known = 0;
+  let unknown = 0;
+  let skipped = 0;
+
+  let sessions: Array<{
+    sessionId: string;
+    cwd: string;
+    projectKey: string;
+    projectPath: string;
+    title: string | null;
+    filePath: string;
+    mtimeMs: number;
+    confidence: "high" | "low";
+  }>;
+  try {
+    // `kimi_agent_token_usage` 是 (session_id, agent) 粒度 —— **必须 GROUP BY 并对
+    // 每个投影列显式写冲突规则**。这张表上踩过一次：`SELECT DISTINCT` 在真库返回
+    // 61 行而不是 32（裸表 67），而 61 不是 67，抽样看会以为「差不多去重了」。
+    //
+    // 真库实测各 agent 在 cwd/project_key/project_path/title/identity_confidence 上
+    // 全部 0 分歧，**只有 file_mtime_ms 有 9 场分歧** —— 恰好就是那 9 场多 agent 会话。
+    // 所以 MAX(file_mtime_ms) 是唯一真正在做事的那条规则：任一 agent 变了就要重算。
+    //
+    // MIN(identity_confidence)：'high'(h) 字典序小于 'low'(l)，所以 MIN 就是
+    // high-wins，与 aggregate.ts:862 同口径。（该列今天无消费者，写反了看不出来。）
+    sessions = db
+      .prepare(
+        `SELECT session_id               AS sessionId,
+                MIN(cwd)                 AS cwd,
+                MIN(project_key)         AS projectKey,
+                MIN(project_path)        AS projectPath,
+                MIN(title)               AS title,
+                MIN(file_path)           AS filePath,
+                MAX(file_mtime_ms)       AS mtimeMs,
+                MIN(identity_confidence) AS confidence
+           FROM kimi_agent_token_usage
+          WHERE missing_since IS NULL
+          GROUP BY session_id`
+      )
+      .all() as typeof sessions;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    upsertWorkDurationState(db, {
+      source,
+      rule_version: WORK_DURATION_RULE_VERSION,
+      last_rebuilt_at: now,
+      last_error: msg,
+      source_session_count: 0,
+      indexed_session_count: 0,
+      duration_known_session_count: 0,
+      duration_unknown_session_count: 0,
+      error_session_count: 0,
+      skipped_unchanged_count: 0,
+      duration_ms: Date.now() - startedAt,
+      updated_at: now,
+    });
+    return {
+      ok: false,
+      status: "failed",
+      source,
+      sourceSessionCount: 0,
+      indexedSessionCount: 0,
+      durationKnownSessionCount: 0,
+      durationUnknownSessionCount: 0,
+      errorSessionCount: 0,
+      skippedUnchangedCount: 0,
+      missingMarkedCount: 0,
+      durationMs: Date.now() - startedAt,
+      errors: [msg],
+    };
+  }
+
+  // 一次取全部时间戳，按 session 分组。两处来源缺一不可：真库有 2/32 场会话
+  // 完全没有事件行（纯 thinking 轮不产生 usage.record），全靠 user 戳兜住才没变 unknown。
+  //
+  // **只取 role='user'**。assistant 侧走事件表 —— 两边都取会重复计数，
+  // 但真库上 active_ms 逐位相同（7490 戳与 9043 戳都是 89.50h），
+  // 因为 assistant 戳落在同一批密集簇里。能证伪它的只有戳数，见 test 用例 #1。
+  const stampRows = db
+    .prepare(
+      `SELECT session_id AS sid, event_at AS at FROM kimi_token_usage_event
+       UNION ALL
+       SELECT source_session_id AS sid, event_at_utc AS at
+         FROM agent_user_messages
+        WHERE source = 'kimi' AND role = 'user'`
+    )
+    .all() as { sid: string; at: string }[];
+  const bySession = new Map<string, string[]>();
+  for (const r of stampRows) {
+    const list = bySession.get(r.sid);
+    if (list) list.push(r.at);
+    else bySession.set(r.sid, [r.at]);
+  }
+
+  for (const s of sessions) {
+    const stamps = bySession.get(s.sessionId) ?? [];
+    const mtimeMs = Math.trunc(s.mtimeMs) || 0;
+    const existing = getWorkDurationRow(db, source, s.sessionId);
+    // 跳过未变：三条件，与 opencode 的 refresh.ts:704-710 同构。
+    // `missing_since === null` 不能省 —— 漏它会让「曾 missing、现在回来」的行永不重算。
+    if (
+      !options.full &&
+      existing &&
+      existing.transcript_mtime_ms === mtimeMs &&
+      existing.transcript_size_bytes === stamps.length &&
+      existing.missing_since === null
+    ) {
+      markWorkDurationRowSeen(db, source, s.sessionId, now);
+      skipped++;
+      if (existing.duration_status === "full") known++;
+      else unknown++;
+      indexed++;
+      continue;
+    }
+    const row = rowFromDuration({
+      source,
+      sessionId: s.sessionId,
+      // 库型源：源产物路径 + 更新时间 + 戳数，语义同「原始材料变了没有」。
+      // transcript_path 全仓库只被 SELECT 回来做跳过比较，无人对它做 existsSync。
+      transcriptPath: s.filePath,
+      transcriptMtimeMs: mtimeMs,
+      transcriptSizeBytes: stamps.length,
+      cwd: s.cwd,
+      projectKey: s.projectKey,
+      projectPath: s.projectPath,
+      // project_key 在 kimi ingest 里已算好，与另外三家同口径。
+      identityConfidence: s.confidence,
+      title: s.title,
+      timestamps: stamps.map((x) => new Date(x)),
+      error: null,
+      nowIso: now,
+    });
+    upsertWorkDurationRow(db, row);
+    indexed++;
+    if (row.duration_status === "full") known++;
+    else unknown++;
+  }
+
+  const missingMarked = markUnseenWorkDurationRowsMissing(
+    db,
+    source,
+    new Set(sessions.map((x) => x.sessionId)),
+    now
+  );
+  const durationMs = Date.now() - startedAt;
+  upsertWorkDurationState(db, {
+    source,
+    rule_version: WORK_DURATION_RULE_VERSION,
+    last_rebuilt_at: now,
+    last_error: errors[0] ?? null,
+    source_session_count: sessions.length,
+    indexed_session_count: indexed,
+    duration_known_session_count: known,
+    duration_unknown_session_count: unknown,
+    error_session_count: 0,
+    skipped_unchanged_count: skipped,
+    duration_ms: durationMs,
+    updated_at: now,
+  });
+  return {
+    ok: true,
+    status: "success",
+    source,
+    sourceSessionCount: sessions.length,
+    indexedSessionCount: indexed,
+    durationKnownSessionCount: known,
+    durationUnknownSessionCount: unknown,
+    errorSessionCount: 0,
+    skippedUnchangedCount: skipped,
+    missingMarkedCount: missingMarked,
+    durationMs,
+    errors,
+  };
+}
+
 export async function refreshWorkDuration(
   db: Database.Database,
   options: RefreshWorkDurationOptions = {}
@@ -775,12 +971,13 @@ export async function refreshWorkDuration(
   const codex = await refreshCodexWorkDuration(db, options);
   const claude = await refreshClaudeWorkDuration(db, options);
   const opencode = refreshOpencodeWorkDuration(db, options);
-  const all = [codex, claude, opencode];
+  const kimi = refreshKimiWorkDuration(db, options);
+  const all = [codex, claude, opencode, kimi];
   const status = all.some((r) => r.status === "failed")
     ? "failed"
     : all.some((r) => r.status === "partial")
       ? "partial"
       : "success";
   const errors = all.flatMap((r) => r.errors);
-  return { ok: status !== "failed", status, claude, codex, opencode, errors };
+  return { ok: status !== "failed", status, claude, codex, opencode, kimi, errors };
 }
