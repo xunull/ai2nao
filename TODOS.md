@@ -2,20 +2,32 @@
 
 ## 索引
 
-**这一节 2026-08-21 重写过。** 原先是一个编号 1–34 的优先级列表，已经不可信：
-编号跳过 20/21；列表的 34 与正文的 `## 34.` 指的不是同一件事；正文的 `## 35.`
-以及此后新增的约 35 条（agent_user_messages、kimi、opencode、注意力层等）
-它一条都没有。改成按性质分组、与正文小节一一对应，不再编号 —— 编号是上一版
-失准的直接原因。
+**这一节重写过两次：2026-08-21（编号列表失准）、2026-08-25（完成了没销账）。**
 
-下面 67 条按性质分组（含末尾 2 条已完成待归档），组内不排先后。**加粗**的是我建议优先看的。
+2026-08-21 那次的病是编号错位。这次是另一种：opencode 与 kimi 三天内做完了
+5 件事，索引一条都没销，其中 3 条还带着「建议优先看」的加粗 —— 照着它挑活会
+挑到已经做完的。**销账和记新条目一样重要。**
 
-### 正确性（代码与事实不符，5）
-- **recleanClaude 是死代码** —— `cleaner_version` 回填机制实际不工作
-- **pricing.ts 的注释说 Codex 无定价，实际有**
+下面 62 条按性质分组，组内不排先后（另有 2 条待归档、5 条本轮销账，列在末尾）。
+算式：上一版 65 条活跃 − 5 条销账 + 2 条新增 = 62。上一版头部写的 67 含了那 2 条待归档。**加粗**的是建议优先看的。
+标注了实测日期的条目，括号里是当时的真实数字，不是估计。
+
+### 正确性（5）
+- **三个 reclean 入口全是死代码** —— `recleanClaude` / `recleanCodex` /
+  `recleanOpencode`（`queries.ts:554-562`）**各自 0 处调用**。
+  *（2026-08-25 实测。原条目只点名 recleanClaude，实际三个都一样。
+  `cleaner_version` 回填机制因此整个不工作，不是 claude 一家的事。）*
+- **pricing.ts 关于 Codex 的说法要重新表述** —— `codexAdapter.queryCostRows`
+  确实存在（`adapters.ts:344`），但 `codex_token_usage_event` 没有 `cost_usd` 列，
+  成本靠 join 价格表现算；而 `pricing.ts:38` 说主力模型 gpt-5.5 不在 LiteLLM 里
+  故意留空。*（2026-08-25 实测。「注释说无定价、实际有」这个原表述不准确：
+  注释里的 "Codex has none" 说的是 cache-creation，那是对的。）*
 - 搜索两条路径的排序规则不一致
 - 停更的同步任务审计
 - 用户消息清洗：`bash-*` 三个标签的口径分叉
+  *（2026-08-25 实测：`cleaned_text` 里仍含 `<bash-` 的有 claude 93 条、kimi 2 条。
+  `myMessages.ts:17` 的 v4 注释写明「这不是一刀切」，所以残留可能是有意的 ——
+  要先确认口径，再决定这 95 条算不算问题。）*
 
 ### 安全姿态（2）
 - **`serve` 非-loopback 绑定** —— `--host` 加写接口无认证
@@ -23,34 +35,45 @@
   `src/rag/config.ts:111` 明文读取。文件是 0600，靠文件权限而非加密。
   *（此条只在旧列表里出现过，正文没有详细段落）*
 
-### 数据缺口 / 待查清（6）
-- **opencode 的 AI 正文尚未入库**
-- opencode 的 `raw_payload_json` 把附件全文内联了（最大一条 3.77 MB 换 553 字提问）
-- codex 的 subagent 会话：4325 条 AI 回答搜得到但看不出在回答什么
+### 数据缺口 / 待查清（4）
+- codex 的 subagent 会话：AI 回答搜得到但看不出在回答什么
+  *（2026-08-25 实测：25789 条 assistant 里 4334 条没有 `answering_user_key`，
+  比 2026-08-21 记的 4325 略增。）*
 - kimi 的 origin 为 null 是什么原因
-- 查清 kimi 的 `inputCacheCreation` 为什么恒为 0
+- **kimi 的 `cache_creation_input` 确认恒为 0，但不知道为什么**
+  *（2026-08-25 实测：6359 个事件合计 0。「是不是真的 0」已经有答案，
+  剩下的是「为什么」—— 是 kimi 不做 cache write，还是 wire.jsonl 不上报。）*
 - Agent 用户消息：周期性全 id 对账 sweep（源删除检测）
 
-### 归一 / 技术债（8）
-- 看板两个入口函数抽成源适配器注册表 　*（2026-08-21 加）*
-- `work_session_duration` 纳入 opencode / kimi 　*（2026-08-21 加）*
+### 归一 / 技术债（9）
+- 看板两个入口函数抽成源适配器注册表
+  *（`buildWorkDashboard` 与 `buildWorkTokenRanking` 仍是并列的两个函数。
+  2026-08-21 记「已用 sourceCoverage 测试兜底」，那条兜底仍在。）*
 - DB 背景的会话收集器缺 range/limit 　*（2026-08-21 加）*
 - file-mtime 水位状态机已经有三份
 - 外部只读数据源：抽公共同步状态机（等第三个源）
-- 全站本地日分桶表达式统一走 `bucketExpr` 　*（原记 5 文件 27 处；2026-08-21 实测剩 6 处，已迁走大半）*
+- 全站本地日分桶表达式统一走 `bucketExpr`
+  *（原记 5 文件 27 处；2026-08-21 实测剩 6 处；2026-08-25 实测 7 处 ——
+  数字口径可能与上次 grep 方式不同，做之前先重新数。）*
 - clampLimit 跨项目 DRY 整合
 - 其余页面增量迁移到 `<Page>` 框架
+- `WORK_DURATION_RULE_VERSION` 不分源 　*（2026-08-25 加）* ——
+  四个源共用一个全局常量，改任一源口径会强制四源全量重建
+- `work_session_duration.identity_confidence` 是只写列 　*（2026-08-25 加）* ——
+  有 4 个写入者、0 个读取者，写反了没有可观测后果
 
 ### 性能（3）
 - index.db WAL checkpoint 策略
 - codex / minimax 的 event 时间索引升级成复合索引
 - 会话详情页：给另外四个来源上虚拟化
 
-### 接更多源 / 打通（4）
-- opencode 接进 token 趋势页（第 5 个源）
+### 接更多源 / 打通（2）
 - MiniMax 成本（pay-as-you-go）定价接入
-- Agent 用户消息统一库（agent_user_messages）
-- Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源
+  *（五个 token 源里唯一按量付费、真能算出钱的一个。）*
+- **Work Dashboard 纳入 Cursor / Cherry / AI Chat 来源**
+  *（2026-08-25 实测：cursor 与 cherry 各有历史页，但三张注册表
+  `TOKEN_SOURCES` / `DASHBOARD_SOURCES` / `WORK_DURATION_SOURCES` 一张都没进，
+  `index.db` 里 0 张相关表。是七个源里最大的空白。）*
 
 ### Work Dashboard（3）
 - Work Dashboard 快照表 + scheduler 自动刷新 　*（2026-08-21 实测：无快照表，未做）*
@@ -68,7 +91,7 @@
 - 下载目录索引：下载过程中 birthtime / mtime 抖动
 
 ### Cursor 接入（4）
-- Cursor 对话镜像 + FTS（`index.db`） 　*（2026-08-21 实测：index.db 里 0 张 cursor 表，未做）*
+- Cursor 对话镜像 + FTS（`index.db`） 　*（2026-08-25 复测：index.db 里仍 0 张 cursor 表）*
 - Cursor 集成：LICENSE / NOTICE 与上游署名
 - Cursor 设计文档修订（仅 `src/` 实现）
 - Cursor opened projects：显示关联 chat session counts
@@ -103,10 +126,18 @@
 - Cosmos 本地 embedding fallback 　*（2026-08-21 实测：0 处本地 embedding 代码，未做。此条只在旧列表里，正文没有段落）*
 - RAG：Evidence 载荷与「证据可回看层」DTO 对齐 　*（同上，只有一句话）*
 
-### 待归档（正文还在，但已实测完成）
+### 2026-08-25 销账（做完了，从上面移除）
+- **opencode 的 AI 正文入库** —— 实测 2260 条 assistant 行在库
+- **opencode 的 `raw_payload_json` 附件内联** —— `src/blobStore.ts` 按 sha256 抽出
+- **opencode 接进 token 趋势页（第 5 个源）** —— `TOKEN_SOURCES` 含 opencode
+- **`work_session_duration` 纳入 opencode / kimi** ——
+  表里四个源齐全；kimi 口径是「按会话合并」（N 个 agent 并成一条时间轴）
+- Agent 用户消息统一库（`agent_user_messages`）—— claude/codex/kimi/opencode 四源在库
+
+### 待归档（正文还在，但已实测完成 —— 等你定要不要删正文）
 - **Claude Code 本地对话（v1）** —— `/claude-code-history` 与
   `/claude-code-history/s/:sessionId` 都已上线（`web/src/routes.ts:48-49`）。
-  正文的「已定约束」段落可能仍有参考价值，没有径自删除，等你定。
+  正文的「已定约束」段落可能仍有参考价值，没有径自删除。
 - **workDashboard / sessionMemory 取「最近 N 个项目」而非 alpha 前 N** ——
   `aggregate.ts:866-867` 已是 `.sort(按 lastUpdatedAt 倒序).slice(0, limitProjects)`。
 
