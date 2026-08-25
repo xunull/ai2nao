@@ -121,7 +121,9 @@
 - README / LM Studio 使用文档
 - CopilotKit 自定义 AI Studio UI
 - MCP v2 重 tool：search_history + project_overview + 按项目 USD 成本
-- token-vs-git v2
+- token-vs-git v2 　*（2026-08-25 复查：v1 已上线在跑；四条延后项其实是
+  「核心 2 条 + 副产品 2 条」。核心里的「精确剔除非 AI 提交」修的是比值正确性——
+  现在分母混进手写代码，项目之间不可比。）*
 - 首页线索的曝光 / 点击日志
 - Cosmos 本地 embedding fallback 　*（2026-08-21 实测：0 处本地 embedding 代码，未做。此条只在旧列表里，正文没有段落）*
 - RAG：Evidence 载荷与「证据可回看层」DTO 对齐 　*（同上，只有一句话）*
@@ -1147,11 +1149,57 @@ Depends on / blocked by:
 
 ## 33. token-vs-git v2
 
-**What:** 项目级「token 消耗 vs git 产出」分析的 v1 落地后,补几件延后的:
-- **per-commit churn 存储**(Approach C):存到每个 commit(sha/author/ts/added/deleted),支持「这次很贵的 session → 对应哪几个 commit」精细关联。
-- **降噪 glob 的 config 覆盖**:v1 硬编码默认排除列表,v2 允许 `~/.ai2nao/config.json` 覆盖。
+**What:** 项目级「token 消耗 vs git 产出」分析的 v1 落地后,补几件延后的。
+**2026-08-25 复查后重新分组** —— 原来平列的四条其实是「两件事 + 两个副产品」:
+
+**核心(捆在一起做,拆开做不出完整价值)**
+- **per-commit churn 存储**(Approach C):存到每个 commit(sha/author/ts/added/deleted/**路径**),
+  支持「这次很贵的 session → 对应哪几个 commit」精细关联。
+- **精确剔除非 AI 提交**:把 AI session 时间窗对到 commit,只算 AI 辅助的提交,
+  而非作者的全部提交。**四条里唯一修正比值正确性的一条** —— 现在分母混进了手写代码,
+  「token/行」系统性偏高,且偏多少取决于各项目手写比例,**项目之间不可比**,
+  而「哪个项目最费」正是这个页面存在的意义。
+
+**副产品(上面两条做完后几乎免费)**
 - **子目录二级粒度**:v1 输出 repo 级,v2 可展开看 repo 内子目录 token 占比。
-- **精确剔除非 AI 提交**:把 AI session 时间窗对到 commit,只算 AI 辅助的提交,而非作者的全部提交。
+  *(2026-08-25 实测过可行性,见下面「子目录粒度的两半」。)*
+- **降噪 glob 的 config 覆盖**:v1 硬编码默认排除列表,v2 允许 `~/.ai2nao/config.json` 覆盖。
+  (这条其实独立,S 号,想单做也行。)
+
+### 子目录粒度的两半(2026-08-25 实测)
+
+**git 那半:几乎白送。** `parseNumstat.ts:97` 已经把路径解析出来做降噪判断,下一行就扔掉:
+
+```ts
+const path = normalizeRenamePath(rawPath);
+if (opts.isDenoised(path)) continue;
+added += Number(a);        // ← path 到此为止,只累加进按天总数
+```
+
+改法是别扔:输出 key 从 `day` 变成 `(day, topDir)`。`git_line_churn` 现在是
+`(project_key, day, added, deleted, commits)`,加一列即可。S 号。
+
+**token 那半:库里没有可用信号。** 实测 `agent_user_messages`:
+
+```
+claude   14819 条 assistant → 带 tool_use 的 18 条、带 file_path 的 6 条
+codex    25789 条           → 10 条、48 条
+kimi / opencode            → 0-4 条、0 条
+```
+
+那十几条还是正文里**碰巧提到**这些词 —— **入库时工具调用整个没存**,只取了文本。
+而源头是有的,随手抽一个 claude JSONL:`tool_use` 357 次
+(Bash 45 / Write 27 / Edit 15 / Read 11),`file_path` 53 处全是真实路径。
+
+三条路,选 C:
+- **A. 把工具调用也入库** —— `agent_user_messages` 已 232MB,而 `Read` 的返回值
+  可能是整个文件,存进去会爆;要存也只能存「工具名 + 路径」不存内容,且要一次全量回扫。
+- **B. 查询时按需读 JSONL** —— 不涨库,但每次展开子目录要遍历几百个 JSONL,慢到不可用。
+- **C. 用 git 当归因桥** —— 不问「这些 token 花在哪个子目录」,改问「这个会话时间窗内的
+  commit 碰了哪些子目录」,再把会话 token 按那些子目录分摊。**C 需要的正好就是核心那两条。**
+
+**结论:单独做「子目录粒度」只能做出 git 那半(每个子目录改了多少行),
+做不出 token 那半(每个子目录花了多少 token),而后者才是这个页面存在的理由。**
 
 **Why:** v1 把指标做对(多指标面板、token/行 当透镜、repo 级、窗口准确),但比值分子分母仍是「AI token ÷ 你所有提交的行」的近似;v2 把归因做精。
 
@@ -1163,9 +1211,11 @@ Depends on / blocked by:
 
 **Depends on / blocked by:** v1（git_line_churn 表 + scheduler + 分析页）落地。
 
-**Effort estimate:** M（human ~1天 / CC ~40min）
+**Effort estimate:** 核心两条 M（human ~1天 / CC ~40min）；子目录粒度在其之后 +S；
+降噪 config 覆盖可单独做，S。
 
-**Priority:** P3
+**Priority:** P3（但「精确剔除非 AI 提交」修的是正确性不是分辨率，
+若这个页面要拿来做决策，它应当先于其余三条）
 
 ---
 
