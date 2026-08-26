@@ -449,6 +449,33 @@ Priority: Phase 2/3
 
 ## Completed
 
+### git churn per-commit 存储（V60）
+
+**Completed:** 2026-08-26
+
+`git_line_churn` 从 `(project_key, day)` 降到逐提交。解锁「这次很贵的会话 →
+对应哪几个 commit」。全程只读，只是 `git log` 多要 `%H` / `%ae` / `%aI` 三个字段。
+
+**它主要是拆掉而不是加上**：v1 的增量写入是累加（同一提交扫两次数字翻倍），
+那套 `merge-base --is-ancestor` + 两路写 + 删窗 + 「重扫不双重计数」CRITICAL 单测
+全为守它。sha 进主键后写入是 `INSERT OR REPLACE`，幂等由主键保证。
+
+**对抗性冷读证伪了两条载荷性前提**，各有真库反例：
+- `sha` **不是**全局唯一：`xibahe-rag` 被 clone 到两个路径，28 个 sha 同属两个
+  project_key。只用 sha 做主键 + `pLimit(4)` 并发 → 一个项目产出静默归零且永不自愈。
+  → `PRIMARY KEY (project_key, sha)`。
+- rescan 删窗**不是**「自动就对」：`--since` 过滤 committer date、`day` 来自
+  author date，真库两条相差一年多的提交会双重计数，占被保留历史的 44%。
+  → 删窗外加「清掉本次涉及天的遗留行」。
+
+**顺带治好一个 v1 就存在的静默数据丢失**：`insight-git` 的 `last_synced_sha`
+被 gc 后 `merge-base --is-ancestor` 返回 exit 128，而 `isAncestor` 只认 exit 1、
+其余 throw，外层 catch 又不清游标 —— 它冻结在 2026-01-04 一行，漏了 8 天 27 个提交。
+V60 的 `rule_version` bump 恰好绕过 isAncestor 才暴露出来。已把 128 也当重扫。
+
+真库验收：迁移后视图与 `git_line_churn_v59_snapshot` 714 行**逐行相等**；
+重扫后 2534 行（2504 真提交 + 30 遗留），floor 以下 32 行 / 12458 行产出一行未少。
+
 ### work_session_duration 纳入 opencode / kimi
 
 **Completed:** opencode 2026-08-23（O7a/O7b）、kimi 2026-08-25
@@ -1153,8 +1180,10 @@ Depends on / blocked by:
 **2026-08-25 复查后重新分组** —— 原来平列的四条其实是「两件事 + 两个副产品」:
 
 **核心(捆在一起做,拆开做不出完整价值)**
-- **per-commit churn 存储**(Approach C):存到每个 commit(sha/author/ts/added/deleted/**路径**),
-  支持「这次很贵的 session → 对应哪几个 commit」精细关联。
+- ~~**per-commit churn 存储**(Approach C)~~ **2026-08-26 done**(V60):
+  `git_commit_churn(project_key, sha, author_email, authored_at, day, added, deleted, commits, is_legacy)`,
+  `git_line_churn` 改成视图。v1 评的 `Effort: L / Risk: Med / 过度建设` 两个都反了 ——
+  实测 2534 行 / 868 KiB,而且它**移除**了 v1 最脆的累加语义(幂等改由主键保证)。
 - **精确剔除非 AI 提交**:把 AI session 时间窗对到 commit,只算 AI 辅助的提交,
   而非作者的全部提交。**四条里唯一修正比值正确性的一条** —— 现在分母混进了手写代码,
   「token/行」系统性偏高,且偏多少取决于各项目手写比例,**项目之间不可比**,

@@ -4,7 +4,8 @@
  * Expected input shape (produced by the collector with
  * `--pretty=format:%x00%ad --date=format-local:%Y-%m-%d --numstat --no-merges`):
  *
- *   <NUL>2026-06-20            <- COMMIT_MARK + author-date (local calendar day)
+ *   <NUL><sha>\x1f<author-email>\x1f<author-date-iso>\x1f2026-06-20
+ *                               <- COMMIT_MARK + 4 unit-separated fields
  *   10  2   src/a.ts          <- numstat: added\tdeleted\tpath
  *   -   -   img.png           <- binary file (skip line counts)
  *   ...
@@ -24,8 +25,33 @@
 /** Commit-boundary marker = git `%x00` (NUL). Kept as a JS escape (ASCII source). */
 export const COMMIT_MARK = String.fromCharCode(0);
 
+/** Commit-field separator = git `%x1f` (US). `%ae` / sha / ISO date can't contain it. */
+export const FIELD_MARK = String.fromCharCode(31);
+
 export type DayChurn = { added: number; deleted: number; commits: number };
 export type DenoisePredicate = (path: string) => boolean;
+
+/**
+ * One commit's contribution after denoise. `day` is git's `--date=format-local`
+ * calendar day and is **stored verbatim** — never recomputed from `authoredAt`,
+ * because the two diverge across timezone changes.
+ */
+export type CommitChurn = {
+  sha: string;
+  authorEmail: string;
+  /** `%aI` normalized to UTC. Raw `%aI` carries the author's local offset and
+   *  a TEXT column with mixed offsets can't be string-compared. */
+  authoredAt: string;
+  day: string;
+  added: number;
+  deleted: number;
+};
+
+/** `%aI` (offset-carrying ISO) → UTC ISO. Unparseable input is returned as-is. */
+export function toUtcIso(raw: string): string {
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? raw : new Date(t).toISOString();
+}
 
 /**
  * Normalize a numstat path that may encode a rename to its NEW path:
@@ -63,16 +89,19 @@ export const defaultDenoise: DenoisePredicate = (path) =>
 export function parseNumstat(
   raw: string,
   opts: { isDenoised: DenoisePredicate }
-): Map<string, DayChurn> {
-  const out = new Map<string, DayChurn>();
+): CommitChurn[] {
+  const out: CommitChurn[] = [];
   if (!raw) return out;
 
   // Each commit block starts with COMMIT_MARK. split drops a leading empty chunk.
   for (const block of raw.split(COMMIT_MARK)) {
     if (!block.trim()) continue;
     const lines = block.split("\n");
-    const day = lines[0].trim();
-    if (!day) continue;
+    // Header: <sha>\x1f<author-email>\x1f<%aI>\x1f<local day>
+    const head = lines[0].trim().split(FIELD_MARK);
+    if (head.length < 4) continue;
+    const [sha, authorEmail, authoredRaw, day] = head.map((x) => x.trim());
+    if (!sha || !day) continue;
 
     let added = 0;
     let deleted = 0;
@@ -92,12 +121,35 @@ export function parseNumstat(
     }
     if (!contributed) continue; // commit touched only denoised/binary files
 
-    const cur = out.get(day) ?? { added: 0, deleted: 0, commits: 0 };
-    cur.added += added;
-    cur.deleted += deleted;
-    cur.commits += 1;
-    out.set(day, cur);
+    out.push({
+      sha,
+      authorEmail,
+      authoredAt: toUtcIso(authoredRaw),
+      day,
+      added,
+      deleted,
+    });
   }
 
+  return out;
+}
+
+/**
+ * Roll per-commit churn up to the per-day shape v1 stored.
+ *
+ * Kept as its own function so the rules encoded in the existing parse tests
+ * (denoise, rename normalization, binary skip, "commits counts only commits
+ * contributing >=1 line") stay asserted verbatim — they are about parsing,
+ * not about storage grain.
+ */
+export function rollupByDay(commits: CommitChurn[]): Map<string, DayChurn> {
+  const out = new Map<string, DayChurn>();
+  for (const c of commits) {
+    const cur = out.get(c.day) ?? { added: 0, deleted: 0, commits: 0 };
+    cur.added += c.added;
+    cur.deleted += c.deleted;
+    cur.commits += 1;
+    out.set(c.day, cur);
+  }
   return out;
 }

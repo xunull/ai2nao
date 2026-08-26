@@ -1,26 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
   parseNumstat,
+  rollupByDay,
   defaultDenoise,
   COMMIT_MARK,
+  FIELD_MARK,
 } from "../src/gitChurn/parseNumstat.js";
 
-// Build a `git log --numstat --pretty=format:%x00%ad` style block.
-// Each commit = COMMIT_MARK + day line, then numstat lines `added\tdeleted\tpath`.
+// Build a `git log --numstat --pretty=format:%x00%H%x1f%ae%x1f%aI%x1f%ad` block.
+// Header = COMMIT_MARK + sha \x1f email \x1f %aI \x1f local-day, then numstat lines.
+let shaSeq = 0;
 function commit(day: string, files: Array<[string, string, string]>): string {
+  const sha = `sha${String(shaSeq++).padStart(38, "0")}`;
   return (
     COMMIT_MARK +
-    day +
+    [sha, "dev@example.com", `${day}T12:00:00+08:00`, day].join(FIELD_MARK) +
     "\n" +
     files.map(([a, d, p]) => `${a}\t${d}\t${p}`).join("\n")
   );
 }
 
+/** These cases assert PARSING rules (denoise / rename / binary / commit counting),
+ *  not storage grain — so they keep asserting the per-day shape via rollupByDay. */
+const parseDays = (raw: string, opts: Parameters<typeof parseNumstat>[1]) =>
+  rollupByDay(parseNumstat(raw, opts));
+
 const denoiseNone = () => false;
 
 describe("parseNumstat", () => {
   it("returns empty for empty input", () => {
-    expect(parseNumstat("", { isDenoised: denoiseNone }).size).toBe(0);
+    expect(parseDays("", { isDenoised: denoiseNone }).size).toBe(0);
   });
 
   it("sums added/deleted per day and counts the commit", () => {
@@ -28,7 +37,7 @@ describe("parseNumstat", () => {
       ["10", "2", "src/a.ts"],
       ["5", "0", "src/b.ts"],
     ]);
-    const m = parseNumstat(raw, { isDenoised: denoiseNone });
+    const m = parseDays(raw, { isDenoised: denoiseNone });
     expect(m.get("2026-06-20")).toEqual({ added: 15, deleted: 2, commits: 1 });
   });
 
@@ -37,7 +46,7 @@ describe("parseNumstat", () => {
       commit("2026-06-20", [["10", "1", "a.ts"]]) +
       commit("2026-06-20", [["4", "0", "b.ts"]]) +
       commit("2026-06-21", [["7", "3", "c.ts"]]);
-    const m = parseNumstat(raw, { isDenoised: denoiseNone });
+    const m = parseDays(raw, { isDenoised: denoiseNone });
     expect(m.get("2026-06-20")).toEqual({ added: 14, deleted: 1, commits: 2 });
     expect(m.get("2026-06-21")).toEqual({ added: 7, deleted: 3, commits: 1 });
   });
@@ -47,7 +56,7 @@ describe("parseNumstat", () => {
       ["-", "-", "img.png"],
       ["3", "0", "a.ts"],
     ]);
-    expect(parseNumstat(raw, { isDenoised: denoiseNone }).get("2026-06-20")).toEqual({
+    expect(parseDays(raw, { isDenoised: denoiseNone }).get("2026-06-20")).toEqual({
       added: 3,
       deleted: 0,
       commits: 1,
@@ -61,7 +70,7 @@ describe("parseNumstat", () => {
       ["50", "0", "x/{a.js => dist/b.js}"], // new path = x/dist/b.js
     ]);
     // With a denoise that excludes anything containing "dist/", both should drop.
-    const m = parseNumstat(raw, {
+    const m = parseDays(raw, {
       isDenoised: (p) => p.includes("dist/"),
     });
     expect(m.has("2026-06-20")).toBe(false); // both files denoised, commit contributes 0 lines
@@ -69,7 +78,7 @@ describe("parseNumstat", () => {
 
   it("excludes denoised files from line counts, and a commit with only denoised files is not counted", () => {
     const raw = commit("2026-06-20", [["9999", "0", "package-lock.json"]]);
-    const m = parseNumstat(raw, { isDenoised: defaultDenoise });
+    const m = parseDays(raw, { isDenoised: defaultDenoise });
     expect(m.has("2026-06-20")).toBe(false); // lock file denoised -> 0 lines -> commit not counted
   });
 
@@ -78,7 +87,7 @@ describe("parseNumstat", () => {
       ["9999", "0", "package-lock.json"], // denoised
       ["2", "1", "src/real.ts"], // real
     ]);
-    expect(parseNumstat(raw, { isDenoised: defaultDenoise }).get("2026-06-20")).toEqual({
+    expect(parseDays(raw, { isDenoised: defaultDenoise }).get("2026-06-20")).toEqual({
       added: 2,
       deleted: 1,
       commits: 1,

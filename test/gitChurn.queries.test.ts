@@ -20,10 +20,14 @@ function seedRepo(path = REPO) {
   ).run(path, "2026-06-26T00:00:00Z");
 }
 
+// V60 起 git_line_churn 是视图（不可写），底层表是 git_commit_churn。
+// 这里种的是「一天一行」的聚合形状，等价于迁移搬过来的历史遗留行。
 function seedChurn(projectKey: string, day: string, added: number, deleted: number, commits: number) {
   db.prepare(
-    "INSERT INTO git_line_churn (project_key, day, added, deleted, commits) VALUES (?, ?, ?, ?, ?)"
-  ).run(projectKey, day, added, deleted, commits);
+    `INSERT INTO git_commit_churn
+       (project_key, sha, author_email, authored_at, day, added, deleted, commits, is_legacy)
+     VALUES (?, ?, 'dev@example.com', ?, ?, ?, ?, ?, 1)`
+  ).run(projectKey, `legacy:${day}`, `${day}T00:00:00.000Z`, day, added, deleted, commits);
 }
 
 function seedClaude(sessionId: string, projectKey: string, lastUpdatedAt: string, total: number) {

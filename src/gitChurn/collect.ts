@@ -18,9 +18,11 @@ import { execGit } from "../git/exec.js";
 import { parseNumstat, defaultDenoise } from "./parseNumstat.js";
 
 /** Bump when denoise globs / day bucketing / author rule change so old rows rescan. */
-export const GIT_CHURN_RULE_VERSION = 1;
+export const GIT_CHURN_RULE_VERSION = 2;
 
-const PRETTY = "--pretty=format:%x00%ad";
+// %H sha / %ae 作者(走 --use-mailmap) / %aI 带偏移的 ISO / %ad 由 --date 决定的本地日历日。
+// %x1f 是单元分隔符,与 %x00 的提交分隔符配套;sha、邮箱、ISO 日期都不可能含它。
+const PRETTY = "--pretty=format:%x00%H%x1f%ae%x1f%aI%x1f%ad";
 const DATE = "--date=format-local:%Y-%m-%d";
 const NUMSTAT_MAX_BUFFER = 64 * 1024 * 1024; // large repos' numstat can exceed the 10MB default
 
@@ -35,13 +37,26 @@ export function localDay(d: Date): string {
 
 type StateRow = { last_synced_sha: string | null; rule_version: number };
 
+/**
+ * `git merge-base --is-ancestor` 的三种结局:
+ *   exit 0   → 是祖先,可以走增量
+ *   exit 1   → 不是祖先(rebase / force-push / 切分支)→ 重扫
+ *   exit 128 → **那个 sha 在仓库里已经不存在了**(被 gc、shallow clone、
+ *              分支删除、仓库重建)。这一支原来是 `throw`,而外层 catch 只写
+ *              `last_error` **不清 last_synced_sha** —— 于是那个仓库永远卡在报错、
+ *              永远进不了重扫。真库实测有活实例:`insight-git` 的
+ *              92dfd4a6 被 gc 掉后,数据冻结在 2026-01-04 一行,漏掉了 8 天 27 个提交
+ *              (V60 的 rule_version bump 恰好绕过 isAncestor 才把它治好)。
+ *              所以这一支也当「不是祖先」→ 重扫,让它自愈。
+ */
 async function isAncestor(cwd: string, ancestor: string, head: string): Promise<boolean> {
   try {
     await execGit(["merge-base", "--is-ancestor", ancestor, head], { cwd });
-    return true; // exit 0 = ancestor
+    return true;
   } catch (e) {
-    if ((e as { code?: number })?.code === 1) return false; // exit 1 = not ancestor
-    throw e; // any other exit = real error
+    const code = (e as { code?: number })?.code;
+    if (code === 1 || code === 128) return false;
+    throw e; // 其余(比如 git 不存在)仍是真错误
   }
 }
 
@@ -102,28 +117,39 @@ export async function collectRepoChurn(
       { cwd: opts.repoPath, maxBuffer: NUMSTAT_MAX_BUFFER }
     );
 
-    const byDay = parseNumstat(stdout, { isDenoised: defaultDenoise });
+    const commits = parseNumstat(stdout, { isDenoised: defaultDenoise });
+    // 本次涉及的天 —— rescan 时用来清掉这些天上的遗留行,见下。
+    const touchedDays = [...new Set(commits.map((c) => c.day))];
 
     // All git I/O done; now write in ONE synchronous transaction.
     const write = db.transaction(() => {
       if (mode === "rescan") {
         db.prepare(
-          "DELETE FROM git_line_churn WHERE project_key = ? AND day >= ?"
+          "DELETE FROM git_commit_churn WHERE project_key = ? AND day >= ?"
         ).run(opts.repoPath, floorDay);
+        // `--since` 过滤的是 **committer** date,而 day 来自 %ad(**author** date),
+        // 两者能差一年多(真库有 author=2024-04-23 / committer=2026-07-15 的提交)。
+        // 这类提交在窗口内会被产出,但它的 day 在 floorDay 之下,上面那条删窗够不着 ——
+        // 不清掉同一天的遗留行就会变成「遗留行 + 真提交行」两条,视图 SUM 算两遍。
+        if (touchedDays.length > 0) {
+          const holes = touchedDays.map(() => "?").join(",");
+          db.prepare(
+            `DELETE FROM git_commit_churn
+              WHERE project_key = ? AND is_legacy = 1 AND day IN (${holes})`
+          ).run(opts.repoPath, ...touchedDays);
+        }
+      }
+      {
+        // 两路共用同一条写入:主键 (project_key, sha) 让它天然幂等。
+        // v1 的累加语义(以及为守住它而存在的「重扫不双重计数」单测)到此不再需要。
         const ins = db.prepare(
-          "INSERT OR REPLACE INTO git_line_churn (project_key, day, added, deleted, commits) VALUES (?, ?, ?, ?, ?)"
+          `INSERT OR REPLACE INTO git_commit_churn
+             (project_key, sha, author_email, authored_at, day, added, deleted, commits, is_legacy)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)`
         );
-        for (const [day, c] of byDay) ins.run(opts.repoPath, day, c.added, c.deleted, c.commits);
-      } else {
-        const up = db.prepare(
-          `INSERT INTO git_line_churn (project_key, day, added, deleted, commits)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(project_key, day) DO UPDATE SET
-             added = added + excluded.added,
-             deleted = deleted + excluded.deleted,
-             commits = commits + excluded.commits`
-        );
-        for (const [day, c] of byDay) up.run(opts.repoPath, day, c.added, c.deleted, c.commits);
+        for (const c of commits) {
+          ins.run(opts.repoPath, c.sha, c.authorEmail, c.authoredAt, c.day, c.added, c.deleted);
+        }
       }
       db.prepare(
         `INSERT INTO git_line_churn_state (repo_path, last_synced_sha, rule_version, author_email, updated_at, last_error)
@@ -138,7 +164,7 @@ export async function collectRepoChurn(
     });
     write();
 
-    return { mode, days: byDay.size };
+    return { mode, days: touchedDays.length };
   } catch (e) {
     // Record the failure (keep last_synced_sha so we don't lose ground) and rethrow
     // so the scheduler's per-repo catch counts it.

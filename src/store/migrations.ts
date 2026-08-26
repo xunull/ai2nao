@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 59;
+export const SCHEMA_VERSION = 60;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -76,6 +76,7 @@ export function migrate(db: Database.Database): void {
     applyV57(db);
     applyV58(db);
     applyV59(db);
+    applyV60(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -141,6 +142,7 @@ export function migrate(db: Database.Database): void {
   if (v < 57) applyV57(db);
   if (v < 58) applyV58(db);
   if (v < 59) applyV59(db);
+  if (v < 60) applyV60(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -2976,6 +2978,105 @@ function applyV58(db: Database.Database): void {
         ON opencode_session(last_updated_at);
     `);
     db.exec("UPDATE meta_schema SET version = 58 WHERE id = 1;");
+  })();
+}
+
+/**
+ * V60 —— git churn 从 `(project_key, day)` 降到**逐提交**。
+ *
+ * 为什么：v1 的增量写入是**累加**(`added = added + excluded.added`),同一个提交扫两次
+ * 数字就翻倍 —— 所以 v1 需要 `merge-base --is-ancestor` 判祖先、rescan/incremental
+ * 两路分开、删窗重扫,外加一条「重扫不双重计数」的 CRITICAL 单测来守着。
+ * 换成 sha 做主键之后写入是 `INSERT OR REPLACE`,**幂等由主键保证**,那套机器不再需要。
+ *
+ * 主键是 `(project_key, sha)` 而**不是** `sha` —— sha 不是全局唯一的:真库里
+ * `xibahe-rag` 被 clone 到两个路径,28 个 sha 同属两个 project_key。只用 sha 做主键,
+ * 并发采集(`sync.ts` 的 pLimit(4))下后写的会覆盖先写的 project_key,
+ * 另一个项目的产出**静默归零且永不自愈**(下轮 incremental 的 last_sha..HEAD 是空的)。
+ *
+ * 老数据必须搬过来,不能丢:`DEFAULT_FLOOR_DAYS = 400`,重扫只覆盖 `--since=now-400d`,
+ * 真库有 32 行(最早 2024-04-23、含 12458 行产出)在 floor 之下 —— 一旦 DROP 就永久没了。
+ * 所以搬成 `is_legacy=1` 的行,合成键 `'legacy:'||day`,并保留原来那天的 `commits` 数。
+ *
+ * 快照表不是可选的:主验收是「视图聚合与迁移前逐行相等」,DROP 之后就无从比较了。
+ */
+function applyV60(db: Database.Database): void {
+  // 三种状态要分开,少判一种就会炸:
+  //   view  → 本迁移跑过了,早退(没有它重复执行会 UNIQUE 冲突,而且第二次的
+  //           INSERT...SELECT 会从新表读回自己)
+  //   table → 正常升级路径,要快照 + 搬运 + DROP + 建视图
+  //   都没有 → 合成旧库/裁剪过的库(测试里就有),直接建新表与视图,不搬运
+  const kind = (
+    db
+      .prepare("SELECT type FROM sqlite_master WHERE name = 'git_line_churn'")
+      .get() as { type?: string } | undefined
+  )?.type;
+  if (kind === "view") {
+    db.exec("UPDATE meta_schema SET version = 60 WHERE id = 1;");
+    return;
+  }
+  const hasLegacyTable = kind === "table";
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE git_commit_churn (
+        project_key  TEXT NOT NULL,
+        -- 真提交是 40 位 sha;历史遗留行是合成键 'legacy:<day>'(不会与 sha 冲突)。
+        sha          TEXT NOT NULL,
+        author_email TEXT NOT NULL,
+        -- %aI 归一到 UTC。原始 %aI 带作者本地偏移(真库 +08:00 与 Z 混用),
+        -- 而 queries 的时间边界是 toISOString();TEXT 列上混合偏移的字符串比较是错的。
+        -- 遗留行只知道天、不知道时刻,填当天 00:00:00Z。
+        authored_at  TEXT NOT NULL,
+        -- git --date=format-local 算出的本地日历日,**原样存,永不从 authored_at 重算**
+        -- (换时区会分叉)。
+        day          TEXT NOT NULL,
+        added        INTEGER NOT NULL DEFAULT 0,
+        deleted      INTEGER NOT NULL DEFAULT 0,
+        -- 真提交恒为 1;遗留行装原来那天的提交数,所以视图用 SUM 而不是 COUNT。
+        commits      INTEGER NOT NULL DEFAULT 1,
+        is_legacy    INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (project_key, sha)
+      );
+      CREATE INDEX idx_git_commit_churn_project_day ON git_commit_churn(project_key, day);
+      -- queries.ts 的过滤列是 day(**不带 project_key**),v1 的 idx_git_line_churn_day
+      -- 正是为它建的;少了它视图会退化成全表扫。
+      CREATE INDEX idx_git_commit_churn_day ON git_commit_churn(day);
+      CREATE INDEX idx_git_commit_churn_at  ON git_commit_churn(authored_at);
+    `);
+
+    if (hasLegacyTable) {
+      // 快照:主验收「视图聚合与迁移前逐行相等」离了它没法执行。
+      db.exec(
+        "CREATE TABLE git_line_churn_v59_snapshot AS SELECT * FROM git_line_churn;"
+      );
+
+      db.exec(`
+        INSERT INTO git_commit_churn
+          (project_key, sha, author_email, authored_at, day, added, deleted, commits, is_legacy)
+        SELECT project_key,
+               'legacy:' || day,
+               COALESCE((SELECT s.author_email FROM git_line_churn_state s
+                          WHERE s.repo_path = git_line_churn.project_key), ''),
+               day || 'T00:00:00.000Z',
+               day, added, deleted, commits, 1
+          FROM git_line_churn;
+      `);
+
+      // 同名 DROP TABLE + CREATE VIEW 是允许的;表上的索引随表自动消失。
+      db.exec("DROP TABLE git_line_churn;");
+    }
+    db.exec(`
+      CREATE VIEW git_line_churn AS
+        SELECT project_key,
+               day,
+               SUM(added)   AS added,
+               SUM(deleted) AS deleted,
+               SUM(commits) AS commits
+          FROM git_commit_churn
+         GROUP BY project_key, day;
+    `);
+    db.exec("UPDATE meta_schema SET version = 60 WHERE id = 1;");
   })();
 }
 
