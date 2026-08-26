@@ -120,6 +120,7 @@ import { registerWorkRecapRoutes } from "../workRecap/routes.js";
 import { registerWorkTokensTrendRoutes } from "../workTokensTrend/routes.js";
 import { registerAgentUserMessagesRoutes } from "../agentUserMessages/routes.js";
 import { registerAiRhythmRoutes } from "../aiRhythm/routes.js";
+import { registerAiSessionsRoutes } from "../aiSessions/routes.js";
 import { registerCommitBridgeRoutes } from "../commitBridge/routes.js";
 import { registerProjectCalendarRoutes } from "../projectCalendar/routes.js";
 import { registerHomeRoutes } from "../home/routes.js";
@@ -319,6 +320,7 @@ export function createApp(opts: ServeOptions): Hono {
   registerProviderRoutes(app, db);
   registerAgentUserMessagesRoutes(app, db);
   registerAiRhythmRoutes(app, db);
+  registerAiSessionsRoutes(app, db);
   registerCommitBridgeRoutes(app, db);
   registerProjectCalendarRoutes(app, db, opts.schedulerRuntime);
   registerHomeRoutes(app, db);

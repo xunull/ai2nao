@@ -26,6 +26,7 @@ import {
   LayoutDashboard,
   MessageSquareText,
   MessagesSquare,
+  CalendarRange,
   Package,
   Plug,
   Search,
@@ -151,6 +152,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/work-recap", label: "工作回看", icon: GitCommit },
       { to: "/ai-rhythm", label: "AI 节律", icon: Activity },
+      { to: "/ai-sessions", label: "每日会话", icon: CalendarRange },
       { to: "/project-calendar", label: "项目日历", icon: CalendarDays },
       { to: "/attention", label: "注意力", icon: Eye },
       { to: "/commit-bridge", label: "对话↔提交", icon: GitCompare },

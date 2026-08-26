@@ -19,6 +19,7 @@ export const ROUTE_PATHS = [
   "/providers",
   "/agent-messages",
   "/ai-rhythm",
+  "/ai-sessions",
   "/project-calendar",
   "/attention",
   "/commit-bridge",
