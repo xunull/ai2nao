@@ -51,6 +51,8 @@ const OpencodeHistory = lazy(() =>
   import("./pages/OpencodeHistory").then((m) => ({ default: m.OpencodeHistory }))
 );
 const KimiHistory = lazy(() => import("./pages/KimiHistory"));
+const HermesHistory = lazy(() => import("./pages/HermesHistory"));
+const HermesHistorySession = lazy(() => import("./pages/HermesHistorySession"));
 const KimiHistorySession = lazy(() => import("./pages/KimiHistorySession"));
 const OpencodeHistorySession = lazy(() =>
   import("./pages/OpencodeHistorySession").then((m) => ({ default: m.OpencodeHistorySession }))
@@ -210,6 +212,8 @@ export function App() {
           <Route path="/opencode-history/s/:sessionId" element={<OpencodeHistorySession />} />
           <Route path="/kimi-history" element={<KimiHistory />} />
           <Route path="/kimi-history/s/:sessionId" element={<KimiHistorySession />} />
+          <Route path="/hermes-history" element={<HermesHistory />} />
+          <Route path="/hermes-history/s/:sessionId" element={<HermesHistorySession />} />
           <Route path="/ai-chat" element={<AiChat />} />
           <Route path="/bash-permissions" element={<BashPermissions />} />
           <Route path="/bash-sandbox" element={<BashSandboxSettings />} />

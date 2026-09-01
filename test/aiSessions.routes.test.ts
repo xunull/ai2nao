@@ -41,9 +41,13 @@ describe("GET /api/ai-sessions", () => {
     expect(Array.isArray(body.active)).toBe(true);
     expect(Array.isArray(body.started)).toBe(true);
     // 覆盖面必须随数字一起下发 —— 少了它,这个数读起来像「全部 AI 会话」。
-    expect(body.coverage.sources).toEqual(["claude", "codex", "kimi", "opencode"]);
+    // 这条断言**钉死整个列表**是有意的:往 agent_user_messages 加源不会让 tsc 报到
+    // 这里(AgentUserMessageSource 是协变位置),所以这条测试是唯一会红的东西。
+    // 加源时它红了 → 说明你还没把新源写进覆盖面声明,不是测试过时了。
+    expect(body.coverage.sources).toEqual(["claude", "codex", "kimi", "opencode", "hermes"]);
     expect(body.coverage.note).toMatch(/cursor|cherry/);
     expect(body.coverage.note).toMatch(/minimax/);
+    expect(body.coverage.note).toMatch(/hermes/);
     db.close();
   });
 

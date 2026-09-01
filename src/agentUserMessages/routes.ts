@@ -16,7 +16,18 @@ function jsonErr(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
 }
 
-const SOURCES = new Set<AgentUserMessageSource>(["claude", "codex", "opencode"]);
+/**
+ * 搜索的 `source=` 白名单。**必须与 AgentUserMessageSource 手工保持同步** ——
+ * 往那个联合类型加成员不会让 tsc 报到这里(协变位置)。kimi 就是这么漏的:
+ * 它入库很久了,却一直不在这个集合里,搜索按 source 筛 kimi 会被当成非法值。
+ */
+const SOURCES = new Set<AgentUserMessageSource>([
+  "claude",
+  "codex",
+  "opencode",
+  "kimi",
+  "hermes",
+]);
 const ROLE_FILTERS = new Set<string>(["user", "assistant", "all"]);
 
 /**

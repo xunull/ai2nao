@@ -5,9 +5,15 @@
 
 /**
  * V54 起 source 列不再有 CHECK 约束 —— 合法性就靠这个联合类型。加新源改这一行,
- * 零迁移(改 CHECK 要重建 232 MB 的表,见 migrations.ts applyV54)。
+ * 零迁移(改 CHECK 要重建这张表,现已 330 MB,见 migrations.ts applyV54)。
+ *
+ * **但改这一行不会让 tsc 报出该改的地方。** 全仓没有 `Record<AgentUserMessageSource,…>`
+ * 也没有 exhaustive switch,22 个引用点全在协变位置,加成员只是放宽。真正要跟着改的
+ * 是**不引用本类型的硬编码字面量数组**,逐处枚举在 docs/agent-source-checklist.md。
+ * 教训来自 kimi:它早在本 union 里,却至今缺席 agentUserMessages/routes.ts 的筛选器、
+ * topicStream/conversation.ts 的话题流和 AiRhythm.tsx 的图例,tsc 从没报过。
  */
-export type AgentUserMessageSource = "claude" | "codex" | "opencode" | "kimi";
+export type AgentUserMessageSource = "claude" | "codex" | "opencode" | "kimi" | "hermes";
 
 /** 消息角色。V53 起这张表也装 assistant 行(AI 正文入库)。 */
 export type AgentMessageRole = "user" | "assistant";

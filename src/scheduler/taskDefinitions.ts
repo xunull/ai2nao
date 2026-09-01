@@ -22,6 +22,7 @@ import { ingestOpencodeUserMessages } from "../agentUserMessages/opencodeIngest.
 import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "../agentUserMessages/kimiIngest.js";
+import { ingestHermesUserMessages } from "../agentUserMessages/hermesIngest.js";
 import { refreshKimiTokenUsage } from "../kimiTokenUsage/refresh.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
@@ -661,6 +662,34 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: r.status,
           summary: {
             scannedFiles: r.scannedFiles,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
+          },
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // hermes「我发的消息」+ AI 正文入库(供全文搜索与 /ai-sessions)。
+      // 源是 ~/.hermes/state.db(SQLite + WAL),只读打开、REQUIRED 列守卫,
+      // 打不开或结构不认识时报 failed 但不影响其它六个源。
+      //
+      // **全量重扫,不用水位**:真库只有 1537 条消息,一轮 ~160ms;而水位是这个仓库
+      // 翻过车的地方(opencode 的「筛选时钟 ≠ 推进时钟」永久丢过 550/1934 条)。
+      // 在这个体量上水位是纯粹的风险没有收益。
+      key: "agent_user_messages.hermes.sync",
+      label: "hermes 用户消息入库",
+      description:
+        "把 hermes state.db 里的提问与 AI 正文写入 agent_user_messages,工具结果折进对应 assistant 行的载荷。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = ingestHermesUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedSessions: r.scannedSessions,
             upserted: r.upserted,
             watermarkMs: r.watermarkMs,
           },

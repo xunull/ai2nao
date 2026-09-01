@@ -139,6 +139,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { to: "/cherry-studio-history", label: "Cherry" },
           { to: "/opencode-history", label: "opencode" },
           { to: "/kimi-history", label: "Kimi" },
+          { to: "/hermes-history", label: "Hermes" },
         ],
       },
       { to: "/topics/river", label: "主题河流", icon: Waves },

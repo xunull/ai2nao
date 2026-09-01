@@ -75,6 +75,7 @@ import { ingestClaudeUserMessages } from "./agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "./agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "./agentUserMessages/kimiIngest.js";
 import { ingestOpencodeUserMessages } from "./agentUserMessages/opencodeIngest.js";
+import { ingestHermesUserMessages } from "./agentUserMessages/hermesIngest.js";
 import { setSyncState, getSyncState } from "./agentUserMessages/store.js";
 import { CARD_REGISTRY } from "./cards/registry.js";
 import { generateCardBundle } from "./cards/bundle.js";
@@ -2176,8 +2177,10 @@ const agentMessagesCmd = program
   .command("agent-messages")
   .description("Cross-agent conversation index (agent_user_messages)");
 
-type AumSourceName = "claude" | "codex" | "opencode" | "kimi";
-const AUM_SOURCES: AumSourceName[] = ["claude", "codex", "opencode", "kimi"];
+// 这是 AgentUserMessageSource 的一份**手抄副本** —— 两处不同步时 tsc 不会报。
+// 加源清单见 docs/agent-source-checklist.md。
+type AumSourceName = "claude" | "codex" | "opencode" | "kimi" | "hermes";
+const AUM_SOURCES: AumSourceName[] = ["claude", "codex", "opencode", "kimi", "hermes"];
 
 agentMessagesCmd
   .command("resync")
@@ -2234,10 +2237,14 @@ agentMessagesCmd
 
         const results: Record<string, unknown> = {};
         for (const src of want) {
+          // 每个源一个显式分支 —— 原来最后是 `else → kimi` 的兜底,
+          // 那意味着往 AUM_SOURCES 加任何新源都会静默跑成 kimi 的 ingest。
           if (src === "claude") results[src] = await ingestClaudeUserMessages(db);
           else if (src === "codex") results[src] = await ingestCodexUserMessages(db);
           else if (src === "opencode") results[src] = ingestOpencodeUserMessages(db);
-          else results[src] = ingestKimiUserMessages(db);
+          else if (src === "kimi") results[src] = ingestKimiUserMessages(db);
+          else if (src === "hermes") results[src] = ingestHermesUserMessages(db);
+          else results[src] = { status: "skipped", reason: `unknown source: ${String(src)}` };
         }
 
         const after = snapshot();

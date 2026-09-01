@@ -93,6 +93,12 @@ import {
 } from "../opencodeHistory/index.js";
 import { isOpencodeHistoryError } from "../opencodeHistory/errors.js";
 import {
+  listHermesSessions,
+  loadHermesSessionDetail,
+  hermesDbPath,
+  resolveHermesHome,
+} from "../hermesHistory/index.js";
+import {
   getCherryStudioStatus,
   listCherryStudioSessions,
   loadCherryStudioSession,
@@ -922,6 +928,36 @@ export function createApp(opts: ServeOptions): Hono {
     } catch (e) {
       return codexHistoryErr(e);
     }
+  });
+
+  // ── hermes ───────────────────────────────────────────────────────────────
+  // 直读活的 state.db,不镜像(见 hermesHistory/index.ts 顶部注释)。
+  // 打不开 / 结构不认识时返回 200 + diagnostic,让页面显示可解释的空态而不是白屏 ——
+  // 与 opencode 的 500 不同,因为 hermes 更可能没装。
+  app.get("/api/hermes-history/sessions", (c) => {
+    const result = listHermesSessions(c.req.query("hermesHome"));
+    return c.json(result);
+  });
+
+  app.get("/api/hermes-history/sessions/:sessionId", (c) => {
+    const sessionId = decodeURIComponent(c.req.param("sessionId"));
+    const { detail, diagnostic } = loadHermesSessionDetail(
+      sessionId,
+      c.req.query("hermesHome")
+    );
+    if (diagnostic) return c.json({ detail: null, diagnostic });
+    if (!detail) return jsonErr(404, `hermes session not found: ${sessionId}`);
+    return c.json({ detail });
+  });
+
+  app.get("/api/hermes-history/status", (c) => {
+    const home = resolveHermesHome(c.req.query("hermesHome"));
+    return c.json({
+      platform: process.platform,
+      hermesHome: home,
+      dbPath: hermesDbPath(home),
+      envHermesHome: Boolean(process.env.HERMES_HOME),
+    });
   });
 
   app.get("/api/opencode-history/status", (c) => {

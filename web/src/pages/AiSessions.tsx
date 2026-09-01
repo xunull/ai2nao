@@ -30,6 +30,7 @@ const SOURCE_META = {
   codex: { label: "Codex", color: "#2563eb" },
   opencode: { label: "opencode", color: "#0d9488" },
   kimi: { label: "Kimi", color: "#7c3aed" },
+  hermes: { label: "Hermes", color: "#c026d3" },
 } as const;
 type SourceKey = keyof typeof SOURCE_META;
 const SOURCES = Object.keys(SOURCE_META) as SourceKey[];

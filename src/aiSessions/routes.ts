@@ -41,9 +41,10 @@ export function registerAiSessionsRoutes(app: Hono, db: Database.Database): void
         // 覆盖面必须随数字一起下发 —— 不写明就又是一个「读起来像全部、
         // 其实不是」的数(排行页的活跃时长列刚栽过这一次)。
         coverage: {
-          sources: ["claude", "codex", "kimi", "opencode"],
+          sources: ["claude", "codex", "kimi", "opencode", "hermes"],
           note:
             "cursor / cherry-studio 未入库；minimax 是 API 用量账单，没有会话概念。" +
+            "hermes 无项目归属（cwd 9/120、git_repo_root 0/120），下钻时落在「无目录记录」组。" +
             "「新开」按首条消息日算，与 Token 趋势 tooltip 里按最后更新日落桶的会话数口径不同。",
         },
       });
