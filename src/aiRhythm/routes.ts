@@ -17,7 +17,7 @@ function jsonErr(status: number, message: string) {
  *   GET /api/ai-rhythm/heatmap  作息热力图(weekday×hour,仅 is_human,全源全时段)。
  *   GET /api/ai-rhythm/streak   连续天数纪录(Duolingo 式,grace 规则)。
  *   GET /api/ai-rhythm/commands 命令/技能用量排行(纯排行,路径守卫)。
- *   GET /api/ai-rhythm/source-trend 三源迁移周趋势(堆叠面积)。
+ *   GET /api/ai-rhythm/source-trend 逐源周趋势(堆叠面积;只计人发起的会话)。
  *   GET /api/ai-rhythm/records  个人纪录/极值(奖杯架)。
  * 必须在 src/serve/app.ts 的 createApp 里注册,否则不可达。
  */

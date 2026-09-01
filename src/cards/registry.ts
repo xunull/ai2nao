@@ -91,8 +91,11 @@ export const CARD_REGISTRY: CardDef[] = [
   },
   {
     name: "source-trend",
-    title: "三源使用趋势",
-    description: "按周统计 Claude / Codex / opencode 的对话量迁移。",
+    // 标题/描述里**不写死源名** —— 卡片是发出去给人看的,写死几源就得跟着
+    // SERIES 一起改,而它们分在两个文件里、tsc 不会报。加源清单见
+    // docs/agent-source-checklist.md 第 11 项。
+    title: "AI 使用趋势",
+    description: "按周统计各 AI agent 的对话量迁移（只计人发起的会话）。",
     render: (db, o) => renderSourceTrendSvg(weeklySourceMix(db, { now: o?.now })),
   },
   {

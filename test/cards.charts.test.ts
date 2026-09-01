@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandLeaderboard, SourceTrend } from "../src/aiRhythm/queries.js";
 import { renderLeaderboardSvg } from "../src/cards/leaderboardSvg.js";
 import { renderSourceTrendSvg, SERIES } from "../src/cards/sourceTrendSvg.js";
+import { CARD_REGISTRY } from "../src/cards/registry.js";
 
 function expectValidSvg(svg: string) {
   expect(svg.startsWith("<svg")).toBe(true);
@@ -120,5 +121,25 @@ describe("renderLeaderboardSvg", () => {
     expectValidSvg(svg);
     expect(svg).toContain("共 0 次调用");
     expect(rectCount(svg)).toBe(1); // 仅背景
+  });
+});
+
+describe("卡片注册表 — 标题/描述不许写死源数或源名", () => {
+  /**
+   * 回归:`source-trend` 卡的标题曾是「三源使用趋势」、描述是「按周统计
+   * Claude / Codex / opencode 的对话量迁移」。加 kimi、加 hermes 之后两处都过期了,
+   * 而它们是**发出去给人看的**(bundle.ts 渲进 markdown 与 HTML),却没有任何测试守着。
+   *
+   * 根因是标题/描述与 SERIES 分在两个文件,tsc 不会报。这条测试守的不是「写得对」,
+   * 而是「不写死会漂的东西」。
+   */
+  it("source-trend 卡不写死源数,也不枚举源名", () => {
+    const card = CARD_REGISTRY.find((c) => c.name === "source-trend");
+    expect(card, "source-trend 卡不见了").toBeTruthy();
+    const text = `${card!.title} ${card!.description}`;
+    expect(text, "标题/描述里写死了源数").not.toMatch(/[一二三四五六七八九十]源/);
+    for (const s of SERIES) {
+      expect(text, `标题/描述里枚举了源名 ${s.label}`).not.toContain(s.label);
+    }
   });
 });
