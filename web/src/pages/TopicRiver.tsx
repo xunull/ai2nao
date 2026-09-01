@@ -148,7 +148,7 @@ const SOURCE_META: Record<
  * straight to their session page; claude's id is itself `${projectId}:${uuid}`
  * and its page needs projectId as a query param.
  */
-function sessionDetailPath(sourceRef: string): string | null {
+export function sessionDetailPath(sourceRef: string): string | null {
   const idx = sourceRef.indexOf(":");
   if (idx < 0) return null;
   const chatSource = sourceRef.slice(0, idx);
