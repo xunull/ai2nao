@@ -241,6 +241,24 @@ export function userMessageAnalytics(
   return { totals, byDay };
 }
 
+/**
+ * 每桶的逐源计数。**用 Record 而不是散列字段**,这样往
+ * `AgentUserMessageSource` 加成员时 `ZERO_COUNTS` 会缺键 → tsc 直接报错。
+ *
+ * 此前这里是固定四字段 + `if/else if` 链,新源既不匹配任何分支、也不计入 total,
+ * 于是**静默从时间线上消失**。hermes 入库时真的踩了:152 条人类消息一条都不显示,
+ * 而全套测试照样绿。同样的家法见 web/src/util/sourceLabels.ts 顶部注释。
+ */
+export type SourceCounts = Record<AgentUserMessageSource, number>;
+
+const ZERO_COUNTS: SourceCounts = {
+  claude: 0,
+  codex: 0,
+  opencode: 0,
+  kimi: 0,
+  hermes: 0,
+};
+
 export type UserMessageTimelineBucket = {
   bucketStart: string; // ISO 下界(含)
   bucketEnd: string; // ISO 上界(不含)
@@ -248,6 +266,7 @@ export type UserMessageTimelineBucket = {
   codex: number;
   opencode: number;
   kimi: number;
+  hermes: number;
   total: number;
 };
 
@@ -325,23 +344,19 @@ export function userMessageTimeline(
     )
     .all(params) as { k: string; source: string; n: number }[];
 
-  const byKey = new Map<
-    string,
-    { claude: number; codex: number; opencode: number; kimi: number }
-  >();
+  const byKey = new Map<string, SourceCounts>();
   for (const r of rows) {
-    const e = byKey.get(r.k) ?? { claude: 0, codex: 0, opencode: 0, kimi: 0 };
-    if (r.source === "claude") e.claude += r.n;
-    else if (r.source === "codex") e.codex += r.n;
-    else if (r.source === "opencode") e.opencode += r.n;
-    else if (r.source === "kimi") e.kimi += r.n;
+    const e = byKey.get(r.k) ?? { ...ZERO_COUNTS };
+    // 认不出的源不静默丢 —— 计不进任何一列会让它从图上消失且总数对不上。
+    if (r.source in e) e[r.source as AgentUserMessageSource] += r.n;
     byKey.set(r.k, e);
   }
 
   let windowTotal = 0;
   const outBuckets: UserMessageTimelineBucket[] = buckets.map((b) => {
-    const e = byKey.get(b.key) ?? { claude: 0, codex: 0, opencode: 0, kimi: 0 };
-    const total = e.claude + e.codex + e.opencode + e.kimi;
+    const e = byKey.get(b.key) ?? { ...ZERO_COUNTS };
+    // 求和遍历 Record,不逐字段相加 —— 后者漏一个源就静默少算总数。
+    const total = Object.values(e).reduce((a, n) => a + n, 0);
     windowTotal += total;
     return {
       bucketStart: b.start.toISOString(),
@@ -350,6 +365,7 @@ export function userMessageTimeline(
       codex: e.codex,
       opencode: e.opencode,
       kimi: e.kimi,
+      hermes: e.hermes,
       total,
     };
   });
