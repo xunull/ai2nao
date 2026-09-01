@@ -235,10 +235,34 @@ export type WeekMix = {
   codex: number;
   opencode: number;
   kimi: number;
+  /** 只含**人发起**的 hermes 会话,cron 定时任务不计 —— 见 HERMES_COUNTED。 */
+  hermes: number;
   /** 各分列之和(**不是** COUNT(*))—— 见 weeklySourceMix 的注释。 */
   total: number;
 };
 export type SourceTrend = { weeks: WeekMix[]; generatedAt: string };
+
+/**
+ * hermes 里**人发起**的那部分。cron 定时任务不算「你在用 agent」——
+ * 真库 120 场里 94 场是 cron,全算进来这条带会有 78% 是机器跑的,
+ * 而这张卡的标题是「你按周用哪个 agent」。
+ *
+ * 判据用 session id 前缀而不是 hermes 自己的 `sessions.source` 列:后者只存在
+ * `~/.hermes/state.db`,index.db 拿不到。实测 121 场里
+ * `(source=='cron') != (id LIKE 'cron_%')` 的行数为 **0**。
+ *
+ * 这仍然是耦合上游约定 —— 它哪天改了 id 命名,这里会静默失效。防它的不是换判据,
+ * 是下面那条「total == 各带之和」的不变量加上专盯 cron 的用例。
+ */
+const HERMES_COUNTED =
+  "source = 'hermes' AND source_session_id NOT LIKE 'cron\\_%' ESCAPE '\\'";
+
+/**
+ * 一条消息算不算进这张卡。**`total` 必须用它,各带之和才恒等于 total** ——
+ * 原来 total 是 COUNT(*)(全源)而分列只有三个,kimi 从入库起就没被画进去,
+ * W34 那周漏 124/422 = 29%,而绝对值堆叠图上不会出现空洞,只是矮一截。
+ */
+const WEEK_COUNTED = `(source IN ('claude','codex','opencode','kimi') OR (${HERMES_COUNTED}))`;
 
 /**
  * 使用迁移周趋势:按本地周分桶,统计各源的 is_human 消息数。
@@ -262,7 +286,8 @@ export function weeklySourceMix(
               SUM(source = 'codex')    AS codex,
               SUM(source = 'opencode') AS opencode,
               SUM(source = 'kimi')     AS kimi,
-              SUM(source IN ('claude','codex','opencode','kimi')) AS total
+              SUM(${HERMES_COUNTED})   AS hermes,
+              SUM(${WEEK_COUNTED})     AS total
        FROM agent_user_messages
        WHERE is_human = 1
          AND strftime('%Y-W%W', event_at_utc, 'localtime') IS NOT NULL

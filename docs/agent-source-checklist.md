@@ -46,7 +46,8 @@ npm run typecheck:web  → 零错误
 |---|---|---|---|
 | 9 | `src/topicStream/rebuild.ts` | `CONVERSATION_SOURCES`（两条入河 SQL 都从它生成）+ **必须同时 bump `CONVERSATION_RULE_VERSION`**，否则 `loadCodebook` 命中、`kmeans` 一次都不跑，新源只会被贴到旧质心上 | 该源的人类消息要不要进话题聚类 |
 | 9b | `web/src/pages/TopicRiver.tsx` `sessionDetailPath` | 话题河 → 各源历史页的深链 | **静默**：新源的会话在河里点不进去，返回 null 不报错 |
-| 10 | `web/src/pages/AiRhythm.tsx` | 节奏页图例数组 | 该源有没有足够的时间分布密度 |
+| 10 | `web/src/pages/AiRhythm.tsx` | `SOURCE_COLORS` + 图例数组 + `<Area>` **三处分开写**，少一处 tsc 不报 | 该源有没有足够的时间分布密度 |
+| 10b | `src/aiRhythm/queries.ts` `WEEK_COUNTED` | 决定「哪条消息算进这张卡」，`total` 必须用它 | 不用它 → `total` 与各带之和脱节，绝对值堆叠图上不会出现空洞、只是矮一截 |
 | 11 | `src/cards/sourceTrendSvg.ts` | 卡片 SVG 的 `SERIES`（已导出，供测试派生计数） | 卡片是固定几条线的成图，加一条要重新配色；**注意「图例项数 == 柱子段数」对它恒真无判别力**（两者同源于 `SERIES`），要断言就写死标签名 |
 | 12 | `src/workTokensTrend/types.ts` `TOKEN_SOURCES` | token 趋势 | 该源有没有 token 数据 |
 | 13 | `src/workDashboard/types.ts` `DASHBOARD_SOURCES` | Work Dashboard | **需要 `project_key` 归属** |

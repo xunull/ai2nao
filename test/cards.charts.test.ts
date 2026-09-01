@@ -37,7 +37,7 @@ describe("renderSourceTrendSvg", () => {
     const svg = renderSourceTrendSvg(trend);
     // 计数断言从 SERIES 派生 → 对「SERIES 少一项」恒真无判别力。
     // 这一条写死标签,才是真正守住「加源没漏这张卡」的东西。
-    for (const label of ["Claude", "Codex", "opencode", "Kimi"]) {
+    for (const label of ["Claude", "Codex", "opencode", "Kimi", "Hermes"]) {
       expect(svg, `图例缺少 ${label}`).toContain(`>${label}</text>`);
     }
   });

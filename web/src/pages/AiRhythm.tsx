@@ -16,6 +16,7 @@ const SOURCE_COLORS = {
   codex: "#2563eb",
   opencode: "#7c3aed",
   kimi: "#16a34a",
+  hermes: "#c026d3",
 } as const;
 
 type Cell = { weekday: number; hour: number; count: number }; // weekday 0=周日
@@ -364,6 +365,8 @@ type WeekMix = {
   codex: number;
   opencode: number;
   kimi: number;
+  /** 只含人发起的 hermes,cron 定时任务不计(后端 HERMES_COUNTED)。 */
+  hermes: number;
   /** 各分列之和(后端已改成不含未画的源)。 */
   total: number;
 };
@@ -395,7 +398,7 @@ function SourceTrendCard() {
           <span className="text-[var(--fg-muted)]">· 你按周用哪个 agent</span>
         </h2>
         <div className="flex items-center gap-3 text-xs text-[var(--fg-muted)]">
-          {(["claude", "codex", "opencode", "kimi"] as const).map((s) => (
+          {(["claude", "codex", "opencode", "kimi", "hermes"] as const).map((s) => (
             <span key={s} className="flex items-center gap-1">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-sm"
@@ -458,6 +461,14 @@ function SourceTrendCard() {
                 stackId="s"
                 stroke={SOURCE_COLORS.kimi}
                 fill={SOURCE_COLORS.kimi}
+                fillOpacity={0.75}
+              />
+              <Area
+                type="monotone"
+                dataKey="hermes"
+                stackId="s"
+                stroke={SOURCE_COLORS.hermes}
+                fill={SOURCE_COLORS.hermes}
                 fillOpacity={0.75}
               />
             </AreaChart>

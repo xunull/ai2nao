@@ -23,13 +23,18 @@ const FONT =
  * legend 与 bars 都从这一个数组生成,少一项就两边一起少。要守住只能断言
  * legend 文本里出现该源。加源清单见 docs/agent-source-checklist.md 第 11 项。
  */
-export const SERIES: { key: "claude" | "codex" | "opencode" | "kimi"; label: string; color: string }[] =
-  [
-    { key: "claude", label: "Claude", color: "#8250df" },
-    { key: "codex", label: "Codex", color: "#1f6feb" },
-    { key: "opencode", label: "opencode", color: "#2da44e" },
-    { key: "kimi", label: "Kimi", color: "#bf3989" },
-  ];
+export const SERIES: {
+  key: "claude" | "codex" | "opencode" | "kimi" | "hermes";
+  label: string;
+  color: string;
+}[] = [
+  { key: "claude", label: "Claude", color: "#8250df" },
+  { key: "codex", label: "Codex", color: "#1f6feb" },
+  { key: "opencode", label: "opencode", color: "#2da44e" },
+  { key: "kimi", label: "Kimi", color: "#bf3989" },
+  // hermes 这条只含**人发起**的会话,cron 定时任务不计(后端 HERMES_COUNTED)。
+  { key: "hermes", label: "Hermes", color: "#bc4c00" },
+];
 
 /** 图例横排步长。SERIES 变长时画布宽度按它反算,见 renderSourceTrendSvg。 */
 const LEGEND_STEP = 92;
