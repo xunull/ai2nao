@@ -25,6 +25,22 @@ const GIT_RULE_VERSION = "git-repo-v1";
 const GIT_TOP_N = 12;
 
 /** Conversation adapter (3rd source): AI-chat topic river from cleaned user messages. */
+/**
+ * 入河的聊天源。**这个常量曾经是装饰品**:导出了却全仓零引用,真正决定入河的是
+ * 两条 SQL 字符串字面量(conversation.ts 的 aggregateConversationSessions 与
+ * 本文件的 conversationSourceCount),同一个列表抄了两份 —— 加源时改它什么都不会发生。
+ *
+ * 现在两处都从 CONVERSATION_SOURCE_SQL 生成,「两条 SQL 的源集合相同」
+ * **不可能再漂**。加源只改这一行(然后 bump CONVERSATION_RULE_VERSION)。
+ */
+export const CONVERSATION_SOURCES = ["claude", "codex", "opencode", "kimi"] as const;
+
+/**
+ * 上面那个数组的 SQL `IN (...)` 内容。来源是本文件的硬编码字面量数组,
+ * 无外部输入 → 无注入面;用拼接而不是参数绑定,是为了让它能进 prepare 的常量 SQL。
+ */
+export const CONVERSATION_SOURCE_SQL = CONVERSATION_SOURCES.map((s) => `'${s}'`).join(", ");
+
 export const CONVERSATION_SOURCE = "conversation";
 /** conversation has no per-profile concept; use the no-profile convention. */
 export const CONVERSATION_PROFILE = "-";
@@ -33,7 +49,15 @@ export const CONVERSATION_PROFILE = "-";
  * a new N) reclusters and reshuffles bands; otherwise new sessions assign to the
  * frozen centroids of this version and bands stay stable across rebuilds.
  */
-export const CONVERSATION_RULE_VERSION = "cluster-v1";
+/**
+ * 改「入河源集合 / 聚合口径 / 噪音过滤」时必须 bump —— conversation.ts:549 是
+ * `opts.recluster ? null : loadCodebook(db, ruleVersion)`,不换版本号 kmeans
+ * **一次都不会跑**,新源只会被贴到旧质心上。
+ *
+ * v2 = 加入 kimi(第四个源) + 重算质心。v1 的质心是拿 311 个样本算的,
+ *      而它已经在服务 475 个(+53%),且 12 个簇里 4 个都叫「附件分析」。
+ */
+export const CONVERSATION_RULE_VERSION = "cluster-v2";
 
 export type TopicStreamEvent = {
   sourceRef: string;
@@ -129,7 +153,7 @@ function conversationSourceCount(db: Database.Database): number {
     .prepare(
       `SELECT COUNT(*) AS c FROM (
          SELECT source, source_session_id FROM agent_user_messages
-         WHERE is_human = 1 AND source IN ('claude', 'codex', 'opencode')
+         WHERE is_human = 1 AND source IN (${CONVERSATION_SOURCE_SQL})
          GROUP BY source, source_session_id
        )`
     )

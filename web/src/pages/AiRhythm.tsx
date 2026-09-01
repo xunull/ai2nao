@@ -10,10 +10,12 @@ import {
 import { apiGet } from "../api";
 
 // 三源品牌色,与全 app 一致(AgentMessages SOURCE_META)。
+/** 源色。加源要同时改这里、图例数组、和下面的 <Area> —— 三处分开写,tsc 不会报。 */
 const SOURCE_COLORS = {
   claude: "#d97757",
   codex: "#2563eb",
   opencode: "#7c3aed",
+  kimi: "#16a34a",
 } as const;
 
 type Cell = { weekday: number; hour: number; count: number }; // weekday 0=周日
@@ -361,11 +363,13 @@ type WeekMix = {
   claude: number;
   codex: number;
   opencode: number;
+  kimi: number;
+  /** 各分列之和(后端已改成不含未画的源)。 */
   total: number;
 };
 type SourceTrendResp = { ok: true; weeks: WeekMix[]; generatedAt: string };
 
-/** 习惯演变 · 三源迁移卡:每周三源计数的堆叠面积。 */
+/** 习惯演变卡:每周逐源计数的堆叠面积。加源见 docs/agent-source-checklist.md。 */
 function SourceTrendCard() {
   const q = useQuery<SourceTrendResp>({
     queryKey: ["ai-rhythm-source-trend"],
@@ -387,11 +391,11 @@ function SourceTrendCard() {
     <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-sm font-medium text-[var(--fg)]">
-          习惯演变 · 三源迁移{" "}
+          习惯演变{" "}
           <span className="text-[var(--fg-muted)]">· 你按周用哪个 agent</span>
         </h2>
         <div className="flex items-center gap-3 text-xs text-[var(--fg-muted)]">
-          {(["claude", "codex", "opencode"] as const).map((s) => (
+          {(["claude", "codex", "opencode", "kimi"] as const).map((s) => (
             <span key={s} className="flex items-center gap-1">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-sm"
@@ -446,6 +450,14 @@ function SourceTrendCard() {
                 stackId="s"
                 stroke={SOURCE_COLORS.opencode}
                 fill={SOURCE_COLORS.opencode}
+                fillOpacity={0.75}
+              />
+              <Area
+                type="monotone"
+                dataKey="kimi"
+                stackId="s"
+                stroke={SOURCE_COLORS.kimi}
+                fill={SOURCE_COLORS.kimi}
                 fillOpacity={0.75}
               />
             </AreaChart>

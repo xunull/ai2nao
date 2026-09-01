@@ -234,13 +234,22 @@ export type WeekMix = {
   claude: number;
   codex: number;
   opencode: number;
+  kimi: number;
+  /** 各分列之和(**不是** COUNT(*))—— 见 weeklySourceMix 的注释。 */
   total: number;
 };
 export type SourceTrend = { weeks: WeekMix[]; generatedAt: string };
 
 /**
- * 三源迁移周趋势:按本地周分桶,统计 claude/codex/opencode 各自的 is_human 消息数。
+ * 使用迁移周趋势:按本地周分桶,统计各源的 is_human 消息数。
  * 坏时间戳守卫(strftime NULL → 剔除,同热力图口径)。
+ *
+ * **`total` 必须等于各分列之和,不能是 COUNT(*)。** 原来是 COUNT(*)(全源),
+ * 而分列只有三个源 —— kimi 从入库起就没被画进这张卡,W34 那周漏掉 124/422 = 29%。
+ * 因为是绝对值堆叠面积图,图上不会出现空洞,曲线只是矮一截,看着完全正常。
+ *
+ * `total` 不是死字段:`cards/sourceTrendSvg.ts:37` 拿它定 Y 轴上限、`:42` 算页脚
+ * 「共 N 次」。口径错时那张 SVG 卡的柱子会系统性偏矮 —— 改口径必须同时改这两处的测试。
  */
 export function weeklySourceMix(
   db: Database.Database,
@@ -252,11 +261,13 @@ export function weeklySourceMix(
               SUM(source = 'claude')   AS claude,
               SUM(source = 'codex')    AS codex,
               SUM(source = 'opencode') AS opencode,
-              COUNT(*)                 AS total
+              SUM(source = 'kimi')     AS kimi,
+              SUM(source IN ('claude','codex','opencode','kimi')) AS total
        FROM agent_user_messages
        WHERE is_human = 1
          AND strftime('%Y-W%W', event_at_utc, 'localtime') IS NOT NULL
        GROUP BY week
+       HAVING total > 0
        ORDER BY week`
     )
     .all() as WeekMix[];

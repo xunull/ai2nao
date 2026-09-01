@@ -79,4 +79,41 @@ describe("weeklySourceMix — 三源迁移周趋势", () => {
     const { weeks } = weeklySourceMix(db);
     expect(weeks).toEqual([]);
   });
+
+  it("每个已接入的源都进桶,且 total == 各带之和", () => {
+    // 回归:total 原来是 COUNT(*)(全源),而分列只有三个 —— kimi 从入库起就
+    // 没被画进这张卡,W34 那周漏 124/422 = 29%。因为是绝对值堆叠面积图,
+    // 图上不会出现空洞,曲线只是矮一截,看着完全正常。
+    //
+    // 「total == 各带之和」这一条同时守住两件事:漏了某个源(和对不上),
+    // 以及 total 又被写回 COUNT(*)(含未画的源,和也对不上)。
+    const db = freshDb();
+    const sources = ["claude", "codex", "opencode", "kimi"] as const;
+    seed(
+      db,
+      sources.map((s) => row(at("2026-07-06"), s))
+    );
+    const { weeks } = weeklySourceMix(db);
+    expect(weeks.length).toBe(1);
+    const w = weeks[0]!;
+    for (const s of sources) {
+      expect(w[s], `源 ${s} 没有计进桶`).toBe(1);
+    }
+    const sum = sources.reduce((a, s) => a + w[s], 0);
+    expect(w.total).toBe(sum);
+    expect(w.total).toBe(sources.length);
+  });
+
+  it("未画的源不进 total —— 否则 Y 轴会被撑高、柱子系统性偏矮", () => {
+    // sourceTrendSvg.ts:37 拿 total 定 Y 轴上限、:42 算页脚「共 N 次」。
+    // total 若含未画的源,那张 SVG 卡的柱子会整体偏矮。
+    const db = freshDb();
+    seed(db, [
+      row(at("2026-07-06"), "claude"),
+      row(at("2026-07-06"), "hermes"), // 已入库但这张卡还没画它
+    ]);
+    const { weeks } = weeklySourceMix(db);
+    expect(weeks.length).toBe(1);
+    expect(weeks[0]!.total).toBe(1); // 只算 claude,不算 hermes
+  });
 });

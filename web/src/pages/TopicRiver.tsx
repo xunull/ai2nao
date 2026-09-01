@@ -156,6 +156,9 @@ function sessionDetailPath(sourceRef: string): string | null {
   if (!sid) return null;
   if (chatSource === "codex") return `/codex-history/s/${encodeURIComponent(sid)}`;
   if (chatSource === "opencode") return `/opencode-history/s/${encodeURIComponent(sid)}`;
+  // 加源到话题河时**必须一起加这里**,否则新源的会话在河里点不进去(静默:
+  // 返回 null 只是不给链接,不会报错)。清单见 docs/agent-source-checklist.md。
+  if (chatSource === "kimi") return `/kimi-history/s/${encodeURIComponent(sid)}`;
   if (chatSource === "claude") {
     const cidx = sid.indexOf(":");
     if (cidx < 0) return null;

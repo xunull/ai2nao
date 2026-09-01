@@ -1,5 +1,5 @@
 /**
- * 三源使用趋势卡:按本地周分桶,每周一根堆叠竖条(Claude / Codex / opencode 三色)。
+ * 使用趋势卡:按本地周分桶,每周一根堆叠竖条(每个源一色,见 SERIES)。
  * 看的是「对哪个 agent 说话」随时间的迁移。数据 = weeklySourceMix(is_human 消息计数)。
  * 约束同其它卡:无 <style>/外链、presentation 属性、自带浅色底。
  */
@@ -16,18 +16,31 @@ const SHOW_WEEKS = 16; // 最近 N 周
 const FONT =
   '-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif';
 
-/** 三源固定色(GitHub 分类色,彼此可辨)。 */
-const SERIES: { key: "claude" | "codex" | "opencode"; label: string; color: string }[] =
+/**
+ * 各源固定色(GitHub 分类色,彼此可辨)。
+ *
+ * **这里少一个源不会让 tsc 报错,也不会让「图例项数 == 柱子段数」那条断言红** ——
+ * legend 与 bars 都从这一个数组生成,少一项就两边一起少。要守住只能断言
+ * legend 文本里出现该源。加源清单见 docs/agent-source-checklist.md 第 11 项。
+ */
+export const SERIES: { key: "claude" | "codex" | "opencode" | "kimi"; label: string; color: string }[] =
   [
     { key: "claude", label: "Claude", color: "#8250df" },
     { key: "codex", label: "Codex", color: "#1f6feb" },
     { key: "opencode", label: "opencode", color: "#2da44e" },
+    { key: "kimi", label: "Kimi", color: "#bf3989" },
   ];
+
+/** 图例横排步长。SERIES 变长时画布宽度按它反算,见 renderSourceTrendSvg。 */
+const LEGEND_STEP = 92;
 
 export function renderSourceTrendSvg(trend: SourceTrend): string {
   const weeks = trend.weeks.slice(-SHOW_WEEKS);
   const plotW = Math.max(STEP, weeks.length * STEP - BAR_GAP);
-  const width = Math.max(260, PAD * 2 + plotW);
+  // 画布宽必须同时容得下柱区**和图例** —— 图例按 LEGEND_STEP 横排,加到第 4 项时
+  // 原来的 260 下限就装不下了(实测第 4 项落在 x=292,跑出画布)。
+  const legendW = PAD * 2 + Math.max(0, SERIES.length - 1) * LEGEND_STEP + 60;
+  const width = Math.max(260, PAD * 2 + plotW, legendW);
   const yPlotTop = PAD + TITLE_H;
   const yPlotBottom = yPlotTop + PLOT_H;
   const yLegend = yPlotBottom + 15;
@@ -43,8 +56,11 @@ export function renderSourceTrendSvg(trend: SourceTrend): string {
     const x = PAD + i * STEP;
     let bottom = yPlotBottom;
     for (const s of SERIES) {
-      const v = w[s.key];
-      if (v <= 0) continue;
+      // `?? 0`:后端与 SERIES 不同步时(正是这张卡历史上的病),`w[s.key]` 是
+      // undefined,算出来的 y/height 会是 NaN,直接吐出**非法 SVG**。
+      // 少画一段总比画出坏节点强。
+      const v = w[s.key] ?? 0;
+      if (!Number.isFinite(v) || v <= 0) continue;
       const h = Math.max(1, Math.round((v / maxTotal) * PLOT_H));
       const y = bottom - h;
       bars.push(
@@ -55,7 +71,7 @@ export function renderSourceTrendSvg(trend: SourceTrend): string {
   });
 
   const legend = SERIES.map((s, i) => {
-    const lx = PAD + i * 92;
+    const lx = PAD + i * LEGEND_STEP;
     return (
       `<rect x="${lx}" y="${yLegend - 9}" width="10" height="10" rx="2" fill="${s.color}"/>` +
       `<text x="${lx + 14}" y="${yLegend}" font-size="10" fill="#656d76">${s.label}</text>`
@@ -68,10 +84,10 @@ export function renderSourceTrendSvg(trend: SourceTrend): string {
   )}`;
 
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="三源使用趋势">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="AI 使用趋势">`,
     `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="#ffffff" stroke="#d0d7de"/>`,
     `<g font-family='${FONT}'>`,
-    `<text x="${PAD}" y="${PAD + 15}" font-size="15" font-weight="600" fill="#1f2328">三源使用趋势</text>`,
+    `<text x="${PAD}" y="${PAD + 15}" font-size="15" font-weight="600" fill="#1f2328">AI 使用趋势</text>`,
     bars.join(""),
     legend,
     `<text x="${PAD}" y="${yFooter}" font-size="11" fill="#656d76">${footer}</text>`,

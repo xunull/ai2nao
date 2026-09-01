@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import { CONVERSATION_RULE_VERSION } from "../src/topicStream/rebuild.js";
 import { openDatabase } from "../src/store/open.js";
 import { createApp } from "../src/serve/app.js";
 import {
@@ -203,7 +204,13 @@ describe("conversation adapter — rebuild", () => {
       expect(bands.size).toBe(3);
       expect(bands.has("其他")).toBe(false);
 
-      const codebook = (db.prepare("SELECT COUNT(*) c FROM topic_codebook WHERE rule_version='cluster-v1'").get() as { c: number }).c;
+      // 用常量而不是写死 'cluster-v1' —— bump 版本号是这套设计里的**常规动作**
+      // (加源就要 bump,否则 kmeans 一次都不会跑),写死会让每次 bump 都假红一次。
+      const codebook = (
+        db
+          .prepare("SELECT COUNT(*) c FROM topic_codebook WHERE rule_version = ?")
+          .get(CONVERSATION_RULE_VERSION) as { c: number }
+      ).c;
       expect(codebook).toBe(3);
 
       // second rebuild uses the FROZEN codebook → identical session→band map

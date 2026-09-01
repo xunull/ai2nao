@@ -30,10 +30,11 @@ export function normalizeOrigin(raw: string | null | undefined): HermesSessionOr
   }
 }
 
-/** cron 之外的都算「人发起的」—— 列表页默认只看这些。 */
-export function isHumanOrigin(origin: HermesSessionOrigin): boolean {
-  return origin !== "cron";
-}
+// 这里原来有个 isHumanOrigin(origin) { return origin !== "cron" },注释写着
+// 「列表页默认只看这些」—— 但全仓零调用:列表页是在前端自己写死
+// `s.origin === "cron"` 过滤的(HermesHistory.tsx:94),而 web/ 与 src/ 是两个
+// tsconfig,前端 import 不到这里。留着一个「看起来是真相源、其实改了没用」的
+// 函数,正是同一天在 topicStream 里踩到的那个坑(CONVERSATION_SOURCES),故删除。
 
 /**
  * 标题坏不坏。真库 120 场里 25 场是坏的(20 场 NULL + 5 场存了模型的 <think> 原文),

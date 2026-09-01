@@ -239,7 +239,7 @@ describe("AiRhythm — 习惯演变卡", () => {
     });
     renderPage();
     await waitFor(() =>
-      expect(screen.getByText(/习惯演变 · 三源迁移/)).toBeInTheDocument()
+      expect(screen.getByText(/习惯演变/)).toBeInTheDocument()
     );
     expect(screen.queryByText("还没有足够数据")).not.toBeInTheDocument();
   });

@@ -12,6 +12,7 @@ import { scrubPaths } from "../util/scrub.js";
 import { OTHER_CATEGORY, OTHER_COLOR } from "./classify.js";
 import {
   CONVERSATION_SOURCE,
+  CONVERSATION_SOURCE_SQL,
   CONVERSATION_PROFILE,
   CONVERSATION_RULE_VERSION,
   persistTopicStream,
@@ -24,8 +25,11 @@ import {
   type RebuildTopicStreamResult,
 } from "./rebuild.js";
 
-/** Chat sources that carry human messages in agent_user_messages. */
-export const CONVERSATION_SOURCES = ["claude", "codex", "opencode"] as const;
+// 源集合定义在 rebuild.ts —— 那里已经是其余 CONVERSATION_* 常量的家,
+// 而本文件本来就 import 它,放这边会造成 conversation ⇄ rebuild 循环依赖。
+// 这里只做 re-export,老的 import 路径不变。
+export { CONVERSATION_SOURCES, CONVERSATION_SOURCE_SQL } from "./rebuild.js";
+
 /** Fixed cluster count (config-overridable later); 12 + 其他 keeps bands readable. */
 export const CONVERSATION_K = 12;
 /** far-drift threshold: nearest-centroid cosine distance > τ → 其他 (probe: ~0.30). */
@@ -252,7 +256,7 @@ export function aggregateConversationSessions(db: Database.Database): Conversati
     .prepare(
       `SELECT source, source_session_id, event_at_utc, cleaned_text
          FROM agent_user_messages
-        WHERE is_human = 1 AND source IN ('claude', 'codex', 'opencode')
+        WHERE is_human = 1 AND source IN (${CONVERSATION_SOURCE_SQL})
         ORDER BY source, source_session_id, event_at_utc`
     )
     .all() as AgentMessageRow[];
