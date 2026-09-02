@@ -1,4 +1,10 @@
 export type ForwardedToolProps = {
+  /**
+   * 这一轮用哪个模型。**前端传来的值不可信** —— 合法性、可用性一律由后端
+   * `selectModelForTurn` 判定;这里只做形状归一,不认识的一律成 null。
+   * null 表示「没指定」,由后端用默认模型,而不是「随便挑一个」。
+   */
+  modelId: string | null;
   useRag: boolean;
   ragTopK: number;
   webSearchEnabled: boolean;
@@ -18,7 +24,9 @@ export function parseForwardedToolProps(input: unknown): ForwardedToolProps {
   const rawSessionMemoryTopK = parseInt(String(props.sessionMemoryTopK ?? 8), 10);
   const rawCodeExecutionTimeoutMs = parseInt(String(props.codeExecutionTimeoutMs ?? 10_000), 10);
   const rawShellExecutionTimeoutMs = parseInt(String(props.shellExecutionTimeoutMs ?? 10_000), 10);
+  const rawModelId = typeof props.modelId === "string" ? props.modelId.trim() : "";
   return {
+    modelId: rawModelId || null,
     useRag: props.useRag === true,
     ragTopK: Math.min(20, Math.max(1, rawRagTopK || 8)),
     webSearchEnabled: props.webSearchEnabled === true,

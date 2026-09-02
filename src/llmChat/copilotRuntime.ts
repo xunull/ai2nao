@@ -19,7 +19,8 @@ import type {
   AgentRunnerStopRequest,
   CopilotRuntimeFetchHandler,
 } from "@copilotkit/runtime/v2";
-import { llmChatStatus, readLlmChatConfig } from "./config.js";
+import { llmChatStatus, readLlmChatDocument, selectModelForTurn } from "./config.js";
+import { stampModelSnapshot } from "./modelStamp.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
 import {
@@ -277,12 +278,17 @@ async function* runAi2NaoTurnEvents(
   yield { type: EventType.RUN_STARTED, threadId: input.threadId, runId } as BaseEvent;
   try {
     validateAi2NaoCopilotInput(input.messages, input.tools, input.context, input.state);
-    const cfg = readLlmChatConfig();
-    if (!cfg) {
-      throw new Error(
-        "LLM chat is not configured. Add ~/.ai2nao/llm-chat.json or set AI2NAO_LLM_CHAT_CONFIG."
-      );
-    }
+    // 前端每轮通过 properties → forwardedProps 送来 modelId。合法性与可用性一律
+    // 在这里判 —— 前端的值不可信,而且 picker 可能与库里的配置有一瞬间的不同步。
+    const selection = selectModelForTurn(
+      readLlmChatDocument(),
+      parseForwardedToolProps(input.forwardedProps).modelId
+    );
+    // **不可用就报错,不静默换家。** 用户明确点了某一家,却把内容发给另一家,
+    // 费用、数据去向、以及「我以为在用 A」的误判全都错。抛出去由下面的 catch
+    // 变成 RUN_ERROR,文案里带模型名,用户看得出该去哪修。
+    if (!selection.ok) throw new Error(selection.message);
+    const cfg = selection.config;
     ensureLlmChatSession(deps.db, input.threadId);
     const detail = getLlmChatSession(deps.db, input.threadId);
     const persistedMessages = detail ? agUiMessagesFromSession(detail) : [];
@@ -347,7 +353,11 @@ async function* runAi2NaoTurnEvents(
     }
 
     replaceLlmChatSessionMessages(deps.db, input.threadId, {
-      messages: mergeAgUiMessages(mergedMessages, generated.messages()),
+      // 快照盖在这一轮新产生的消息上;历史消息已经带着它们当时那一家,不覆盖。
+      messages: mergeAgUiMessages(
+        mergedMessages,
+        stampModelSnapshot(generated.messages(), selection.snapshot)
+      ),
     });
     yield { type: EventType.RUN_FINISHED, threadId: input.threadId, runId } as BaseEvent;
   } catch (error) {
