@@ -300,95 +300,320 @@ function CredentialActions({
   );
 }
 
-const LLM_PROVIDERS = [
-  { id: "deepseek", label: "DeepSeek" },
-  { id: "alibaba", label: "阿里云百炼" },
-  { id: "moonshotai", label: "Moonshot" },
-  { id: "openai", label: "OpenAI" },
-  { id: "openai-compatible", label: "OpenAI 兼容" },
-] as const;
+/**
+ * **只是 id → 中文标签。清单本身由后端给**(`availableProviders`)。
+ *
+ * 以前这里是一份硬编码的服务商清单,后端加一家而这里忘了加,那家在下拉里
+ * 压根不存在 —— 功能静默不可用,tsc 不管、测试全绿。现在漏一个标签的后果
+ * 降级成「显示原始 id」,丑但可选可用。同形于 AiSessions 的 coverage.sources。
+ */
+const PROVIDER_LABELS: Record<string, string> = {
+  deepseek: "DeepSeek",
+  alibaba: "阿里云百炼",
+  moonshotai: "Moonshot（Kimi）",
+  openai: "OpenAI",
+  "openai-compatible": "OpenAI 兼容",
+  volcengine: "火山方舟",
+  minimax: "MiniMax",
+};
+
+type ModelEntry = {
+  id: string;
+  label: string;
+  provider: string;
+  model: string;
+  baseURL: string;
+  keyRef: string;
+};
+
+type LlmChatStatusRes = {
+  configured: boolean;
+  defaultModelId: string | null;
+  models: {
+    id: string;
+    label: string;
+    provider: string;
+    model: string;
+    available: boolean;
+    credentialSource: "config" | "env" | "none-needed" | "none";
+  }[];
+  availableProviders: { id: string; defaultBaseURL: string }[];
+};
+
+const CRED_SOURCE_TEXT: Record<string, string> = {
+  config: "已配置",
+  env: "环境变量",
+  "none-needed": "无需 key",
+  none: "未配 key",
+};
+
+function providerLabel(id: string): string {
+  return PROVIDER_LABELS[id] ?? id;
+}
+
+/** 从后端的（已脱敏的）凭据值里读出可编辑的模型列表。 */
+function modelsFromValues(v: Record<string, unknown>): ModelEntry[] {
+  if (Array.isArray(v.models)) return v.models as ModelEntry[];
+  // 旧的单模型配置:种一条,让用户在同一个界面里自然升级。那把老 key 由后端
+  // 在 parseLlmChatDocument 里搬进 keys.legacy,不会因为这次保存而丢。
+  if (typeof v.provider === "string" && typeof v.model === "string") {
+    return [
+      {
+        id: "legacy",
+        label: `${providerLabel(v.provider)} ${v.model}`,
+        provider: v.provider,
+        model: v.model,
+        baseURL: typeof v.baseURL === "string" ? v.baseURL : "",
+        keyRef: "legacy",
+      },
+    ];
+  }
+  return [];
+}
+
+function newEntryId(existing: ModelEntry[]): string {
+  for (let i = 1; ; i += 1) {
+    const id = `model-${i}`;
+    if (!existing.some((e) => e.id === id)) return id;
+  }
+}
 
 function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () => void }) {
   const v = cred.values ?? {};
-  const [provider, setProvider] = useState(String(v.provider ?? "deepseek"));
-  const [baseURL, setBaseURL] = useState(String(v.baseURL ?? ""));
-  const [model, setModel] = useState(String(v.model ?? ""));
-  const [apiKey, setApiKey] = useState("");
+  const keyPresence = (v.keys ?? {}) as Record<string, boolean>;
+  const [models, setModels] = useState<ModelEntry[]>(() => modelsFromValues(v));
+  const [defaultModelId, setDefaultModelId] = useState<string | null>(
+    typeof v.defaultModelId === "string" ? v.defaultModelId : (modelsFromValues(v)[0]?.id ?? null)
+  );
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const save = useSaveCredential("llm-chat", onChanged);
   const clear = useClearCredential("llm-chat", onChanged);
 
+  // 服务商清单与可用性由后端给,前端不再自己维护 —— 后端加一家这里自动出现。
+  const status = useQuery({
+    queryKey: ["llm-chat-status"],
+    queryFn: () => apiGet<LlmChatStatusRes>("/api/llm-chat/status"),
+  });
+  // 两处都先兜底再 map:响应形状不能假设(旧后端、代理改写、测试桩都可能少字段),
+  // 而这个区块崩了会连带整个设置页白屏 —— 一个可选的状态查询不该有这种爆炸半径。
+  const providers = Array.isArray(status.data?.availableProviders)
+    ? status.data.availableProviders
+    : [];
+  const availability = new Map(
+    (Array.isArray(status.data?.models) ? status.data.models : []).map((m) => [m.id, m] as const)
+  );
+
+  const patch = (id: string, next: Partial<ModelEntry>) =>
+    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, ...next } : m)));
+
+  const addModel = () => {
+    const first = providers[0];
+    const id = newEntryId(models);
+    const provider = first?.id ?? "deepseek";
+    setModels((prev) => [
+      ...prev,
+      { id, label: "", provider, model: "", baseURL: first?.defaultBaseURL ?? "", keyRef: provider },
+    ]);
+    setDefaultModelId((d) => d ?? id);
+    setEditingId(id);
+  };
+
+  const removeModel = (id: string) => {
+    setModels((prev) => prev.filter((m) => m.id !== id));
+    if (editingId === id) setEditingId(null);
+  };
+
+  // keys 只发有输入的那几个:mergePatch 对对象是递归合并,不会抹掉没发的。
+  // models 必须发完整数组 —— 它对数组是整体替换,发一半就等于删掉另一半。
+  const onSave = () =>
+    save.mutate({
+      defaultModelId,
+      models: models.map((m) => ({ ...m, label: m.label.trim() || m.model })),
+      ...(Object.keys(keyDrafts).some((k) => keyDrafts[k]?.trim())
+        ? {
+            keys: Object.fromEntries(
+              Object.entries(keyDrafts)
+                .filter(([, val]) => val.trim())
+                .map(([k, val]) => [k, val.trim()])
+            ),
+          }
+        : {}),
+    });
+
+  const incomplete = models.some((m) => !m.model.trim() || !m.keyRef.trim());
+  // 按「引用它的模型属于哪家」来显示,而不是直接显示 keyRef 字面量 ——
+  // 旧配置迁移过来的槽位叫 legacy(服务端把老 apiKey 搬到了那里),
+  // 直接显示会变成一个叫「legacy」的输入框,没人知道那要填什么。
+  const keyRefs = [...new Set(models.map((m) => m.keyRef).filter(Boolean))].map((ref) => ({
+    ref,
+    label: providerLabel(models.find((m) => m.keyRef === ref)?.provider ?? ref),
+  }));
+
   return (
     <Section
       title="AI 对话模型"
-      hint="用于 AI 对话、工作回看叙事、主题命名。选「OpenAI 兼容」时必须填 Base URL。"
+      hint="可以配多个模型，对话时随时切换。密钥按服务商存一份，同一家的多个模型共用。"
     >
       <div className="mb-3">
         <SourceBadge cred={cred} />
       </div>
 
-      <div className="space-y-2.5">
-        <Field label="服务商" htmlFor="llm-provider">
-          <select
-            id="llm-provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className={inputCls}
-          >
-            {LLM_PROVIDERS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
+      {models.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-4 text-center text-xs text-[var(--muted)]">
+          还没有配置任何模型。点下面的「添加模型」开始。
+        </p>
+      ) : (
+        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
+          {models.map((m) => {
+            const av = availability.get(m.id);
+            const isDefault = m.id === defaultModelId;
+            return (
+              <li key={m.id} className="px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--fg)]">
+                    <input
+                      type="radio"
+                      name="llm-default-model"
+                      checked={isDefault}
+                      onChange={() => setDefaultModelId(m.id)}
+                      aria-label={`把「${m.label || m.model || m.id}」设为默认`}
+                    />
+                    默认
+                  </label>
+                  <span className="min-w-0 flex-1 truncate text-sm text-[var(--fg)]">
+                    {m.label || m.model || "(未命名)"}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs text-[var(--muted)]">
+                    {providerLabel(m.provider)} / {m.model || "—"}
+                  </span>
+                  {av && (
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${
+                        av.available ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {CRED_SOURCE_TEXT[av.credentialSource] ?? av.credentialSource}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(editingId === m.id ? null : m.id)}
+                    className="shrink-0 text-xs text-[var(--accent)] hover:underline"
+                  >
+                    {editingId === m.id ? "收起" : "编辑"}
+                  </button>
+                  {isDefault ? (
+                    // 删掉默认项会让每日摘要 / 话题命名 / 工作回顾一起换模型,
+                    // 所以先要求指定新默认,而不是删完再静默回落。
+                    <span
+                      className="shrink-0 text-xs text-[var(--muted)]"
+                      title="它是默认模型，先把默认设到别的条目上再删"
+                    >
+                      默认项
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => removeModel(m.id)}
+                      aria-label={`删除「${m.label || m.model || m.id}」`}
+                      className="shrink-0 text-xs text-red-700 hover:underline"
+                    >
+                      删除
+                    </button>
+                  )}
+                </div>
+
+                {editingId === m.id && (
+                  <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
+                    <Field label="名称" htmlFor={`m-label-${m.id}`}>
+                      <input
+                        id={`m-label-${m.id}`}
+                        value={m.label}
+                        onChange={(e) => patch(m.id, { label: e.target.value })}
+                        placeholder="留空则用模型名"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="服务商" htmlFor={`m-provider-${m.id}`}>
+                      <select
+                        id={`m-provider-${m.id}`}
+                        value={m.provider}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          const base = providers.find((p) => p.id === next)?.defaultBaseURL ?? "";
+                          // 换服务商时预填地址与 key 槽位,少两次手敲。
+                          patch(m.id, { provider: next, baseURL: base, keyRef: next });
+                        }}
+                        className={inputCls}
+                      >
+                        {providers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {providerLabel(p.id)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="模型" htmlFor={`m-model-${m.id}`}>
+                      <input
+                        id={`m-model-${m.id}`}
+                        value={m.model}
+                        onChange={(e) => patch(m.id, { model: e.target.value })}
+                        placeholder="deepseek-v4-flash"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Base URL" htmlFor={`m-base-${m.id}`}>
+                      <input
+                        id={`m-base-${m.id}`}
+                        value={m.baseURL}
+                        onChange={(e) => patch(m.id, { baseURL: e.target.value })}
+                        placeholder="选服务商时自动预填"
+                        className={`${inputCls} font-mono text-xs`}
+                      />
+                    </Field>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <button type="button" onClick={addModel} className="mt-2 text-xs text-[var(--accent)] hover:underline">
+        + 添加模型
+      </button>
+
+      {keyRefs.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-1.5 text-xs font-medium text-[var(--fg)]">服务商密钥</h4>
+          <p className="mb-2 text-xs text-[var(--muted)]">
+            同一家的多个模型共用一把。留空表示不改动已保存的值。
+          </p>
+          <div className="space-y-2">
+            {keyRefs.map(({ ref, label }) => (
+              <Field key={ref} label={label} htmlFor={`k-${ref}`}>
+                <input
+                  id={`k-${ref}`}
+                  type="password"
+                  value={keyDrafts[ref] ?? ""}
+                  onChange={(e) => setKeyDrafts((d) => ({ ...d, [ref]: e.target.value }))}
+                  placeholder={keyPresence[ref] ? "已保存 · 留空则不改动" : "sk-…"}
+                  className={inputCls}
+                />
+              </Field>
             ))}
-          </select>
-        </Field>
-
-        <Field label="模型" htmlFor="llm-model">
-          <input
-            id="llm-model"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="deepseek-chat"
-            className={inputCls}
-          />
-        </Field>
-
-        <Field label="Base URL" htmlFor="llm-base">
-          <input
-            id="llm-base"
-            value={baseURL}
-            onChange={(e) => setBaseURL(e.target.value)}
-            placeholder="留空用服务商默认值"
-            className={`${inputCls} font-mono text-xs`}
-          />
-        </Field>
-
-        <Field label="API Key" htmlFor="llm-key">
-          <input
-            id="llm-key"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={cred.set ? "已保存 · 留空则不改动" : "sk-…"}
-            className={inputCls}
-          />
-        </Field>
-      </div>
+          </div>
+        </div>
+      )}
 
       <CredentialActions
         cred={cred}
-        disabled={!model.trim()}
+        disabled={models.length === 0 || incomplete}
         saving={save.isPending}
         error={save.error}
-        onSave={() =>
-          save.mutate({
-            provider,
-            model: model.trim(),
-            ...(baseURL.trim() ? { baseURL: baseURL.trim() } : {}),
-            // Omitted when blank → the server keeps the stored key.
-            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-          })
-        }
+        onSave={onSave}
         onClear={() => clear.mutate()}
       />
     </Section>

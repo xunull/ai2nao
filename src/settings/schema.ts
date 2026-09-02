@@ -114,13 +114,18 @@ const LLM_CHAT_SECRET_FIELDS = ["apiKey", "keys"] as const;
  */
 function redactLlmChat(parsed: unknown): unknown {
   const out = omit(parsed, LLM_CHAT_SECRET_FIELDS) as Record<string, unknown>;
-  if (isPlainRecord(parsed) && isPlainRecord(parsed.keys)) {
-    const presence: Record<string, boolean> = {};
+  if (!isPlainRecord(parsed)) return out;
+  const presence: Record<string, boolean> = {};
+  if (isPlainRecord(parsed.keys)) {
     for (const [k, v] of Object.entries(parsed.keys)) {
       presence[k] = typeof v === "string" && v.trim().length > 0;
     }
-    out.keys = presence;
   }
+  // 旧的单模型配置没有 keys 对象,秘密在顶层 apiKey。不映射它,设置页就会把
+  // 一个明明存着 key 的槽位显示成「未配置」,用户以为要重填 —— 而留空才是
+  // 「别动已存的那把」。这条语义是 Settings.test.tsx 一直在守的东西。
+  if (!isPlainRecord(parsed.keys) && field(parsed, "apiKey")) presence.legacy = true;
+  if (Object.keys(presence).length > 0) out.keys = presence;
   return out;
 }
 
@@ -205,7 +210,10 @@ export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
     redact: (p) => omit(p, API_KEY_ONLY),
     secretFields: API_KEY_ONLY,
     legacyPath: null,
-    label: "MiniMax",
+    // 「· 额度查询」是与 llm-chat 里的对话 key 区分用途:这把打 token_plan/remains,
+    // 那把打 /chat/completions,实测可能不是同一把(2026-09-02:kimi 的额度 key 打
+    // api.moonshot.ai 是 401)。同名会让人不知道该填哪个,改一把也不会拖累另一个。
+    label: "MiniMax · 额度查询",
   },
   kimi: {
     parse: parseKimiJson,
@@ -214,6 +222,6 @@ export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
     redact: (p) => omit(p, API_KEY_ONLY),
     secretFields: API_KEY_ONLY,
     legacyPath: null,
-    label: "Kimi Code",
+    label: "Kimi Code · 额度查询",
   },
 };

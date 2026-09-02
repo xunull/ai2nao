@@ -239,6 +239,13 @@ export function parseLlmChatDocument(raw: string): LlmChatStoredDocument | null 
     }
   }
 
+  // 从旧格式升级时的一次性搬运。设置页第一次保存多模型配置只 PATCH
+  // {defaultModelId, keys, models},而 mergePatch 保留未发送的字段 ——
+  // 合并结果里于是同时有旧的顶层 apiKey 和新的 models。若在这里无视它,
+  // 用户存一次就把已有的 key 弄丢了:静默、不可逆,要等下次对话报 401 才发现。
+  const legacyKey = optionalTrimmedString(data.apiKey);
+  if (legacyKey && !keys[LEGACY_MODEL_ID]) keys[LEGACY_MODEL_ID] = legacyKey;
+
   const models: LlmChatModelEntry[] = [];
   const seen = new Set<string>();
   for (const raw of Array.isArray(data.models) ? data.models : []) {

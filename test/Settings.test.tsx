@@ -31,9 +31,15 @@ function settingsPayload(over: Record<string, Partial<Cred>> = {}) {
       "llm-chat": cred({
         set: true,
         source: "db",
-        // The server sends the config WITHOUT the key — that is the contract
-        // this page is built on.
-        values: { provider: "deepseek", model: "deepseek-reasoner", baseURL: "https://api.deepseek.com" },
+        // 服务端发的是**脱敏后**的配置：没有密钥原文，只有一个 presence map
+        // 告诉界面哪个槽位已经配过。旧的单模型配置里，那个槽位叫 legacy
+        // （服务端把顶层 apiKey 映射到那里，见 schema.ts 的 redactLlmChat）。
+        values: {
+          provider: "deepseek",
+          model: "deepseek-reasoner",
+          baseURL: "https://api.deepseek.com",
+          keys: { legacy: true },
+        },
         ...over["llm-chat"],
       }),
       "rag-embedding": cred(over["rag-embedding"]),
@@ -86,11 +92,11 @@ describe("Settings page", () => {
 
     await user.click(screen.getByRole("button", { name: "AI 与模型" }));
     expect(await screen.findByRole("heading", { name: "AI 对话模型" })).toBeInTheDocument();
-    // Non-secret fields come back and populate the form…
-    expect(screen.getByLabelText("模型")).toHaveValue("deepseek-reasoner");
-    // …but the key box is empty with a "leave it alone" placeholder, because the
-    // server never sends the key at all.
-    const keyBox = screen.getByLabelText("API Key");
+    // 旧的单模型配置被种成一条模型 —— 老用户升级后 picker 不能是空的。
+    expect(screen.getByText("DeepSeek deepseek-reasoner")).toBeInTheDocument();
+    // 密钥框仍然是空的 + 「留空则不改动」:服务端从不回传密钥，
+    // 而 legacy 槽位的「已保存」状态靠脱敏时映射出来的 presence map。
+    const keyBox = screen.getByLabelText("DeepSeek");
     expect(keyBox).toHaveValue("");
     expect(keyBox).toHaveAttribute("placeholder", "已保存 · 留空则不改动");
 
@@ -98,7 +104,7 @@ describe("Settings page", () => {
     expect(await screen.findByRole("heading", { name: "飞书推送" })).toBeInTheDocument();
   });
 
-  it("saving with an empty key box omits apiKey — which is what stops it wiping the key", async () => {
+  it("密钥框留空时不发 keys 字段 —— 这才是「不抹掉已存密钥」的机制", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     vi.stubGlobal(
       "fetch",
@@ -115,17 +121,20 @@ describe("Settings page", () => {
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "AI 与模型" }));
+    await user.click(await screen.findByRole("button", { name: "编辑" }));
     const model = await screen.findByLabelText("模型");
     await user.clear(model);
-    await user.type(model, "deepseek-chat");
+    await user.type(model, "deepseek-v4-flash");
     await user.click(screen.getByRole("button", { name: "保存" }));
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain("/api/settings/secret/llm-chat");
-    const body = calls[0].body as Record<string, unknown>;
-    expect(body.model).toBe("deepseek-chat");
-    // The whole point: no apiKey field at all, so the server keeps the stored one.
-    expect("apiKey" in body).toBe(false);
+    const body = calls[0].body as { models: { model: string }[]; keys?: unknown };
+    // models 必须是完整数组：mergePatch 对数组是整体替换，发一半等于删掉另一半。
+    expect(body.models).toHaveLength(1);
+    expect(body.models[0].model).toBe("deepseek-v4-flash");
+    // 关键：一个 keys 字段都不发，服务端保留已存的密钥。
+    expect("keys" in body).toBe(false);
   });
 
   it("an env-managed credential says so and disables the input", async () => {

@@ -91,6 +91,43 @@ describe("parseLlmChatDocument —— 形状保持(写回路径用)", () => {
     expect(back).toEqual({ defaultModelId: null, keys: { deepseek: "sk-ds" }, models: [] });
   });
 
+  it("从旧格式升级时不吞掉那把老 key —— mergePatch 会把它带进来", () => {
+    // 设置页第一次保存多模型配置时,PATCH 只发 {defaultModelId, keys, models},
+    // 而 mergePatch 保留未发送的字段 → 合并结果里同时有顶层 apiKey 和 models。
+    // 若多模型分支直接无视顶层 apiKey,用户存一次就把已有的 key 弄丢了。
+    const merged = {
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      baseURL: "https://api.deepseek.com",
+      apiKey: "sk-老配置里的",
+      defaultModelId: "legacy",
+      keys: {},
+      models: [
+        {
+          id: "legacy",
+          label: "DeepSeek",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          baseURL: "https://api.deepseek.com",
+          keyRef: "legacy",
+        },
+      ],
+    };
+    const doc = parseLlmChatDocument(JSON.stringify(merged)) as LlmChatMultiDocument;
+    expect(doc.keys.legacy).toBe("sk-老配置里的");
+  });
+
+  it("keys 里已经有同名槽位时,不被顶层 apiKey 覆盖", () => {
+    const merged = {
+      apiKey: "sk-旧的",
+      defaultModelId: null,
+      keys: { legacy: "sk-新的" },
+      models: [],
+    };
+    const doc = parseLlmChatDocument(JSON.stringify(merged)) as LlmChatMultiDocument;
+    expect(doc.keys.legacy).toBe("sk-新的");
+  });
+
   it("非法 JSON 返回 null", () => {
     expect(parseLlmChatDocument("{")).toBeNull();
   });

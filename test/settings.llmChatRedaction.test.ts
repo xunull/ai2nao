@@ -98,6 +98,18 @@ describe("llm-chat 凭据脱敏", () => {
     expect(spec.hasSecret(legacy)).toBe(true);
   });
 
+  it("从旧格式搬运过来的那把 key 同样不外泄 —— 升级路径不能开天窗", () => {
+    // parseLlmChatDocument 会把 mergePatch 带进来的顶层 apiKey 搬进 keys.legacy
+    // (否则用户升级时会丢 key)。搬完之后它仍然是秘密,必须照样被脱敏挡住。
+    const parsed = spec.parse(
+      JSON.stringify({ apiKey: "sk-MIGRATED-SECRET", defaultModelId: null, keys: {}, models: [] })
+    );
+    const serialized = JSON.stringify(spec.redact(parsed));
+    expect(serialized).not.toContain("sk-MIGRATED-SECRET");
+    // 而且 UI 要看得出这个槽位已经有 key 了。
+    expect((spec.redact(parsed) as { keys: Record<string, boolean> }).keys.legacy).toBe(true);
+  });
+
   it("secretFields 同时覆盖两种形状的秘密位置", () => {
     expect([...spec.secretFields].sort()).toEqual(["apiKey", "keys"]);
   });
