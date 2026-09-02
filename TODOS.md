@@ -2095,8 +2095,21 @@ Cons:
 - 修法（无 tools 时把 tool 消息压平成文本）会改动 `agUiMessagesToModelMessages` 这条热路径
 - 压平会丢掉工具调用的结构，前端已渲染的卡片不受影响，但后续轮次的模型看不到结构化的调用记录
 
-Context: 2026-09-02 的 `/plan-eng-review` 在审多模型计划时发现。当时的判断是「先用测试把它变成事实，不在未知上提前重构」，于是 T5 只钉住当前行为、不修。**这条 TODO 的前提是 T5 的第二条测试变红**——如果它绿，说明现有厂商都能吃下这种请求，本条直接销账。对应的修法就是那次评审里被否掉的 5C 方案。
+Context: 2026-09-02 的 `/plan-eng-review` 在审多模型计划时发现，同日 T5 落了测试。
 
-Depends on: 多模型计划的 T5（`~/.gstack/projects/xunull-ai2nao/quincy-main-design-20260902-ai-chat-multi-model.md`）
+**我最初写的「前提是 T5 第二条测试变红」是错的**：T5 那条是「钉现状」的纯函数测试，
+它记录的是 `agUiMessagesToModelMessages` 把 tool-call/tool-result 原样送出去这个事实，
+天然是绿的；厂商到底认不认，纯函数测试永远答不了，只能真打一次。
+
+同日实测（无 tools 定义 + 历史含 tool_calls）：
+- **MiniMax-M2 → 200，照收不误，不 400。**
+- DeepSeek → 402 `Insufficient Balance`，账户余额不足，**这一家无结论**。
+- 通义千问 / 火山方舟 / Kimi → 缺 key，未测。
+
+所以「部分厂商会 400」目前是**未证实的假设**，不是已知事实。销账条件不是某条测试变红，
+而是把剩下四家都实测一遍：全都 200 就直接销，任何一家 400 就按被否掉的 5C 方案修
+（无 tools 时把历史里的 tool 消息压平成文本）。
+
+Depends on: 五家的 key（Moonshot 开放平台 / 阿里云百炼 / 火山方舟），以及 DeepSeek 充值
 
 Priority: Phase 3
