@@ -21,6 +21,7 @@ import type {
 } from "@copilotkit/runtime/v2";
 import { llmChatStatus, readLlmChatDocument, selectModelForTurn } from "./config.js";
 import { stampModelSnapshot } from "./modelStamp.js";
+import { ThinkStreamFilter } from "./normalizeResponse.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
 import {
@@ -382,6 +383,8 @@ export async function* aiSdkStreamToAgUiEvents(
 ): AsyncGenerator<BaseEvent> {
   const toolCalls = new Map<string, ToolCallState>();
   const dsml = new DsmlToolCallBuffer();
+  // 每条消息一个:text-start 时重建,避免上一条的未闭合状态串到下一条。
+  let think = new ThinkStreamFilter();
   let messageId = randomUUID();
   for await (const raw of fullStream) {
     const part = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
@@ -389,15 +392,23 @@ export async function* aiSdkStreamToAgUiEvents(
     switch (part.type) {
       case "text-start": {
         messageId = randomUUID();
+        think = new ThinkStreamFilter();
         break;
       }
       case "text-delta": {
         const delta = stringValue(part.text) || stringValue(part.delta);
         if (!delta) break;
-        yield* dsml.consume(delta, messageId, options.executeTextToolCall);
+        // **先剥 <think> 再交给 DSML。** 顺序不能反:think 块里的内容不该被
+        // 当成工具调用去解析,而且它压根不该到达前端 —— T0 实测 MiniMax 的
+        // 第一条 delta 就是 "<think>\n用户问",不挡就直接流进气泡。
+        const visible = think.push(delta);
+        if (visible) yield* dsml.consume(visible, messageId, options.executeTextToolCall);
         break;
       }
       case "text-end": {
+        // 扣住的尾巴若不在 think 块里,它其实是普通文本,收尾时补吐。
+        const tail = think.finish();
+        if (tail) yield* dsml.consume(tail, messageId, options.executeTextToolCall);
         break;
       }
       case "tool-input-start": {
