@@ -98,10 +98,20 @@ export type LlmChatConfig =
       apiKey?: string;
     };
 
+/** 设置页「服务商」下拉的选项。前端不再自己维护清单,只维护 id → 中文标签。 */
+export type LlmChatProviderOption = { id: LlmChatProvider; defaultBaseURL: string };
+
 export type LlmChatStatus = {
   configured: boolean;
+  /** 单数字段保留,含义是**默认那个** —— 老消费者不用改。 */
   provider: LlmChatProvider | null;
   model: string | null;
+  /** 实际生效的默认模型 id。默认项悬空时这里是真正会被用的那个,不是那个死 id。 */
+  defaultModelId: string | null;
+  /** picker 的数据源。绝不含密钥,只有 available / credentialSource。 */
+  models: LlmChatModelView[];
+  /** 与 LlmChatProvider 联合类型同源;加一家前端自动看见,不用改硬编码清单。 */
+  availableProviders: LlmChatProviderOption[];
   /** Host only, for debugging (no path, no key). */
   baseHost: string | null;
   configPath: string;
@@ -491,14 +501,47 @@ function baseHostFromUrl(baseURL: string): string | null {
   }
 }
 
+export function availableProviderList(): LlmChatProviderOption[] {
+  return LLM_CHAT_PROVIDERS.map((id) => ({
+    id,
+    defaultBaseURL: LLM_CHAT_DEFAULT_BASE_URLS[id],
+  }));
+}
+
+/**
+ * status 里与模型有关的两个字段。
+ *
+ * `defaultModelId` 报的是**真正会被用的那个**:默认项悬空时回落 models[0],
+ * 与 `resolveLlmChatConfig` 的口径一致。若照抄那个死 id,页面顶部的药丸就会
+ * 指向一个不存在的模型 —— 界面说谎正是 1B 要修的东西。
+ */
+export function statusModelFields(
+  doc: LlmChatStoredDocument,
+  env: NodeJS.ProcessEnv = process.env
+): { defaultModelId: string | null; models: LlmChatModelView[] } {
+  const models = listModelsFromDocument(doc, env);
+  if (models.length === 0) return { defaultModelId: null, models: [] };
+  const { defaultModelId } = documentEntries(doc);
+  const resolved = models.find((m) => m.id === defaultModelId)?.id ?? models[0].id;
+  return { defaultModelId: resolved, models };
+}
+
 export function llmChatStatus(): LlmChatStatus {
   const configPath = configPathFromEnv();
-  const cfg = readLlmChatConfig();
-  if (!cfg) {
+  // 只读一次文档:两次读会让「刚保存完」这一瞬间的 cfg 与 models 来自不同快照。
+  const doc = readLlmChatDocument();
+  const cfg = doc ? resolveLlmChatConfig(doc) : null;
+  // availableProviders 在「什么都没配」时也要给 —— 否则设置页连服务商下拉都是空的,
+  // 用户第一次进来就没法添加任何模型。
+  const availableProviders = availableProviderList();
+  if (!cfg || !doc) {
     return {
       configured: false,
       provider: null,
       model: null,
+      defaultModelId: null,
+      models: [],
+      availableProviders,
       baseHost: null,
       configPath,
       source: null,
@@ -509,8 +552,10 @@ export function llmChatStatus(): LlmChatStatus {
     configured: true,
     provider: cfg.provider,
     model: cfg.model,
+    ...statusModelFields(doc),
+    availableProviders,
     baseHost: baseHostFromUrl(cfg.baseURL),
     configPath,
-    source: stored && parseLlmChatConfigJson(stored) ? "db" : "file",
+    source: stored && parseLlmChatDocument(stored) ? "db" : "file",
   };
 }

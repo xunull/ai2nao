@@ -4,6 +4,8 @@ import {
   parseLlmChatConfigJson,
   parseLlmChatDocument,
   resolveLlmChatConfig,
+  availableProviderList,
+  statusModelFields,
   type LlmChatMultiDocument,
 } from "../src/llmChat/config.js";
 
@@ -203,12 +205,67 @@ describe("listModelsFromDocument —— 可用性判定", () => {
     expect(serialized).not.toContain("sk-mo");
   });
 
-  it("旧格式文档也要合成一条稳定条目 —— 否则老用户升级后 picker 是空的", () => {
+  it("旧格式文档也要合成一条稳定条目 —— 否则老用户升级后 picker 是空的（前置）", () => {
     const legacy = parseLlmChatDocument(
       JSON.stringify({ provider: "deepseek", model: "deepseek-v4-flash", apiKey: "sk-ds" })
     )!;
     const views = listModelsFromDocument(legacy, {});
     expect(views).toHaveLength(1);
     expect(views[0]).toMatchObject({ available: true, credentialSource: "config" });
+  });
+});
+
+describe("status 的模型字段 —— picker / 药丸 / 设置页下拉的唯一数据源", () => {
+  it("availableProviders 覆盖全部 provider,并带可预填的 base URL", () => {
+    const list = availableProviderList();
+    const ids = list.map((p) => p.id).sort();
+    // 与 LlmChatProvider 联合类型同源:加一家这里自动出现,前端不用改硬编码清单。
+    expect(ids).toEqual([
+      "alibaba",
+      "deepseek",
+      "minimax",
+      "moonshotai",
+      "openai",
+      "openai-compatible",
+      "volcengine",
+    ]);
+    expect(list.find((p) => p.id === "volcengine")?.defaultBaseURL).toBe(
+      "https://ark.cn-beijing.volces.com/api/v3"
+    );
+    // openai-compatible 没有默认地址(必须用户自己填),空串是有意的。
+    expect(list.find((p) => p.id === "openai-compatible")?.defaultBaseURL).toBe("");
+  });
+
+  it("defaultModelId 如实反映当前默认项", () => {
+    expect(statusModelFields(fiveModelDoc(), {}).defaultModelId).toBe("ds-chat");
+  });
+
+  it("默认悬空时,status 报的是真正会被用的那个(models[0]),不是那个死 id", () => {
+    const doc = fiveModelDoc();
+    doc.defaultModelId = "已经被删掉的";
+    // 药丸显示的必须是实际生效的模型,否则界面又在说谎 —— 这正是 1B 的初衷。
+    expect(statusModelFields(doc, {}).defaultModelId).toBe("ds-chat");
+  });
+
+  it("旧格式返回合成 id,前端不必特判两种形状", () => {
+    const legacy = parseLlmChatDocument(
+      JSON.stringify({ provider: "deepseek", model: "deepseek-v4-flash", apiKey: "sk-ds" })
+    )!;
+    const f = statusModelFields(legacy, {});
+    expect(f.models).toHaveLength(1);
+    expect(f.defaultModelId).toBe(f.models[0].id);
+  });
+
+  it("models 为空时 defaultModelId 是 null,不是编一个", () => {
+    expect(statusModelFields({ defaultModelId: "x", keys: {}, models: [] }, {})).toEqual({
+      defaultModelId: null,
+      models: [],
+    });
+  });
+
+  it("整个 status 模型字段里不出现任何密钥原文", () => {
+    const s = JSON.stringify(statusModelFields(fiveModelDoc(), {}));
+    expect(s).not.toContain("sk-ds");
+    expect(s).not.toContain("sk-mo");
   });
 });
