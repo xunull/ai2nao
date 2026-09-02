@@ -4,7 +4,7 @@ import {
   defaultWebSearchConfigPath,
 } from "../config.js";
 import { parseGithubConfigJson } from "../github/config.js";
-import { parseLlmChatConfigJson } from "../llmChat/config.js";
+import { parseLlmChatDocument } from "../llmChat/config.js";
 import { defaultNotifyConfigPath, parseNotifyConfigJson } from "../notify/config.js";
 import { parseRagEmbeddingJson } from "../rag/config.js";
 import { parseWebSearchConfigJson } from "../webSearch/config.js";
@@ -97,15 +97,54 @@ function parseKimiJson(raw: string): { apiKey: string } | null {
 
 const API_KEY_ONLY = ["apiKey"] as const;
 
+function isPlainRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+/**
+ * llm-chat 的秘密**有两个位置**:多模型文档在顶层 `keys` 对象里,迁移前的单模型
+ * 配置在顶层 `apiKey`。只列其中一个,另一种形状就会原样漏进 API 响应 ——
+ * `omit()` 是浅删,不会替你去嵌套结构里找。
+ */
+const LLM_CHAT_SECRET_FIELDS = ["apiKey", "keys"] as const;
+
+/**
+ * `keys` 不整块抹掉,换成 presence map:设置页需要显示「这家配过 / 没配过」,
+ * 整块删会让 UI 无从判断,而返回原值就是把 5 把 key 明文送进浏览器。
+ */
+function redactLlmChat(parsed: unknown): unknown {
+  const out = omit(parsed, LLM_CHAT_SECRET_FIELDS) as Record<string, unknown>;
+  if (isPlainRecord(parsed) && isPlainRecord(parsed.keys)) {
+    const presence: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(parsed.keys)) {
+      presence[k] = typeof v === "string" && v.trim().length > 0;
+    }
+    out.keys = presence;
+  }
+  return out;
+}
+
+function llmChatHasSecret(parsed: unknown): boolean {
+  if (field(parsed, "apiKey")) return true;
+  if (isPlainRecord(parsed) && isPlainRecord(parsed.keys)) {
+    return Object.values(parsed.keys).some(
+      (v) => typeof v === "string" && v.trim().length > 0
+    );
+  }
+  return false;
+}
+
 export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
   "llm-chat": {
-    parse: parseLlmChatConfigJson,
+    // 形状保持的解析器,不是塌缩的那个:patchCredential 把 parse 的输出写回库,
+    // 用 resolveLlmChatConfig 那种塌缩语义会让每次保存吃掉其余模型条目。
+    parse: parseLlmChatDocument,
     // Env keys (DEEPSEEK_API_KEY etc.) are a FALLBACK applied downstream in
     // llmChat/model.ts (`cfg.apiKey || env`), not an override — so: null.
     envVar: null,
-    hasSecret: (p) => Boolean(field(p, "apiKey")),
-    redact: (p) => omit(p, API_KEY_ONLY),
-    secretFields: API_KEY_ONLY,
+    hasSecret: llmChatHasSecret,
+    redact: redactLlmChat,
+    secretFields: LLM_CHAT_SECRET_FIELDS,
     legacyPath: pathFromEnv("AI2NAO_LLM_CHAT_CONFIG", defaultLlmChatConfigPath),
     label: "AI 对话模型",
   },

@@ -4,45 +4,14 @@ import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
-import type { LlmChatConfig, LlmChatProvider } from "./config.js";
+import { resolveApiKeySource } from "./apiKeySource.js";
+import type { LlmChatConfig } from "./config.js";
 import { llmChatLog } from "./log.js";
 
-type ProviderApiKeyEnv =
-  | "ALIBABA_API_KEY"
-  | "DEEPSEEK_API_KEY"
-  | "MOONSHOT_API_KEY"
-  | "OPENAI_API_KEY";
-
-type ApiKeySource =
-  | "config"
-  | ProviderApiKeyEnv
-  | "AI2NAO_LLM_API_KEY"
-  | "placeholder"
-  | "missing";
-
-function providerApiKeyEnv(provider: LlmChatProvider): ProviderApiKeyEnv | null {
-  if (provider === "alibaba") return "ALIBABA_API_KEY";
-  if (provider === "deepseek") return "DEEPSEEK_API_KEY";
-  if (provider === "moonshotai") return "MOONSHOT_API_KEY";
-  if (provider === "openai") return "OPENAI_API_KEY";
-  return null;
-}
-
-function resolveApiKey(cfg: LlmChatConfig): { apiKey?: string; source: ApiKeySource } {
-  if (cfg.apiKey?.trim()) return { apiKey: cfg.apiKey.trim(), source: "config" };
-  const providerEnv = providerApiKeyEnv(cfg.provider);
-  if (providerEnv) {
-    const providerKey = process.env[providerEnv]?.trim();
-    if (providerKey) return { apiKey: providerKey, source: providerEnv };
-    const sharedKey = process.env.AI2NAO_LLM_API_KEY?.trim();
-    if (sharedKey) return { apiKey: sharedKey, source: "AI2NAO_LLM_API_KEY" };
-    return { source: "missing" };
-  }
-  const sharedKey = process.env.AI2NAO_LLM_API_KEY?.trim();
-  if (sharedKey) return { apiKey: sharedKey, source: "AI2NAO_LLM_API_KEY" };
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  if (openaiKey) return { apiKey: openaiKey, source: "OPENAI_API_KEY" };
-  return { apiKey: "local-no-key", source: "placeholder" };
+// key 解析已搬到 apiKeySource.ts —— picker 的可用性判定要用同一份逻辑,
+// 两处各写一套就会出现「界面说能用、发出去 401」的分歧。这里只是转调,不是重写。
+function resolveApiKey(cfg: LlmChatConfig) {
+  return resolveApiKeySource({ provider: cfg.provider, apiKey: cfg.apiKey });
 }
 
 export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
@@ -70,9 +39,16 @@ export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
     const openai = createOpenAI({ baseURL, ...(apiKey ? { apiKey } : {}) });
     return openai.chat(cfg.model);
   }
-  if (cfg.provider === "openai-compatible") {
+  // 下面三家共用 openai-compatible 适配器,但各有独立的 provider id ——
+  // 为的是设置页能预填 base URL(火山那串 ark 路径没人记得住),
+  // 以及 apiKeySource 能给它们各自的约定环境变量。
+  if (
+    cfg.provider === "openai-compatible" ||
+    cfg.provider === "volcengine" ||
+    cfg.provider === "minimax"
+  ) {
     const provider = createOpenAICompatible<string, string, string, string>({
-      name: "openai-compatible",
+      name: cfg.provider,
       baseURL,
       apiKey,
     });

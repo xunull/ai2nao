@@ -7,6 +7,17 @@
  */
 import type { LlmChatConfig } from "./config.js";
 
+/**
+ * **与 `apiKeySource.ts` 的同名函数是有意重复的,不要合并。**
+ *
+ * 两者兜底顺序不同:本文件对 `openai-compatible` 不查 `OPENAI_API_KEY`,
+ * 直接回落 `"local-no-key"`;`apiKeySource` 多一步。本文件服务 dailySummary 与
+ * workRecap,它们属于「多模型改造中行为必须一字不变」的消费者,所以宁可留重复。
+ * 合并前要先证明这一步差异对这两个消费者无影响,并补上专盯它的断言。
+ *
+ * 这个 switch 没有 default —— 返回类型不含 undefined,加 provider 时 tsc 会报
+ * 「lacks ending return statement」,这正是它被发现的方式。
+ */
 function providerApiKeyEnv(provider: LlmChatConfig["provider"]): string | null {
   switch (provider) {
     case "deepseek":
@@ -17,6 +28,10 @@ function providerApiKeyEnv(provider: LlmChatConfig["provider"]): string | null {
       return "ALIBABA_API_KEY";
     case "openai":
       return "OPENAI_API_KEY";
+    case "volcengine":
+      return "ARK_API_KEY";
+    case "minimax":
+      return "MINIMAX_API_KEY";
     case "openai-compatible":
       return null;
   }
