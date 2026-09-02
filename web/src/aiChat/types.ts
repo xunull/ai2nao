@@ -1,7 +1,27 @@
+/** 一个模型条目在界面上的样子。**绝不含密钥**,只有来源分类。 */
+export type LlmChatModelView = {
+  id: string;
+  label: string;
+  provider: string;
+  model: string;
+  available: boolean;
+  credentialSource: "config" | "env" | "none-needed" | "none";
+};
+
 export type LlmChatStatus = {
   configured: boolean;
+  /** 单数字段的含义是**默认那个**。 */
   provider: string | null;
   model: string | null;
+  /** 实际生效的默认模型 id(默认项悬空时是真正会被用的那个)。 */
+  defaultModelId: string | null;
+  /** picker 与设置页列表的数据源。 */
+  models: LlmChatModelView[];
+  /**
+   * 服务商清单**由后端给**,前端只维护 id → 中文标签。
+   * 以前前端自己硬编码一份,后端加一家而这里忘了加,那家在下拉里压根不存在。
+   */
+  availableProviders: { id: string; defaultBaseURL: string }[];
   baseHost: string | null;
   configPath: string;
   /** "db" once the config lives in config.db; "file" while still on the legacy JSON. */

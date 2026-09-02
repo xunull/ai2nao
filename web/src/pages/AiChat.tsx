@@ -1,5 +1,11 @@
-import { CopilotChat, CopilotKit, useDefaultRenderTool, useRenderTool } from "@copilotkit/react-core/v2";
-import { Component, useCallback, useEffect, useState } from "react";
+import {
+  CopilotChat,
+  CopilotChatAssistantMessage,
+  CopilotKit,
+  useDefaultRenderTool,
+  useRenderTool,
+} from "@copilotkit/react-core/v2";
+import { Component, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { z } from "zod";
 import { apiGet, apiPost } from "../api";
@@ -15,6 +21,7 @@ import type {
   RagStatus,
   WebSearchStatus,
 } from "../aiChat/types";
+import { assistantModelLabel, resolveChatModel } from "../aiChat/modelPicker";
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
   const cls =
@@ -630,6 +637,45 @@ export function AiChat() {
   const [sessionErr, setSessionErr] = useState<string | null>(null);
   const [chatErr, setChatErr] = useState<string | null>(null);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  /** 这一轮用哪个模型。null = 用后端的默认项。 */
+  const [modelId, setModelId] = useState<string | null>(null);
+
+  // 取值规则在 aiChat/modelPicker.ts,那里有单测;这里只负责接线。
+  const {
+    models: chatModels,
+    effectiveModelId,
+    selected: selectedModel,
+    fallbackLabel,
+  } = resolveChatModel(cfg, modelId);
+
+  /**
+   * 气泡上的模型归属。
+   *
+   * 优先用消息自带的 `ai2naoModel` 不可变快照 —— 条目改名/删除都不影响历史。
+   * 但快照是后端在**落库时**盖的,AG-UI 的流式事件不带它,所以正在生成的那条
+   * 拿不到,只能用 picker 的当前值兜底。已知边界:流式过程中改 picker,那一条
+   * 的标签会跟着变;落库刷新后以快照为准。
+   */
+  const AssistantMessageWithModel = useMemo(() => {
+    function WithModel(
+      props: React.ComponentProps<typeof CopilotChatAssistantMessage>
+    ) {
+      const label = assistantModelLabel(props.message, fallbackLabel);
+      return (
+        <div>
+          {label ? (
+            <div className="mb-0.5 text-[11px] font-medium text-neutral-500">AI · {label}</div>
+          ) : null}
+          <CopilotChatAssistantMessage {...props} />
+        </div>
+      );
+    }
+    // 这个插槽的类型是 `typeof CopilotChatAssistantMessage` —— 它连带一串静态
+    // 子组件(MarkdownRenderer / Toolbar / CopyButton …)。不把它们带上,用到那些
+    // 静态成员的地方会在运行时断,而不是编译期。
+    return Object.assign(WithModel, CopilotChatAssistantMessage);
+    // 只在标签变化时换组件标识,避免每次 render 都把消息子树重挂一遍。
+  }, [fallbackLabel]);
 
   const refreshSessions = useCallback(async (signal?: AbortSignal) => {
     const rows = await listAiChatSessions({ signal });
@@ -888,7 +934,15 @@ export function AiChat() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill
-                label={cfg?.configured ? `模型 ${cfg.model}` : cfgErr ?? "模型未配置"}
+                // 药丸跟着 picker 走。以前它固定显示后端配置里的那个模型名,
+                // 多模型之后就会出现「你选了 Kimi、Kimi 在答、页顶写着 deepseek」。
+                label={
+                  selectedModel
+                    ? `模型 ${selectedModel.label}`
+                    : cfg?.configured
+                      ? `模型 ${cfg.model}`
+                      : (cfgErr ?? "模型未配置")
+                }
                 tone={cfg?.configured ? "ok" : "warn"}
               />
               <StatusPill
@@ -903,6 +957,25 @@ export function AiChat() {
                 }
                 tone={webSearch?.ok ? "ok" : "idle"}
               />
+              <label className="flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700">
+                模型
+                <select
+                  aria-label="选择模型"
+                  value={effectiveModelId ?? ""}
+                  onChange={(e) => setModelId(e.target.value || null)}
+                  className="max-w-[9rem] truncate bg-transparent text-xs font-medium outline-none"
+                >
+                  {chatModels.length === 0 && <option value="">未配置</option>}
+                  {chatModels.map((m) => (
+                    // 不可用的置灰而不是隐藏 —— 让人看得见「这家我配过条目、只是差 key」。
+                    // 判据来自后端的 credentialSource，靠环境变量拿 key 的不会被误禁。
+                    <option key={m.id} value={m.id} disabled={!m.available}>
+                      {m.label}
+                      {m.available ? "" : "（未配 key）"}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex h-8 items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700">
                 <input
                   type="checkbox"
@@ -995,6 +1068,9 @@ export function AiChat() {
                   runtimeUrl="/api/copilotkit"
                   useSingleEndpoint={true}
                   properties={{
+                    // 与五个工具开关同一条通道。合法性由后端 selectModelForTurn 判，
+                    // 前端的值不可信；不可用会返回 RUN_ERROR，不会静默换家。
+                    modelId: effectiveModelId,
                     useRag,
                     ragTopK: 8,
                     webSearchEnabled: effectiveWebSearch,
@@ -1024,6 +1100,9 @@ export function AiChat() {
                     <CopilotChat
                       key={activeSessionId}
                       threadId={activeSessionId}
+                      // 探针确认过的插槽链路：chatView → messageView → assistantMessage。
+                      // 不用重写外壳，也不违反铁律 —— 渲染一个标签是纯展示。
+                      chatView={{ messageView: { assistantMessage: AssistantMessageWithModel } }}
                       onError={handleChatError}
                       labels={{
                         modalHeaderTitle: "AI 对话",

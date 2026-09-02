@@ -4,6 +4,8 @@ import { Bell, BookOpen, Bot, Database, Folder, Layers, Plus, Sliders, X } from 
 import { apiDelete, apiGet, apiPatch } from "../api";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
 import { RagCorpusSection } from "./settings/RagCorpusSection";
+// 与 /ai-chat 共用同一份 status 契约 —— 两处各抄一份就会悄悄漂开。
+import type { LlmChatStatus } from "../aiChat/types";
 
 /** Where a credential is actually coming from — mirrors the server's precedence. */
 type CredSource = "env" | "db" | "file" | null;
@@ -326,20 +328,6 @@ type ModelEntry = {
   keyRef: string;
 };
 
-type LlmChatStatusRes = {
-  configured: boolean;
-  defaultModelId: string | null;
-  models: {
-    id: string;
-    label: string;
-    provider: string;
-    model: string;
-    available: boolean;
-    credentialSource: "config" | "env" | "none-needed" | "none";
-  }[];
-  availableProviders: { id: string; defaultBaseURL: string }[];
-};
-
 const CRED_SOURCE_TEXT: Record<string, string> = {
   config: "已配置",
   env: "环境变量",
@@ -394,7 +382,7 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
   // 服务商清单与可用性由后端给,前端不再自己维护 —— 后端加一家这里自动出现。
   const status = useQuery({
     queryKey: ["llm-chat-status"],
-    queryFn: () => apiGet<LlmChatStatusRes>("/api/llm-chat/status"),
+    queryFn: () => apiGet<LlmChatStatus>("/api/llm-chat/status"),
   });
   // 两处都先兜底再 map:响应形状不能假设(旧后端、代理改写、测试桩都可能少字段),
   // 而这个区块崩了会连带整个设置页白屏 —— 一个可选的状态查询不该有这种爆炸半径。

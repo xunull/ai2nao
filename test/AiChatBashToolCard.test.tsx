@@ -21,6 +21,10 @@ vi.mock("@copilotkit/react-core/v2", () => ({
     <div data-testid="mock-copilotkit">{children}</div>
   ),
   CopilotChat: () => <div data-testid="mock-copilot-chat" />,
+  // 新 import 必须在 mock 里有对应导出，否则 vitest 直接报错。
+  // 渲染成一个可断言的占位，气泡包装层的逻辑仍然跑得到。
+  CopilotChatAssistantMessage: () => <div data-testid="mock-assistant-message" />,
+
   useDefaultRenderTool: vi.fn(),
   useRenderTool: vi.fn((config: { name: string; render: typeof shellRenderConfig["render"] }) => {
     if (config.name === "ai2nao_run_shell") shellRenderConfig = config;

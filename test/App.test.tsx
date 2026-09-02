@@ -16,6 +16,9 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotChat: ({ threadId }: { threadId: string }) => (
     <textarea aria-label="消息内容" data-threadid={threadId} />
   ),
+  // 新 import 必须在 mock 里有对应导出，否则 vitest 直接报错。
+  // 渲染成一个可断言的占位，气泡包装层的逻辑仍然跑得到。
+  CopilotChatAssistantMessage: () => <div data-testid="mock-assistant-message" />,
 }));
 
 function renderApp(initialEntry: string) {
