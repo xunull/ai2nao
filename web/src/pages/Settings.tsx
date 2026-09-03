@@ -365,7 +365,11 @@ function providersFromValues(v: Record<string, unknown>): ProviderDraft[] {
       {
         id,
         provider,
-        label: typeof o.label === "string" ? o.label : provider,
+        // 服务端存的默认名是 provider id(不本地化,那是前端的事)。
+        // 这里把「没被用户改过」的那种升级成中文名 —— 否则左栏显示「DeepSeek」
+        // 而名称框显示「deepseek」,同一屏两种写法。用户自起的名原样保留。
+        label:
+          typeof o.label === "string" && o.label !== provider ? o.label : providerLabel(provider),
         baseURL: typeof o.baseURL === "string" ? o.baseURL : "",
         enabled: o.enabled !== false,
         models: Array.isArray(o.models)
@@ -565,7 +569,10 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                           d.enabled ? "text-[var(--fg)]" : "text-[var(--muted)] line-through"
                         }`}
                       >
-                        {d.label || d.id}
+                        {/* 迁移出来的实例名就是 provider id(如 "deepseek"),直接显示是个
+                            生字符串。providerLabel 对未知值原样返回,所以用户自己起的
+                            名字("我的代理")照常穿过去。 */}
+                        {providerLabel(d.label) || d.id}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--muted)]">
                         <span
@@ -638,40 +645,35 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                 />
               </Field>
 
-              <div className="flex gap-2">
-                <div className="w-40 shrink-0">
-                  <Field label="接口类型" htmlFor={`p-adapter-${selected.id}`}>
-                    <select
-                      id={`p-adapter-${selected.id}`}
-                      value={selected.provider}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        const base = adapters.find((a) => a.id === next)?.defaultBaseURL ?? "";
-                        // 换接口类型时预填地址,少一次手敲(火山那串 ark 路径没人记得住)。
-                        patchDraft(selected.id, { provider: next, baseURL: base });
-                      }}
-                      className={inputCls}
-                    >
-                      {adapters.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {providerLabel(a.id)}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <Field label="Base URL" htmlFor={`p-base-${selected.id}`}>
-                    <input
-                      id={`p-base-${selected.id}`}
-                      value={selected.baseURL}
-                      onChange={(e) => patchDraft(selected.id, { baseURL: e.target.value })}
-                      placeholder="选接口类型时自动预填"
-                      className={`${inputCls} font-mono text-xs`}
-                    />
-                  </Field>
-                </div>
-              </div>
+              <Field label="接口类型" htmlFor={`p-adapter-${selected.id}`}>
+                <select
+                  id={`p-adapter-${selected.id}`}
+                  value={selected.provider}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const base = adapters.find((a) => a.id === next)?.defaultBaseURL ?? "";
+                    // 换接口类型时预填地址,少一次手敲(火山那串 ark 路径没人记得住)。
+                    patchDraft(selected.id, { provider: next, baseURL: base });
+                  }}
+                  className={inputCls}
+                >
+                  {adapters.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {providerLabel(a.id)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Base URL" htmlFor={`p-base-${selected.id}`}>
+                <input
+                  id={`p-base-${selected.id}`}
+                  value={selected.baseURL}
+                  onChange={(e) => patchDraft(selected.id, { baseURL: e.target.value })}
+                  placeholder="选接口类型时自动预填"
+                  className={`${inputCls} font-mono text-xs`}
+                />
+              </Field>
 
               <Field label="API Key" htmlFor={`p-key-${selected.id}`}>
                 <input

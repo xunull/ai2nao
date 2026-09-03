@@ -106,6 +106,15 @@ function isPlainRecord(x: unknown): x is Record<string, unknown> {
  * 配置在顶层 `apiKey`。只列其中一个,另一种形状就会原样漏进 API 响应 ——
  * `omit()` 是浅删,不会替你去嵌套结构里找。
  */
+/**
+ * **注意:这个常量不是脱敏的实现,别把它当成防线。**
+ *
+ * 它只喂给下面那次顶层 `omit`,而真正的脱敏是 `redactLlmChat` 深走 providers。
+ * 全仓库没有任何生产代码读 `spec.secretFields`(只有测试读),所以改它能让测试
+ * 变绿却一个字节的实际脱敏行为都不会变 —— 上一版正是靠它看起来在脱敏。
+ *
+ * `keys` 留在这里是给「归一前的历史输入」兜底的:parse 的输出永远没有这个字段。
+ */
 const LLM_CHAT_SECRET_FIELDS = ["apiKey", "keys"] as const;
 
 /**
