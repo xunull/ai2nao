@@ -5,9 +5,10 @@
  * picker 里某个模型能不能选。两处若各写一套,就会出现「界面说能用、发出去 401」
  * 或反过来「界面置灰、其实靠环境变量能跑」的分歧 —— 后者正是 `keySet` 谓词的死因。
  *
- * 本文件对 `config.ts` 只做 type-only import,运行期无依赖,不成环。
+ * 本文件对 `document.ts` 只做 type-only import,运行期无依赖,不成环。
+ * (指向 document 而不是 config:config 会 import 本文件,那条路是真的运行期依赖。)
  */
-import type { LlmChatProvider } from "./config.js";
+import type { LlmChatProvider } from "./document.js";
 
 export type ProviderApiKeyEnv =
   | "ALIBABA_API_KEY"
