@@ -319,15 +319,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   minimax: "MiniMax",
 };
 
-type ModelEntry = {
-  id: string;
-  label: string;
-  provider: string;
-  model: string;
-  baseURL: string;
-  keyRef: string;
-};
-
 const CRED_SOURCE_TEXT: Record<string, string> = {
   config: "已配置",
   env: "环境变量",
@@ -339,42 +330,85 @@ function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id;
 }
 
-/** 从后端的（已脱敏的）凭据值里读出可编辑的模型列表。 */
-function modelsFromValues(v: Record<string, unknown>): ModelEntry[] {
-  if (Array.isArray(v.models)) return v.models as ModelEntry[];
-  // 旧的单模型配置:种一条,让用户在同一个界面里自然升级。那把老 key 由后端
-  // 在 parseLlmChatDocument 里搬进 keys.legacy,不会因为这次保存而丢。
-  if (typeof v.provider === "string" && typeof v.model === "string") {
+type ModelDraft = { model: string; label: string };
+
+/** 一个厂商实例的可编辑副本。`hasKey` 来自后端脱敏(只有布尔,没有原文)。 */
+type ProviderDraft = {
+  id: string;
+  provider: string;
+  label: string;
+  baseURL: string;
+  enabled: boolean;
+  models: ModelDraft[];
+  hasKey: boolean;
+  /** 用户这次新输入的 key。空 = 别动已存的那把。 */
+  keyDraft: string;
+};
+
+type DefaultRef = { providerId: string; model: string } | null;
+
+/**
+ * 从后端(已脱敏的)凭据值里读出可编辑的厂商列表。
+ *
+ * 只认新形状:`parseLlmChatDocument` 已经在服务端把三种历史形状全部归一成
+ * `providers{}`,前端不再需要认识旧形状。搬运必须在服务端做 —— 脱敏后前端
+ * 手上根本没有密钥原文,搬不动它。
+ */
+function providersFromValues(v: Record<string, unknown>): ProviderDraft[] {
+  const raw = v.providers;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return [];
+  return Object.entries(raw as Record<string, unknown>).flatMap(([id, val]) => {
+    if (typeof val !== "object" || val === null) return [];
+    const o = val as Record<string, unknown>;
+    const provider = typeof o.provider === "string" ? o.provider : "openai-compatible";
     return [
       {
-        id: "legacy",
-        label: `${providerLabel(v.provider)} ${v.model}`,
-        provider: v.provider,
-        model: v.model,
-        baseURL: typeof v.baseURL === "string" ? v.baseURL : "",
-        keyRef: "legacy",
+        id,
+        provider,
+        label: typeof o.label === "string" ? o.label : provider,
+        baseURL: typeof o.baseURL === "string" ? o.baseURL : "",
+        enabled: o.enabled !== false,
+        models: Array.isArray(o.models)
+          ? (o.models as Record<string, unknown>[]).flatMap((m) =>
+              m && typeof m.model === "string"
+                ? [{ model: m.model, label: typeof m.label === "string" ? m.label : m.model }]
+                : []
+            )
+          : [],
+        hasKey: o.hasKey === true,
+        keyDraft: "",
       },
     ];
-  }
-  return [];
+  });
 }
 
-function newEntryId(existing: ModelEntry[]): string {
-  for (let i = 1; ; i += 1) {
-    const id = `model-${i}`;
-    if (!existing.some((e) => e.id === id)) return id;
+function defaultFromValues(v: Record<string, unknown>): DefaultRef {
+  const d = v.defaultModel;
+  if (typeof d !== "object" || d === null) return null;
+  const o = d as Record<string, unknown>;
+  return typeof o.providerId === "string" && typeof o.model === "string"
+    ? { providerId: o.providerId, model: o.model }
+    : null;
+}
+
+/** 新实例 id:优先用适配器 id,占用了就加后缀。id 不含冒号(视图 id 靠它切分)。 */
+function newProviderId(provider: string, taken: string[]): string {
+  if (!taken.includes(provider)) return provider;
+  for (let i = 2; ; i += 1) {
+    const id = `${provider}-${i}`;
+    if (!taken.includes(id)) return id;
   }
 }
 
 function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () => void }) {
   const v = cred.values ?? {};
-  const keyPresence = (v.keys ?? {}) as Record<string, boolean>;
-  const [models, setModels] = useState<ModelEntry[]>(() => modelsFromValues(v));
-  const [defaultModelId, setDefaultModelId] = useState<string | null>(
-    typeof v.defaultModelId === "string" ? v.defaultModelId : (modelsFromValues(v)[0]?.id ?? null)
+  const [drafts, setDrafts] = useState<ProviderDraft[]>(() => providersFromValues(v));
+  const [defaultRef, setDefaultRef] = useState<DefaultRef>(() => defaultFromValues(v));
+  /** providers 是 map:省略等于「别动」,所以删除必须显式发 null。 */
+  const [deleted, setDeleted] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => providersFromValues(v)[0]?.id ?? null
   );
-  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   const save = useSaveCredential("llm-chat", onChanged);
   const clear = useClearCredential("llm-chat", onChanged);
@@ -384,221 +418,341 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
     queryKey: ["llm-chat-status"],
     queryFn: () => apiGet<LlmChatStatus>("/api/llm-chat/status"),
   });
-  // 两处都先兜底再 map:响应形状不能假设(旧后端、代理改写、测试桩都可能少字段),
+  // 先兜底再 map:响应形状不能假设(旧后端、代理改写、测试桩都可能少字段),
   // 而这个区块崩了会连带整个设置页白屏 —— 一个可选的状态查询不该有这种爆炸半径。
-  const providers = Array.isArray(status.data?.availableProviders)
+  const adapters = Array.isArray(status.data?.availableProviders)
     ? status.data.availableProviders
     : [];
-  const availability = new Map(
-    (Array.isArray(status.data?.models) ? status.data.models : []).map((m) => [m.id, m] as const)
+  /** 服务端对「这家到底有没有 key」的判断(含环境变量),比本地 hasKey 权威。 */
+  const serverView = new Map(
+    (Array.isArray(status.data?.providers) ? status.data.providers : []).map(
+      (p) => [p.id, p] as const
+    )
   );
 
-  const patch = (id: string, next: Partial<ModelEntry>) =>
-    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, ...next } : m)));
+  const selected = drafts.find((d) => d.id === selectedId) ?? null;
 
-  const addModel = () => {
-    const first = providers[0];
-    const id = newEntryId(models);
-    const provider = first?.id ?? "deepseek";
-    setModels((prev) => [
+  const patchDraft = (id: string, next: Partial<ProviderDraft>) =>
+    setDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...next } : d)));
+
+  const addProvider = () => {
+    const adapter = adapters[0]?.id ?? "deepseek";
+    const id = newProviderId(adapter, drafts.map((d) => d.id));
+    setDrafts((prev) => [
       ...prev,
-      { id, label: "", provider, model: "", baseURL: first?.defaultBaseURL ?? "", keyRef: provider },
+      {
+        id,
+        provider: adapter,
+        label: providerLabel(adapter),
+        baseURL: adapters[0]?.defaultBaseURL ?? "",
+        enabled: true,
+        models: [],
+        hasKey: false,
+        keyDraft: "",
+      },
     ]);
-    setDefaultModelId((d) => d ?? id);
-    setEditingId(id);
+    // 刚建出来时它还没有模型;左栏必须仍然看得见它,否则用户会以为没添加成功。
+    setDeleted((prev) => prev.filter((x) => x !== id));
+    setSelectedId(id);
   };
 
-  const removeModel = (id: string) => {
-    setModels((prev) => prev.filter((m) => m.id !== id));
-    if (editingId === id) setEditingId(null);
+  const removeProvider = (id: string) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    setDeleted((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    if (selectedId === id) setSelectedId(null);
   };
 
-  // keys 只发有输入的那几个:mergePatch 对对象是递归合并,不会抹掉没发的。
-  // models 必须发完整数组 —— 它对数组是整体替换,发一半就等于删掉另一半。
-  const onSave = () =>
-    save.mutate({
-      defaultModelId,
-      models: models.map((m) => ({ ...m, label: m.label.trim() || m.model })),
-      ...(Object.keys(keyDrafts).some((k) => keyDrafts[k]?.trim())
-        ? {
-            keys: Object.fromEntries(
-              Object.entries(keyDrafts)
-                .filter(([, val]) => val.trim())
-                .map(([k, val]) => [k, val.trim()])
-            ),
-          }
-        : {}),
-    });
+  const addModel = (id: string) =>
+    setDrafts((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, models: [...d.models, { model: "", label: "" }] } : d))
+    );
 
-  const incomplete = models.some((m) => !m.model.trim() || !m.keyRef.trim());
-  // 按「引用它的模型属于哪家」来显示,而不是直接显示 keyRef 字面量 ——
-  // 旧配置迁移过来的槽位叫 legacy(服务端把老 apiKey 搬到了那里),
-  // 直接显示会变成一个叫「legacy」的输入框,没人知道那要填什么。
-  const keyRefs = [...new Set(models.map((m) => m.keyRef).filter(Boolean))].map((ref) => ({
-    ref,
-    label: providerLabel(models.find((m) => m.keyRef === ref)?.provider ?? ref),
-  }));
+  const patchModel = (id: string, idx: number, next: Partial<ModelDraft>) =>
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? { ...d, models: d.models.map((m, i) => (i === idx ? { ...m, ...next } : m)) }
+          : d
+      )
+    );
+
+  const removeModel = (id: string, idx: number) =>
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.id === id ? { ...d, models: d.models.filter((_, i) => i !== idx) } : d
+      )
+    );
+
+  /**
+   * 默认项不能被删 —— 要先把默认设到别处。
+   *
+   * 删掉它会让 defaultModel 落空,而后端会回落到「第一个启用的实例的第一条」:
+   * 每日摘要 / 话题命名 / 工作回顾就此静默换了一家模型,还在花另一家的钱。
+   * 与 resolveLlmChatConfig 拒绝为「默认实例被关掉」回落是同一条原则。
+   */
+  const isDefaultModel = (providerId: string, model: string) =>
+    defaultRef?.providerId === providerId && defaultRef.model === model;
+  const holdsDefault = (d: ProviderDraft) =>
+    defaultRef?.providerId === d.id && d.models.some((m) => m.model === defaultRef.model);
+
+  /**
+   * PATCH 的词汇表是 `providers.<id>.<字段>`。
+   * mergePatch 对**对象**递归合并(省略即保留),对**数组**整体替换 ——
+   * 所以 models 必须发完整数组(发一半等于删掉另一半),而删掉一整个厂商
+   * 必须显式发 null(省略只会被当成「别动」)。
+   */
+  const onSave = () => {
+    const providers: Record<string, unknown> = {};
+    for (const d of drafts) {
+      providers[d.id] = {
+        provider: d.provider,
+        label: d.label.trim() || providerLabel(d.provider),
+        baseURL: d.baseURL.trim(),
+        enabled: d.enabled,
+        models: d.models
+          .filter((m) => m.model.trim())
+          .map((m) => ({ model: m.model.trim(), label: m.label.trim() || m.model.trim() })),
+        // 只在用户真输入了才发:留空 = 别动已存的那把(前端拿不到原文,发空串就是清掉)。
+        ...(d.keyDraft.trim() ? { apiKey: d.keyDraft.trim() } : {}),
+      };
+    }
+    for (const id of deleted) providers[id] = null;
+    save.mutate({ defaultModel: defaultRef, providers });
+  };
+
+  const incomplete = drafts.some((d) => !d.baseURL.trim());
+  const defaultDisabled = status.data?.defaultDisabled === true;
 
   return (
     <Section
       title="AI 对话模型"
-      hint="可以配多个模型，对话时随时切换。密钥按服务商存一份，同一家的多个模型共用。"
+      hint="按服务商配置：一家一把密钥，底下挂多个模型。对话时随时切换。"
     >
       <div className="mb-3">
         <SourceBadge cred={cred} />
       </div>
 
-      {models.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-4 text-center text-xs text-[var(--muted)]">
-          还没有配置任何模型。点下面的「添加模型」开始。
+      {defaultDisabled && (
+        <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          默认模型所在的服务商已关闭。每日摘要、话题命名、工作回顾会停用，
+          <strong>RAG 向量化会直接报错</strong>。请重新启用它，或把默认模型设到别家。
         </p>
-      ) : (
-        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
-          {models.map((m) => {
-            const av = availability.get(m.id);
-            const isDefault = m.id === defaultModelId;
-            return (
-              <li key={m.id} className="px-3 py-2">
-                <div className="flex items-center gap-3">
-                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--fg)]">
-                    <input
-                      type="radio"
-                      name="llm-default-model"
-                      checked={isDefault}
-                      onChange={() => setDefaultModelId(m.id)}
-                      aria-label={`把「${m.label || m.model || m.id}」设为默认`}
-                    />
-                    默认
-                  </label>
-                  <span className="min-w-0 flex-1 truncate text-sm text-[var(--fg)]">
-                    {m.label || m.model || "(未命名)"}
-                  </span>
-                  <span className="shrink-0 font-mono text-xs text-[var(--muted)]">
-                    {providerLabel(m.provider)} / {m.model || "—"}
-                  </span>
-                  {av && (
-                    <span
-                      className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${
-                        av.available ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"
-                      }`}
-                    >
-                      {CRED_SOURCE_TEXT[av.credentialSource] ?? av.credentialSource}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(editingId === m.id ? null : m.id)}
-                    className="shrink-0 text-xs text-[var(--accent)] hover:underline"
-                  >
-                    {editingId === m.id ? "收起" : "编辑"}
-                  </button>
-                  {isDefault ? (
-                    // 删掉默认项会让每日摘要 / 话题命名 / 工作回顾一起换模型,
-                    // 所以先要求指定新默认,而不是删完再静默回落。
-                    <span
-                      className="shrink-0 text-xs text-[var(--muted)]"
-                      title="它是默认模型，先把默认设到别的条目上再删"
-                    >
-                      默认项
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => removeModel(m.id)}
-                      aria-label={`删除「${m.label || m.model || m.id}」`}
-                      className="shrink-0 text-xs text-red-700 hover:underline"
-                    >
-                      删除
-                    </button>
-                  )}
-                </div>
-
-                {editingId === m.id && (
-                  <div className="mt-2 space-y-2 border-t border-neutral-100 pt-2">
-                    <Field label="名称" htmlFor={`m-label-${m.id}`}>
-                      <input
-                        id={`m-label-${m.id}`}
-                        value={m.label}
-                        onChange={(e) => patch(m.id, { label: e.target.value })}
-                        placeholder="留空则用模型名"
-                        className={inputCls}
-                      />
-                    </Field>
-                    <Field label="服务商" htmlFor={`m-provider-${m.id}`}>
-                      <select
-                        id={`m-provider-${m.id}`}
-                        value={m.provider}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          const base = providers.find((p) => p.id === next)?.defaultBaseURL ?? "";
-                          // 换服务商时预填地址与 key 槽位,少两次手敲。
-                          patch(m.id, { provider: next, baseURL: base, keyRef: next });
-                        }}
-                        className={inputCls}
-                      >
-                        {providers.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {providerLabel(p.id)}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="模型" htmlFor={`m-model-${m.id}`}>
-                      <input
-                        id={`m-model-${m.id}`}
-                        value={m.model}
-                        onChange={(e) => patch(m.id, { model: e.target.value })}
-                        placeholder="deepseek-v4-flash"
-                        className={inputCls}
-                      />
-                    </Field>
-                    <Field label="Base URL" htmlFor={`m-base-${m.id}`}>
-                      <input
-                        id={`m-base-${m.id}`}
-                        value={m.baseURL}
-                        onChange={(e) => patch(m.id, { baseURL: e.target.value })}
-                        placeholder="选服务商时自动预填"
-                        className={`${inputCls} font-mono text-xs`}
-                      />
-                    </Field>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
       )}
 
-      <button type="button" onClick={addModel} className="mt-2 text-xs text-[var(--accent)] hover:underline">
-        + 添加模型
-      </button>
+      <div className="flex gap-3">
+        {/* 左栏：厂商。含 0 模型的和已关闭的 —— 那两种状态恰恰最需要被看见。 */}
+        <div className="w-48 shrink-0">
+          <ul className="max-h-72 overflow-y-auto rounded-lg border border-neutral-200">
+            {drafts.length === 0 ? (
+              <li className="px-3 py-4 text-center text-xs text-[var(--muted)]">
+                还没有服务商
+              </li>
+            ) : (
+              drafts.map((d) => {
+                const sv = serverView.get(d.id);
+                const source = sv?.credentialSource ?? (d.hasKey ? "config" : "none");
+                return (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(d.id)}
+                      className={`w-full border-b border-neutral-100 px-3 py-2 text-left last:border-b-0 ${
+                        selectedId === d.id ? "bg-neutral-100" : "hover:bg-neutral-50"
+                      }`}
+                    >
+                      <span
+                        className={`block truncate text-sm ${
+                          d.enabled ? "text-[var(--fg)]" : "text-[var(--muted)] line-through"
+                        }`}
+                      >
+                        {d.label || d.id}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--muted)]">
+                        <span
+                          className={
+                            source === "none" ? "text-amber-800" : "text-emerald-800"
+                          }
+                        >
+                          {CRED_SOURCE_TEXT[source] ?? source}
+                        </span>
+                        <span>·</span>
+                        <span>{d.models.length} 个模型</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          <button
+            type="button"
+            onClick={addProvider}
+            className="mt-2 text-xs text-[var(--accent)] hover:underline"
+          >
+            + 添加服务商
+          </button>
+        </div>
 
-      {keyRefs.length > 0 && (
-        <div className="mt-4">
-          <h4 className="mb-1.5 text-xs font-medium text-[var(--fg)]">服务商密钥</h4>
-          <p className="mb-2 text-xs text-[var(--muted)]">
-            同一家的多个模型共用一把。留空表示不改动已保存的值。
-          </p>
-          <div className="space-y-2">
-            {keyRefs.map(({ ref, label }) => (
-              <Field key={ref} label={label} htmlFor={`k-${ref}`}>
+        {/* 右栏：选中厂商的详情。 */}
+        <div className="min-w-0 flex-1">
+          {!selected ? (
+            <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-8 text-center text-xs text-[var(--muted)]">
+              {drafts.length === 0 ? "点左边的「添加服务商」开始。" : "从左边选一个服务商。"}
+            </p>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-neutral-200 px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-[var(--fg)]">
+                  <input
+                    type="checkbox"
+                    checked={selected.enabled}
+                    onChange={(e) => patchDraft(selected.id, { enabled: e.target.checked })}
+                  />
+                  启用
+                </label>
+                {holdsDefault(selected) ? (
+                  <span
+                    className="text-xs text-[var(--muted)]"
+                    title="默认模型在这家名下，先把默认设到别家再删"
+                  >
+                    含默认模型，不可删
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => removeProvider(selected.id)}
+                    className="text-xs text-red-700 hover:underline"
+                  >
+                    删除这个服务商
+                  </button>
+                )}
+              </div>
+
+              <Field label="名称" htmlFor={`p-label-${selected.id}`}>
                 <input
-                  id={`k-${ref}`}
-                  type="password"
-                  value={keyDrafts[ref] ?? ""}
-                  onChange={(e) => setKeyDrafts((d) => ({ ...d, [ref]: e.target.value }))}
-                  placeholder={keyPresence[ref] ? "已保存 · 留空则不改动" : "sk-…"}
+                  id={`p-label-${selected.id}`}
+                  value={selected.label}
+                  onChange={(e) => patchDraft(selected.id, { label: e.target.value })}
+                  placeholder="显示用，可自定义"
                   className={inputCls}
                 />
               </Field>
-            ))}
-          </div>
+
+              <div className="flex gap-2">
+                <div className="w-40 shrink-0">
+                  <Field label="接口类型" htmlFor={`p-adapter-${selected.id}`}>
+                    <select
+                      id={`p-adapter-${selected.id}`}
+                      value={selected.provider}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const base = adapters.find((a) => a.id === next)?.defaultBaseURL ?? "";
+                        // 换接口类型时预填地址,少一次手敲(火山那串 ark 路径没人记得住)。
+                        patchDraft(selected.id, { provider: next, baseURL: base });
+                      }}
+                      className={inputCls}
+                    >
+                      {adapters.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {providerLabel(a.id)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Field label="Base URL" htmlFor={`p-base-${selected.id}`}>
+                    <input
+                      id={`p-base-${selected.id}`}
+                      value={selected.baseURL}
+                      onChange={(e) => patchDraft(selected.id, { baseURL: e.target.value })}
+                      placeholder="选接口类型时自动预填"
+                      className={`${inputCls} font-mono text-xs`}
+                    />
+                  </Field>
+                </div>
+              </div>
+
+              <Field label="API Key" htmlFor={`p-key-${selected.id}`}>
+                <input
+                  id={`p-key-${selected.id}`}
+                  type="password"
+                  value={selected.keyDraft}
+                  onChange={(e) => patchDraft(selected.id, { keyDraft: e.target.value })}
+                  placeholder={selected.hasKey ? "已保存 · 留空则不改动" : "sk-…"}
+                  className={inputCls}
+                />
+              </Field>
+
+              <div className="border-t border-neutral-100 pt-2">
+                <h4 className="mb-1.5 text-xs font-medium text-[var(--fg)]">模型</h4>
+                {selected.models.length === 0 ? (
+                  <p className="text-xs text-[var(--muted)]">还没有模型。</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {selected.models.map((m, i) => {
+                      const isDefault = isDefaultModel(selected.id, m.model);
+                      return (
+                        <li key={i} className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="llm-default-model"
+                            checked={isDefault}
+                            disabled={!m.model.trim()}
+                            onChange={() =>
+                              setDefaultRef({ providerId: selected.id, model: m.model })
+                            }
+                            aria-label={`把「${m.label || m.model || "未命名"}」设为默认`}
+                          />
+                          <input
+                            value={m.model}
+                            onChange={(e) => patchModel(selected.id, i, { model: e.target.value })}
+                            placeholder="deepseek-v4-flash"
+                            aria-label="模型 ID"
+                            className={`${inputCls} min-w-0 flex-1 font-mono text-xs`}
+                          />
+                          <input
+                            value={m.label}
+                            onChange={(e) => patchModel(selected.id, i, { label: e.target.value })}
+                            placeholder="显示名（留空用模型 ID）"
+                            aria-label="模型显示名"
+                            className={`${inputCls} min-w-0 flex-1`}
+                          />
+                          {isDefault ? (
+                            <span className="shrink-0 text-xs text-[var(--muted)]" title="它是默认模型，先把默认设到别的模型上再删">
+                              默认项
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => removeModel(selected.id, i)}
+                              aria-label={`删除模型「${m.label || m.model || "未命名"}」`}
+                              className="shrink-0 text-xs text-red-700 hover:underline"
+                            >
+                              删除
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <button
+                  type="button"
+                  onClick={() => addModel(selected.id)}
+                  className="mt-1.5 text-xs text-[var(--accent)] hover:underline"
+                >
+                  + 添加模型
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <CredentialActions
         cred={cred}
-        disabled={models.length === 0 || incomplete}
+        disabled={incomplete || (drafts.length === 0 && deleted.length === 0)}
         saving={save.isPending}
         error={save.error}
         onSave={onSave}

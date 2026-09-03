@@ -8,36 +8,44 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "../web/src/pages/Settings";
 
-/** 多模型形状的（已脱敏的）凭据值：models 完整，keys 只是 presence map。 */
+/**
+ * 厂商优先形状的（已脱敏的）凭据值。
+ * 密钥不是原文而是 `hasKey` 布尔 —— 前端手上永远没有原文,这是脱敏的硬约束,
+ * 也是「密钥搬运只能在服务端做」的原因。
+ */
 const MULTI_VALUES = {
-  defaultModelId: "ds",
-  keys: { deepseek: true, moonshotai: false },
-  models: [
-    {
-      id: "ds",
-      label: "DeepSeek Chat",
+  defaultModel: { providerId: "deepseek", model: "deepseek-v4-flash" },
+  providers: {
+    deepseek: {
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      label: "DeepSeek 官方",
       baseURL: "https://api.deepseek.com",
-      keyRef: "deepseek",
+      enabled: true,
+      hasKey: true,
+      models: [{ model: "deepseek-v4-flash", label: "DeepSeek Chat" }],
     },
-    {
-      id: "kimi",
-      label: "Kimi K2",
+    moonshotai: {
       provider: "moonshotai",
-      model: "kimi-k2",
+      label: "Moonshot",
       baseURL: "https://api.moonshot.ai/v1",
-      keyRef: "moonshotai",
+      enabled: true,
+      hasKey: false,
+      models: [{ model: "kimi-k2", label: "Kimi K2" }],
     },
-  ],
+  },
 };
 
 const STATUS = {
   configured: true,
-  defaultModelId: "ds",
+  defaultModelId: "deepseek:deepseek-v4-flash",
+  defaultDisabled: false,
   models: [
-    { id: "ds", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-v4-flash", available: true, credentialSource: "config" },
-    { id: "kimi", label: "Kimi K2", provider: "moonshotai", model: "kimi-k2", available: false, credentialSource: "none" },
+    { id: "deepseek:deepseek-v4-flash", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-v4-flash", available: true, credentialSource: "config" },
+    { id: "moonshotai:kimi-k2", label: "Kimi K2", provider: "moonshotai", model: "kimi-k2", available: false, credentialSource: "none" },
+  ],
+  providers: [
+    { id: "deepseek", label: "DeepSeek 官方", provider: "deepseek", baseURL: "https://api.deepseek.com", enabled: true, credentialSource: "config", modelCount: 1 },
+    { id: "moonshotai", label: "Moonshot", provider: "moonshotai", baseURL: "https://api.moonshot.ai/v1", enabled: true, credentialSource: "none", modelCount: 1 },
   ],
   availableProviders: [
     { id: "deepseek", defaultBaseURL: "https://api.deepseek.com" },
@@ -112,23 +120,34 @@ async function openAiTab(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "AI 对话模型" });
 }
 
-describe("设置页 · 多模型条目", () => {
+/** 左栏选中某个厂商，右栏才会渲染它的详情。 */
+async function pickProvider(user: ReturnType<typeof userEvent.setup>, name: string | RegExp) {
+  await user.click(await screen.findByRole("button", { name }));
+}
+
+type ProvidersBody = {
+  defaultModel: { providerId: string; model: string } | null;
+  providers: Record<string, { models?: unknown[]; apiKey?: string; baseURL?: string } | null>;
+};
+
+describe("设置页 · 厂商优先", () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
   });
 
-  it("列出全部模型，默认项被选中", async () => {
+  it("左栏列出全部厂商，右栏显示选中那家的模型，默认项被选中", async () => {
     mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
 
-    expect(screen.getByText("DeepSeek Chat")).toBeInTheDocument();
-    expect(screen.getByText("Kimi K2")).toBeInTheDocument();
+    // 左栏两家都在。
+    expect(screen.getByRole("button", { name: /DeepSeek 官方/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Moonshot/ })).toBeInTheDocument();
+    // 右栏默认选中第一家，它名下的模型带默认 radio。
     expect(screen.getByRole("radio", { name: /DeepSeek Chat/ })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /Kimi K2/ })).not.toBeChecked();
   });
 
   it("可用性来自后端，不是前端猜的", async () => {
@@ -137,39 +156,47 @@ describe("设置页 · 多模型条目", () => {
     renderPage();
     await openAiTab(user);
 
-    // 「未配 key」只可能来自模型行的可用性徽章（SourceBadge 不会说这个），
-    // 而它的值来自后端的 credentialSource，不是前端拿 keys 猜的。
-    expect(screen.getByText("未配 key")).toBeInTheDocument();
+    // 「未配 key」来自 status.providers[].credentialSource（含环境变量的判断），
+    // 不是前端拿 hasKey 猜的 —— 靠环境变量拿 key 的那种前端根本看不见。
+    // 断言落在左栏那两个按钮的可访问名上,而不是裸文本 ——
+    // SourceBadge 也会说「已配置」,裸 getByText 会撞上它。
+    expect(screen.getByRole("button", { name: /DeepSeek 官方.*已配置/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Moonshot.*未配 key/ })).toBeInTheDocument();
   });
 
-  it("默认项没有删除按钮 —— 删掉它会连带换掉每日摘要用的模型", async () => {
+  it("默认模型没有删除按钮 —— 删掉它会连带换掉每日摘要用的模型", async () => {
     mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
 
-    expect(screen.queryByRole("button", { name: "删除「DeepSeek Chat」" })).toBeNull();
-    expect(screen.getByRole("button", { name: "删除「Kimi K2」" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除模型「DeepSeek Chat」" })).toBeNull();
+    expect(screen.getByText("默认项")).toBeInTheDocument();
   });
 
-  it("换默认项之后，原来的默认项才可删", async () => {
+  it("★ 含默认模型的厂商整个不可删 —— 否则绕过上一条闸就能静默换家", async () => {
     mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
 
+    expect(screen.queryByRole("button", { name: "删除这个服务商" })).toBeNull();
+    expect(screen.getByText("含默认模型，不可删")).toBeInTheDocument();
+
+    // 把默认换到别家之后，这家才可删。
+    await pickProvider(user, /Moonshot/);
     await user.click(screen.getByRole("radio", { name: /Kimi K2/ }));
-    expect(screen.getByRole("button", { name: "删除「DeepSeek Chat」" })).toBeInTheDocument();
+    await pickProvider(user, /DeepSeek 官方/);
+    expect(screen.getByRole("button", { name: "删除这个服务商" })).toBeInTheDocument();
   });
 
-  it("服务商下拉由接口驱动：后端新增的家会出现，缺中文标签则显示原始 id", async () => {
+  it("接口类型下拉由接口驱动：后端新增的家会出现，缺中文标签则显示原始 id", async () => {
     mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
-    await user.click(screen.getAllByRole("button", { name: "编辑" })[0]);
 
-    const select = await screen.findByLabelText("服务商");
+    const select = await screen.findByLabelText("接口类型");
     const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
     expect(options).toContain("火山方舟");
     expect(options).toContain("MiniMax");
@@ -177,18 +204,20 @@ describe("设置页 · 多模型条目", () => {
     expect(options).toContain("some-new-vendor");
   });
 
-  it("保存时 models 发的是完整数组 —— mergePatch 对数组是整体替换", async () => {
+  it("保存时每家的 models 发的是完整数组 —— mergePatch 对数组是整体替换", async () => {
     const calls = mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
     await user.click(screen.getByRole("button", { name: "保存" }));
 
-    const body = calls[0].body as { models: unknown[]; defaultModelId: string; keys?: unknown };
-    expect(body.models).toHaveLength(2);
-    expect(body.defaultModelId).toBe("ds");
-    // 一个密钥框都没动 → 不发 keys，服务端保留已存的。
-    expect("keys" in body).toBe(false);
+    const body = calls[0].body as unknown as ProvidersBody;
+    expect(body.providers.deepseek?.models).toHaveLength(1);
+    expect(body.providers.moonshotai?.models).toHaveLength(1);
+    expect(body.defaultModel).toEqual({ providerId: "deepseek", model: "deepseek-v4-flash" });
+    // 一个密钥框都没动 → 一个 apiKey 都不发，服务端保留已存的。
+    expect("apiKey" in (body.providers.deepseek ?? {})).toBe(false);
+    expect("apiKey" in (body.providers.moonshotai ?? {})).toBe(false);
   });
 
   it("只发有输入的那把密钥，没动的不发 —— mergePatch 递归合并，不会抹掉其余", async () => {
@@ -197,30 +226,64 @@ describe("设置页 · 多模型条目", () => {
     renderPage();
     await openAiTab(user);
 
-    await user.type(screen.getByLabelText("Moonshot（Kimi）"), "sk-new-moonshot");
+    await pickProvider(user, /Moonshot/);
+    await user.type(screen.getByLabelText("API Key"), "sk-new-moonshot");
     await user.click(screen.getByRole("button", { name: "保存" }));
 
-    const body = calls[0].body as { keys: Record<string, string> };
-    expect(Object.keys(body.keys)).toEqual(["moonshotai"]);
-    expect(body.keys.moonshotai).toBe("sk-new-moonshot");
+    const body = calls[0].body as unknown as ProvidersBody;
+    expect(body.providers.moonshotai?.apiKey).toBe("sk-new-moonshot");
+    expect("apiKey" in (body.providers.deepseek ?? {})).toBe(false);
   });
 
-  it("新增的条目会带上所选服务商的默认 base URL", async () => {
+  it("★ 删掉一个厂商发的是显式 null —— providers 是 map，省略只会被当成「别动」", async () => {
     const calls = mockApi();
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
 
-    await user.click(screen.getByRole("button", { name: "+ 添加模型" }));
-    await user.type(await screen.findByLabelText("模型"), "deepseek-v4-pro");
+    await pickProvider(user, /Moonshot/);
+    await user.click(screen.getByRole("button", { name: "删除这个服务商" }));
     await user.click(screen.getByRole("button", { name: "保存" }));
 
-    const body = calls[0].body as { models: { baseURL: string; model: string }[] };
-    expect(body.models).toHaveLength(3);
-    expect(body.models[2]).toMatchObject({
-      model: "deepseek-v4-pro",
+    const body = calls[0].body as unknown as ProvidersBody;
+    expect(body.providers.moonshotai).toBeNull();
+    expect(body.providers.deepseek).not.toBeNull();
+  });
+
+  it("新增的厂商会带上所选接口类型的默认 base URL", async () => {
+    const calls = mockApi();
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+
+    await user.click(screen.getByRole("button", { name: "+ 添加服务商" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    const body = calls[0].body as unknown as ProvidersBody;
+    // availableProviders[0] 是 deepseek，id 被占了 → 新实例落在 deepseek-2。
+    expect(body.providers["deepseek-2"]).toMatchObject({
       baseURL: "https://api.deepseek.com",
     });
+  });
+
+  it("★ 刚添加、还没选模型的厂商仍留在左栏 —— 那是配置新厂商必经的一秒", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+
+    await user.click(screen.getByRole("button", { name: "+ 添加服务商" }));
+    // 0 个模型，但左栏必须看得见它，否则用户以为没添加成功。
+    expect(screen.getByRole("button", { name: /0 个模型/ })).toBeInTheDocument();
+  });
+
+  it("★ 默认厂商被关掉时给出黄条，并点名 RAG —— 它不是降级而是直接抛", async () => {
+    mockApi({ status: { ...STATUS, defaultDisabled: true } });
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+
+    expect(screen.getByText(/RAG 向量化会直接报错/)).toBeInTheDocument();
   });
 
   it("status 接口挂了也不白屏 —— 一个可选查询不该有这种爆炸半径", async () => {
@@ -229,20 +292,23 @@ describe("设置页 · 多模型条目", () => {
     renderPage();
     await openAiTab(user);
 
-    // 模型列表来自 /api/settings，与 status 无关，仍然渲染。
-    expect(screen.getByText("DeepSeek Chat")).toBeInTheDocument();
-    // 只是可用性徽章没了（列表本身不依赖 status）。
-    expect(screen.queryByText("未配 key")).toBeNull();
+    // 厂商列表来自 /api/settings，与 status 无关，仍然渲染。
+    expect(screen.getByRole("button", { name: /DeepSeek 官方/ })).toBeInTheDocument();
+    // 只是后端那份可用性判断没了，降级用本地 hasKey（moonshotai 的 hasKey 是 false）。
+    expect(screen.getByText("未配 key")).toBeInTheDocument();
   });
 
   it("完全没配过时给出引导，而不是一个空表格", async () => {
-    mockApi({ values: null, status: { ...STATUS, configured: false, models: [], defaultModelId: null } });
+    mockApi({
+      values: null,
+      status: { ...STATUS, configured: false, models: [], providers: [], defaultModelId: null },
+    });
     const user = userEvent.setup();
     renderPage();
     await openAiTab(user);
 
-    expect(screen.getByText(/还没有配置任何模型/)).toBeInTheDocument();
-    // 但服务商下拉的数据已经就位，点「添加模型」就能开始配。
-    expect(screen.getByRole("button", { name: "+ 添加模型" })).toBeInTheDocument();
+    expect(screen.getByText("还没有服务商")).toBeInTheDocument();
+    // 但接口类型清单已经就位，点「添加服务商」就能开始配。
+    expect(screen.getByRole("button", { name: "+ 添加服务商" })).toBeInTheDocument();
   });
 });

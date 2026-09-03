@@ -22,6 +22,23 @@ export type LlmChatStatus = {
    * 以前前端自己硬编码一份,后端加一家而这里忘了加,那家在下拉里压根不存在。
    */
   availableProviders: { id: string; defaultBaseURL: string }[];
+  /**
+   * **厂商列的数据源。与 `models` 是两件事。**
+   * `models` 按模型逐条展开,一个刚添加、刚粘上 key、还没选模型的实例在它里面是
+   * 0 行,于是在左栏里根本不存在 —— 而那正是配置一家新厂商必然经过的那一秒。
+   * 这里含 0 模型的和已关闭的实例。
+   */
+  providers: {
+    id: string;
+    label: string;
+    provider: string;
+    baseURL: string;
+    enabled: boolean;
+    credentialSource: string;
+    modelCount: number;
+  }[];
+  /** 默认模型所在的实例被关掉了 —— 后台四个功能会停,页面必须显式说出来。 */
+  defaultDisabled: boolean;
   baseHost: string | null;
   configPath: string;
   /** "db" once the config lives in config.db; "file" while still on the legacy JSON. */

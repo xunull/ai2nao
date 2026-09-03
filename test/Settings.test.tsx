@@ -31,14 +31,22 @@ function settingsPayload(over: Record<string, Partial<Cred>> = {}) {
       "llm-chat": cred({
         set: true,
         source: "db",
-        // 服务端发的是**脱敏后**的配置：没有密钥原文，只有一个 presence map
-        // 告诉界面哪个槽位已经配过。旧的单模型配置里，那个槽位叫 legacy
-        // （服务端把顶层 apiKey 映射到那里，见 schema.ts 的 redactLlmChat）。
+        // 服务端发的是**脱敏后**的配置：没有密钥原文，每个厂商实例只有一个
+        // hasKey 布尔告诉界面它配过没有（见 schema.ts 的 redactLlmChat）。
+        // 形状已经由服务端归一成 providers{} —— 旧的单模型配置在 parse 阶段
+        // 就被搬成了「一个实例一条模型」，前端不再需要认识旧形状。
         values: {
-          provider: "deepseek",
-          model: "deepseek-reasoner",
-          baseURL: "https://api.deepseek.com",
-          keys: { legacy: true },
+          defaultModel: { providerId: "deepseek", model: "deepseek-reasoner" },
+          providers: {
+            deepseek: {
+              provider: "deepseek",
+              label: "DeepSeek",
+              baseURL: "https://api.deepseek.com",
+              enabled: true,
+              hasKey: true,
+              models: [{ model: "deepseek-reasoner", label: "deepseek-reasoner" }],
+            },
+          },
         },
         ...over["llm-chat"],
       }),
@@ -92,11 +100,12 @@ describe("Settings page", () => {
 
     await user.click(screen.getByRole("button", { name: "AI 与模型" }));
     expect(await screen.findByRole("heading", { name: "AI 对话模型" })).toBeInTheDocument();
-    // 旧的单模型配置被种成一条模型 —— 老用户升级后 picker 不能是空的。
-    expect(screen.getByText("DeepSeek deepseek-reasoner")).toBeInTheDocument();
+    // 服务端搬过来的那一条必须显示出来 —— 老用户升级后 picker 不能是空的。
+    expect(screen.getByRole("button", { name: /DeepSeek/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("模型 ID")).toHaveValue("deepseek-reasoner");
     // 密钥框仍然是空的 + 「留空则不改动」:服务端从不回传密钥，
-    // 而 legacy 槽位的「已保存」状态靠脱敏时映射出来的 presence map。
-    const keyBox = screen.getByLabelText("DeepSeek");
+    // 「已保存」这个状态靠脱敏时给每个实例映射出来的 hasKey 布尔。
+    const keyBox = screen.getByLabelText("API Key");
     expect(keyBox).toHaveValue("");
     expect(keyBox).toHaveAttribute("placeholder", "已保存 · 留空则不改动");
 
@@ -121,20 +130,22 @@ describe("Settings page", () => {
     renderPage();
 
     await user.click(await screen.findByRole("button", { name: "AI 与模型" }));
-    await user.click(await screen.findByRole("button", { name: "编辑" }));
-    const model = await screen.findByLabelText("模型");
+    // 右栏跟着左栏的选中项直接展开，没有「编辑」这一跳。
+    const model = await screen.findByLabelText("模型 ID");
     await user.clear(model);
     await user.type(model, "deepseek-v4-flash");
     await user.click(screen.getByRole("button", { name: "保存" }));
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain("/api/settings/secret/llm-chat");
-    const body = calls[0].body as { models: { model: string }[]; keys?: unknown };
+    const body = calls[0].body as {
+      providers: Record<string, { models: { model: string }[]; apiKey?: string }>;
+    };
     // models 必须是完整数组：mergePatch 对数组是整体替换，发一半等于删掉另一半。
-    expect(body.models).toHaveLength(1);
-    expect(body.models[0].model).toBe("deepseek-v4-flash");
-    // 关键：一个 keys 字段都不发，服务端保留已存的密钥。
-    expect("keys" in body).toBe(false);
+    expect(body.providers.deepseek.models).toHaveLength(1);
+    expect(body.providers.deepseek.models[0].model).toBe("deepseek-v4-flash");
+    // 关键：一个 apiKey 都不发，服务端保留已存的密钥。
+    expect("apiKey" in body.providers.deepseek).toBe(false);
   });
 
   it("an env-managed credential says so and disables the input", async () => {

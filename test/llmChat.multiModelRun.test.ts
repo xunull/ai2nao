@@ -22,7 +22,12 @@ afterEach(() => {
   else process.env.AI2NAO_LLM_CHAT_CONFIG = previousConfigPath;
 });
 
-/** 两条模型条目共用一把 key —— 本地端点,不需要真的能连。 */
+/**
+ * 两条模型条目共用一把 key —— 本地端点,不需要真的能连。
+ *
+ * 仍写成旧扁平形状:parse 会把它归一成一个实例 `local` 带两条模型
+ * (同 keyRef 同 baseURL ⇒ 同一个实例),所以这份 fixture 同时是迁移用例。
+ */
 const MULTI_DOC = {
   defaultModelId: "primary",
   keys: { local: "test-key" },
@@ -45,6 +50,10 @@ const MULTI_DOC = {
     },
   ],
 };
+
+/** 归一后的视图 id:`实例:模型`。 */
+const PRIMARY = "local:primary-model";
+const SECONDARY = "local:secondary-model";
 
 function tempPath(name: string): string {
   return join(mkdtempSync(join(tmpdir(), "ai2nao-multimodel-")), name);
@@ -132,7 +141,7 @@ describe("多模型:每轮可切,不可用不静默换家", () => {
       ],
     });
     try {
-      const sse = await (await run(app, "t-nokey", "hi", { modelId: "primary" })).text();
+      const sse = await (await run(app, "t-nokey", "hi", { modelId: PRIMARY })).text();
       expect(sse).toContain("RUN_ERROR");
       expect(sse).toContain("主模型");
       expect(streamTextMock).not.toHaveBeenCalled();
@@ -147,7 +156,7 @@ describe("多模型:每轮可切,不可用不静默换家", () => {
     try {
       const sse = await (await run(app, "t-default", "hi", {})).text();
       expect(sse).toContain("RUN_FINISHED");
-      expect(snapshots(db, "t-default")[0]?.modelId).toBe("primary");
+      expect(snapshots(db, "t-default")[0]?.modelId).toBe(PRIMARY);
     } finally {
       cleanup();
     }
@@ -159,13 +168,13 @@ describe("多模型:每轮可切,不可用不静默换家", () => {
       .mockReturnValueOnce(answerStream("m1", "主模型答的"))
       .mockReturnValueOnce(answerStream("m2", "备用模型答的"));
     try {
-      await (await run(app, "t-mix", "第一问", { modelId: "primary" })).text();
-      await (await run(app, "t-mix", "第二问", { modelId: "secondary" })).text();
+      await (await run(app, "t-mix", "第一问", { modelId: PRIMARY })).text();
+      await (await run(app, "t-mix", "第二问", { modelId: SECONDARY })).text();
 
       const snaps = snapshots(db, "t-mix");
       expect(snaps).toHaveLength(2);
-      expect(snaps[0]).toMatchObject({ modelId: "primary", model: "primary-model" });
-      expect(snaps[1]).toMatchObject({ modelId: "secondary", model: "secondary-model" });
+      expect(snaps[0]).toMatchObject({ modelId: PRIMARY, model: "primary-model" });
+      expect(snaps[1]).toMatchObject({ modelId: SECONDARY, model: "secondary-model" });
     } finally {
       cleanup();
     }
@@ -187,10 +196,10 @@ describe("多模型:每轮可切,不可用不静默换家", () => {
       .mockReturnValueOnce(answerStream("m1", "主模型答的"))
       .mockReturnValueOnce(answerStream("m2", "备用模型答的"));
     try {
-      await (await run(app, "t-keep", "第一问", { modelId: "primary" })).text();
-      await (await run(app, "t-keep", "第二问", { modelId: "secondary" })).text();
+      await (await run(app, "t-keep", "第一问", { modelId: PRIMARY })).text();
+      await (await run(app, "t-keep", "第二问", { modelId: SECONDARY })).text();
       // 若 stampModelSnapshot 覆盖了已有快照,这里两条都会变成 secondary。
-      expect(snapshots(db, "t-keep")[0]?.modelId).toBe("primary");
+      expect(snapshots(db, "t-keep")[0]?.modelId).toBe(PRIMARY);
     } finally {
       cleanup();
     }

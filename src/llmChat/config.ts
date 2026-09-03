@@ -14,18 +14,20 @@ import { resolve } from "node:path";
 import { defaultLlmChatConfigPath } from "../config.js";
 import { getCredentialRaw } from "../settings/store.js";
 import {
-  isMultiDocument,
+  isEmptyDocument,
   parseLlmChatDocument,
   type LlmChatConfig,
+  type LlmChatDocument,
   type LlmChatProvider,
-  type LlmChatStoredDocument,
 } from "./document.js";
 import {
   availableProviderList,
-  statusModelFields,
   listModelsFromDocument,
+  resolveDefaultTarget,
+  statusModelFields,
   type LlmChatModelView,
   type LlmChatProviderOption,
+  type LlmChatProviderView,
 } from "./views.js";
 import { llmChatLog } from "./log.js";
 
@@ -40,6 +42,10 @@ export type LlmChatStatus = {
   models: LlmChatModelView[];
   /** 与 LlmChatProvider 联合类型同源;加一家前端自动看见,不用改硬编码清单。 */
   availableProviders: LlmChatProviderOption[];
+  /** 厂商列的数据源。含 0 模型的与已关闭的实例。 */
+  providers: LlmChatProviderView[];
+  /** 默认模型所在的实例被关掉了 —— 后台四个功能会停,页面要显式报出来。 */
+  defaultDisabled: boolean;
   /** Host only, for debugging (no path, no key). */
   baseHost: string | null;
   configPath: string;
@@ -64,37 +70,47 @@ function baseHostFromUrl(baseURL: string): string | null {
 }
 
 /**
- * **塌缩**成今天的 `LlmChatConfig`,给 6 个下游消费者用
+ * **塌缩**成运行期的 `LlmChatConfig`,给 6 个后台消费者用
  * (每日摘要 / RAG 兜底 / 工作回顾 ×2 / 话题簇命名 / serve)。
- * 它们的行为必须一字不变,所以这里返回的形状与迁移前逐字段相同。
+ *
+ * **默认实例被关掉时返回 null,不往下找另一家。** 关开关的意图是「别用这家」,
+ * 静默换成别家 = 你的每日摘要不知不觉换了模型、还在花另一家的钱。
+ * 与 `resolveDefaultTarget`(给 picker 用,会回落)口径**故意不同** ——
+ * 那边要显示「实际会用哪个」,这边要尊重「别用这家」。
+ *
+ * 返回 null 的后果对 RAG 不是「未配置」而是抛(rag/embeddings.ts:37-41),
+ * 所以页面上的黄条文案要把它一起点名。
  */
-export function resolveLlmChatConfig(doc: LlmChatStoredDocument): LlmChatConfig | null {
-  if (!isMultiDocument(doc)) return doc;
-  if (doc.models.length === 0) return null;
-  // defaultModelId 悬空(条目被删、手改配置、并发)时回落首条。
-  // 这与「用户选中的模型不可用要报错」不冲突:那里有用户意图可违背,这里没有。
-  const entry = doc.models.find((m) => m.id === doc.defaultModelId) ?? doc.models[0];
-  const apiKey = doc.keys[entry.keyRef]?.trim() || undefined;
+export function resolveLlmChatConfig(doc: LlmChatDocument): LlmChatConfig | null {
+  const explicit = doc.defaultModel;
+  if (explicit) {
+    const inst = doc.providers[explicit.providerId];
+    // 显式默认所在的实例被关掉 → 停,不换家。
+    if (inst && !inst.enabled) return null;
+  }
+  const target = resolveDefaultTarget(doc);
+  if (!target) return null;
+  const inst = doc.providers[target.providerId];
+  if (!inst) return null;
   return {
-    provider: entry.provider,
-    baseURL: entry.baseURL,
-    model: entry.model,
-    apiKey,
-  } as LlmChatConfig;
+    provider: inst.provider,
+    baseURL: inst.baseURL,
+    model: target.model,
+    apiKey: inst.apiKey,
+  };
 }
 
 /**
  * 读出库里存着的文档。来源顺序:config.db → JSON 文件。
  * (API-key 的 ENV 兜底在下游 `model.ts` 里,不在这里 —— 挪上来会悄悄改变优先级。)
  */
-export function readLlmChatDocument(): LlmChatStoredDocument | null {
+export function readLlmChatDocument(): LlmChatDocument | null {
   const stored = getCredentialRaw("llm-chat");
   if (stored) {
     const doc = parseLlmChatDocument(stored);
     if (doc) {
       llmChatLog.debug("config loaded from config.db", {
-        multi: isMultiDocument(doc),
-        models: isMultiDocument(doc) ? doc.models.length : 1,
+        providers: Object.keys(doc.providers).length,
       });
       return doc;
     }
@@ -112,7 +128,7 @@ export function readLlmChatDocument(): LlmChatStoredDocument | null {
       llmChatLog.warn("config file present but invalid JSON shape", path);
       return null;
     }
-    llmChatLog.debug("config loaded", { path, multi: isMultiDocument(doc) });
+    llmChatLog.debug("config loaded", { path, providers: Object.keys(doc.providers).length });
     return doc;
   } catch (e) {
     llmChatLog.warn("config read failed", path, e instanceof Error ? e.message : String(e));
@@ -139,13 +155,15 @@ export function llmChatStatus(): LlmChatStatus {
   // availableProviders 在「什么都没配」时也要给 —— 否则设置页连服务商下拉都是空的,
   // 用户第一次进来就没法添加任何模型。
   const availableProviders = availableProviderList();
-  if (!cfg || !doc) {
+  if (!doc) {
     return {
       configured: false,
       provider: null,
       model: null,
       defaultModelId: null,
       models: [],
+      providers: [],
+      defaultDisabled: false,
       availableProviders,
       baseHost: null,
       configPath,
@@ -153,13 +171,15 @@ export function llmChatStatus(): LlmChatStatus {
     };
   }
   const stored = getCredentialRaw("llm-chat");
+  // **cfg 为 null 时不早返回。** 默认实例被关掉时 cfg 就是 null,若在这里早返回,
+  // 厂商列与「默认已失效」黄条会同时消失 —— 而那两样正是用来告诉用户怎么修的。
   return {
-    configured: true,
-    provider: cfg.provider,
-    model: cfg.model,
+    configured: !isEmptyDocument(doc),
+    provider: cfg?.provider ?? null,
+    model: cfg?.model ?? null,
     ...statusModelFields(doc),
     availableProviders,
-    baseHost: baseHostFromUrl(cfg.baseURL),
+    baseHost: cfg ? baseHostFromUrl(cfg.baseURL) : null,
     configPath,
     source: stored && parseLlmChatDocument(stored) ? "db" : "file",
   };
@@ -170,10 +190,10 @@ export function llmChatStatus(): LlmChatStatus {
 // 存在的唯一理由是让 S0 保持「纯搬家」:既有的 `from "./config.js"` 一处不用改。
 // ---------------------------------------------------------------------------
 export {
-  documentEntries,
+  decodeModelViewId,
+  encodeModelViewId,
+  isEmptyDocument,
   isLlmChatProvider,
-  isMultiDocument,
-  LEGACY_MODEL_ID,
   LLM_CHAT_DEFAULT_BASE_URLS,
   LLM_CHAT_PROVIDERS,
   parseLlmChatConfigJson,
@@ -181,14 +201,16 @@ export {
 } from "./document.js";
 export type {
   LlmChatConfig,
-  LlmChatModelEntry,
-  LlmChatMultiDocument,
+  LlmChatDocument,
+  LlmChatModelRef,
   LlmChatProvider,
-  LlmChatStoredDocument,
+  LlmChatProviderInstance,
 } from "./document.js";
 export {
   availableProviderList,
   listModelsFromDocument,
+  listProvidersFromDocument,
+  resolveDefaultTarget,
   selectModelForTurn,
   statusModelFields,
 } from "./views.js";
@@ -196,5 +218,6 @@ export type {
   LlmChatModelSnapshot,
   LlmChatModelView,
   LlmChatProviderOption,
+  LlmChatProviderView,
   ModelSelection,
 } from "./views.js";

@@ -3,35 +3,27 @@ import type { Message } from "@ag-ui/client";
 import {
   parseLlmChatDocument,
   selectModelForTurn,
-  type LlmChatMultiDocument,
+  type LlmChatDocument,
 } from "../src/llmChat/config.js";
 import { stampModelSnapshot } from "../src/llmChat/modelStamp.js";
 import { parseForwardedToolProps } from "../src/llmTools/forwardedProps.js";
 
-function doc(): LlmChatMultiDocument {
-  return {
-    defaultModelId: "ds-chat",
-    keys: { deepseek: "sk-ds" },
-    models: [
-      {
-        id: "ds-chat",
-        label: "DeepSeek Chat",
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        baseURL: "https://api.deepseek.com",
-        keyRef: "deepseek",
-      },
-      {
-        id: "kimi-k2",
-        label: "Kimi K2",
-        provider: "moonshotai",
-        model: "kimi-k2",
-        baseURL: "https://api.moonshot.ai/v1",
-        keyRef: "moonshotai", // keys 里没有 → 不可用
-      },
-    ],
-  };
+/** 旧扁平形状喂进 parse —— fixture 本身兼作迁移用例。 */
+function doc(): LlmChatDocument {
+  return parseLlmChatDocument(
+    JSON.stringify({
+      defaultModelId: "ds-chat",
+      keys: { deepseek: "sk-ds" },
+      models: [
+        { id: "ds-chat", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-v4-flash", baseURL: "https://api.deepseek.com", keyRef: "deepseek" },
+        { id: "kimi-k2", label: "Kimi K2", provider: "moonshotai", model: "kimi-k2", baseURL: "https://api.moonshot.ai/v1", keyRef: "moonshotai" }, // keys 里没有 → 不可用
+      ],
+    })
+  ) as LlmChatDocument;
 }
+
+const DS = "deepseek:deepseek-v4-flash";
+const KIMI = "moonshotai:kimi-k2";
 
 describe("forwardedProps.modelId —— 前端传来的值不可信", () => {
   it("合法字符串被收下", () => {
@@ -59,7 +51,7 @@ describe("selectModelForTurn", () => {
     if (r.ok) {
       expect(r.config.model).toBe("deepseek-v4-flash");
       expect(r.snapshot).toEqual({
-        modelId: "ds-chat",
+        modelId: DS,
         provider: "deepseek",
         model: "deepseek-v4-flash",
         label: "DeepSeek Chat",
@@ -74,7 +66,7 @@ describe("selectModelForTurn", () => {
   });
 
   it("SC7 选中的模型没配 key → 报错,且错误文案里有模型名", () => {
-    const r = selectModelForTurn(doc(), "kimi-k2", {});
+    const r = selectModelForTurn(doc(), KIMI, {});
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe("unavailable");
@@ -83,9 +75,9 @@ describe("selectModelForTurn", () => {
   });
 
   it("靠环境变量拿 key 的选得中 —— 与 picker 的可用性判定同源", () => {
-    const r = selectModelForTurn(doc(), "kimi-k2", { MOONSHOT_API_KEY: "sk-env" });
+    const r = selectModelForTurn(doc(), KIMI, { MOONSHOT_API_KEY: "sk-env" });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.snapshot.modelId).toBe("kimi-k2");
+    if (r.ok) expect(r.snapshot.modelId).toBe(KIMI);
   });
 
   it("库里没有任何配置 → not-configured(与今天「未配置」同语义)", () => {
@@ -96,10 +88,20 @@ describe("selectModelForTurn", () => {
 
   it("默认项自己不可用时也报错 —— 不能因为它是默认就放行", () => {
     const d = doc();
-    d.defaultModelId = "kimi-k2";
-    d.keys = {};
+    d.defaultModel = { providerId: "moonshotai", model: "kimi-k2" };
+    delete d.providers.deepseek.apiKey;
     const r = selectModelForTurn(d, null, {});
     expect(r.ok).toBe(false);
+  });
+
+  it("★ 选中已关闭实例下的模型 → 报错,理由是 disabled 而不是含糊的不可用", () => {
+    // 运行路径不经过 listModelsFromDocument:forwardedProps 原样透传 modelId,
+    // 只测视图函数把已关闭的过滤掉,等于没测这条路。
+    const d = doc();
+    d.providers.deepseek.enabled = false;
+    const r = selectModelForTurn(d, DS, {});
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("disabled");
   });
 
   it("旧单模型格式仍可用,快照带合成 id", () => {

@@ -109,40 +109,47 @@ function isPlainRecord(x: unknown): x is Record<string, unknown> {
 const LLM_CHAT_SECRET_FIELDS = ["apiKey", "keys"] as const;
 
 /**
- * `keys` 不整块抹掉,换成 presence map:设置页需要显示「这家配过 / 没配过」,
- * 整块删会让 UI 无从判断,而返回原值就是把 5 把 key 明文送进浏览器。
+ * **深走 `providers{}`,不是浅 omit。**
+ *
+ * 密钥已经从顶层 `keys{}` 搬进了每个实例的 `apiKey`。浅 omit 只删顶层键,
+ * 对嵌套一层的 `providers.x.apiKey` 完全够不着 —— 那就是把每一把 key 的明文
+ * 原样送进浏览器。脱敏函数必须跟着形状走,否则它只是看起来在脱敏。
+ *
+ * 不整块删 apiKey 而换成 `hasKey` 布尔:设置页要显示「这家配过 / 没配过」,
+ * 整块删会让界面无从判断,于是把一个明明存着 key 的实例画成「未配置」,
+ * 用户以为要重填 —— 而留空才是「别动已存的那把」。
  */
 function redactLlmChat(parsed: unknown): unknown {
+  if (!isPlainRecord(parsed)) return omit(parsed, LLM_CHAT_SECRET_FIELDS);
   const out = omit(parsed, LLM_CHAT_SECRET_FIELDS) as Record<string, unknown>;
-  if (!isPlainRecord(parsed)) return out;
-  const presence: Record<string, boolean> = {};
-  if (isPlainRecord(parsed.keys)) {
-    for (const [k, v] of Object.entries(parsed.keys)) {
-      presence[k] = typeof v === "string" && v.trim().length > 0;
-    }
+  if (!isPlainRecord(parsed.providers)) return out;
+  const providers: Record<string, unknown> = {};
+  for (const [id, inst] of Object.entries(parsed.providers)) {
+    if (!isPlainRecord(inst)) continue;
+    const { apiKey, ...rest } = inst;
+    providers[id] = { ...rest, hasKey: typeof apiKey === "string" && apiKey.trim().length > 0 };
   }
-  // 旧的单模型配置没有 keys 对象,秘密在顶层 apiKey。不映射它,设置页就会把
-  // 一个明明存着 key 的槽位显示成「未配置」,用户以为要重填 —— 而留空才是
-  // 「别动已存的那把」。这条语义是 Settings.test.tsx 一直在守的东西。
-  if (!isPlainRecord(parsed.keys) && field(parsed, "apiKey")) presence.legacy = true;
-  if (Object.keys(presence).length > 0) out.keys = presence;
+  out.providers = providers;
   return out;
 }
 
 function llmChatHasSecret(parsed: unknown): boolean {
+  if (!isPlainRecord(parsed)) return false;
+  // 顶层 apiKey:归一之后不该再出现,但迁移途中/手改文件时可能有,别漏判。
   if (field(parsed, "apiKey")) return true;
-  if (isPlainRecord(parsed) && isPlainRecord(parsed.keys)) {
-    return Object.values(parsed.keys).some(
-      (v) => typeof v === "string" && v.trim().length > 0
-    );
-  }
-  return false;
+  if (!isPlainRecord(parsed.providers)) return false;
+  return Object.values(parsed.providers).some(
+    (inst) =>
+      isPlainRecord(inst) && typeof inst.apiKey === "string" && inst.apiKey.trim().length > 0
+  );
 }
 
 export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
   "llm-chat": {
-    // 形状保持的解析器,不是塌缩的那个:patchCredential 把 parse 的输出写回库,
-    // 用 resolveLlmChatConfig 那种塌缩语义会让每次保存吃掉其余模型条目。
+    // 归一到 providers{} 的解析器,不是塌缩的那个:patchCredential 把 parse 的
+    // 输出写回库,用 resolveLlmChatConfig 那种塌缩语义会让每次保存吃掉其余厂商。
+    // 它对内容问题一律降级、只在结构性不可解析时返回 null —— 那是刻意的:
+    // 返回 null 会让 mergePatch 退化成空对象,把库里其余厂商连密钥一起清掉。
     parse: parseLlmChatDocument,
     // Env keys (DEEPSEEK_API_KEY etc.) are a FALLBACK applied downstream in
     // llmChat/model.ts (`cfg.apiKey || env`), not an override — so: null.

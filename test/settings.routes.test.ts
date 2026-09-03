@@ -119,46 +119,80 @@ describe("settings routes", () => {
     expect(body.credentials.github).toMatchObject({ set: true, source: "db" });
   });
 
-  it("a partial PATCH keeps the stored key — changing only the model cannot wipe it", async () => {
-    await patch("/api/settings/secret/llm-chat", {
-      provider: "deepseek",
-      model: "deepseek-chat",
-      apiKey: "sk-live-key",
+  /**
+   * 新形状下 PATCH 的词汇表是 `providers.<id>.<字段>`,不再是顶层扁平字段。
+   * mergePatch 会递归进对象(credentialApi.ts:117),所以「只改一个实例的一个字段」
+   * 天然是安全的;而顶层写 `{model:"x"}` 会被 parse 当成陌生字段丢掉 —— 那正是
+   * 前端必须与后端同批上线的原因。
+   */
+  const seedProviders = () =>
+    patch("/api/settings/secret/llm-chat", {
+      providers: {
+        deepseek: {
+          provider: "deepseek",
+          label: "DeepSeek 官方",
+          baseURL: "https://api.deepseek.com",
+          apiKey: "sk-live-key",
+          models: [{ model: "deepseek-chat", label: "DeepSeek Chat" }],
+        },
+      },
     });
+
+  it("a partial PATCH keeps the stored key — changing only the label cannot wipe it", async () => {
+    await seedProviders();
     expect((await get()).credentials["llm-chat"]).toMatchObject({ set: true, source: "db" });
 
     // The form shows a masked key and posts back only the field the user edited.
-    const res = await patch("/api/settings/secret/llm-chat", { model: "deepseek-reasoner" });
+    const res = await patch("/api/settings/secret/llm-chat", {
+      providers: { deepseek: { label: "DeepSeek 代理" } },
+    });
     expect(res.status).toBe(200);
     const dto = (await res.json()).credential;
     expect(dto.set).toBe(true); // key survived
-    expect(dto.values.model).toBe("deepseek-reasoner");
+    expect(dto.values.providers.deepseek.label).toBe("DeepSeek 代理");
+    // 没碰的字段一个都不能掉。
+    expect(dto.values.providers.deepseek.models).toHaveLength(1);
+    expect(dto.values.providers.deepseek.hasKey).toBe(true);
     expect(JSON.stringify(dto)).not.toContain("sk-live-key");
   });
 
   it("PATCH refuses a masked placeholder rather than overwriting the key with asterisks", async () => {
-    await patch("/api/settings/secret/llm-chat", {
-      provider: "deepseek",
-      model: "deepseek-chat",
-      apiKey: "sk-live-key",
+    await seedProviders();
+    const res = await patch("/api/settings/secret/llm-chat", {
+      providers: { deepseek: { apiKey: "********" } },
     });
-    const res = await patch("/api/settings/secret/llm-chat", { apiKey: "********" });
     expect(res.status).toBe(400);
     // and the real key is untouched
     expect((await get()).credentials["llm-chat"].set).toBe(true);
   });
 
   it("PATCH null clears a single field without dropping the rest", async () => {
-    await patch("/api/settings/secret/llm-chat", {
-      provider: "deepseek",
-      model: "deepseek-chat",
-      apiKey: "sk-live-key",
+    await seedProviders();
+    const res = await patch("/api/settings/secret/llm-chat", {
+      providers: { deepseek: { apiKey: null } },
     });
-    const res = await patch("/api/settings/secret/llm-chat", { apiKey: null });
     expect(res.status).toBe(200);
     const dto = (await res.json()).credential;
     expect(dto.set).toBe(false); // key gone
-    expect(dto.values.model).toBe("deepseek-chat"); // rest intact
+    expect(dto.values.providers.deepseek.models).toHaveLength(1); // rest intact
+    expect(dto.values.providers.deepseek.baseURL).toBe("https://api.deepseek.com");
+  });
+
+  it("★ 删一个厂商靠显式 null,不靠省略 —— providers 是 map,省略等于「别动」", async () => {
+    await seedProviders();
+    const added = await patch("/api/settings/secret/llm-chat", {
+      providers: { minimax: { provider: "minimax", baseURL: "https://api.minimaxi.com/v1", apiKey: "sk-mm", models: [] } },
+    });
+    // 上一句只提了 minimax,deepseek 必须还在 —— 这正是 map 相对数组的语义差别:
+    // 旧的 models[] 是整块替换,「删一条」靠发一个短数组;providers 省略即保留。
+    const afterAdd = (await added.json()).credential.values.providers;
+    expect(Object.keys(afterAdd).sort()).toEqual(["deepseek", "minimax"]);
+
+    const res = await patch("/api/settings/secret/llm-chat", { providers: { deepseek: null } });
+    expect(res.status).toBe(200);
+    const values = (await res.json()).credential.values;
+    expect(values.providers.deepseek).toBeUndefined();
+    expect(values.providers.minimax).toBeDefined();
   });
 
   it("PATCH to an unknown credential is 404", async () => {

@@ -74,9 +74,19 @@ describe("credential migration", () => {
     const first = migrateCredentials(db);
     expect(first.migrated.sort()).toEqual(["github", "llm-chat"]);
 
-    // Values landed, byte-identical in meaning (parsed, not translated).
+    // Values landed. github is byte-identical in meaning (parsed, not translated).
     expect(JSON.parse(getCredentialRaw("github")!).token).toBe("ghp_from_file");
-    expect(JSON.parse(getCredentialRaw("llm-chat")!).apiKey).toBe("sk-file");
+    // llm-chat **是**翻译过的:parse 把三种历史形状归一到 providers{}。
+    // 归一的理由见 llmChat/document.ts —— 前端拿不到密钥原文,搬运只能在服务端做。
+    // 这里守的是「搬家不丢东西」:那把 key 必须还在,只是换了住址。
+    const llm = JSON.parse(getCredentialRaw("llm-chat")!);
+    const insts = Object.values(llm.providers) as { apiKey?: string; models: unknown[] }[];
+    expect(insts).toHaveLength(1);
+    expect(insts[0].apiKey).toBe("sk-file");
+    expect(llm.defaultModel).toEqual({
+      providerId: Object.keys(llm.providers)[0],
+      model: "deepseek-chat",
+    });
 
     // Files retired, not deleted — a bad migration stays recoverable by hand.
     expect(existsSync(GITHUB_JSON())).toBe(false);

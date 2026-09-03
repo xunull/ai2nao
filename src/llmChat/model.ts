@@ -54,6 +54,9 @@ export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
     });
     return provider.chatModel(cfg.model);
   }
-  const _exhaustive: never = cfg;
-  throw new Error(`Unsupported LLM provider: ${_exhaustive}`);
+  // LlmChatConfig 不再是可辨识联合(provider 与 baseURL/model 已解耦),所以穷尽性
+  // 检查改成盯 provider 字段本身。这条 never 是「加一家厂商必须补一条适配分支」的
+  // 唯一强制点 —— 删掉它,新厂商会一路走到运行期才抛。
+  const _exhaustive: never = cfg.provider;
+  throw new Error(`Unsupported LLM provider: ${String(_exhaustive)}`);
 }

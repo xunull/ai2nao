@@ -46,16 +46,35 @@ describe("llm-chat 凭据脱敏", () => {
     expect(JSON.stringify(spec.redact(parsed))).not.toContain("sk-LEGACY-SECRET");
   });
 
-  it("脱敏后 UI 仍能看出哪家配了 key(presence map,不是整块抹掉)", () => {
+  it("脱敏后 UI 仍能看出哪家配了 key(每个实例一个 hasKey,不是整块抹掉)", () => {
     const parsed = spec.parse(
       JSON.stringify({
-        defaultModelId: null,
-        keys: { deepseek: "sk-x", moonshotai: "" },
-        models: [],
+        providers: {
+          deepseek: { provider: "deepseek", baseURL: "https://api.deepseek.com", apiKey: "sk-x", models: [] },
+          moonshotai: { provider: "moonshotai", baseURL: "https://api.moonshot.ai/v1", apiKey: "", models: [] },
+        },
       })
     );
-    const redacted = spec.redact(parsed) as { keys?: Record<string, boolean> };
-    expect(redacted.keys).toEqual({ deepseek: true, moonshotai: false });
+    const redacted = spec.redact(parsed) as {
+      providers: Record<string, { hasKey: boolean; apiKey?: string }>;
+    };
+    expect(redacted.providers.deepseek.hasKey).toBe(true);
+    expect(redacted.providers.moonshotai.hasKey).toBe(false);
+    // 明文字段本身必须消失,不是「也一起返回」。
+    expect("apiKey" in redacted.providers.deepseek).toBe(false);
+  });
+
+  it("★ 密钥藏在 providers 里嵌套一层 —— 浅 omit 够不着,必须深走", () => {
+    // 这条是形状改动引入的真实开天窗风险:顶层 omit(["apiKey","keys"]) 对
+    // providers.x.apiKey 完全无效,于是每一把 key 明文直送浏览器。
+    const parsed = spec.parse(
+      JSON.stringify({
+        providers: {
+          a: { provider: "deepseek", baseURL: "https://api.deepseek.com", apiKey: "sk-NESTED-SECRET", models: [] },
+        },
+      })
+    );
+    expect(JSON.stringify(spec.redact(parsed))).not.toContain("sk-NESTED-SECRET");
   });
 
   it("models 是非秘密,脱敏后必须完整保留 —— 否则设置页列表会空", () => {
@@ -75,12 +94,18 @@ describe("llm-chat 凭据脱敏", () => {
         ],
       })
     );
-    const redacted = spec.redact(parsed) as { models?: unknown[]; defaultModelId?: string };
-    expect(redacted.models).toHaveLength(1);
-    expect(redacted.defaultModelId).toBe("ds");
+    const redacted = spec.redact(parsed) as {
+      providers: Record<string, { models: unknown[]; label: string; baseURL: string }>;
+      defaultModel: { providerId: string; model: string };
+    };
+    expect(redacted.providers.deepseek.models).toEqual([
+      { model: "deepseek-v4-flash", label: "DeepSeek" },
+    ]);
+    expect(redacted.defaultModel).toEqual({ providerId: "deepseek", model: "deepseek-v4-flash" });
+    expect(redacted.providers.deepseek.baseURL).toBe("https://api.deepseek.com");
   });
 
-  it("hasSecret:keys 里有任意一把非空即为已配置", () => {
+  it("hasSecret:任意一个实例有非空 key 即为已配置", () => {
     const withKey = spec.parse(
       JSON.stringify({ defaultModelId: null, keys: { deepseek: "sk-x" }, models: [] })
     );
@@ -99,7 +124,7 @@ describe("llm-chat 凭据脱敏", () => {
   });
 
   it("从旧格式搬运过来的那把 key 同样不外泄 —— 升级路径不能开天窗", () => {
-    // parseLlmChatDocument 会把 mergePatch 带进来的顶层 apiKey 搬进 keys.legacy
+    // parseLlmChatDocument 会把 mergePatch 带进来的顶层 apiKey 搬进某个实例
     // (否则用户升级时会丢 key)。搬完之后它仍然是秘密,必须照样被脱敏挡住。
     const parsed = spec.parse(
       JSON.stringify({ apiKey: "sk-MIGRATED-SECRET", defaultModelId: null, keys: {}, models: [] })
@@ -107,7 +132,8 @@ describe("llm-chat 凭据脱敏", () => {
     const serialized = JSON.stringify(spec.redact(parsed));
     expect(serialized).not.toContain("sk-MIGRATED-SECRET");
     // 而且 UI 要看得出这个槽位已经有 key 了。
-    expect((spec.redact(parsed) as { keys: Record<string, boolean> }).keys.legacy).toBe(true);
+    const redacted = spec.redact(parsed) as { providers: Record<string, { hasKey: boolean }> };
+    expect(Object.values(redacted.providers).some((p) => p.hasKey)).toBe(true);
   });
 
   it("secretFields 同时覆盖两种形状的秘密位置", () => {
