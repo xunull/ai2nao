@@ -8,6 +8,7 @@ import {
 } from "../bashTool/index.js";
 import { registerLlmChatChatRoutes } from "./chatRoutes.js";
 import { registerCopilotKitRoutes } from "./copilotRuntime.js";
+import { registerLlmChatProviderRoutes } from "./providerRoutes.js";
 import { registerLlmChatSessionRoutes } from "./sessionRoutes.js";
 
 export type LlmChatRouteDeps = {
@@ -20,6 +21,7 @@ export type LlmChatRouteDeps = {
 export function registerLlmChatRoutes(app: Hono, deps?: LlmChatRouteDeps): void {
   llmChatLogDebugBannerIfEnabled();
   registerLlmChatChatRoutes(app);
+  registerLlmChatProviderRoutes(app);
   if (deps?.db) {
     registerCopilotKitRoutes(app, {
       db: deps.db,

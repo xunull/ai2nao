@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Bell, BookOpen, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
-import { apiDelete, apiGet, apiPatch } from "../api";
+import { apiDelete, apiGet, apiPost, apiPatch } from "../api";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
 import { RagCorpusSection } from "./settings/RagCorpusSection";
 // 与 /ai-chat 共用同一份 status 契约 —— 两处各抄一份就会悄悄漂开。
@@ -347,6 +347,16 @@ type ProviderDraft = {
 
 type DefaultRef = { providerId: string; model: string } | null;
 
+type ModelCatalog = {
+  providers: Record<string, string[]>;
+  source: string;
+  notes: Record<string, string>;
+  error?: string;
+};
+
+/** 检测结果。`reason` 是分类,不是自由文本 —— 界面按它决定颜色。 */
+type ProbeVerdict = { ok: boolean; reason: string; message: string; url?: string };
+
 /**
  * 从后端(已脱敏的)凭据值里读出可编辑的厂商列表。
  *
@@ -434,7 +444,53 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
     )
   );
 
+  /**
+   * 模型目录。**独立于价格表**(见 src/cost/modelCatalog.ts 的理由),
+   * 拉不到就降级成手填 —— 所以这个查询失败不该影响页面任何其它部分。
+   */
+  const catalog = useQuery({
+    queryKey: ["llm-chat-model-catalog"],
+    queryFn: () => apiGet<ModelCatalog>("/api/llm-chat/model-catalog"),
+    retry: false,
+  });
+  /** 用户按「刷新模型」从厂商 /models 拉回来的,按实例 id 存,盖在目录之上。 */
+  const [refreshed, setRefreshed] = useState<Record<string, string[]>>({});
+  const [verdict, setVerdict] = useState<Record<string, ProbeVerdict | "pending">>({});
+
   const selected = drafts.find((d) => d.id === selectedId) ?? null;
+
+  /** 建议列表 = 厂商 /models 拉回来的 ∪ models.dev 目录。二者都可能为空,那就手填。 */
+  const suggestions = (d: ProviderDraft): string[] => {
+    const fromCatalog = catalog.data?.providers?.[d.provider] ?? [];
+    const merged = [...(refreshed[d.id] ?? []), ...fromCatalog];
+    return [...new Set(merged)];
+  };
+
+  const runProbe = async (id: string, kind: "test" | "refresh-models") => {
+    setVerdict((v) => ({ ...v, [id]: "pending" }));
+    try {
+      // 请求体是空对象:baseURL 只能取库里存的那份,后端不接受这里传的任何地址。
+      const r = await apiPost<ProbeVerdict & { models?: string[]; error?: string }>(
+        `/api/llm-chat/providers/${encodeURIComponent(id)}/${kind}`,
+        {}
+      );
+      if (kind === "refresh-models") {
+        if (Array.isArray(r.models)) {
+          setRefreshed((m) => ({ ...m, [id]: r.models as string[] }));
+          setVerdict((v) => ({ ...v, [id]: { ok: true, reason: "ok", message: `拉到 ${r.models!.length} 个模型。` } }));
+        } else {
+          setVerdict((v) => ({ ...v, [id]: { ok: false, reason: r.reason ?? "error", message: r.error ?? "拉取失败。" } }));
+        }
+        return;
+      }
+      setVerdict((v) => ({ ...v, [id]: r }));
+    } catch (e) {
+      setVerdict((v) => ({
+        ...v,
+        [id]: { ok: false, reason: "error", message: e instanceof Error ? e.message : String(e) },
+      }));
+    }
+  };
 
   const patchDraft = (id: string, next: Partial<ProviderDraft>) =>
     setDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...next } : d)));
@@ -686,8 +742,59 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                 />
               </Field>
 
+              <div className="flex items-center gap-3 pl-[calc(6rem+0.75rem)]">
+                <button
+                  type="button"
+                  onClick={() => void runProbe(selected.id, "test")}
+                  className="text-xs text-[var(--accent)] hover:underline"
+                >
+                  检测连接
+                </button>
+                {/* 检测只打 /models,不发计费请求 —— 代价是验不出余额,所以别说「一切正常」。 */}
+                {verdict[selected.id] === "pending" ? (
+                  <span className="text-xs text-[var(--muted)]">检测中…</span>
+                ) : verdict[selected.id] ? (
+                  <span
+                    className={`min-w-0 truncate text-xs ${
+                      (verdict[selected.id] as ProbeVerdict).ok ? "text-emerald-800" : "text-amber-900"
+                    }`}
+                    title={(verdict[selected.id] as ProbeVerdict).url}
+                  >
+                    {(verdict[selected.id] as ProbeVerdict).message}
+                  </span>
+                ) : (
+                  <span className="text-xs text-[var(--muted)]">只查模型列表，不发计费请求（验不出余额）</span>
+                )}
+              </div>
+
               <div className="border-t border-neutral-100 pt-2">
-                <h4 className="mb-1.5 text-xs font-medium text-[var(--fg)]">模型</h4>
+                <div className="mb-1.5 flex items-center gap-3">
+                  <h4 className="text-xs font-medium text-[var(--fg)]">模型</h4>
+                  <button
+                    type="button"
+                    onClick={() => void runProbe(selected.id, "refresh-models")}
+                    className="text-xs text-[var(--accent)] hover:underline"
+                  >
+                    从服务商刷新
+                  </button>
+                  {suggestions(selected).length > 0 && (
+                    <span className="text-xs text-[var(--muted)]">
+                      {suggestions(selected).length} 个可选（输入框里按下箭头）
+                    </span>
+                  )}
+                  {catalog.data?.notes?.[selected.provider] && (
+                    <span className="min-w-0 truncate text-xs text-amber-900" title={catalog.data.notes[selected.provider]}>
+                      {catalog.data.notes[selected.provider]}
+                    </span>
+                  )}
+                </div>
+                {/* datalist 而不是 select:目录列不全的必须还能手填 ——
+                    火山的对话标识是接入点 id(ep-…),私有部署更不在任何目录里。 */}
+                <datalist id={`models-${selected.id}`}>
+                  {suggestions(selected).map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
                 {selected.models.length === 0 ? (
                   <p className="text-xs text-[var(--muted)]">还没有模型。</p>
                 ) : (
@@ -708,6 +815,7 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                           />
                           <input
                             value={m.model}
+                            list={`models-${selected.id}`}
                             onChange={(e) => patchModel(selected.id, i, { model: e.target.value })}
                             placeholder="deepseek-v4-flash"
                             aria-label="模型 ID"
