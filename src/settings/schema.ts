@@ -97,6 +97,24 @@ function parseKimiJson(raw: string): { apiKey: string } | null {
 
 const API_KEY_ONLY = ["apiKey"] as const;
 
+/**
+ * **写入时的类型闸。** 这些密钥字段在任何形状里都只可能是字符串,
+ * 所以 PATCH 里出现非字符串就是类型混淆 —— 最典型的来源是「把脱敏 DTO 原样回写」:
+ * 脱敏把 apiKey 换成了 `hasKey: true`,回写成 `apiKey: true` 之后
+ * `optionalTrimmedString(true)` 返回 undefined,**真密钥静默消失**,还回 200。
+ * 与 `isMaskPlaceholder` 挡「********」是同一类防护,只是那条只管字符串。
+ *
+ * 这份清单是**显式**的,不从 specs 推导:它是安全控制,不该随数据变化而变。
+ * 一致性由测试保证(见 settings.llmChatRedaction.test.ts 的最后一条)。
+ */
+export const STRING_SECRET_FIELDS = ["apiKey", "token", "webhookUrl", "secret"] as const;
+
+/**
+ * 例外:llm-chat 归一**之前**的 `keys` 合法地是对象(provider → key)。
+ * 把它一起纳入类型闸会让手改旧形状的 PATCH 直接报错。
+ */
+export const OBJECT_SECRET_FIELDS = ["keys"] as const;
+
 function isPlainRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }

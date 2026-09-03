@@ -86,7 +86,7 @@ function settingsPayload(values: unknown) {
 }
 
 /** 按 URL 分派；PATCH 的 body 收集起来供断言。 */
-function mockApi(opts: { values?: unknown; status?: unknown } = {}) {
+function mockApi(opts: { values?: unknown; status?: unknown; catalog?: unknown } = {}) {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
   vi.stubGlobal(
     "fetch",
@@ -95,6 +95,16 @@ function mockApi(opts: { values?: unknown; status?: unknown } = {}) {
       if (init?.method === "PATCH") {
         calls.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
         return json({ ok: true });
+      }
+      if (url.includes("/api/llm-chat/model-catalog")) {
+        if (opts.catalog === "error") return new Response("boom", { status: 500 });
+        return json(
+          opts.catalog ?? {
+            providers: { deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"] },
+            source: "cache",
+            notes: { volcengine: "火山方舟的对话标识是推理接入点 id（ep-… ），不是模型名，需要手填。" },
+          }
+        );
       }
       if (url.includes("/api/llm-chat/status")) {
         if (opts.status === "error") return new Response("boom", { status: 500 });
@@ -310,5 +320,49 @@ describe("设置页 · 厂商优先", () => {
     expect(screen.getByText("还没有服务商")).toBeInTheDocument();
     // 但接口类型清单已经就位，点「添加服务商」就能开始配。
     expect(screen.getByRole("button", { name: "+ 添加服务商" })).toBeInTheDocument();
+  });
+
+  it("★ SC9 模型输入框带目录候选 —— 手敲一个已退役的模型名正是要修的症状", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await openAiTab(user);
+
+    const input = await screen.findByLabelText("模型 ID");
+    const listId = input.getAttribute("list");
+    expect(listId).toBeTruthy();
+    const options = [...container.querySelectorAll(`#${listId} option`)].map((o) =>
+      o.getAttribute("value")
+    );
+    expect(options).toEqual(["deepseek-v4-flash", "deepseek-v4-pro"]);
+  });
+
+  it("★ 用 datalist 而不是 select —— 目录列不全的必须还能手填", async () => {
+    // 火山的对话标识是接入点 id(ep-…),私有部署更不在任何目录里。
+    // select 会把这两种情况变成「配不了」。
+    mockApi();
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+    const input = await screen.findByLabelText("模型 ID");
+    expect(input.tagName).toBe("INPUT");
+    await user.clear(input);
+    await user.type(input, "ep-20260903-自己的接入点");
+    expect(input).toHaveValue("ep-20260903-自己的接入点");
+  });
+
+  it("★ 目录接口挂了不影响页面 —— 降级成纯手填,不是白屏", async () => {
+    mockApi({ catalog: "error" });
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await openAiTab(user);
+
+    // 厂商列表照常(它来自 /api/settings,与目录无关)。
+    expect(screen.getByRole("button", { name: /DeepSeek 官方/ })).toBeInTheDocument();
+    const input = await screen.findByLabelText("模型 ID");
+    expect(input).toHaveValue("deepseek-v4-flash");
+    // 只是候选没了。
+    const listId = input.getAttribute("list");
+    expect([...container.querySelectorAll(`#${listId} option`)]).toHaveLength(0);
   });
 });

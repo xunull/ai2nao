@@ -178,6 +178,50 @@ describe("settings routes", () => {
     expect(dto.values.providers.deepseek.baseURL).toBe("https://api.deepseek.com");
   });
 
+  it("★ SC6 GET 列表端点里种满多家密钥,响应序列化后一个原文都没有", async () => {
+    await patch("/api/settings/secret/llm-chat", {
+      providers: {
+        deepseek: { provider: "deepseek", baseURL: "https://api.deepseek.com", apiKey: "sk-DS-SECRET", models: [] },
+        minimax: { provider: "minimax", baseURL: "https://api.minimaxi.com/v1", apiKey: "sk-MM-SECRET", models: [] },
+        kimi: { provider: "moonshotai", baseURL: "https://api.moonshot.ai/v1", apiKey: "sk-KIMI-SECRET", models: [] },
+      },
+    });
+    const all = await get();
+    const cred = all.credentials["llm-chat"];
+    // **前置断言**:没有它,库是空的时候这条测试会空转通过 —— 一个永远绿的
+    // 防泄漏测试比没有更糟,因为它让人以为查过了。
+    expect(cred.set).toBe(true);
+    expect(Object.keys(cred.values.providers).sort()).toEqual(["deepseek", "kimi", "minimax"]);
+    const serialized = JSON.stringify(all);
+    for (const secret of ["sk-DS-SECRET", "sk-MM-SECRET", "sk-KIMI-SECRET"]) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  it("★ SC4(c) 删一条模型靠发短数组 —— mergePatch 对数组是整体替换", async () => {
+    await patch("/api/settings/secret/llm-chat", {
+      providers: {
+        deepseek: {
+          provider: "deepseek",
+          baseURL: "https://api.deepseek.com",
+          apiKey: "sk-live-key",
+          models: [
+            { model: "m1", label: "M1" },
+            { model: "m2", label: "M2" },
+          ],
+        },
+      },
+    });
+    // 只发 m1 —— 数组是整体替换,m2 应该真的没了(而不是被合并保留)。
+    const res = await patch("/api/settings/secret/llm-chat", {
+      providers: { deepseek: { models: [{ model: "m1", label: "M1" }] } },
+    });
+    const values = (await res.json()).credential.values;
+    expect(values.providers.deepseek.models.map((m: { model: string }) => m.model)).toEqual(["m1"]);
+    // 而 key 不能因为这次编辑而丢。
+    expect(values.providers.deepseek.hasKey).toBe(true);
+  });
+
   it("★ 删一个厂商靠显式 null,不靠省略 —— providers 是 map,省略等于「别动」", async () => {
     await seedProviders();
     const added = await patch("/api/settings/secret/llm-chat", {

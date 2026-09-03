@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CREDENTIAL_SPECS } from "../src/settings/schema.js";
+import {
+  CREDENTIAL_SPECS,
+  OBJECT_SECRET_FIELDS,
+  STRING_SECRET_FIELDS,
+} from "../src/settings/schema.js";
+import { mergePatch } from "../src/settings/credentialApi.js";
 
 /**
  * `credentialApi.ts` 把 `spec.redact(parsed)` 的结果直接放进返回给前端的 DTO,
@@ -138,5 +143,67 @@ describe("llm-chat 凭据脱敏", () => {
 
   it("secretFields 同时覆盖两种形状的秘密位置", () => {
     expect([...spec.secretFields].sort()).toEqual(["apiKey", "keys"]);
+  });
+
+  it("★ SC7 hasSecret:只在 providers.*.apiKey 里配 key 也算已配置", () => {
+    // 新形状下密钥不在顶层。谓词跟着形状走,否则设置页把「配好了」显示成「没配」。
+    const parsed = spec.parse(
+      JSON.stringify({
+        providers: {
+          x: { provider: "deepseek", baseURL: "https://api.deepseek.com", apiKey: "sk-x", models: [] },
+        },
+      })
+    );
+    expect(spec.hasSecret(parsed)).toBe(true);
+    const noKey = spec.parse(
+      JSON.stringify({
+        providers: { x: { provider: "deepseek", baseURL: "https://api.deepseek.com", models: [] } },
+      })
+    );
+    expect(spec.hasSecret(noKey)).toBe(false);
+  });
+});
+
+describe("★ SC8 脱敏值被回写时不能吃掉真密钥", () => {
+  /**
+   * 脱敏 DTO 里 apiKey 被换成了 `hasKey: true`。前端只要把它原样回写
+   * (或写成 apiKey:true),mergePatch 就会把 apiKey 设成 true,
+   * 然后 parse 的 optionalTrimmedString(true) 返回 undefined —— **密钥静默消失**,
+   * 不报错、200 OK。这与 isMaskPlaceholder 挡「********」是同一类事故,
+   * 只是类型混淆这条原先没人挡。
+   */
+  it("apiKey 不是字符串也不是 null → 拒绝,不是照单全收", () => {
+    for (const bad of [true, 1, {}, []]) {
+      expect(() =>
+        mergePatch(
+          { providers: { x: { apiKey: "sk-真的" } } },
+          { providers: { x: { apiKey: bad } } } as Record<string, unknown>
+        )
+      ).toThrow(/apiKey/);
+    }
+  });
+
+  it("null 仍然是合法的「清掉这个字段」,不能被误伤", () => {
+    const out = mergePatch({ providers: { x: { apiKey: "sk-真的", label: "L" } } }, {
+      providers: { x: { apiKey: null } },
+    });
+    expect((out.providers as Record<string, Record<string, unknown>>).x.apiKey).toBeUndefined();
+    expect((out.providers as Record<string, Record<string, unknown>>).x.label).toBe("L");
+  });
+
+  it("字符串照常通过", () => {
+    const out = mergePatch({}, { providers: { x: { apiKey: "sk-新的" } } });
+    expect((out.providers as Record<string, Record<string, unknown>>).x.apiKey).toBe("sk-新的");
+  });
+
+  it("★ 每个 spec 的 secretFields 都必须被分类 —— 新加一个密钥字段要被迫做决定", () => {
+    // 这是 spec.secretFields 唯一的读者(生产代码仍然不读它)。作用是:
+    // 有人加了新密钥字段却忘了归类时,这条会红,而不是悄悄绕过类型闸。
+    const classified = new Set<string>([...STRING_SECRET_FIELDS, ...OBJECT_SECRET_FIELDS]);
+    for (const [name, s] of Object.entries(CREDENTIAL_SPECS)) {
+      for (const f of s.secretFields) {
+        expect(classified.has(f), `${name}.secretFields 里的 "${f}" 还没分类`).toBe(true);
+      }
+    }
   });
 });

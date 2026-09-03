@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { CREDENTIAL_SPECS } from "./schema.js";
+import { CREDENTIAL_SPECS, STRING_SECRET_FIELDS } from "./schema.js";
 import {
   CREDENTIAL_NAMES,
   type CredentialName,
@@ -109,6 +109,14 @@ export function mergePatch(base: unknown, patch: Record<string, unknown>): Recor
     if (v === null) {
       delete out[k];
       continue;
+    }
+    // **密钥字段的类型闸。** null 已在上面当成「清掉」处理,到这里还不是字符串
+    // 就是类型混淆(最常见的来源是把脱敏 DTO 原样回写)。放过去的后果是
+    // parse 把它读成 undefined —— 真密钥静默消失,而且返回 200。
+    if ((STRING_SECRET_FIELDS as readonly string[]).includes(k) && typeof v !== "string") {
+      throw new CredentialPatchError(
+        `${k} must be a string (or null to clear); refusing to overwrite a stored secret with ${typeof v}`
+      );
     }
     if (isMaskPlaceholder(v)) {
       throw new CredentialPatchError(`${k} looks like a masked placeholder; omit it to keep the current value`);
