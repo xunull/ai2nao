@@ -649,6 +649,46 @@ export function AiChat() {
   } = resolveChatModel(cfg, modelId);
 
   /**
+   * 贴图入口的闸。四态,因为「不能」有两种、处置方式相反 ——
+   * 后端 `views.ts` 的 `VisionUiState` 是同一套判据,这里只做呈现。
+   *
+   * 字段缺失(打包桌面版可能是旧后端)按 `unknown` 处理:可用 + 提示,
+   * 而不是置灰。把「不知道」当成「不支持」会让旧后端一律不能贴图。
+   */
+  const visionState = selectedModel?.vision ?? "unknown";
+  /** 「仍要发送」后门。只对 `catalog-no` 开放 —— 目录会过期,适配器不会。 */
+  const [forceImages, setForceImages] = useState(false);
+  useEffect(() => {
+    setForceImages(false); // 换模型时收回后门,免得跟着带到下一个模型上
+  }, [effectiveModelId]);
+  const imagesEnabled =
+    visionState === "yes" || visionState === "unknown" || (visionState === "catalog-no" && forceImages);
+  const [attachErr, setAttachErr] = useState<string | null>(null);
+
+  /**
+   * 单张上限 5 MB,与后端 `sessions.ts` 的 `MAX_IMAGE_BYTES` 对齐 ——
+   * CopilotKit 默认是 20 MB,对本仓太大。前端拦一道是为了当场报错、
+   * 不让用户等到发送后才失败;真正的边界在服务端。
+   */
+  const attachmentsConfig = useMemo(
+    () => ({
+      enabled: imagesEnabled,
+      accept: "image/*",
+      maxSize: 5 * 1024 * 1024,
+      onUploadFailed: (e: { reason: string; file: File; message: string }) => {
+        setAttachErr(
+          e.reason === "file-too-large"
+            ? `「${e.file.name}」超过 5 MB，换一张小一点的。`
+            : e.reason === "invalid-type"
+              ? `「${e.file.name}」不是图片，目前只支持 PNG / JPEG / WebP / GIF。`
+              : `「${e.file.name}」没能加进来：${e.message}`
+        );
+      },
+    }),
+    [imagesEnabled]
+  );
+
+  /**
    * 气泡上的模型归属。
    *
    * 优先用消息自带的 `ai2naoModel` 不可变快照 —— 条目改名/删除都不影响历史。
@@ -1097,9 +1137,46 @@ export function AiChat() {
                         {chatErr}
                       </div>
                     ) : null}
+                    {attachErr ? (
+                      <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+                        <span>{attachErr}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-xs underline"
+                          onClick={() => setAttachErr(null)}
+                        >
+                          知道了
+                        </button>
+                      </div>
+                    ) : null}
+                    {/*
+                      贴图不可用时说清原因。两种「不能」文案不同,因为一种能绕过、
+                      一种不能:目录会过期(留后门),而适配器发不出去是确定的。
+                    */}
+                    {visionState === "adapter-no" ? (
+                      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600">
+                        当前模型不能贴图：ai2nao 接入这家的方式发不出图片，发出去也会被丢掉而费用照扣。换一个能读图的模型再试。
+                      </div>
+                    ) : visionState === "catalog-no" && !forceImages ? (
+                      <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600">
+                        <span>模型目录里这个模型不支持读图，贴图入口已关闭。</span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+                          onClick={() => setForceImages(true)}
+                        >
+                          仍要发送
+                        </button>
+                      </div>
+                    ) : visionState === "unknown" ? (
+                      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-500">
+                        没查到这个模型的读图能力（目录未拉取或是手填的模型），贴图可用但不保证模型看得见。
+                      </div>
+                    ) : null}
                     <CopilotChat
                       key={activeSessionId}
                       threadId={activeSessionId}
+                      attachments={attachmentsConfig}
                       // 探针确认过的插槽链路：chatView → messageView → assistantMessage。
                       // 不用重写外壳，也不违反铁律 —— 渲染一个标签是纯展示。
                       chatView={{ messageView: { assistantMessage: AssistantMessageWithModel } }}

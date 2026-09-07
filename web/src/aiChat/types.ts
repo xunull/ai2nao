@@ -6,6 +6,17 @@ export type LlmChatModelView = {
   model: string;
   available: boolean;
   credentialSource: "config" | "env" | "none-needed" | "none";
+  /**
+   * 能不能贴图。**四态**,因为「不能」有两种、处置方式相反:
+   * - `yes`        贴图入口可用
+   * - `unknown`    目录没拉到/旧缓存/手填的模型 → **可用 + 提示**,不置灰
+   * - `catalog-no` 目录说不收图 → 置灰,留「仍要发送」后门(目录会过期)
+   * - `adapter-no` 我们的适配器结构性发不出去 → 置灰,**没有后门**
+   *                (deepseek:发出去图会被丢,而费用照扣)
+   *
+   * 后端可能是旧版本(打包桌面版),没有这个字段 —— 缺失按 `unknown` 处理。
+   */
+  vision?: "yes" | "unknown" | "catalog-no" | "adapter-no";
 };
 
 export type LlmChatStatus = {

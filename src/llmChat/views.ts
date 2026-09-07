@@ -17,6 +17,7 @@ import {
   type LlmChatDocument,
   type LlmChatProvider,
   type LlmChatProviderInstance,
+  PROVIDER_ADAPTER_SENDS_IMAGES,
 } from "./document.js";
 
 /** 设置页「服务商」下拉的选项。前端不再自己维护清单,只维护 id → 中文标签。 */
@@ -69,6 +70,20 @@ export function listProvidersFromDocument(
 }
 
 /** 给 picker 的扁平视图。**绝不含密钥**,只有来源分类。 */
+/**
+ * 这个模型能不能贴图。**四态,不是布尔** —— 因为「不能」有两种,处置方式相反:
+ *
+ * - `yes`         目录说能收图,且我们的适配器发得出去 → 贴图入口可用
+ * - `unknown`     目录没拉到 / 是旧缓存 / 这个 id 不在目录里(比如手填的)
+ *                 → **入口可用 + 一行提示**。目录过期不该硬拦一个实际能用的模型
+ * - `catalog-no`  目录明确说这个模型不收图 → 置灰,但留「仍要发送」后门
+ *                 (目录可能过期,厂商可能刚上了新能力)
+ * - `adapter-no`  我们的 AI SDK 适配器结构性发不出 image part → 置灰,**没有后门**。
+ *                 这不是别人的声明,是我们自己依赖的确定事实;放行只会让用户
+ *                 为一张根本没送出去的图付钱(deepseek 就是这样,T0 实测)
+ */
+export type VisionUiState = "yes" | "unknown" | "catalog-no" | "adapter-no";
+
 export type LlmChatModelView = {
   id: string;
   label: string;
@@ -77,6 +92,8 @@ export type LlmChatModelView = {
   baseURL: string;
   available: boolean;
   credentialSource: CredentialSource;
+  /** 见 `VisionUiState`。 */
+  vision: VisionUiState;
 };
 
 /**
@@ -88,7 +105,13 @@ export type LlmChatModelView = {
  */
 export function listModelsFromDocument(
   doc: LlmChatDocument,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  /**
+   * models.dev 目录说这个模型能不能收图。**注入而不是在这里读盘** ——
+   * 本模块保持纯函数,测试才能不碰 config.db 就把四种状态都覆盖到。
+   * 不传 = 没有目录信息 = 一律按「未知」处理(而不是「不支持」)。
+   */
+  catalogVision?: (provider: LlmChatProvider, model: string) => "yes" | "no" | "unknown"
 ): LlmChatModelView[] {
   const out: LlmChatModelView[] = [];
   for (const [providerId, inst] of Object.entries(doc.providers)) {
@@ -103,10 +126,30 @@ export function listModelsFromDocument(
         baseURL: inst.baseURL,
         available: credentialSource !== "none",
         credentialSource,
+        vision: visionStateOf(inst.provider, ref.model, catalogVision),
       });
     }
   }
   return out;
+}
+
+/**
+ * 两个条件的与,顺序有讲究:**先判适配器**。
+ *
+ * 适配器发不出去是我们自己依赖的确定事实,目录再怎么说都翻不了案;
+ * 反过来先判目录的话,deepseek 会因为 models.dev 说它能收图而显示成可贴图,
+ * 用户点下去才在后端被拦 —— 那时字已经敲完了。
+ */
+function visionStateOf(
+  provider: LlmChatProvider,
+  model: string,
+  catalogVision?: (p: LlmChatProvider, m: string) => "yes" | "no" | "unknown"
+): VisionUiState {
+  if (!PROVIDER_ADAPTER_SENDS_IMAGES[provider]) return "adapter-no";
+  const said = catalogVision?.(provider, model) ?? "unknown";
+  if (said === "yes") return "yes";
+  if (said === "no") return "catalog-no";
+  return "unknown";
 }
 
 /**
@@ -233,7 +276,8 @@ export function selectModelForTurn(
  */
 export function statusModelFields(
   doc: LlmChatDocument,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  catalogVision?: (provider: LlmChatProvider, model: string) => "yes" | "no" | "unknown"
 ): {
   defaultModelId: string | null;
   models: LlmChatModelView[];
@@ -241,7 +285,7 @@ export function statusModelFields(
   /** 默认模型所在的实例被关掉了 —— 后台四个功能会停,页面要显式报出来。 */
   defaultDisabled: boolean;
 } {
-  const models = listModelsFromDocument(doc, env);
+  const models = listModelsFromDocument(doc, env, catalogVision);
   const providers = listProvidersFromDocument(doc, env);
   const target = resolveDefaultTarget(doc);
   const explicit = doc.defaultModel;

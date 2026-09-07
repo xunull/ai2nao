@@ -801,6 +801,12 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                   <ul className="space-y-1.5">
                     {selected.models.map((m, i) => {
                       const isDefault = isDefaultModel(selected.id, m.model);
+                      // 「可读图」只在**确定能贴图**时显示。后端的四态里只有 `yes`
+                      // 算确定 —— unknown(目录没拉到/手填的)不标,免得给出一个
+                      // 界面承诺而实际发过去被丢。判据与 /ai-chat 的闸同源。
+                      const vision = status.data?.models?.find(
+                        (v) => v.provider === selected.provider && v.model === m.model
+                      )?.vision;
                       return (
                         <li key={i} className="flex items-center gap-2">
                           <input
@@ -828,6 +834,21 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
                             aria-label="模型显示名"
                             className={`${inputCls} min-w-0 flex-1`}
                           />
+                          {vision === "yes" ? (
+                            <span
+                              className="shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+                              title="模型目录说这个模型能读图，且 ai2nao 的接入方式发得出图片"
+                            >
+                              可读图
+                            </span>
+                          ) : vision === "adapter-no" ? (
+                            <span
+                              className="shrink-0 rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] text-neutral-500"
+                              title="ai2nao 接入这家的方式发不出图片，发出去也会被丢掉而费用照扣"
+                            >
+                              不能贴图
+                            </span>
+                          ) : null}
                           {isDefault ? (
                             <span className="shrink-0 text-xs text-[var(--muted)]" title="它是默认模型，先把默认设到别的模型上再删">
                               默认项

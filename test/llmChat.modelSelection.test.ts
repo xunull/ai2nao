@@ -5,6 +5,7 @@ import {
   selectModelForTurn,
   type LlmChatDocument,
 } from "../src/llmChat/config.js";
+import { listModelsFromDocument } from "../src/llmChat/views.js";
 import { stampModelSnapshot } from "../src/llmChat/modelStamp.js";
 import { parseForwardedToolProps } from "../src/llmTools/forwardedProps.js";
 
@@ -163,5 +164,82 @@ describe("stampModelSnapshot —— 不可变快照,不是可变外键", () => {
     const out = stampModelSnapshot(input, snap);
     expect((input[0] as { ai2naoModel?: unknown }).ai2naoModel).toBeUndefined();
     expect(out[0]).not.toBe(input[0]);
+  });
+});
+
+/**
+ * 贴图能力的四态(T7)。四态不是布尔,因为「不能」有两种、处置方式相反:
+ * 目录说不行留后门(目录会过期),适配器发不出去不留(那是我们自己的确定事实)。
+ */
+describe("vision 四态", () => {
+  const doc = parseLlmChatDocument(
+    JSON.stringify({
+      defaultModel: null,
+      providers: {
+        mm: {
+          provider: "minimax",
+          label: "MiniMax",
+          baseURL: "https://api.minimaxi.com/v1",
+          apiKey: "sk-x",
+          enabled: true,
+          models: [
+            { model: "MiniMax-M3", label: "M3" },
+            { model: "MiniMax-M2.7", label: "M2.7" },
+            { model: "手填的", label: "手填的" },
+          ],
+        },
+        ds: {
+          provider: "deepseek",
+          label: "DeepSeek",
+          baseURL: "https://api.deepseek.com",
+          apiKey: "sk-y",
+          enabled: true,
+          models: [{ model: "deepseek-v4-flash-vision-exp", label: "DS 视觉" }],
+        },
+      },
+    })
+  )!;
+
+  /** 模拟 models.dev:M3 能收图,M2.7 不能,手填的那个目录里没有。 */
+  const catalog = (_p: string, m: string): "yes" | "no" | "unknown" =>
+    m === "MiniMax-M3" || m === "deepseek-v4-flash-vision-exp"
+      ? "yes"
+      : m === "MiniMax-M2.7"
+        ? "no"
+        : "unknown";
+
+  const byModel = (env: NodeJS.ProcessEnv = {}) => {
+    const out = new Map<string, string>();
+    for (const v of listModelsFromDocument(doc, env, catalog)) out.set(v.model, v.vision);
+    return out;
+  };
+
+  it("目录说能收 + 适配器发得出 → yes", () => {
+    expect(byModel().get("MiniMax-M3")).toBe("yes");
+  });
+
+  it("目录明确说不收 → catalog-no(界面置灰但留后门)", () => {
+    expect(byModel().get("MiniMax-M2.7")).toBe("catalog-no");
+  });
+
+  it("★ 目录里没有这个 id(手填的)→ unknown,不是不支持", () => {
+    // 把「没查到」当成「不支持」会让手填模型一律不能贴图。
+    expect(byModel().get("手填的")).toBe("unknown");
+  });
+
+  it("★ 适配器发不出去 → adapter-no,压过目录的「yes」", () => {
+    // models.dev 说 deepseek-v4-flash-vision-exp 能收图,厂商大概也真支持,
+    // 但 @ai-sdk/deepseek 的 case "user" 里 content 是纯字符串,图无处可去。
+    // 先判适配器就是为了这一条:否则界面显示可贴图,点下去才在后端被拦。
+    expect(byModel().get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
+  });
+
+  it("★ 不传目录时一律 unknown —— 离线/旧缓存不该把所有模型都置灰", () => {
+    const out = new Map<string, string>();
+    for (const v of listModelsFromDocument(doc, {})) out.set(v.model, v.vision);
+    expect(out.get("MiniMax-M3")).toBe("unknown");
+    expect(out.get("MiniMax-M2.7")).toBe("unknown");
+    // 但适配器那一条与目录无关,照样是确定的 no
+    expect(out.get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
   });
 });

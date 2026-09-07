@@ -9,6 +9,7 @@
  * 那两个模块从不反向 import 本文件。re-export 的目的只是让既有的
  * `from "./config.js"` 调用点不必改动(S0 是纯搬家)。
  */
+import { modelVisionSupport, readCachedCatalog } from "../cost/modelCatalog.js";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defaultLlmChatConfigPath } from "../config.js";
@@ -177,7 +178,12 @@ export function llmChatStatus(): LlmChatStatus {
     configured: !isEmptyDocument(doc),
     provider: cfg?.provider ?? null,
     model: cfg?.model ?? null,
-    ...statusModelFields(doc),
+    // 目录在 config.db,是 I/O —— 所以在这一层读、注进纯函数 views,
+    // 而不是让 views 自己读盘。读不到时 modelVisionSupport 一律回 "unknown",
+    // 界面表现为「可用 + 提示」,不是「置灰」。
+    ...statusModelFields(doc, process.env, (provider, model) =>
+      modelVisionSupport(readCachedCatalog(), provider, model)
+    ),
     availableProviders,
     baseHost: cfg ? baseHostFromUrl(cfg.baseURL) : null,
     configPath,
