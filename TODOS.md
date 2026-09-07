@@ -2113,3 +2113,40 @@ Context: 2026-09-02 的 `/plan-eng-review` 在审多模型计划时发现，同�
 Depends on: 五家的 key（Moonshot 开放平台 / 阿里云百炼 / 火山方舟），以及 DeepSeek 充值
 
 Priority: Phase 3
+
+## 让历史对话里的图重见天日
+
+**What:** 现在 `/opencode-history` 的会话详情页看不到任何图片，而这些对话里确实贴过图。
+补上之后，回看历史对话时截图能直接显示出来，而不是彻底消失。
+
+**Why:** 图是最高密度的证据 —— 一张报错截图抵五段描述。现在回看历史，
+「我当时给 AI 看了什么」这个信息完全丢失了。`agent_user_messages` 里有 245 条消息
+带 `[Image…]` 占位符，占位符背后的图要么在 blob 仓里、要么还在厂商库里，两边都取得到。
+
+**Pros:**
+- 零 API 成本、零厂商依赖，纯本地渲染
+- blob 仓（`~/.ai2nao/blobs`）里已有 114 个文件全是图，白存了几个月没人看过
+- `GET /api/blobs/:sha256`（贴图功能会先建）可以直接复用
+
+**Cons:**
+- 两条数据线互不相交，得先选一条（见 Context），选错就是白做
+- 走 vendor 库那条要往浏览器推最大 3.77 MB 的 data URI，需要自己的缩略图/懒加载方案
+- 走 blob 仓那条要新建一个展示面，是独立特性不是小改动
+
+**Context:** 来自 `/plan-eng-review`（2026-09-04）贴图功能评审的 Step 0。当时设计文档写
+「共用同一条路由，只差一个 `<img>` 标签」，实地核对后发现**是错的**，有两条互不相交的线：
+
+1. `/opencode-history/sessions/:id` → `opencodeHistory/load.ts` 直读 vendor 的 opencode.db
+   （3.2 GB，实测仍有 457 条内联 `data:` URI）→ `normalize.ts` 的 `buildMessage()`
+   switch 只有 `text`/`reasoning`/`tool`/`patch`/`step-*`，**没有 `case "file"`**，
+   图在这里被静默丢弃。这条线**永远看不到 blob**。
+2. `agent_user_messages.raw_payload_json` 里的 `{blob:{sha256,bytes,mime}}` stub
+   （114 个文件、34 MB）→ 但 `agentUserMessages/routes.ts:37` 写明
+   「`raw_payload_json` 只在 `/:id/raw` 返回（审计）」→ **零前端页面**。
+
+所以有两个方向：给 `buildMessage` 加 `case "file"` 并扩 DTO（覆盖 457 条，但要解决
+大 data URI 推送），或者给 `agent_user_messages` 建一个新展示面（用 blob 路由取图，
+天然可缓存且不推大 payload，覆盖所有源不只 opencode）。
+
+**Depends on / blocked by:** 建议在 `/ai-chat` 贴图功能落地之后做 ——
+那轮会先建好 `GET /api/blobs/:sha256` 与魔术字节嗅探，第二个方向可以直接复用。
