@@ -22,6 +22,7 @@ import type {
   WebSearchStatus,
 } from "../aiChat/types";
 import { assistantModelLabel, resolveChatModel } from "../aiChat/modelPicker";
+import { visionGate } from "../aiChat/visionGate";
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
   const cls =
@@ -661,8 +662,9 @@ export function AiChat() {
   useEffect(() => {
     setForceImages(false); // 换模型时收回后门,免得跟着带到下一个模型上
   }, [effectiveModelId]);
-  const imagesEnabled =
-    visionState === "yes" || visionState === "unknown" || (visionState === "catalog-no" && forceImages);
+  // 判定在 aiChat/visionGate.ts,那里有单测;这里只负责接线。
+  const gate = visionGate(visionState, forceImages);
+  const imagesEnabled = gate.imagesEnabled;
   const [attachErr, setAttachErr] = useState<string | null>(null);
 
   /**
@@ -1149,28 +1151,18 @@ export function AiChat() {
                         </button>
                       </div>
                     ) : null}
-                    {/*
-                      贴图不可用时说清原因。两种「不能」文案不同,因为一种能绕过、
-                      一种不能:目录会过期(留后门),而适配器发不出去是确定的。
-                    */}
-                    {visionState === "adapter-no" ? (
-                      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600">
-                        当前模型不能贴图：ai2nao 接入这家的方式发不出图片，发出去也会被丢掉而费用照扣。换一个能读图的模型再试。
-                      </div>
-                    ) : visionState === "catalog-no" && !forceImages ? (
+                    {gate.notice ? (
                       <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600">
-                        <span>模型目录里这个模型不支持读图，贴图入口已关闭。</span>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
-                          onClick={() => setForceImages(true)}
-                        >
-                          仍要发送
-                        </button>
-                      </div>
-                    ) : visionState === "unknown" ? (
-                      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-500">
-                        没查到这个模型的读图能力（目录未拉取或是手填的模型），贴图可用但不保证模型看得见。
+                        <span>{gate.notice}</span>
+                        {gate.canForce ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+                            onClick={() => setForceImages(true)}
+                          >
+                            仍要发送
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                     <CopilotChat

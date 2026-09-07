@@ -40,8 +40,8 @@ const STATUS = {
   defaultModelId: "deepseek:deepseek-v4-flash",
   defaultDisabled: false,
   models: [
-    { id: "deepseek:deepseek-v4-flash", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-v4-flash", available: true, credentialSource: "config" },
-    { id: "moonshotai:kimi-k2", label: "Kimi K2", provider: "moonshotai", model: "kimi-k2", available: false, credentialSource: "none" },
+    { id: "deepseek:deepseek-v4-flash", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-v4-flash", available: true, credentialSource: "config", vision: "adapter-no" },
+    { id: "moonshotai:kimi-k2", label: "Kimi K2", provider: "moonshotai", model: "kimi-k2", available: false, credentialSource: "none", vision: "yes" },
   ],
   providers: [
     { id: "deepseek", label: "DeepSeek 官方", provider: "deepseek", baseURL: "https://api.deepseek.com", enabled: true, credentialSource: "config", modelCount: 1 },
@@ -364,5 +364,52 @@ describe("设置页 · 厂商优先", () => {
     // 只是候选没了。
     const listId = input.getAttribute("list");
     expect([...container.querySelectorAll(`#${listId} option`)]).toHaveLength(0);
+  });
+});
+
+/**
+ * 模型行上的读图徽章(T7)。**只在确定时标** —— unknown 不标,
+ * 免得给出一个界面承诺而实际发过去被丢。
+ */
+describe("读图能力徽章", () => {
+  // 这对钩子必须自己写一份:上面那对在 `设置页 · 厂商优先` 的 describe **内部**,
+  // 兄弟 describe 拿不到,少了它上一个用例的 DOM 会漏进下一个。
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("★ vision=yes 标「可读图」,vision=adapter-no 标「不能贴图」", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+
+    // 默认选中的是 deepseek(adapter-no)
+    expect(await screen.findByText("不能贴图")).toBeInTheDocument();
+    expect(screen.queryByText("可读图")).not.toBeInTheDocument();
+
+    // 切到 moonshotai(yes)
+    await user.click(await screen.findByRole("button", { name: /Moonshot/ }));
+    expect(await screen.findByText("可读图")).toBeInTheDocument();
+    expect(screen.queryByText("不能贴图")).not.toBeInTheDocument();
+  });
+
+  it("★ vision 缺失(旧后端)两个徽章都不显示 —— 不猜", async () => {
+    const noVision = {
+      ...STATUS,
+      models: STATUS.models.map((m) => {
+        const { vision: _drop, ...rest } = m as Record<string, unknown>;
+        return rest;
+      }),
+    };
+    mockApi({ status: noVision });
+    const user = userEvent.setup();
+    renderPage();
+    await openAiTab(user);
+    await screen.findByRole("button", { name: /DeepSeek/ });
+    expect(screen.queryByText("可读图")).not.toBeInTheDocument();
+    expect(screen.queryByText("不能贴图")).not.toBeInTheDocument();
   });
 });
