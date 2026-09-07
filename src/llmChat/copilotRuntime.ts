@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import {
   AbstractAgent,
   EventType,
@@ -24,6 +25,7 @@ import { stampModelSnapshot } from "./modelStamp.js";
 import { ThinkStreamFilter } from "./normalizeResponse.js";
 import { createChatLanguageModel } from "./model.js";
 import { llmChatLog } from "./log.js";
+import { getBlob } from "../blobStore.js";
 import {
   defaultBashApprovalStore,
   type BashApprovalStore,
@@ -91,6 +93,8 @@ type AiSdkStreamToAgUiOptions = {
 const runningThreadIds = new Set<string>();
 const runningThreadStops = new Map<string, () => void>();
 const MAX_TOOL_LOOP_STEPS = 6;
+/** 见 `/api/copilotkit` 注册处的注释:按 base64 膨胀后的体积算,不是二进制图大小。 */
+const COPILOTKIT_MAX_BODY_BYTES = 48 * 1024 * 1024;
 const sseTextEncoder = new TextEncoder();
 
 type CopilotRuntimeHandlers = {
@@ -110,7 +114,23 @@ export function registerCopilotKitRoutes(
 
   app.get("/api/copilotkit/info", async (c) => runCopilotHandler((await getHandlers()).multi, c.req.raw));
 
-  app.post("/api/copilotkit", async (c) => runCopilotHandler((await getHandlers()).single, c.req.raw));
+  // **请求体上限必须在 handler 之前。** 图的字节现在走这条路由(不再有独立上传
+  // 路由),而全仓此前没有任何 body 上限 —— serve() 没传 options,Node 的 http
+  // server 本身也不限。没有它的话,一个 100 MB 的 base64 body 会被完整缓冲、
+  // JSON 解析、再做抽取(瞬时约 300 MB),然后才轮到 sessions.ts 的 1.5 MB 闸说话;
+  // 打包版桌面应用可能直接 OOM。
+  //
+  // 上限按「base64 膨胀 + JSON 包装」算,不是按二进制图大小:
+  // 6 张 × 5 MB(单张上限)× 4/3 ≈ 40 MB,再留一点给历史消息。
+  app.post(
+    "/api/copilotkit",
+    bodyLimit({
+      maxSize: COPILOTKIT_MAX_BODY_BYTES,
+      onError: (c) =>
+        c.json({ error: "请求体过大。图片太多或太大，请减少张数后重试。" }, 413),
+    }),
+    async (c) => runCopilotHandler((await getHandlers()).single, c.req.raw)
+  );
 
   app.post("/api/copilotkit/agent/default/connect", async (c) => {
     return runCopilotHandler((await getHandlers()).multi, c.req.raw);
@@ -723,11 +743,83 @@ function textChunkEvent(messageId: string, delta: string): BaseEvent {
   } as BaseEvent;
 }
 
+/**
+ * 历史里最多重发几张图。**只约束历史,当前这条消息的图一张都不能少** ——
+ * 「一次贴三张做横向对比」是贴图的主场景之一,静默丢掉一张会让模型答错而没人知道。
+ *
+ * 为什么要有上限:一张截图约合 1000-1600 token,而对话是累积的。贴一张追问五轮,
+ * 不设窗口就是同一张图付六次钱。
+ */
+const HISTORY_IMAGE_WINDOW = 2;
+
+/** AG-UI 的 image part 形状(`sessions.ts` 抽取后是 url 源,抽取前是 data 源)。 */
+type AgUiImageSource = { type?: unknown; value?: unknown; mimeType?: unknown };
+
+function imageSourceOf(part: unknown): AgUiImageSource | null {
+  if (!part || typeof part !== "object") return null;
+  const p = part as { type?: unknown; source?: unknown };
+  if (p.type !== "image") return null;
+  if (!p.source || typeof p.source !== "object") return null;
+  return p.source as AgUiImageSource;
+}
+
+/**
+ * 把一个 image part 解成字节。
+ *
+ * **两种形状都要认。** `copilotRuntime` 建 payload(:300)在
+ * `replaceLlmChatSessionMessages`(:356)之前 —— 也就是模型调用先于持久化,
+ * 所以本轮新消息拿到的还是前端发来的**内联 data**,只有历史消息才是 url 引用。
+ *
+ * 取不到返回 null,调用方降级成文字占位 —— blob 文件被手工删掉时不该静默少一张图。
+ */
+function imageBytesOf(source: AgUiImageSource): Buffer | null {
+  const value = typeof source.value === "string" ? source.value : "";
+  if (!value) return null;
+  if (source.type === "url") {
+    const sha = value.startsWith("/api/blobs/") ? value.slice("/api/blobs/".length) : "";
+    return sha ? getBlob(sha) : null;
+  }
+  if (source.type === "data") {
+    try {
+      const b = Buffer.from(value, "base64");
+      return b.length > 0 ? b : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** 窗口外的历史图换成这个 —— 让模型知道「这里曾经有张图」,而不是凭空少一段。 */
+function imagePlaceholder(source: AgUiImageSource): string {
+  const mime = typeof source.mimeType === "string" ? source.mimeType : "图片";
+  return `[你在这里贴过一张 ${mime} 截图，为控制上下文长度未重复发送]`;
+}
+
 export function agUiMessagesToModelMessages(messages: Message[]): ModelMessage[] {
   const toolNames = new Map<string, string>();
   const modelMessages: ModelMessage[] = [];
 
-  for (const message of messages) {
+  // 先数清楚哪些图属于「当前这条消息」,哪些属于历史 —— 两者规则不同。
+  // 当前 = 最后一条带内容的 user 消息;它的图全部原样发送。
+  let lastUserIdx = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === "user") lastUserIdx = i;
+  }
+  // 历史图从后往前数,只保留最近 HISTORY_IMAGE_WINDOW 张。
+  const historyImageKeys: string[] = [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (i === lastUserIdx || messages[i]?.role !== "user") continue;
+    const c = (messages[i] as { content?: unknown }).content;
+    if (!Array.isArray(c)) continue;
+    for (let j = c.length - 1; j >= 0; j -= 1) {
+      if (imageSourceOf(c[j])) historyImageKeys.push(`${i}:${j}`);
+    }
+  }
+  const keepHistoryImages = new Set(historyImageKeys.slice(0, HISTORY_IMAGE_WINDOW));
+
+  for (let msgIdx = 0; msgIdx < messages.length; msgIdx += 1) {
+    const message = messages[msgIdx]!;
     const text = textFromAgUiMessage(message).trim();
     if (message.role === "system" && text) {
       modelMessages.push({ role: "system", content: text });
@@ -737,8 +829,39 @@ export function agUiMessagesToModelMessages(messages: Message[]): ModelMessage[]
       modelMessages.push({ role: "system", content: text });
       continue;
     }
-    if (message.role === "user" && text) {
-      modelMessages.push({ role: "user", content: text });
+    if (message.role === "user") {
+      // **守卫不能只看 text。** 原来是 `role === "user" && text`,而
+      // `textFromAgUiMessage` 只取 type==="text" 的 part —— 「粘一张截图、
+      // 什么都不打、回车」这条最常见的消息 text 为空,会落空所有分支被整条丢弃,
+      // 模型连「用户发了东西」都不知道。
+      const parts: Array<
+        { type: "text"; text: string } | { type: "image"; image: Buffer }
+      > = [];
+      const rawContent = (message as { content?: unknown }).content;
+      if (Array.isArray(rawContent)) {
+        for (let j = 0; j < rawContent.length; j += 1) {
+          const src = imageSourceOf(rawContent[j]);
+          if (!src) continue;
+          const isCurrent = msgIdx === lastUserIdx;
+          if (!isCurrent && !keepHistoryImages.has(`${msgIdx}:${j}`)) {
+            parts.push({ type: "text", text: imagePlaceholder(src) });
+            continue;
+          }
+          const bytes = imageBytesOf(src);
+          if (bytes) parts.push({ type: "image", image: bytes });
+          // 取不到就明说,不静默少一张 —— blob 被手工删掉时用户看得出发生了什么。
+          else parts.push({ type: "text", text: "[这张图已不在本机附件仓]" });
+        }
+      }
+      if (text) parts.unshift({ type: "text", text });
+      if (parts.length === 0) continue;
+      // 纯文本时仍发字符串,不发单元素数组 —— 与改动前逐字节一致,
+      // 免得给每一条历史文本消息都换一种线格式。
+      if (parts.length === 1 && parts[0]!.type === "text") {
+        modelMessages.push({ role: "user", content: parts[0]!.text });
+      } else {
+        modelMessages.push({ role: "user", content: parts } as ModelMessage);
+      }
       continue;
     }
     if (message.role === "assistant") {

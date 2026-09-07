@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Message } from "@ag-ui/client";
+import { putBlob, sniffImageMime } from "../blobStore.js";
 
 const MAX_MESSAGES = 200;
 const MAX_SYNC_RAW_BYTES = 1_500_000;
@@ -246,9 +247,15 @@ function normalizeAgUiMessage(raw: Message, index: number, now: string) {
   if (!msg.id?.trim()) {
     throw new LlmChatSessionError(400, `message at index ${index} is missing id`);
   }
-  const rawJson = JSON.stringify(msg);
-  const plainText = textFromAgUiMessage(msg);
-  const preview = previewForAgUiMessage(msg, plainText);
+  // **抽取必须在 stringify 之前。** 落库的是抽取后的形状,而 1.5 MB 上限
+  // (MAX_SYNC_RAW_BYTES)是在本函数返回之后按 raw_json 长度累加的 —— 顺序对了,
+  // 那道闸看到的就已经是短引用而不是 base64。
+  const extracted = extractInlineImages(msg, index);
+  const rawJson = JSON.stringify(extracted);
+  // 存库这一路要的是「这条消息有没有内容」,纯图消息必须算有;
+  // 发给模型那一路要的是纯文本,两者语义相反,所以是两个函数。
+  const plainText = previewTextFromAgUiMessage(extracted);
+  const preview = previewForAgUiMessage(extracted, plainText);
   return {
     message_id: msg.id.trim(),
     message_index: index,
@@ -264,6 +271,158 @@ function normalizeAgUiMessage(raw: Message, index: number, now: string) {
 
 export function agUiMessagesFromSession(detail: LlmChatSessionDetail): Message[] {
   return detail.messages.map((row) => JSON.parse(row.raw_json) as Message);
+}
+
+/** 单条消息最多几张图。多图横向对比是真实用法,但没有理由一次几十张。 */
+const MAX_IMAGES_PER_MESSAGE = 6;
+/** 解码**之后**的字节上限。前端的 maxSize 是浏览器提示,不是边界。 */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** 唯一允许的 url 源前缀 —— 我们自己的 blob 出口。 */
+const BLOB_URL_PREFIX = "/api/blobs/";
+
+type MediaSource = { type?: unknown; value?: unknown; mimeType?: unknown };
+type MediaPart = { type?: unknown; source?: MediaSource; metadata?: unknown };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * 把消息里内联的图片抽进 blob 仓,正文换成 `/api/blobs/<sha>` 引用。
+ *
+ * **为什么必须在服务端做,而不是靠前端的 `onUpload`:** CopilotKit 的
+ * `useAttachments` 里,`onUpload` 缺席时走的是
+ * `source = { type: "data", value: await readFileAsBase64(file), mimeType }`,
+ * 默认 `maxSize` 是 20 MB。也就是说前端一个配置失误,整个文件就 base64 进了消息。
+ * 服务端不设防的话,后果是**模型已答完、钱已花完**之后落库才 413(那一行在 try 内)。
+ *
+ * **不要用 `parseDataUri`。** 它的第一行是 `startsWith("data:")`,而
+ * `readFileAsBase64` 的文档注释写着 "string (without the data URL prefix)",
+ * 实现是 `result.split(",")[1]` —— 拿到的是**裸 base64**。喂给 parseDataUri
+ * 只会静默返回 null,抽取什么都不做,图永远内联。
+ *
+ * **写失败就不剥**(照抄 `slimPartData` 已验证的语义):宁可继续内联占地方,
+ * 也不能出现「正文剥了、blob 没写成」那种两头落空的行。
+ */
+function extractInlineImages(msg: Message & { role: string }, index: number): Message {
+  const content = "content" in msg ? msg.content : undefined;
+  if (!Array.isArray(content)) return msg;
+
+  let imageCount = 0;
+  let changed = false;
+  const out = content.map((part) => {
+    if (!isRecord(part)) return part;
+    const p = part as MediaPart;
+    const kind = typeof p.type === "string" ? p.type : "";
+    if (kind === "text") return part;
+
+    // 只支持图片。音频/视频/文档没有任何一条下游路径能处理,留着只会撑爆载荷。
+    if (kind === "audio" || kind === "video" || kind === "document" || kind === "binary") {
+      throw new LlmChatSessionError(
+        400,
+        `message at index ${index}: 暂不支持 ${kind} 附件，目前只支持图片`
+      );
+    }
+    if (kind !== "image") return part;
+
+    imageCount += 1;
+    if (imageCount > MAX_IMAGES_PER_MESSAGE) {
+      throw new LlmChatSessionError(
+        400,
+        `message at index ${index}: 一条消息最多 ${MAX_IMAGES_PER_MESSAGE} 张图`
+      );
+    }
+
+    const src = isRecord(p.source) ? (p.source as MediaSource) : null;
+    if (!src) return part;
+
+    // url 源:只认我们自己的 blob 出口。外部 URL 直接拒绝,**且绝不去取** ——
+    // 本机应用能看见内网,替调用方发出站请求就是 SSRF。
+    if (src.type === "url") {
+      const value = typeof src.value === "string" ? src.value : "";
+      if (!value.startsWith(BLOB_URL_PREFIX)) {
+        throw new LlmChatSessionError(
+          400,
+          `message at index ${index}: 图片只能引用本机附件仓，不接受外部地址`
+        );
+      }
+      return part;
+    }
+
+    if (src.type !== "data") return part;
+    const b64 = typeof src.value === "string" ? src.value : "";
+    if (!b64) return part;
+
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(b64, "base64");
+    } catch {
+      throw new LlmChatSessionError(400, `message at index ${index}: 图片数据无法解码`);
+    }
+    if (bytes.length === 0) {
+      throw new LlmChatSessionError(400, `message at index ${index}: 图片数据无法解码`);
+    }
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      throw new LlmChatSessionError(
+        413,
+        `message at index ${index}: 单张图片超过 ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)} MB`
+      );
+    }
+
+    // 真实魔术字节必须与声明的 mime 对得上。对不上就是坏数据或伪装,
+    // 白花一次钱换一个看不懂的报错不如当场拒。
+    const sniffed = sniffImageMime(bytes);
+    if (!sniffed) {
+      throw new LlmChatSessionError(
+        400,
+        `message at index ${index}: 只支持 PNG / JPEG / WebP / GIF`
+      );
+    }
+    const declared = typeof src.mimeType === "string" ? src.mimeType : "";
+    if (declared && declared !== sniffed) {
+      throw new LlmChatSessionError(
+        400,
+        `message at index ${index}: 图片实际类型是 ${sniffed}，与声明的 ${declared} 不符`
+      );
+    }
+
+    const ref = putBlob(bytes, sniffed);
+    if (!ref) return part; // 写不成就不剥 —— 绝不两头落空
+    changed = true;
+    return {
+      ...part,
+      source: { type: "url", value: `${BLOB_URL_PREFIX}${ref.sha256}`, mimeType: sniffed },
+      metadata: {
+        ...(isRecord(p.metadata) ? p.metadata : {}),
+        sha256: ref.sha256,
+        bytes: ref.bytes,
+      },
+    };
+  });
+
+  return changed ? ({ ...msg, content: out } as Message) : msg;
+}
+
+/**
+ * 给**存库**用的文本:图片折成「[图片]」占位。
+ *
+ * 与 `textFromAgUiMessage` 分家,因为两个调用方要的东西相反 —— 存库要一个占位
+ * 字符串好让预览、标题、`message_count` 都成立;发给模型要真正的 image part,
+ * 收到字符串「[图片]」等于把占位符当正文发出去。
+ * 合成一个函数正是「纯图消息被整条丢弃」那个 bug 的成因。
+ */
+export function previewTextFromAgUiMessage(message: Message): string {
+  const content = "content" in message ? message.content : "";
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!isRecord(part)) return "";
+      if (part.type === "text") return typeof part.text === "string" ? part.text : "";
+      if (part.type === "image") return "[图片]";
+      return "";
+    })
+    .join("");
 }
 
 export function textFromAgUiMessage(message: Message): string {

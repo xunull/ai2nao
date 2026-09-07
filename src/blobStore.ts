@@ -13,9 +13,18 @@ import { dirname, join, resolve } from "node:path";
  * 抽出来而不是删掉：那 129 张图是「我到底喂给 AI 看了什么」的唯一记录，
  * 删了就再也没有了。按 sha256 寻址天然去重（同一张截图粘两次只存一份）。
  *
- * **不做孤儿回收。** 源侧 opencode.db 是 vendor 的可变状态库，随时会 vacuum；
- * blob 仓正是为了不受它影响而存在的，跟着它删就失去了意义。体积由
- * `blobStoreStats()` 报出来，超了由人来决定，而不是自动清。
+ * **写入方现在有两个**：opencode 的历史抽取（`opencodeHistory/myMessages.ts`）与
+ * `/ai-chat` 的贴图（`llmChat/sessions.ts`）。
+ *
+ * **不做孤儿回收 —— 对两个来源都是。** 理由不是「源侧会 vacuum」（那只解释了
+ * opencode 那一半），而是：任何来源的附件都是「我到底喂给 AI 看了什么」的唯一记录，
+ * 而 sha 去重意味着同一个 blob 可能同时被多个会话、以及 opencode 的
+ * `agent_user_messages` 引用 —— 引用埋在两张表的 JSON 字段里，跨子系统的引用计数
+ * 漏扫一处就是不可逆的数据丢失。几十 MB 的磁盘不值这个风险。
+ * 体积由人来看、由人来清。
+ *
+ * **读取入口一律经 `blobPath` 校验 sha 形状。** 它是 `getBlob` / `hasBlob` 共用的
+ * 瓶颈，校验放这里，未来每个调用方自动受保护 —— 不靠谁记得在路由层再判一次。
  */
 
 /** 环境变量覆盖 —— 没有它的话测试会写进开发者真实的 `~/.ai2nao/blobs`。 */
@@ -53,7 +62,22 @@ export function parseDataUri(url: string): { bytes: Buffer; mime: string | null 
   }
 }
 
-function blobPath(sha256: string): string {
+/** 小写十六进制 64 位，别的一律不认。 */
+const SHA256_RE = /^[a-f0-9]{64}$/;
+
+export function isValidSha256(value: string): boolean {
+  return SHA256_RE.test(value);
+}
+
+/**
+ * 路径拼接**兼**安全闸。形状不合法返回 null,调用方据此当「没有这个 blob」。
+ *
+ * 为什么必须校验:分片目录取的是 `sha256.slice(0, 2)`,传 `"../../../etc/passwd"`
+ * 进来时它是 `".."`,`join` 拼出来就是一条真实的穿越路径。在 `getBlob` 有 HTTP
+ * 出口之前这条路不可达,有了 `/api/blobs/:sha256` 就可达了。
+ */
+function blobPath(sha256: string): string | null {
+  if (!isValidSha256(sha256)) return null;
   return join(blobStoreDir(), sha256.slice(0, 2), sha256);
 }
 
@@ -63,7 +87,10 @@ function blobPath(sha256: string): string {
  */
 export function putBlob(bytes: Buffer, mime: string | null): BlobRef | null {
   const sha256 = createHash("sha256").update(bytes).digest("hex");
+  // digest("hex") 必然是合法形状,这里的 null 分支实际不可达 —— 但让它走
+  // 与写失败相同的「返回 null」出口,调用方不需要为它单独写一条路径。
   const target = blobPath(sha256);
+  if (!target) return null;
   try {
     if (!existsSync(target)) {
       mkdirSync(dirname(target), { recursive: true });
@@ -78,6 +105,7 @@ export function putBlob(bytes: Buffer, mime: string | null): BlobRef | null {
 /** 读回。用于「按 hash 取得回」的验收与将来的详情页展示。 */
 export function getBlob(sha256: string): Buffer | null {
   const p = blobPath(sha256);
+  if (!p) return null;
   try {
     return existsSync(p) ? readFileSync(p) : null;
   } catch {
@@ -87,9 +115,30 @@ export function getBlob(sha256: string): Buffer | null {
 
 export function hasBlob(sha256: string): boolean {
   const p = blobPath(sha256);
+  if (!p) return false;
   try {
     return existsSync(p) && statSync(p).size > 0;
   } catch {
     return false;
   }
+}
+
+/**
+ * 按魔术字节判类型。**不信任任何声明的 mime** —— 落盘的是裸字节，没有扩展名，
+ * mime 从来没跟着 blob 存下来（`putBlob` 只把它回给调用方）。
+ *
+ * 白名单之外一律返回 null，调用方据此降级为附件下载。SVG 故意不在白名单里：
+ * 同源端点上按 `image/svg+xml` 吐出去，直接打开那个 URL 就是同源脚本执行。
+ */
+export function sniffImageMime(bytes: Buffer): string | null {
+  if (bytes.length < 12) return null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return "image/gif";
+  // WebP: "RIFF" .... "WEBP"
+  if (
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) return "image/webp";
+  return null;
 }

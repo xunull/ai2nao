@@ -107,6 +107,7 @@ import {
   searchCherryStudioSessions,
 } from "../cherryStudioHistory/index.js";
 import { registerLlmChatRoutes } from "../llmChat/routes.js";
+import { registerBlobRoutes } from "../blobRoutes.js";
 import { registerLmStudioRoutes } from "../lmstudio/routes.js";
 import { registerGithubRoutes } from "../github/routes.js";
 import { registerHuggingfaceRoutes } from "../huggingface/routes.js";
@@ -301,6 +302,7 @@ export function createApp(opts: ServeOptions): Hono {
     bashApprovalStore,
     bashPermissionRules,
   });
+  registerBlobRoutes(app);
   registerBashApprovalRoutes(app, bashApprovalStore);
   registerCodeRunnerRoutes(app);
   registerRagRoutes(app, rag ? { db: rag.db, dbPath: rag.path } : undefined);
