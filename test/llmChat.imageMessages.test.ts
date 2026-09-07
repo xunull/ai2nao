@@ -11,7 +11,8 @@ import {
   replaceLlmChatSessionMessages,
   LlmChatSessionError,
 } from "../src/llmChat/sessions.js";
-import { agUiMessagesToModelMessages } from "../src/llmChat/copilotRuntime.js";
+import { agUiMessagesToModelMessages, assertCanSendImages } from "../src/llmChat/copilotRuntime.js";
+import { PROVIDER_ADAPTER_SENDS_IMAGES } from "../src/llmChat/document.js";
 import { putBlob } from "../src/blobStore.js";
 
 /**
@@ -241,5 +242,52 @@ describe("发给模型(T4)", () => {
 
   it("空消息仍然跳过", () => {
     expect(agUiMessagesToModelMessages([userMsg("m1", [])])).toHaveLength(0);
+  });
+});
+
+/**
+ * 后端视觉闸(T4b)。前端置灰是第一道,这是第二道 —— 前端的值不可信,
+ * 而 picker 与库里的配置有一瞬不同步时,图会被真的发出去、真的计费。
+ */
+describe("后端视觉闸(T4b)", () => {
+  const withImage = () => {
+    const ref = putBlob(PNG, "image/png")!;
+    return agUiMessagesToModelMessages([userMsg("m1", [urlPart(ref.sha256)])]);
+  };
+
+  it("★ deepseek 带图 → 抛,一个字节不发", () => {
+    expect(() => assertCanSendImages(withImage(), "deepseek")).toThrow(/发不出图片/);
+  });
+
+  it("★ 这一条没有后门 —— 错误信息要说清「发出去图也会被丢、费用照扣」", () => {
+    // 「仍要发送」后门是给「目录可能过期」留的;适配器发不出去是确定事实。
+    try {
+      assertCanSendImages(withImage(), "deepseek");
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect((e as Error).message).toContain("费用照扣");
+    }
+  });
+
+  it("deepseek 纯文本照常通过 —— 闸只拦带图的轮次", () => {
+    const out = agUiMessagesToModelMessages([userMsg("m1", [{ type: "text", text: "你好" }])]);
+    expect(() => assertCanSendImages(out, "deepseek")).not.toThrow();
+  });
+
+  it("能发图的 provider 一律放行", () => {
+    for (const p of ["minimax", "volcengine", "moonshotai", "alibaba", "openai", "openai-compatible"] as const) {
+      expect(() => assertCanSendImages(withImage(), p), p).not.toThrow();
+    }
+  });
+
+  it("★ 适配器表覆盖全部 provider —— 加一家厂商忘了填,这里会红", () => {
+    // 漏填的话 PROVIDER_ADAPTER_SENDS_IMAGES[新provider] 是 undefined,
+    // 而 undefined 是 falsy → 会被当成「发不出图」而静默拦住所有贴图。
+    const table = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
+    for (const p of ["alibaba", "deepseek", "minimax", "moonshotai", "openai", "openai-compatible", "volcengine"]) {
+      expect(typeof table[p], p).toBe("boolean");
+    }
+    // 且 deepseek 必须是 false —— 这是实测出来的,不是推测
+    expect(table.deepseek).toBe(false);
   });
 });

@@ -38,6 +38,45 @@ export const LLM_CHAT_PROVIDERS = Object.keys(
   LLM_CHAT_DEFAULT_BASE_URLS
 ) as LlmChatProvider[];
 
+/**
+ * **我们的 AI SDK 适配器发不发得出 image part。**
+ *
+ * 这与「厂商支不支持图像输入」是两回事,必须分开:models.dev 说
+ * `deepseek-v4-flash-vision-exp` 支持图像输入,厂商大概也真支持,但
+ * `@ai-sdk/deepseek` 结构性发不出去 —— 2026-09-07 实测:
+ *
+ *   AI SDK Warning (deepseek.chat / deepseek-v4-flash-vision-exp):
+ *     The feature "user message part type: file" is not supported.
+ *
+ * 而它**只往 stderr 打警告、不抛异常**,请求照常成功、token 照常计费,模型答
+ * 「无法确定(未提供截图)」。源码逐字(convertToDeepSeekMessages):
+ *
+ *   case "user": {
+ *     let userContent = "";                  // ← 纯字符串,图没有地方可去
+ *     for (const part of content) {
+ *       if (part.type === "text") userContent += part.text;
+ *       else warnings.push({ type: "unsupported", feature: `user message part type: ${part.type}` });
+ *     }
+ *   }
+ *
+ * 依据(每一条都可复查,不是猜的):
+ * - minimax / volcengine / openai-compatible → `createOpenAICompatible`,**T0 实测通过**
+ * - moonshotai → 4.9 KB 薄封装,package.json 依赖 `@ai-sdk/openai-compatible`
+ * - alibaba / openai → 各自官方适配器,源码含 `image_url`
+ * - deepseek → 上面那段,**实测 + 源码双证**
+ *
+ * 升 AI SDK 版本时要重验这张表 —— 它描述的是我们的依赖,不是厂商的能力。
+ */
+export const PROVIDER_ADAPTER_SENDS_IMAGES: Record<LlmChatProvider, boolean> = {
+  alibaba: true,
+  deepseek: false,
+  minimax: true,
+  moonshotai: true,
+  openai: true,
+  "openai-compatible": true,
+  volcengine: true,
+};
+
 /** 运行期真正交给 AI SDK 的那一份。6 个后台消费者拿到的也是它。 */
 export type LlmChatConfig = {
   provider: LlmChatProvider;

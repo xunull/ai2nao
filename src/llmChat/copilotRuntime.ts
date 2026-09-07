@@ -21,6 +21,7 @@ import type {
   CopilotRuntimeFetchHandler,
 } from "@copilotkit/runtime/v2";
 import { llmChatStatus, readLlmChatDocument, selectModelForTurn } from "./config.js";
+import { PROVIDER_ADAPTER_SENDS_IMAGES, type LlmChatProvider } from "./document.js";
 import { stampModelSnapshot } from "./modelStamp.js";
 import { ThinkStreamFilter } from "./normalizeResponse.js";
 import { createChatLanguageModel } from "./model.js";
@@ -320,6 +321,10 @@ async function* runAi2NaoTurnEvents(
       { sessionId: input.threadId }
     );
     const modelMessages = agUiMessagesToModelMessages(mergedMessages);
+    // **带图但发不出去的,一个字节都不发。** 前端的置灰是第一道,这是第二道 ——
+    // 前端的值不可信(与 modelId 同一条铁律),而 picker 与库里的配置有一瞬不同步时,
+    // 图会被真的发出去、真的计费,模型却静默丢图编一个答案。
+    assertCanSendImages(modelMessages, cfg.provider);
     const systemPrompt = ai2NaoSystemPrompt(input.forwardedProps);
     const result = streamText({
       model: createChatLanguageModel(cfg),
@@ -794,6 +799,32 @@ function imageBytesOf(source: AgUiImageSource): Buffer | null {
 function imagePlaceholder(source: AgUiImageSource): string {
   const mime = typeof source.mimeType === "string" ? source.mimeType : "图片";
   return `[你在这里贴过一张 ${mime} 截图，为控制上下文长度未重复发送]`;
+}
+
+/**
+ * 这一轮带图但当前 provider 的适配器发不出图 → 抛,由外层变成 `RUN_ERROR`。
+ *
+ * **这一条不设后门。** 「仍要发送」那个后门是为「models.dev 目录可能过期、
+ * 模型其实能用」留的;适配器发不出去是我们自己依赖的确定事实,放行只会让用户
+ * 为一张根本没送出去的图付钱 —— 那正是本设计要防的失败模式。
+ *
+ * 导出是为了单测能直接打它,不必跑完整回合。
+ */
+export function assertCanSendImages(
+  modelMessages: ModelMessage[],
+  provider: LlmChatProvider
+): void {
+  if (PROVIDER_ADAPTER_SENDS_IMAGES[provider]) return;
+  const hasImage = modelMessages.some(
+    (m) =>
+      Array.isArray(m.content) &&
+      m.content.some((p) => typeof p === "object" && p !== null && p.type === "image")
+  );
+  if (!hasImage) return;
+  throw new Error(
+    `当前服务商（${provider}）的接入方式发不出图片，这一轮没有发送。` +
+      `请换一个能读图的模型再试 —— 直接发出去的话图会被丢掉，而费用照扣。`
+  );
 }
 
 export function agUiMessagesToModelMessages(messages: Message[]): ModelMessage[] {

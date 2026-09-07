@@ -7,6 +7,7 @@ import {
   catalogIsStale,
   ensureModelCatalog,
   parseModelsDevCatalog,
+  modelVisionSupport,
   readCachedCatalog,
   writeCachedCatalog,
 } from "../src/cost/modelCatalog.js";
@@ -26,6 +27,7 @@ const MODELS_DEV = {
   deepseek: {
     models: {
       "deepseek-chat": { id: "deepseek-chat", cost: { input: 0.27, output: 1.1 } },
+      "deepseek-vl": { id: "deepseek-vl", modalities: { input: ["text", "image"] } },
       // 没有 cost —— 同步价格那条路会跳过它,目录这条路**必须收**。
       "deepseek-reasoner": { id: "deepseek-reasoner" },
     },
@@ -53,7 +55,7 @@ afterEach(() => {
 
 describe("parseModelsDevCatalog", () => {
   it("按 provider 收模型 id,只要点名的那几家", () => {
-    const out = parseModelsDevCatalog(MODELS_DEV, WANTED);
+    const out = parseModelsDevCatalog(MODELS_DEV, WANTED).providers;
     expect(Object.keys(out).sort()).toEqual(["deepseek", "minimax"]);
     // 没点名的 anthropic 不进来;点名了但对面没有的 moonshotai 也不凭空造。
     expect(out.anthropic).toBeUndefined();
@@ -63,22 +65,23 @@ describe("parseModelsDevCatalog", () => {
   it("★ 无价格的模型也要收 —— 同步价格那条路跳过它,目录这条路不能跟着跳", () => {
     // modelsDevSync.ts 对没有 cost 的模型 skippedNoCost++,那是为了不把模型
     // 误标成免费。目录只关心「这个 id 能不能用」,跟价格无关。
-    expect(parseModelsDevCatalog(MODELS_DEV, ["deepseek"]).deepseek).toEqual([
+    expect(parseModelsDevCatalog(MODELS_DEV, ["deepseek"]).providers.deepseek).toEqual([
       "deepseek-chat",
+      "deepseek-vl",
       "deepseek-reasoner",
     ]);
   });
 
   it("★ 不剥 `provider/` 前缀 —— bareModelId 是给价格匹配用的,当目录用会给出厂商不认的 id", () => {
-    expect(parseModelsDevCatalog(MODELS_DEV, ["minimax"]).minimax).toEqual([
+    expect(parseModelsDevCatalog(MODELS_DEV, ["minimax"]).providers.minimax).toEqual([
       "minimax/MiniMax-M2",
     ]);
   });
 
   it("形状不对时给空目录,不抛 —— 上游随时可能改结构,不该炸设置页", () => {
-    expect(parseModelsDevCatalog(null, WANTED)).toEqual({});
-    expect(parseModelsDevCatalog("字符串", WANTED)).toEqual({});
-    expect(parseModelsDevCatalog({ deepseek: { models: "不是对象" } }, ["deepseek"])).toEqual({});
+    expect(parseModelsDevCatalog(null, WANTED).providers).toEqual({});
+    expect(parseModelsDevCatalog("字符串", WANTED).providers).toEqual({});
+    expect(parseModelsDevCatalog({ deepseek: { models: "不是对象" } }, ["deepseek"]).providers).toEqual({});
   });
 });
 
@@ -136,9 +139,9 @@ describe("ensureModelCatalog", () => {
     writeCachedCatalog({ fetchedAt: old, providers: { deepseek: ["旧的"] } });
     const r = await ensureModelCatalog({ providers: WANTED, fetchJson: ok });
     expect(r.source).toBe("network");
-    expect(r.catalog.providers.deepseek).toEqual(["deepseek-chat", "deepseek-reasoner"]);
+    expect(r.catalog.providers.deepseek).toEqual(["deepseek-chat", "deepseek-vl", "deepseek-reasoner"]);
     // 落了盘,下次不用再拉。
-    expect(readCachedCatalog()?.providers.deepseek).toEqual(["deepseek-chat", "deepseek-reasoner"]);
+    expect(readCachedCatalog()?.providers.deepseek).toEqual(["deepseek-chat", "deepseek-vl", "deepseek-reasoner"]);
   });
 
   it("没有缓存 → 拉一次", async () => {
@@ -184,6 +187,59 @@ describe("ensureModelCatalog", () => {
     writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["旧的"] } });
     const r = await ensureModelCatalog({ providers: WANTED, fetchJson: ok, force: true });
     expect(r.source).toBe("network");
-    expect(r.catalog.providers.deepseek).toEqual(["deepseek-chat", "deepseek-reasoner"]);
+    expect(r.catalog.providers.deepseek).toEqual(["deepseek-chat", "deepseek-vl", "deepseek-reasoner"]);
+  });
+});
+
+/**
+ * 图像能力(T6)。models.dev 的 `modalities.input` 一直在响应里,只是原来只取了 id。
+ * 三态而不是布尔:旧缓存里没有这个字段,把「没有」当成「不支持」会在升级当天
+ * 把所有模型误拦掉。
+ */
+describe("modalities.input → visionModels", () => {
+  it("只有 input 含 image 的才进 visionModels", () => {
+    const out = parseModelsDevCatalog(MODELS_DEV, ["deepseek", "minimax"]);
+    expect(out.visionModels.deepseek).toEqual(["deepseek-vl"]);
+    // minimax 那条 fixture 没写 modalities → 一个都不进
+    expect(out.visionModels.minimax).toEqual([]);
+  });
+
+  it("★ 空数组与「这家不在目录里」是两回事", () => {
+    const cat = {
+      fetchedAt: new Date().toISOString(),
+      providers: { deepseek: ["deepseek-chat", "deepseek-vl"] },
+      visionModels: { deepseek: ["deepseek-vl"] },
+    };
+    expect(modelVisionSupport(cat, "deepseek", "deepseek-vl")).toBe("yes");
+    expect(modelVisionSupport(cat, "deepseek", "deepseek-chat")).toBe("no");
+    // 目录里根本没有这家 → 未知,不是不支持
+    expect(modelVisionSupport(cat, "moonshotai", "kimi-k2")).toBe("unknown");
+    // 这家在,但这个 model id 目录里没有(比如手填的) → 未知
+    expect(modelVisionSupport(cat, "deepseek", "手填的模型")).toBe("unknown");
+  });
+
+  it("★ 旧缓存(无 visionModels 字段)一律未知 —— 否则升级当天全被误拦", () => {
+    const old = { fetchedAt: new Date().toISOString(), providers: { deepseek: ["deepseek-chat"] } };
+    expect(modelVisionSupport(old, "deepseek", "deepseek-chat")).toBe("unknown");
+    expect(modelVisionSupport(null, "deepseek", "deepseek-chat")).toBe("unknown");
+  });
+
+  it("★ 旧缓存读回来时 visionModels 保持 undefined,不被补成空对象", () => {
+    setConfigMeta(
+      "model-catalog",
+      JSON.stringify({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["m1"] } })
+    );
+    const back = readCachedCatalog();
+    expect(back?.providers.deepseek).toEqual(["m1"]);
+    expect(back?.visionModels).toBeUndefined(); // 补成 {} 会变成「查过了,没有」
+  });
+
+  it("新缓存写进去读得回来", () => {
+    writeCachedCatalog({
+      fetchedAt: new Date().toISOString(),
+      providers: { deepseek: ["a", "b"] },
+      visionModels: { deepseek: ["b"] },
+    });
+    expect(readCachedCatalog()?.visionModels?.deepseek).toEqual(["b"]);
   });
 });

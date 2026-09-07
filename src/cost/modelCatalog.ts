@@ -18,7 +18,39 @@ export type ModelCatalog = {
   fetchedAt: string;
   /** provider id → 该家的模型 id 列表(原样,不做任何归一)。 */
   providers: Record<string, string[]>;
+  /**
+   * provider id → 该家**能收图**的模型 id 列表(models.dev 的 `modalities.input`
+   * 含 "image")。
+   *
+   * **可选,且「缺失」≠「不支持」。** 升级当天盘上还是旧缓存,里面没有这个字段;
+   * 把缺失当成不支持会让所有模型被误拦。缺失一律按「未知」处理 ——
+   * 见 `modelVisionSupport`。
+   */
+  visionModels?: Record<string, string[]>;
 };
+
+/** models.dev 对某个模型的图像输入是怎么说的。「没说」与「说不行」必须分开。 */
+export type VisionSupport = "yes" | "no" | "unknown";
+
+/**
+ * 目录对这个模型的图像输入怎么说。
+ *
+ * 三态而不是布尔:目录可能整体拉不到(离线)、可能是升级前的旧缓存(没有该字段)、
+ * 也可能这家根本不在目录里。这些都是「不知道」,不是「不支持」——
+ * 前者应该放行加提示,后者才该置灰。
+ */
+export function modelVisionSupport(
+  catalog: ModelCatalog | null,
+  provider: string,
+  model: string
+): VisionSupport {
+  if (!catalog?.visionModels) return "unknown"; // 旧缓存或没拉到
+  const vision = catalog.visionModels[provider];
+  if (!vision) return "unknown"; // 目录里没有这家
+  if (vision.includes(model)) return "yes";
+  // 这家在目录里、也列了能收图的模型,但不含它 —— 这才是「说不行」。
+  return catalog.providers[provider]?.includes(model) ? "no" : "unknown";
+}
 
 export const CATALOG_META_KEY = "model-catalog";
 export const CATALOG_URL = "https://models.dev/api.json";
@@ -42,22 +74,31 @@ function asObj(v: unknown): Record<string, unknown> | null {
 export function parseModelsDevCatalog(
   root: unknown,
   wanted: string[]
-): Record<string, string[]> {
+): { providers: Record<string, string[]>; visionModels: Record<string, string[]> } {
   const obj = asObj(root);
-  if (!obj) return {};
-  const out: Record<string, string[]> = {};
+  if (!obj) return { providers: {}, visionModels: {} };
+  const providers: Record<string, string[]> = {};
+  const visionModels: Record<string, string[]> = {};
   for (const provider of wanted) {
     const models = asObj(asObj(obj[provider])?.models);
     if (!models) continue;
     const ids: string[] = [];
+    const vision: string[] = [];
     for (const [key, raw] of Object.entries(models)) {
       const m = asObj(raw);
       const id = typeof m?.id === "string" && m.id.trim() ? m.id.trim() : key.trim();
-      if (id && !ids.includes(id)) ids.push(id);
+      if (!id || ids.includes(id)) continue;
+      ids.push(id);
+      // `modalities.input` 是个字符串数组,含 "image" 才算能收图。
+      const input = asObj(m?.modalities)?.input;
+      if (Array.isArray(input) && input.includes("image")) vision.push(id);
     }
-    if (ids.length > 0) out[provider] = ids;
+    if (ids.length > 0) providers[provider] = ids;
+    // 空数组也要写:「这家一个能收图的都没有」与「这家不在目录里」是两回事,
+    // `modelVisionSupport` 靠这个区分 "no" 与 "unknown"。
+    if (ids.length > 0) visionModels[provider] = vision;
   }
-  return out;
+  return { providers, visionModels };
 }
 
 export function readCachedCatalog(): ModelCatalog | null {
@@ -73,7 +114,17 @@ export function readCachedCatalog(): ModelCatalog | null {
     for (const [k, list] of Object.entries(providers)) {
       if (Array.isArray(list)) clean[k] = list.filter((x): x is string => typeof x === "string");
     }
-    return { fetchedAt: o.fetchedAt, providers: clean };
+    // visionModels 缺失时**不要**补空对象 —— undefined 表示「旧缓存/不知道」,
+    // 空对象会被 modelVisionSupport 当成「查过了,这家没有」。
+    const rawVision = asObj(o.visionModels);
+    let vision: Record<string, string[]> | undefined;
+    if (rawVision) {
+      vision = {};
+      for (const [k, list] of Object.entries(rawVision)) {
+        if (Array.isArray(list)) vision[k] = list.filter((x): x is string => typeof x === "string");
+      }
+    }
+    return { fetchedAt: o.fetchedAt, providers: clean, ...(vision ? { visionModels: vision } : {}) };
   } catch {
     // 手改坏了或半截写入 —— 当没有,重新拉一次即可。缓存是可丢的。
     return null;
@@ -136,9 +187,11 @@ export async function ensureModelCatalog(
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const root = await fetchJson(CATALOG_URL, ac.signal);
+    const parsed = parseModelsDevCatalog(root, opts.providers);
     const catalog: ModelCatalog = {
       fetchedAt: new Date(nowMs).toISOString(),
-      providers: parseModelsDevCatalog(root, opts.providers),
+      providers: parsed.providers,
+      visionModels: parsed.visionModels,
     };
     writeCachedCatalog(catalog);
     return { catalog, source: "network" };
