@@ -41,35 +41,29 @@ export const LLM_CHAT_PROVIDERS = Object.keys(
 /**
  * **我们的 AI SDK 适配器发不发得出 image part。**
  *
- * 这与「厂商支不支持图像输入」是两回事,必须分开:models.dev 说
- * `deepseek-v4-flash-vision-exp` 支持图像输入,厂商大概也真支持,但
- * `@ai-sdk/deepseek` 结构性发不出去 —— 2026-09-07 实测:
+ * 这与「厂商支不支持图像输入」是两回事,必须分开:厂商能力看 models.dev 目录,
+ * 这张表只描述**我们装的依赖**。它随依赖版本变,所以每一格填得对不对由
+ * `test/llmChat.adapterSendsImages.test.ts` 守着 —— 走生产路径、换掉 fetch,截下
+ * 适配器真正要发出去的请求体看图在不在;表与已装版本对不上就红。
+ *
+ * 为什么非守不可:`@ai-sdk/deepseek` 2.0.35 结构性发不出去,2026-09-07 实测:
  *
  *   AI SDK Warning (deepseek.chat / deepseek-v4-flash-vision-exp):
  *     The feature "user message part type: file" is not supported.
  *
  * 而它**只往 stderr 打警告、不抛异常**,请求照常成功、token 照常计费,模型答
- * 「无法确定(未提供截图)」。源码逐字(convertToDeepSeekMessages):
+ * 「无法确定(未提供截图)」—— 它的 `case "user"` 把 content 拼成纯字符串,图没有
+ * 地方可去。2.0.57 起加了图片分支;2026-09-14 升到 2.0.64 后改为 true(不按模型 ID
+ * 放行,非 JPEG/PNG/GIF/WebP 在发送前抛错)。那次升级后这张表已经过期,只看表值的
+ * 测试却全绿,这才补了上面那条测试。**DeepSeek 服务端收不收图仍未实测** —— 那是
+ * 目录那一侧的事。
  *
- *   case "user": {
- *     let userContent = "";                  // ← 纯字符串,图没有地方可去
- *     for (const part of content) {
- *       if (part.type === "text") userContent += part.text;
- *       else warnings.push({ type: "unsupported", feature: `user message part type: ${part.type}` });
- *     }
- *   }
- *
- * 依据(每一条都可复查,不是猜的):
- * - minimax / volcengine / openai-compatible → `createOpenAICompatible`,**T0 实测通过**
- * - moonshotai → 4.9 KB 薄封装,package.json 依赖 `@ai-sdk/openai-compatible`
- * - alibaba / openai → 各自官方适配器,源码含 `image_url`
- * - deepseek → 上面那段,**实测 + 源码双证**
- *
- * 升 AI SDK 版本时要重验这张表 —— 它描述的是我们的依赖,不是厂商的能力。
+ * 目前全部为 true,`adapter-no` 暂时没有真实 provider;保留它是给下一个发不出图的
+ * 适配器用的(相关测试用改表模拟)。
  */
 export const PROVIDER_ADAPTER_SENDS_IMAGES: Record<LlmChatProvider, boolean> = {
   alibaba: true,
-  deepseek: false,
+  deepseek: true,
   minimax: true,
   moonshotai: true,
   openai: true,

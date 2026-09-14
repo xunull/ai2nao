@@ -5,6 +5,7 @@ import {
   selectModelForTurn,
   type LlmChatDocument,
 } from "../src/llmChat/config.js";
+import { PROVIDER_ADAPTER_SENDS_IMAGES } from "../src/llmChat/document.js";
 import { listModelsFromDocument } from "../src/llmChat/views.js";
 import { stampModelSnapshot } from "../src/llmChat/modelStamp.js";
 import { parseForwardedToolProps } from "../src/llmTools/forwardedProps.js";
@@ -227,11 +228,32 @@ describe("vision 四态", () => {
     expect(byModel().get("手填的")).toBe("unknown");
   });
 
+  /**
+   * 目前全部适配器都发得出图(见 llmChat.adapterSendsImages.test.ts),`adapter-no`
+   * 没有真实的 provider,用改表模拟一家发不出的。无论断言成败都还原。
+   */
+  const withAdapterDroppingImages = (provider: string, fn: () => void) => {
+    const table = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
+    const saved = table[provider]!;
+    table[provider] = false;
+    try {
+      fn();
+    } finally {
+      table[provider] = saved;
+    }
+  };
+
   it("★ 适配器发不出去 → adapter-no,压过目录的「yes」", () => {
-    // models.dev 说 deepseek-v4-flash-vision-exp 能收图,厂商大概也真支持,
-    // 但 @ai-sdk/deepseek 的 case "user" 里 content 是纯字符串,图无处可去。
+    // 当年 @ai-sdk/deepseek 2.0.35 的 case "user" 里 content 是纯字符串,图无处可去,
+    // 而 models.dev 说 deepseek-v4-flash-vision-exp 能收图。
     // 先判适配器就是为了这一条:否则界面显示可贴图,点下去才在后端被拦。
-    expect(byModel().get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
+    withAdapterDroppingImages("deepseek", () => {
+      expect(byModel().get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
+    });
+  });
+
+  it("适配器发得出图时跟着目录走 —— deepseek 升到 2.0.64 后,目录说能收就是 yes", () => {
+    expect(byModel().get("deepseek-v4-flash-vision-exp")).toBe("yes");
   });
 
   it("★ 不传目录时一律 unknown —— 离线/旧缓存不该把所有模型都置灰", () => {
@@ -239,7 +261,14 @@ describe("vision 四态", () => {
     for (const v of listModelsFromDocument(doc, {})) out.set(v.model, v.vision);
     expect(out.get("MiniMax-M3")).toBe("unknown");
     expect(out.get("MiniMax-M2.7")).toBe("unknown");
-    // 但适配器那一条与目录无关,照样是确定的 no
-    expect(out.get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
+    expect(out.get("deepseek-v4-flash-vision-exp")).toBe("unknown");
+  });
+
+  it("★ 适配器那一态与目录无关 —— 不传目录也照样是确定的 no", () => {
+    withAdapterDroppingImages("deepseek", () => {
+      const out = new Map<string, string>();
+      for (const v of listModelsFromDocument(doc, {})) out.set(v.model, v.vision);
+      expect(out.get("deepseek-v4-flash-vision-exp")).toBe("adapter-no");
+    });
   });
 });

@@ -80,7 +80,8 @@ export function listProvidersFromDocument(
  *                 (目录可能过期,厂商可能刚上了新能力)
  * - `adapter-no`  我们的 AI SDK 适配器结构性发不出 image part → 置灰,**没有后门**。
  *                 这不是别人的声明,是我们自己依赖的确定事实;放行只会让用户
- *                 为一张根本没送出去的图付钱(deepseek 就是这样,T0 实测)
+ *                 为一张根本没送出去的图付钱(`@ai-sdk/deepseek` 2.0.35 就是这样,T0 实测;
+ *                 升到 2.0.64 后已能发图,目前没有 provider 处于这一态)
  */
 export type VisionUiState = "yes" | "unknown" | "catalog-no" | "adapter-no";
 
@@ -137,8 +138,8 @@ export function listModelsFromDocument(
  * 两个条件的与,顺序有讲究:**先判适配器**。
  *
  * 适配器发不出去是我们自己依赖的确定事实,目录再怎么说都翻不了案;
- * 反过来先判目录的话,deepseek 会因为 models.dev 说它能收图而显示成可贴图,
- * 用户点下去才在后端被拦 —— 那时字已经敲完了。
+ * 反过来先判目录的话,一家发不出图的适配器(如 @ai-sdk/deepseek 2.0.35)会因为
+ * models.dev 说模型能收图而显示成可贴图,用户点下去才在后端被拦 —— 那时字已经敲完了。
  */
 function visionStateOf(
   provider: LlmChatProvider,

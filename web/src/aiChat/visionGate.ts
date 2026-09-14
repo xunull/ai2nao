@@ -31,8 +31,8 @@ export function visionGate(vision: VisionState | undefined, forced: boolean): Vi
 
     case "adapter-no":
       // **没有后门。** 后门是给「目录可能过期、模型其实能用」留的;适配器发不出去
-      // 是我们自己依赖的确定事实(@ai-sdk/deepseek 的 user content 是纯字符串,
-      // 图无处可去,且只警告不抛错)。放行只会让用户为一张没送出去的图付钱。
+      // 是我们自己依赖的确定事实(如 @ai-sdk/deepseek 2.0.35 的 user content 是
+      // 纯字符串,图无处可去,且只警告不抛错)。放行只会让用户为一张没送出去的图付钱。
       return {
         imagesEnabled: false,
         notice:

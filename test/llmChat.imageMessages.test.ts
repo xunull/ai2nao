@@ -250,12 +250,25 @@ describe("发给模型(T4)", () => {
  * 而 picker 与库里的配置有一瞬不同步时,图会被真的发出去、真的计费。
  */
 describe("后端视觉闸(T4b)", () => {
+  // 升到 @ai-sdk/deepseek 2.0.64 后,全部适配器都发得出图(每一格的真相由
+  // llmChat.adapterSendsImages.test.ts 按真实请求体核对),闸暂时没有真实的拦截对象。
+  // 这里用改表模拟「一家发不出图的适配器」,守的是闸本身的行为。
+  const adapterTable = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
+  let savedDeepseek: boolean;
+  beforeEach(() => {
+    savedDeepseek = adapterTable.deepseek!;
+    adapterTable.deepseek = false;
+  });
+  afterEach(() => {
+    adapterTable.deepseek = savedDeepseek;
+  });
+
   const withImage = () => {
     const ref = putBlob(PNG, "image/png")!;
     return agUiMessagesToModelMessages([userMsg("m1", [urlPart(ref.sha256)])]);
   };
 
-  it("★ deepseek 带图 → 抛,一个字节不发", () => {
+  it("★ 适配器发不出图 + 带图 → 抛,一个字节不发", () => {
     expect(() => assertCanSendImages(withImage(), "deepseek")).toThrow(/发不出图片/);
   });
 
@@ -269,7 +282,7 @@ describe("后端视觉闸(T4b)", () => {
     }
   });
 
-  it("deepseek 纯文本照常通过 —— 闸只拦带图的轮次", () => {
+  it("发不出图的适配器,纯文本照常通过 —— 闸只拦带图的轮次", () => {
     const out = agUiMessagesToModelMessages([userMsg("m1", [{ type: "text", text: "你好" }])]);
     expect(() => assertCanSendImages(out, "deepseek")).not.toThrow();
   });
@@ -283,11 +296,9 @@ describe("后端视觉闸(T4b)", () => {
   it("★ 适配器表覆盖全部 provider —— 加一家厂商忘了填,这里会红", () => {
     // 漏填的话 PROVIDER_ADAPTER_SENDS_IMAGES[新provider] 是 undefined,
     // 而 undefined 是 falsy → 会被当成「发不出图」而静默拦住所有贴图。
-    const table = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
+    // (每一格填得对不对,由 llmChat.adapterSendsImages.test.ts 按真实请求体核对。)
     for (const p of ["alibaba", "deepseek", "minimax", "moonshotai", "openai", "openai-compatible", "volcengine"]) {
-      expect(typeof table[p], p).toBe("boolean");
+      expect(typeof adapterTable[p], p).toBe("boolean");
     }
-    // 且 deepseek 必须是 false —— 这是实测出来的,不是推测
-    expect(table.deepseek).toBe(false);
   });
 });
