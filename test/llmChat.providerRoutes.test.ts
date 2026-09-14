@@ -228,6 +228,7 @@ describe("GET /api/llm-chat/model-catalog", () => {
     writeCachedCatalog({
       fetchedAt: new Date().toISOString(),
       providers: { deepseek: ["deepseek-chat"] },
+      visionModels: {},
     });
     const res = await app.request("http://x/api/llm-chat/model-catalog");
     expect(res.status).toBe(200);
@@ -237,7 +238,7 @@ describe("GET /api/llm-chat/model-catalog", () => {
   });
 
   it("★ 火山带一条提示 —— 它的对话标识是接入点 id(ep-…),目录选不出来", async () => {
-    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: {} });
+    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: {}, visionModels: {} });
     const res = await app.request("http://x/api/llm-chat/model-catalog");
     const body = (await res.json()) as { notes: Record<string, string> };
     expect(body.notes.volcengine).toContain("接入点");

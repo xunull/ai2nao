@@ -105,7 +105,7 @@ describe("缓存(config.db 的 config_meta,不碰 model_prices)", () => {
 
   it("7 天是新鲜与陈旧的分界", () => {
     const t0 = Date.parse("2026-09-03T00:00:00.000Z");
-    const c = { fetchedAt: "2026-09-03T00:00:00.000Z", providers: {} };
+    const c = { fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {} };
     expect(catalogIsStale(c, t0 + CATALOG_MAX_AGE_MS - 1)).toBe(false);
     expect(catalogIsStale(c, t0 + CATALOG_MAX_AGE_MS + 1)).toBe(true);
     // 时间戳解析不出来 → 当陈旧,宁可多拉一次也不要永远用一份坏缓存。
@@ -121,7 +121,7 @@ describe("ensureModelCatalog", () => {
 
   it("缓存新鲜 → 直接用,一个网络请求都不发", async () => {
     let called = 0;
-    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["缓存里的"] } });
+    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["缓存里的"] }, visionModels: {} });
     const r = await ensureModelCatalog({
       providers: WANTED,
       fetchJson: async () => {
@@ -241,5 +241,35 @@ describe("modalities.input → visionModels", () => {
       visionModels: { deepseek: ["b"] },
     });
     expect(readCachedCatalog()?.visionModels?.deepseek).toEqual(["b"]);
+  });
+});
+
+/**
+ * 旧格式缓存(升级前写下的,没有 visionModels)。按时间可能还新鲜,但留着它的代价是
+ * 所有模型的读图能力都判成「未知」、最长熬满 7 天 —— 而对话页的 status 接口只读缓存,
+ * 不去拉。所以旧格式一律算陈旧,下一次有人要目录时就换成新格式。
+ */
+describe("旧格式缓存", () => {
+  it("★ 按时间还新鲜也算陈旧;新格式按时间判", () => {
+    const t0 = Date.parse("2026-09-03T00:00:00.000Z");
+    expect(catalogIsStale({ fetchedAt: "2026-09-03T00:00:00.000Z", providers: {} }, t0 + 1000)).toBe(true);
+    expect(
+      catalogIsStale({ fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {} }, t0 + 1000)
+    ).toBe(false);
+  });
+
+  it("★ ensureModelCatalog 遇到旧格式会真去拉,并换成新格式落盘", async () => {
+    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["旧的"] } });
+    let called = 0;
+    const r = await ensureModelCatalog({
+      providers: WANTED,
+      fetchJson: async () => {
+        called += 1;
+        return MODELS_DEV;
+      },
+    });
+    expect(called).toBe(1);
+    expect(r.source).toBe("network");
+    expect(readCachedCatalog()?.visionModels?.deepseek).toEqual(["deepseek-vl"]);
   });
 });

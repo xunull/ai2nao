@@ -1,6 +1,8 @@
 import {
   CopilotChat,
   CopilotChatAssistantMessage,
+  CopilotChatInput,
+  CopilotChatUserMessage,
   CopilotKit,
   useDefaultRenderTool,
   useRenderTool,
@@ -23,6 +25,8 @@ import type {
 } from "../aiChat/types";
 import { assistantModelLabel, resolveChatModel } from "../aiChat/modelPicker";
 import { visionGate } from "../aiChat/visionGate";
+import { ChatImageGrid } from "../aiChat/ChatImageGrid";
+import { imagesFromContent } from "../aiChat/imageGrid";
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
   const cls =
@@ -719,6 +723,54 @@ export function AiChat() {
     // 只在标签变化时换组件标识,避免每次 render 都把消息子树重挂一遍。
   }, [fallbackLabel]);
 
+  /**
+   * 用户消息里的图换成自己的网格,文字与工具栏仍用 CopilotKit 的。
+   *
+   * CopilotKit 默认把图排成 `flex-wrap` 一行、每张最大 80×80 按原图比例缩 ——
+   * 竖长截图被压成 32px 宽的细缝(2026-09-07 实测)。它的 `children` 渲染函数把
+   * 文字与工具栏两块现成元素交给我们,只换掉图区;外层容器的类名照抄默认实现,
+   * 免得与其余消息对不齐。没有图的消息原样走默认实现。纯展示。
+   */
+  const UserMessageWithImages = useMemo(() => {
+    function WithImages(props: React.ComponentProps<typeof CopilotChatUserMessage>) {
+      const images = imagesFromContent((props.message as { content?: unknown }).content);
+      if (images.length === 0) return <CopilotChatUserMessage {...props} />;
+      return (
+        <CopilotChatUserMessage {...props}>
+          {({ messageRenderer, toolbar }) => (
+            <div
+              data-copilotkit
+              data-testid="copilot-user-message"
+              data-message-id={props.message.id}
+              className="copilotKitMessage copilotKitUserMessage cpk:flex cpk:flex-col cpk:items-end cpk:group cpk:pt-10"
+            >
+              <ChatImageGrid images={images} />
+              {messageRenderer}
+              {toolbar}
+            </div>
+          )}
+        </CopilotChatUserMessage>
+      );
+    }
+    // 同 AssistantMessageWithModel:插槽类型连带静态子组件,不带上会在运行时断。
+    return Object.assign(WithImages, CopilotChatUserMessage);
+  }, []);
+
+  /**
+   * 贴图关着时把「+」整个拿掉。
+   *
+   * CopilotKit 的 AddMenuButton 在菜单为空时只是 `disabled`,按钮照样显示 ——
+   * 灰条刚说完「不能贴图」,旁边还摆着一个看上去能贴图的 +。本页不注册任何
+   * client tools(铁律),toolsMenu 恒空,菜单里唯一的项就是「添加文件」;
+   * 贴图关着时这个按钮没有任何用途。
+   */
+  const AddMenuButtonWhenImagesEnabled = useMemo(() => {
+    function MaybeAddMenuButton(props: React.ComponentProps<typeof CopilotChatInput.AddMenuButton>) {
+      return imagesEnabled ? <CopilotChatInput.AddMenuButton {...props} /> : null;
+    }
+    return MaybeAddMenuButton;
+  }, [imagesEnabled]);
+
   const refreshSessions = useCallback(async (signal?: AbortSignal) => {
     const rows = await listAiChatSessions({ signal });
     setSessions(rows);
@@ -763,13 +815,26 @@ export function AiChat() {
 
   useEffect(() => {
     const ac = new AbortController();
-    apiGet<LlmChatStatus>("/api/llm-chat/status", { signal: ac.signal })
-      .then((s) => {
-        setCfg(s);
-        setCfgErr(null);
+    const loadStatus = () =>
+      apiGet<LlmChatStatus>("/api/llm-chat/status", { signal: ac.signal })
+        .then((s) => {
+          setCfg(s);
+          setCfgErr(null);
+        })
+        .catch((e: unknown) => {
+          if (!ac.signal.aborted) setCfgErr(e instanceof Error ? e.message : String(e));
+        });
+    void loadStatus();
+    // 读图能力来自 models.dev 目录缓存,而 status 接口只读缓存、从不去拉 —— 只用
+    // 对话页的话缓存永远不更新,读图能力一直是「未知」。所以顺手请求一次目录
+    // (新鲜时只是读缓存,零网络);真去拉了(source === "network")再重载 status。
+    // 不阻塞页面,拉不到就维持现状。
+    apiGet<{ source?: string }>("/api/llm-chat/model-catalog", { signal: ac.signal })
+      .then((c) => {
+        if (c.source === "network") void loadStatus();
       })
-      .catch((e: unknown) => {
-        if (!ac.signal.aborted) setCfgErr(e instanceof Error ? e.message : String(e));
+      .catch(() => {
+        /* 目录拉不到不影响对话,读图能力保持「未知」即可 */
       });
     apiGet<RagStatus>("/api/rag/status", { signal: ac.signal })
       .then((s) => {
@@ -1171,7 +1236,13 @@ export function AiChat() {
                       attachments={attachmentsConfig}
                       // 探针确认过的插槽链路：chatView → messageView → assistantMessage。
                       // 不用重写外壳，也不违反铁律 —— 渲染一个标签是纯展示。
-                      chatView={{ messageView: { assistantMessage: AssistantMessageWithModel } }}
+                      chatView={{
+                        messageView: {
+                          assistantMessage: AssistantMessageWithModel,
+                          userMessage: UserMessageWithImages,
+                        },
+                        input: { addMenuButton: AddMenuButtonWhenImagesEnabled },
+                      }}
                       onError={handleChatError}
                       labels={{
                         modalHeaderTitle: "AI 对话",

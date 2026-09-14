@@ -19,6 +19,11 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   // 新 import 必须在 mock 里有对应导出，否则 vitest 直接报错。
   // 渲染成一个可断言的占位，气泡包装层的逻辑仍然跑得到。
   CopilotChatAssistantMessage: () => <div data-testid="mock-assistant-message" />,
+  // 图气泡与「+」按钮插槽用到的两个组件。同上：mock 里缺导出，渲染一碰就报错白屏。
+  CopilotChatUserMessage: () => <div data-testid="mock-user-message" />,
+  CopilotChatInput: Object.assign(() => <div data-testid="mock-chat-input" />, {
+    AddMenuButton: () => <button type="button" data-testid="mock-add-menu-button" />,
+  }),
 }));
 
 function renderApp(initialEntry: string) {

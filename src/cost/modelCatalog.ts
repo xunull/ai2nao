@@ -136,6 +136,10 @@ export function writeCachedCatalog(catalog: ModelCatalog): void {
 }
 
 export function catalogIsStale(catalog: ModelCatalog, nowMs: number): boolean {
+  // **旧格式缓存一律算陈旧。** 升级前写下的缓存没有 visionModels —— 它可能才拉了
+  // 一天、按时间还新鲜,但留着它的代价是所有模型的读图能力都判成「未知」,
+  // 最长要熬满 7 天。按陈旧处理,下一次有人要目录时就顺手换成新格式。
+  if (!catalog.visionModels) return true;
   const t = Date.parse(catalog.fetchedAt);
   // 时间戳解析不出来就当陈旧:宁可多拉一次,也不要永远用一份坏缓存。
   if (!Number.isFinite(t)) return true;
