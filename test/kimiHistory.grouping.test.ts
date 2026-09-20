@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_PROJECTS,
   groupByProject,
+  PENDING_PROJECT_KEY,
   matchesQuery,
   projectPanel,
   sessionsForProject,
@@ -20,7 +21,16 @@ const s = (
   projectPath,
   preview: extra.preview ?? "",
   lastUpdatedAt,
+  tokenIndexed: extra.tokenIndexed ?? true,
 });
+
+/** 只有正文、还没进 token 索引的会话:没有标题,也没有项目归属。 */
+const pending = (sessionId: string, lastUpdatedAt: string): KimiGroupableSession =>
+  s(sessionId, "", lastUpdatedAt, {
+    title: null,
+    projectKey: PENDING_PROJECT_KEY,
+    tokenIndexed: false,
+  });
 
 const A = "/repo/alpha";
 const B = "/repo/beta";
@@ -136,5 +146,38 @@ describe("projectPanel", () => {
       "beta",
       "alpha",
     ]);
+  });
+});
+
+describe("待索引的会话", () => {
+  it("单独成桶,不与「(未知项目)」混在一起", () => {
+    const groups = groupByProject([
+      s("1", A, "2026-09-01T00:00:00Z"),
+      s("2", "", "2026-09-02T00:00:00Z"),
+      pending("3", "2026-09-03T00:00:00Z"),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["alpha", "(未知项目)", "待索引"]);
+    expect(groups[1]).toMatchObject({ isUnknown: true, isPending: false });
+    expect(groups[2]).toMatchObject({ isUnknown: false, isPending: true });
+  });
+
+  it("排在最末,即使它最近活跃", () => {
+    const groups = groupByProject([
+      pending("1", "2026-12-31T00:00:00Z"),
+      s("2", "", "2026-01-02T00:00:00Z"),
+      s("3", A, "2026-01-01T00:00:00Z"),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["alpha", "(未知项目)", "待索引"]);
+  });
+
+  it("多场待索引会话并成一桶", () => {
+    const groups = groupByProject([pending("1", "2026-09-01T00:00:00Z"), pending("2", "2026-09-02T00:00:00Z")]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ sessionCount: 2, isPending: true });
+  });
+
+  it("选中待索引桶时右栏只留它们", () => {
+    const all = [s("1", A, "2026-09-01T00:00:00Z"), pending("2", "2026-09-02T00:00:00Z")];
+    expect(sessionsForProject(all, PENDING_PROJECT_KEY).map((x) => x.sessionId)).toEqual(["2"]);
   });
 });

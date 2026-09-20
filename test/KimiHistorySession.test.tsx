@@ -40,6 +40,7 @@ const SESSION = {
   agentCount: 4,
   humanMessageCount: 2,
   totalMessageCount: 5,
+  tokenIndexed: true,
 };
 
 function stub(status: number, body: unknown) {

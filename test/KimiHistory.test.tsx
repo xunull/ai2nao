@@ -43,6 +43,7 @@ function session(over: Partial<Record<string, unknown>> = {}) {
     agentCount: 4,
     humanMessageCount: 3,
     totalMessageCount: 40,
+    tokenIndexed: true,
     preview: "首句预览与标题不同,这样断言才不会两处都命中",
     ...over,
   };

@@ -44,7 +44,17 @@ export type KimiDashboardSessionRow = {
   /** 含 AI 正文在内的全部消息条数。用于分辨「零提问」与「正文没入库」。 */
   totalMessageCount: number;
   preview: string;
+  /**
+   * 这场会话进 token 索引了没有。`false` = 只有正文 —— 标题、模型、agent 数、
+   * 项目归属都还没有,因为那些字段只有 `kimi_agent_token_usage` 里有。
+   * 界面把它们收进「待索引」,不能并进「(未知项目)」:那个词的意思是
+   * 「确定没有目录」,不是「还没查出来」(见 CONTEXT.md)。
+   */
+  tokenIndexed: boolean;
 };
+
+/** 「待索引」会话共用的项目键。只是展示用的分桶,从不入库。 */
+export const KIMI_PENDING_PROJECT_KEY = "kimi:pending";
 
 export type KimiSessionsDiagnostic = {
   kind: string;
@@ -67,10 +77,14 @@ const LIST_SQL = `
     WHERE missing_since IS NULL
     GROUP BY session_id
   ),
+  -- token 索引**见过**的全部会话,含已标记文件消失的。下面靠它把「文件没了」
+  -- 与「还没索引到」分开:前者要继续隐藏(正文表不会因为文件消失而删行,
+  -- 不减掉的话死会话会被正文表请回列表),后者要显示。
+  known AS (SELECT DISTINCT session_id FROM kimi_agent_token_usage),
   -- 一遍窗口扫出「最早一条真人提问」与两个计数。用相关子查询取 preview 在真库上
   -- 是 128ms(它只按 source 走索引,再逐会话扫到匹配为止),这个形式是 86ms。
   msgs AS (
-    SELECT session_id, first_human_text, human_count, total_count
+    SELECT session_id, first_human_text, human_count, total_count, first_at, last_at
     FROM (
       SELECT source_session_id AS session_id,
              cleaned_text      AS first_human_text,
@@ -80,21 +94,39 @@ const LIST_SQL = `
              ) AS rn,
              SUM(CASE WHEN is_human = 1 THEN 1 ELSE 0 END)
                OVER (PARTITION BY source_session_id) AS human_count,
-             COUNT(*) OVER (PARTITION BY source_session_id) AS total_count
+             COUNT(*) OVER (PARTITION BY source_session_id) AS total_count,
+             MIN(event_at_utc) OVER (PARTITION BY source_session_id) AS first_at,
+             MAX(event_at_utc) OVER (PARTITION BY source_session_id) AS last_at
       FROM agent_user_messages
       WHERE source = 'kimi'
     )
     WHERE rn = 1
+  ),
+  -- 主干 = token 索引里还在的 ∪ 索引压根没见过但已经有正文的。
+  -- 只认前者的话,token 刷新任务一关,新会话就在这个页面上静默消失
+  -- (真库里曾有 17 场是这样)。见 docs/adr/0002-kimi-session-spine.md。
+  spine AS (
+    SELECT session_id FROM agents
+    UNION
+    SELECT session_id FROM msgs WHERE session_id NOT IN (SELECT session_id FROM known)
   )
-  SELECT a.session_id, a.title, a.project_key, a.project_path,
-         a.identity_confidence, a.model, a.created_at, a.last_updated_at,
-         a.agent_count,
+  SELECT s.session_id,
+         a.title,
+         COALESCE(a.project_key, ?)  AS project_key,
+         COALESCE(a.project_path, '') AS project_path,
+         COALESCE(a.identity_confidence, 'low') AS identity_confidence,
+         a.model,
+         COALESCE(a.created_at, m.first_at)      AS created_at,
+         COALESCE(a.last_updated_at, m.last_at)  AS last_updated_at,
+         COALESCE(a.agent_count, 0)  AS agent_count,
          COALESCE(m.human_count, 0)  AS human_count,
          COALESCE(m.total_count, 0)  AS total_count,
-         COALESCE(m.first_human_text, '') AS preview
-  FROM agents a
-  LEFT JOIN msgs m ON m.session_id = a.session_id
-  ORDER BY a.last_updated_at DESC
+         COALESCE(m.first_human_text, '') AS preview,
+         CASE WHEN a.session_id IS NULL THEN 0 ELSE 1 END AS token_indexed
+  FROM spine s
+  LEFT JOIN agents a ON a.session_id = s.session_id
+  LEFT JOIN msgs   m ON m.session_id = s.session_id
+  ORDER BY COALESCE(a.last_updated_at, m.last_at) DESC
 `;
 
 type RawRow = {
@@ -110,6 +142,7 @@ type RawRow = {
   human_count: number;
   total_count: number;
   preview: string;
+  token_indexed: number;
 };
 
 /**
@@ -142,29 +175,22 @@ function messageIngestState(db: Database.Database): {
 }
 
 /**
- * 有正文、但不在 token 索引里的会话数。
+ * token 刷新任务开着没有。
  *
- * 列表的主干是 `kimi_agent_token_usage` —— 这些会话因此在这个页面上根本不存在
- * (在「对话搜索」里却搜得到),每个目录旁边标的会话数也会因此偏小。成因还没查:
- * 可能是 wire.jsonl 已被 kimi 自己清掉、也可能是某一轮 token 刷新漏了。
- * 在查清之前,至少不能让一个已知偏小的数字不加提示地印在界面上。
+ * 「有正文、没索引」最常见的成因不是滞后,而是 `kimi.tokens.refresh` 压根关着
+ * (本仓库所有定时任务都以关闭状态入库,要用户自己开)。真库上曾经有 17 场会话
+ * 因此只有正文:正文同步开着、每小时在跑,token 索引停在几周前。
+ *
+ * 所以诊断要直接说是哪个任务,而不是只报一个数字让人自己猜。
  */
-function bodiesWithoutTokenIndex(db: Database.Database): number {
+function tokenRefreshEnabled(db: Database.Database): boolean | null {
   try {
     const row = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM (
-           SELECT DISTINCT source_session_id AS sid
-           FROM agent_user_messages WHERE source = 'kimi'
-         )
-         WHERE sid NOT IN (
-           SELECT session_id FROM kimi_agent_token_usage WHERE missing_since IS NULL
-         )`
-      )
-      .get() as { n: number } | undefined;
-    return row?.n ?? 0;
+      .prepare(`SELECT enabled FROM scheduled_tasks WHERE task_key = 'kimi.tokens.refresh'`)
+      .get() as { enabled: number } | undefined;
+    return row ? row.enabled === 1 : null; // 没有这一行 = 任务还没注册过
   } catch {
-    return 0; // 旧库没有某张表 —— 少报一条诊断,好过整页崩掉
+    return null; // 旧库没有这张表 —— 说不出所以然,就别断言
   }
 }
 
@@ -175,7 +201,7 @@ export function listKimiDashboardSessions(db: Database.Database): {
   const diagnostics: KimiSessionsDiagnostic[] = [];
   let raw: RawRow[];
   try {
-    raw = db.prepare(LIST_SQL).all() as RawRow[];
+    raw = db.prepare(LIST_SQL).all(KIMI_PENDING_PROJECT_KEY) as RawRow[];
   } catch (e) {
     // 表不在(旧库)= 索引损坏,不是「没用过 kimi」。别静默返回空。
     return {
@@ -202,6 +228,7 @@ export function listKimiDashboardSessions(db: Database.Database): {
     humanMessageCount: r.human_count,
     totalMessageCount: r.total_count,
     preview: r.preview,
+    tokenIndexed: r.token_indexed === 1,
   }));
 
   // 判据用「一条消息都没有」而不是「没有真人提问」—— 一个会话完全可以只有 AI 正文
@@ -224,12 +251,18 @@ export function listKimiDashboardSessions(db: Database.Database): {
     });
   }
 
-  const orphanBodies = bodiesWithoutTokenIndex(db);
-  if (orphanBodies > 0) {
+  // 主干已经把它们列出来了,所以这条诊断不再是「你看不到 N 场」,而是
+  // 「这 N 场缺标题和 token 状态,原因多半是那个任务关着」。
+  const pending = sessions.filter((x) => !x.tokenIndexed).length;
+  if (pending > 0) {
+    const enabled = tokenRefreshEnabled(db);
     diagnostics.push({
-      kind: "kimi-bodies-without-token-index",
-      message: `另有 ${orphanBodies} 场会话有正文但不在 token 索引里，没有列在这里（「对话搜索」里仍搜得到），各目录的会话数会因此偏小`,
-      count: orphanBodies,
+      kind: enabled === false ? "kimi-token-refresh-disabled" : "kimi-sessions-pending-index",
+      message:
+        enabled === false
+          ? `${pending} 场会话还没进 token 索引，暂时没有标题与用量 —— 定时任务「kimi token 统计刷新」是关着的，去调度页打开它`
+          : `${pending} 场会话还没进 token 索引，暂时没有标题与用量，等下一轮「kimi token 统计刷新」`,
+      count: pending,
     });
   }
 

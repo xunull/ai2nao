@@ -321,3 +321,90 @@ describe("路由", () => {
     db.close();
   });
 });
+
+/**
+ * 主干 = token 索引 ∪ 只有正文的会话。见 docs/adr/0002-kimi-session-spine.md。
+ *
+ * 只认 token 索引的话,那个定时任务一关新会话就在页面上静默消失 ——
+ * 真库上曾经有 17 场是这样,而 `kimi.tokens.refresh` 在那台机器上压根没开。
+ * 但不能无脑翻成以正文为准:正文表不会因为 wire.jsonl 被删而减行,
+ * 那样会把已经消失的会话请回列表。
+ */
+describe("会话主干", () => {
+  it("只有正文、token 索引没见过的会话也列出来,标成待索引", () => {
+    const db = freshDb();
+    seedAgent(db, { session: "s-indexed", agent: "main" });
+    seedMessage(db, { session: "s-indexed", text: "已索引的提问", isHuman: true });
+    seedMessage(db, { session: "s-new", text: "还没索引的提问", isHuman: true, at: "2026-08-20T03:00:00.000Z" });
+
+    const { sessions } = listKimiDashboardSessions(db);
+    const byId = new Map(sessions.map((s) => [s.sessionId, s]));
+    expect([...byId.keys()].sort()).toEqual(["s-indexed", "s-new"]);
+
+    const fresh = byId.get("s-new")!;
+    expect(fresh.tokenIndexed).toBe(false);
+    expect(fresh.title).toBeNull();
+    expect(fresh.agentCount).toBe(0);
+    expect(fresh.humanMessageCount).toBe(1);
+    expect(fresh.preview).toBe("还没索引的提问");
+    // 时间退回正文的首尾 —— 没有它这一行会因为 last_updated_at 为空排到最后或被判空
+    expect(fresh.lastUpdatedAt).toBe("2026-08-20T03:00:00.000Z");
+    // 项目键不能是空串:那会与「全部」那一项的 id 撞上
+    expect(fresh.projectKey).toBe("kimi:pending");
+    expect(fresh.projectPath).toBe("");
+    expect(byId.get("s-indexed")!.tokenIndexed).toBe(true);
+    db.close();
+  });
+
+  it("文件已消失的会话不因为正文还在就被请回来", () => {
+    const db = freshDb();
+    seedAgent(db, { session: "s-gone", agent: "main", missing: "2026-08-20T00:00:00.000Z" });
+    seedMessage(db, { session: "s-gone", text: "历史提问", isHuman: true });
+
+    const { sessions } = listKimiDashboardSessions(db);
+    expect(sessions.map((s) => s.sessionId)).toEqual([]);
+    db.close();
+  });
+
+  it("一个 agent 消失、另一个还在时,会话照常列出(X2)", () => {
+    const db = freshDb();
+    seedAgent(db, { session: "s-mixed", agent: "main" });
+    seedAgent(db, { session: "s-mixed", agent: "agent-1", missing: "2026-08-20T00:00:00.000Z" });
+    seedMessage(db, { session: "s-mixed", text: "提问", isHuman: true });
+
+    const { sessions } = listKimiDashboardSessions(db);
+    expect(sessions.map((s) => s.sessionId)).toEqual(["s-mixed"]);
+    expect(sessions[0]!.tokenIndexed).toBe(true);
+    expect(sessions[0]!.agentCount).toBe(1); // 只数还在的
+    db.close();
+  });
+
+  it("有待索引会话时报诊断,并指名是哪个定时任务关着", () => {
+    const db = freshDb();
+    seedMessage(db, { session: "s-new", text: "提问", isHuman: true });
+    db.prepare(
+      `INSERT INTO scheduled_tasks (task_key, enabled, interval_seconds, config_json, created_at, updated_at)
+       VALUES ('kimi.tokens.refresh', 0, 3600, '{}', ?, ?)`
+    ).run(AT, AT);
+
+    const { diagnostics } = listKimiDashboardSessions(db);
+    const d = diagnostics.find((x) => x.kind === "kimi-token-refresh-disabled");
+    expect(d).toBeDefined();
+    expect(d!.count).toBe(1);
+    expect(d!.message).toContain("kimi token 统计刷新");
+    db.close();
+  });
+
+  it("任务开着时诊断换一种说法 —— 那只是还没轮到,不是关着", () => {
+    const db = freshDb();
+    seedMessage(db, { session: "s-new", text: "提问", isHuman: true });
+    db.prepare(
+      `INSERT INTO scheduled_tasks (task_key, enabled, interval_seconds, config_json, created_at, updated_at)
+       VALUES ('kimi.tokens.refresh', 1, 3600, '{}', ?, ?)`
+    ).run(AT, AT);
+
+    const { diagnostics } = listKimiDashboardSessions(db);
+    expect(diagnostics.map((x) => x.kind)).toContain("kimi-sessions-pending-index");
+    db.close();
+  });
+});

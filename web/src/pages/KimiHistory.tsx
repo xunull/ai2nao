@@ -10,6 +10,7 @@ import { formatFileTimeMs } from "../util/formatDisplay";
 import {
   ALL_PROJECTS,
   matchesQuery,
+  PENDING_PROJECT_LABEL,
   projectPanel,
   sessionsForProject,
 } from "../kimiHistory/grouping";
@@ -43,6 +44,8 @@ type KimiSession = {
   humanMessageCount: number;
   totalMessageCount: number;
   preview: string;
+  /** false = 只有正文,还没进 token 索引 —— 标题/项目归属暂缺,收进「待索引」。 */
+  tokenIndexed: boolean;
 };
 
 type KimiSessionsResponse = {
@@ -100,9 +103,11 @@ export default function KimiHistory() {
           className="block truncate font-mono text-[11px] text-neutral-600"
           title={row.original.projectPath}
         >
-          {row.original.projectPath === ""
-            ? "—"
-            : row.original.projectPath.split("/").slice(-2).join("/")}
+          {!row.original.tokenIndexed
+            ? PENDING_PROJECT_LABEL
+            : row.original.projectPath === ""
+              ? "—"
+              : row.original.projectPath.split("/").slice(-2).join("/")}
         </span>
       ),
     };
@@ -216,10 +221,14 @@ export default function KimiHistory() {
               <ProjectRow
                 key={g.key}
                 label={g.label}
-                title={g.path || "确定不属于任何工作目录的会话"}
+                title={
+                  g.isPending
+                    ? "只有正文、还没进 token 索引的会话 —— 看上面的诊断"
+                    : g.path || "确定不属于任何工作目录的会话"
+                }
                 count={g.sessionCount}
                 active={g.key === project}
-                muted={g.isUnknown}
+                muted={g.isUnknown || g.isPending}
                 onClick={() => patchParams({ project: g.key })}
               />
             ))}

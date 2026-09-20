@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { apiGet } from "../api";
 import { Page } from "../components/Page";
 import { formatFileTimeMs } from "../util/formatDisplay";
-import { UNKNOWN_PROJECT_LABEL } from "../kimiHistory/grouping";
+import { PENDING_PROJECT_LABEL, UNKNOWN_PROJECT_LABEL } from "../kimiHistory/grouping";
 
 /**
  * 单场 kimi 会话的正文。
@@ -28,7 +28,17 @@ type KimiSession = {
   agentCount: number;
   humanMessageCount: number;
   totalMessageCount: number;
+  tokenIndexed: boolean;
 };
+
+/**
+ * 副标题分三态。空串不能一律当「(未知项目)」——「还没索引到」与「确定没有目录」
+ * 是两件事,见 CONTEXT.md。留白则会让人以为副标题丢了。
+ */
+function subtitleFor(s: KimiSession): string {
+  if (!s.tokenIndexed) return PENDING_PROJECT_LABEL;
+  return s.projectPath || UNKNOWN_PROJECT_LABEL;
+}
 
 type KimiMessage = {
   id: number;
@@ -74,7 +84,7 @@ export default function KimiHistorySession() {
     <Page
       title={s?.title?.trim() || "Kimi 会话"}
       // 空路径 = 确定不属于任何工作目录,不是「没查到」。留白会让人以为副标题丢了。
-      subtitle={s ? s.projectPath || UNKNOWN_PROJECT_LABEL : undefined}
+      subtitle={s ? subtitleFor(s) : undefined}
       fill
       actions={
         <Link
