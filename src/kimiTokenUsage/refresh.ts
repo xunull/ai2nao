@@ -7,6 +7,7 @@ import {
 } from "../kimiHistory/scan.js";
 import { normalizeWorkProjectIdentity } from "../workProjects/identity.js";
 import { parseKimiUsage, type KimiUsageEvent } from "./parse.js";
+import { getKimiTokenUsageState } from "./queries.js";
 import { KIMI_TOKEN_USAGE_RULE_VERSION } from "./types.js";
 
 /**
@@ -55,6 +56,8 @@ export type RefreshKimiTokenUsageResult = {
   durationMs: number;
   /** 目录列举失败 —— 这一轮的结果不完整。 */
   dirListFailure: boolean;
+  /** 因规则版本变化而被强制全量重解析(不是调用方传的 `full`)。 */
+  forcedFullByRuleVersion: boolean;
 };
 
 // 规则版本挪到 ./types.js —— 读取侧(queries.ts)也要用它判断陈旧。
@@ -87,6 +90,15 @@ export function refreshKimiTokenUsage(
 ): RefreshKimiTokenUsageResult {
   const started = Date.now();
   const now = new Date().toISOString();
+
+  // 规则版本变了 = 已入库那些行的派生字段(项目身份、标题、模型)是按旧口径算出来的。
+  // 逐行的跳过判据只比 mtime 与大小,而 wire.jsonl 不会因为我们改代码而变 —— 不强制
+  // 全量就永远刷不掉。在此之前这个机制是空的:版本不符只让读取侧报 `rule_version_mismatch`,
+  // 数据从不重建。空库(state 行还没有)也走这条,反正没有可跳过的行。
+  const forcedFullByRuleVersion =
+    getKimiTokenUsageState(db)?.rule_version !== RULE_VERSION;
+  const full = opts.full === true || forcedFullByRuleVersion;
+
   const { files, dirListFailure } = scanKimiWireFiles({
     cliRoot: opts.cliRoot,
     desktopRoot: opts.desktopRoot,
@@ -183,7 +195,7 @@ export function refreshKimiTokenUsage(
 
     const prev = existing.get(key);
     if (
-      !opts.full &&
+      !full &&
       prev &&
       prev.file_mtime_ms === Math.trunc(f.mtimeMs) &&
       prev.file_size_bytes === size
@@ -316,5 +328,6 @@ export function refreshKimiTokenUsage(
     events: eventCount,
     durationMs,
     dirListFailure,
+    forcedFullByRuleVersion,
   };
 }

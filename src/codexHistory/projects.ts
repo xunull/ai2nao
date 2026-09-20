@@ -4,13 +4,12 @@ import { diagnosticFromError, type CodexDiagnostic } from "./errors.js";
 import { listCodexSessionSummaries } from "./load.js";
 import { codexStateDbPath, resolveCodexRoot } from "./paths.js";
 import { listCodexProjectsFromStateDb, openCodexStateDb } from "./stateDb.js";
+import { UNKNOWN_PROJECT_LABEL } from "../workProjects/identity.js";
 import type {
   CodexListFilters,
   CodexProjectSummary,
   CodexProjectsResult,
 } from "./types.js";
-
-const UNKNOWN_PROJECT = "(未知项目)";
 
 /** 去单个/多个尾斜杠;与 stateDb 的 `rtrim(cwd,'/')` 行为对齐(D2/D3)。 */
 function stripTrailingSlash(s: string): string {
@@ -29,7 +28,7 @@ function toSummary(
   return {
     id: proj,
     path: isUnknown ? "" : proj,
-    name: isUnknown ? UNKNOWN_PROJECT : basename(proj) || proj,
+    name: isUnknown ? UNKNOWN_PROJECT_LABEL : basename(proj) || proj,
     sessionCount,
     lastActiveAt: new Date(lastActiveMs).toISOString(),
   };

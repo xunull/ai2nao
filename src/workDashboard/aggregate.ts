@@ -34,6 +34,7 @@ import { isWorkDurationSource, type WorkDurationSource } from "../workDuration/t
 import type { ChatSession, ChatSessionSummary } from "../cursorHistory/types.js";
 import {
   normalizeWorkProjectIdentity,
+  UNKNOWN_PROJECT_LABEL,
 } from "../workProjects/identity.js";
 import { DASHBOARD_SOURCES, isDashboardSource, SOURCE_COVERAGE_UNITS } from "./types.js";
 import type {
@@ -250,6 +251,9 @@ export function normalizeDashboardProjectPath(
 }
 
 function projectLabel(path: string, used: Map<string, number>): string {
+  // 空路径 = 确定不属于任何目录(kimi 的随手提问走这条)。不拦的话 basename("") 是空串,
+  // 卡片上标题和路径两行全空。见 docs/adr/0001-kimi-unknown-project-identity.md。
+  if (path === "") return UNKNOWN_PROJECT_LABEL;
   const base = basename(path) || path;
   const count = used.get(base) ?? 0;
   used.set(base, count + 1);

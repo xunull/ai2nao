@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { apiGet } from "../api";
 import { Page } from "../components/Page";
 import { formatFileTimeMs } from "../util/formatDisplay";
+import { UNKNOWN_PROJECT_LABEL } from "../kimiHistory/grouping";
 
 /**
  * 单场 kimi 会话的正文。
@@ -49,6 +50,7 @@ function parseTime(value: string): number {
 
 export default function KimiHistorySession() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const [searchParams] = useSearchParams();
 
   const detail = useQuery({
     queryKey: ["kimi-history-session", sessionId],
@@ -62,14 +64,21 @@ export default function KimiHistorySession() {
   const s = detail.data?.session;
   const messages = detail.data?.messages ?? [];
 
+  // 列表页把当时选中的目录写在 `?project=` 里,原样带回去 —— 否则返回后又要重新找一遍。
+  const project = searchParams.get("project") ?? "";
+  const backHref = project
+    ? `/kimi-history?project=${encodeURIComponent(project)}`
+    : "/kimi-history";
+
   return (
     <Page
       title={s?.title?.trim() || "Kimi 会话"}
-      subtitle={s ? s.projectPath : undefined}
+      // 空路径 = 确定不属于任何工作目录,不是「没查到」。留白会让人以为副标题丢了。
+      subtitle={s ? s.projectPath || UNKNOWN_PROJECT_LABEL : undefined}
       fill
       actions={
         <Link
-          to="/kimi-history"
+          to={backHref}
           className="inline-flex h-9 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm transition hover:border-blue-200 hover:bg-slate-50"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { defaultKimiCliRoot } from "../src/kimiHistory/paths.js";
+import { defaultKimiCliRoot, sandboxDefaultWorkDir } from "../src/kimiHistory/paths.js";
 import { scanKimiWireFiles } from "../src/kimiHistory/scan.js";
 import { refreshKimiTokenUsage } from "../src/kimiTokenUsage/refresh.js";
 import { openDatabase } from "../src/store/open.js";
@@ -349,6 +349,82 @@ describe.skipIf(!existsSync(defaultKimiCliRoot()))("kimi token 真实数据对�
       .prepare(`SELECT COUNT(*) n FROM kimi_token_usage_event WHERE fresh_input < 0`)
       .get() as { n: number };
     expect(neg.n).toBe(0);
+    db.close();
+  });
+});
+
+/**
+ * 规则版本改了就必须重刷 —— 见 docs/adr/0001-kimi-unknown-project-identity.md。
+ *
+ * 逐行的跳过判据只比 mtime 与大小,而 wire.jsonl 不会因为我们改代码而变。
+ * 在补上这条之前,bump 规则版本只让读取侧报 stale,数据永远不会重建。
+ */
+describe("规则版本触发重刷", () => {
+  it("版本不符时强制全量重解析,而不是按 mtime 跳过", () => {
+    const db = freshDb();
+    const root = newRoot();
+    writeAgentFile(root, "session_a", "main", [
+      usageLine({ time: 1786169845493, inputOther: 1, output: 1 }),
+    ]);
+    const opts = { cliRoot: root, desktopRoot: emptyRoot() };
+
+    refreshKimiTokenUsage(db, opts);
+    // 文件没动 → 第二轮应当跳过
+    const second = refreshKimiTokenUsage(db, opts);
+    expect(second.skippedUnchanged).toBe(1);
+    expect(second.forcedFullByRuleVersion).toBe(false);
+
+    // 模拟「这一版的规则版本比库里的新」
+    db.prepare(`UPDATE kimi_token_usage_state SET rule_version = rule_version - 1 WHERE id = 1`).run();
+    const third = refreshKimiTokenUsage(db, opts);
+    expect(third.forcedFullByRuleVersion).toBe(true);
+    expect(third.skippedUnchanged).toBe(0);
+    expect(third.indexedAgents).toBe(1);
+
+    // 重刷完版本回到当前值,下一轮恢复跳过
+    const fourth = refreshKimiTokenUsage(db, opts);
+    expect(fourth.forcedFullByRuleVersion).toBe(false);
+    expect(fourth.skippedUnchanged).toBe(1);
+    db.close();
+  });
+
+  it("重刷会更新派生字段 —— 旧口径写下的项目键会被新口径覆盖", () => {
+    const db = freshDb();
+    const root = newRoot();
+    writeAgentFile(root, "session_a", "main", [
+      usageLine({ time: 1786169845493, inputOther: 1, output: 1 }),
+    ]);
+    const opts = { cliRoot: root, desktopRoot: emptyRoot() };
+    refreshKimiTokenUsage(db, opts);
+
+    db.prepare(`UPDATE kimi_agent_token_usage SET project_key = 'kimi:旧口径'`).run();
+    db.prepare(`UPDATE kimi_token_usage_state SET rule_version = rule_version - 1 WHERE id = 1`).run();
+    refreshKimiTokenUsage(db, opts);
+
+    const row = db.prepare(`SELECT project_key FROM kimi_agent_token_usage`).get() as {
+      project_key: string;
+    };
+    expect(row.project_key).toBe("/p/proj");
+    db.close();
+  });
+
+  it("桌面沙箱的无目录会话全部归到 kimi:unknown,路径留空", () => {
+    const db = freshDb();
+    const root = newRoot();
+    // sandboxDefaultWorkDir() 被 kimiProjectPath() 映射成 null → 这里走无目录分支
+    const sandbox = sandboxDefaultWorkDir();
+    writeAgentFile(root, "conv-1", "main", [
+      usageLine({ time: 1786169845493, inputOther: 1, output: 1 }),
+    ], sandbox);
+    writeAgentFile(root, "conv-2", "main", [
+      usageLine({ time: 1786169845494, inputOther: 2, output: 2 }),
+    ], sandbox);
+    refreshKimiTokenUsage(db, { cliRoot: root, desktopRoot: emptyRoot() });
+
+    const rows = db
+      .prepare(`SELECT DISTINCT project_key, project_path FROM kimi_agent_token_usage`)
+      .all() as { project_key: string; project_path: string }[];
+    expect(rows).toEqual([{ project_key: "kimi:unknown", project_path: "" }]);
     db.close();
   });
 });

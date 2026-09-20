@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { KIMI_TOKEN_USAGE_RULE_VERSION } from "../src/kimiTokenUsage/types.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/store/open.js";
 import { CLAUDE_TOKEN_USAGE_RULE_VERSION } from "../src/claudeTokenUsage/types.js";
@@ -137,8 +138,10 @@ function seedKimi(db: Database.Database): void {
        (id, rule_version, last_rebuilt_at, last_error, source_agent_count,
         indexed_agent_count, token_known_agent_count, token_unknown_agent_count,
         error_agent_count, skipped_unchanged_count, duration_ms, updated_at)
-     VALUES (1, 1, ?, null, 1, 1, 1, 0, 0, 0, 5, ?)`
-  ).run(AT, AT);
+     VALUES (1, ?, ?, null, 1, 1, 1, 0, 0, 0, 5, ?)`
+    // 规则版本跟着常量走,不写死 —— 写死的话每次 bump 口径,读取侧都会如实报
+    // rule_version_mismatch,这条用例就会莫名其妙地红。
+  ).run(KIMI_TOKEN_USAGE_RULE_VERSION, AT, AT);
   db.prepare(
     `INSERT INTO agent_user_messages
        (source, source_session_id, source_message_key, project, event_at_utc,

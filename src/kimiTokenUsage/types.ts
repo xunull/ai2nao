@@ -6,10 +6,16 @@
  */
 
 /**
- * 解析规则的版本。改动 `parse.ts` 的口径时 +1,已入库的行会因
- * `rule_version` 不符被判为陈旧并触发重建。
+ * 解析规则的版本。改动 `parse.ts` 的口径、或改动写进 `kimi_agent_token_usage`
+ * 的任何派生字段(项目身份、标题、模型)时 +1。
+ *
+ * 版本不符时 `refreshKimiTokenUsage` 会把那一轮强制当全量跑 —— 逐行的跳过判据
+ * 只比文件 mtime 与大小,不重刷的话代码改了库里还是旧值。
+ *
+ * 2:kimi 无目录会话的项目键从 `kimi:<sessionId>` 改成固定的 `kimi:unknown`、
+ *   路径改成空串。见 docs/adr/0001-kimi-unknown-project-identity.md。
  */
-export const KIMI_TOKEN_USAGE_RULE_VERSION = 1;
+export const KIMI_TOKEN_USAGE_RULE_VERSION = 2;
 
 /** `kimi_token_usage_state` 的一行(V55 建的,主键恒为 1)。 */
 export type KimiTokenUsageStateRow = {

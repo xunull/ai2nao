@@ -141,6 +141,33 @@ function messageIngestState(db: Database.Database): {
   }
 }
 
+/**
+ * 有正文、但不在 token 索引里的会话数。
+ *
+ * 列表的主干是 `kimi_agent_token_usage` —— 这些会话因此在这个页面上根本不存在
+ * (在「对话搜索」里却搜得到),每个目录旁边标的会话数也会因此偏小。成因还没查:
+ * 可能是 wire.jsonl 已被 kimi 自己清掉、也可能是某一轮 token 刷新漏了。
+ * 在查清之前,至少不能让一个已知偏小的数字不加提示地印在界面上。
+ */
+function bodiesWithoutTokenIndex(db: Database.Database): number {
+  try {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM (
+           SELECT DISTINCT source_session_id AS sid
+           FROM agent_user_messages WHERE source = 'kimi'
+         )
+         WHERE sid NOT IN (
+           SELECT session_id FROM kimi_agent_token_usage WHERE missing_since IS NULL
+         )`
+      )
+      .get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  } catch {
+    return 0; // 旧库没有某张表 —— 少报一条诊断,好过整页崩掉
+  }
+}
+
 export function listKimiDashboardSessions(db: Database.Database): {
   sessions: KimiDashboardSessionRow[];
   diagnostics: KimiSessionsDiagnostic[];
@@ -194,6 +221,15 @@ export function listKimiDashboardSessions(db: Database.Database): {
           ? `${withoutBodies.length} 个 kimi 会话在 token 索引里有,但正文一条都没有(${state.detail})`
           : `${withoutBodies.length} 个 kimi 会话缺正文 —— ${state.detail}`,
       count: withoutBodies.length,
+    });
+  }
+
+  const orphanBodies = bodiesWithoutTokenIndex(db);
+  if (orphanBodies > 0) {
+    diagnostics.push({
+      kind: "kimi-bodies-without-token-index",
+      message: `另有 ${orphanBodies} 场会话有正文但不在 token 索引里，没有列在这里（「对话搜索」里仍搜得到），各目录的会话数会因此偏小`,
+      count: orphanBodies,
     });
   }
 

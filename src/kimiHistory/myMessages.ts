@@ -35,8 +35,9 @@ export type KimiFileExtraction = {
  * **唯一的抽取口径。** 以后做 kimi 的会话详情页 / 阅读模式抽屉时也走这里,
  * 不要在别处再写一份判据(claude 那边的 parity 测试就是为这件事存在的)。
  *
- * kimi 不需要像 claude 那样剥控制标签:它的 user 正文是干净的 text part,
- * 注入内容走 origin.kind 区分而不是混在正文里。所以 cleanedText === rawText。
+ * kimi 的注入内容走 origin.kind 区分,不像 claude 那样混在正文里。但桌面版沙箱会给
+ * 每条真人消息加 `<meta>` / `<attachment>` 控制标签,那一层仍要剥 —— 见 normalize.ts
+ * 的 cleanKimiUserText。CLI 侧没有这些标签,那边 cleanedText 与 rawText 相同。
  */
 export function extractKimiMessages(file: KimiWireFile): KimiFileExtraction {
   const st = statSync(file.filePath);
