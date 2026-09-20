@@ -73,6 +73,33 @@ export type TokenSourceAdapter = {
     to: Date,
     granularity: BucketGranularity
   ): SourceCostRow[];
+  /**
+   * **源自己已经算好费用**时实现这个,优先于 `queryCostRows`。
+   *
+   * 为什么需要它:`queryCostRows` 的契约是交出 token 分量,由框架用**当前**的
+   * `model_prices` 重算。对 ai2nao 自己的对话来说那是错的 —— 每笔账在发生时就
+   * 按当时的单价(含按上下文分的档位价)算过并存了快照,趋势页再拿新价重算,
+   * 会让同一笔钱在会话页与趋势页显示不同数字。设计里「不按新价重算」正是这条。
+   *
+   * 两者都不实现的源,token 全部计入 unpriced(**不是 $0**)。
+   */
+  queryPricedRows?(
+    db: Database.Database,
+    from: Date,
+    to: Date,
+    granularity: BucketGranularity
+  ): PricedBucketRow[];
+};
+
+/** 已定价的分桶行:费用由源自己算好,框架不再定价。 */
+export type PricedBucketRow = {
+  bucket_key: string;
+  /** 已定价部分的 USD。 */
+  cost_usd: number;
+  /** 被成功定价的 token 数。 */
+  priced_tokens: number;
+  /** 有 token 但没算出费用的那部分(未定价 / 状态未知 / 还在进行中)。 */
+  unpriced_tokens: number;
 };
 
 const ZERO_PREV: SourcePrevWindowRow = {
@@ -624,6 +651,153 @@ const opencodeAdapter: TokenSourceAdapter = {
   // 展示出来比不显示更误导。所以 token 全部计入 unpriced,与 kimi/minimax 一致。
 };
 
+// ── ai2nao 自己的对话 ────────────────────────────────────────────────────────
+
+/**
+ * 账目行的 message_id 前缀,**直接拼进 SQL 而不是当参数传**。
+ *
+ * 它是编译期常量、不含任何用户输入,没有注入面;做成参数反而会让子查询的 `?`
+ * 与主查询的 `?` 挤进同一条位置参数序列 —— 顺序写错不报错,只是查不到数据。
+ * 少一个参数就少一次错位的机会。
+ */
+const CALL_ROW_LIKE = "ai2nao:call:%";
+
+/**
+ * 两段式查询的第一段。
+ *
+ * `llm_chat_messages` 上没有时间索引,按时间直接过滤要跨过每条消息的大 `raw_json`。
+ * 改为先挑出窗口内有活动的会话,再借 `idx_llm_chat_messages_session_role`
+ * 只取这些会话的 activity 行 —— 省掉的是**扫大行**,这才是这里的开销所在。
+ *
+ * ⚠️ **第一段是全表扫 `llm_chat_sessions`,用不上 `idx_llm_chat_sessions_recent`。**
+ * `COALESCE(last_message_at, updated_at)` 把列包进了函数,谓词就不可索引了。
+ * 这是**有意接受**的:会话表每场对话一行,扫它是微秒级;为凑索引改写成
+ * `last_message_at >= ? OR (last_message_at IS NULL AND updated_at >= ?)`
+ * 属于给非瓶颈处做投机优化,还可能让计划变差。写在这里是免得后来人
+ * 以为索引坏了 —— `EXPLAIN QUERY PLAN` 实测就是 `SCAN llm_chat_sessions`。
+ *
+ * 真正要守住的是「不要裸扫 `llm_chat_messages`」,那条有测试钉着。
+ *
+ * **不加上界。** 会话在窗口内有账目、之后仍在继续用时,它的最后活动时间会落在
+ * `to` 之后;写成 `BETWEEN` 会把这些会话连同窗口内的账目一起漏掉。
+ */
+const SESSIONS_SINCE = `SELECT id FROM llm_chat_sessions
+                                 WHERE COALESCE(last_message_at, updated_at) >= ?`;
+
+/**
+ * 从账目行里取一个用量分量。**两层 `json_extract`** —— `raw_json` 是消息信封,
+ * 它的 `content` 存的是**字符串化**的 `ChatCall`。只解一层不报错,只会恒得 null,
+ * 于是整列静静地恒为 0。
+ */
+function callField(path: string): string {
+  return `COALESCE(json_extract(json_extract(m.raw_json, '$.content'), '${path}'), 0)`;
+}
+
+/** 三条窗口查询共用的过滤。位置参数依次是:会话起点、桶起点、桶终点。 */
+const CALL_ROWS_IN_WINDOW = `FROM llm_chat_messages m
+          WHERE m.session_id IN (${SESSIONS_SINCE})
+            AND m.role = 'activity'
+            AND m.message_id LIKE '${CALL_ROW_LIKE}'
+            AND m.created_at >= ? AND m.created_at < ?`;
+
+const ai2naoChatAdapter: TokenSourceAdapter = {
+  key: "ai2nao-chat",
+  capabilities: {
+    cacheRead: true,
+    cacheCreation: true,
+    reasoningOutput: true,
+    // 账目行是 ai2nao 自己写的,不存在「扫描失败」或「解析不出」——
+    // 三态计数对它**不适用**,不是「恒为 0」。与 MiniMax 同理。
+    coverageUnit: null,
+  },
+
+  /**
+   * 判据是「这台机器上产生过账目吗」。对话表由 migration 统一建,永远存在,
+   * 所以不能用 `everPresent` 那套「表里有没有行」—— 有对话不等于有账目
+   * (账目是这次改动之后才开始写的,老会话一行都没有)。
+   */
+  probePresence: (db) =>
+    Boolean(
+      db
+        .prepare(
+          `SELECT 1 FROM llm_chat_messages
+            WHERE role = 'activity' AND message_id LIKE '${CALL_ROW_LIKE}' LIMIT 1`
+        )
+        .get()
+    ),
+
+  queryBuckets(db, from, to, granularity) {
+    return db
+      .prepare(
+        `SELECT ${bucketExpr(granularity, "m.created_at")} AS bucket_key,
+                COALESCE(SUM(${callField("$.usage.noCache")}), 0) AS fresh_input,
+                COALESCE(SUM(${callField("$.usage.cacheRead")}), 0) AS cache_read_input,
+                COALESCE(SUM(${callField("$.usage.cacheWrite")}), 0) AS cache_creation_input,
+                COALESCE(SUM(${callField("$.usage.output")}), 0) AS output,
+                COALESCE(SUM(${callField("$.usage.reasoning")}), 0) AS reasoning_output,
+                0 AS session_count, 0 AS full_count, 0 AS unknown_count, 0 AS error_count
+           ${CALL_ROWS_IN_WINDOW}
+          GROUP BY bucket_key
+          ORDER BY bucket_key ASC`
+      )
+      .all(from.toISOString(), from.toISOString(), to.toISOString()) as SourceBucketRow[];
+  },
+
+  queryPrevWindow(db, from, to) {
+    const row = db
+      .prepare(
+        `SELECT COALESCE(SUM(${callField("$.usage.noCache")}), 0) AS fresh_input,
+                COALESCE(SUM(${callField("$.usage.cacheRead")}), 0) AS cache_read_input,
+                COALESCE(SUM(${callField("$.usage.cacheWrite")}), 0) AS cache_creation_input,
+                COALESCE(SUM(${callField("$.usage.output")}), 0) AS output
+           ${CALL_ROWS_IN_WINDOW}`
+      )
+      .get(from.toISOString(), from.toISOString(), to.toISOString()) as SourcePrevWindowRow;
+    return row ?? ZERO_PREV;
+  },
+
+  queryMonthRange(db) {
+    return monthRangeOf(
+      db,
+      `SELECT MIN(strftime('%Y-%m', created_at, 'localtime')) AS earliest,
+              MAX(strftime('%Y-%m', created_at, 'localtime')) AS latest
+         FROM llm_chat_messages
+        WHERE role = 'activity' AND message_id LIKE '${CALL_ROW_LIKE}'`
+    );
+  },
+
+  /**
+   * **费用由源自己出,不交给框架按当前价格表重算。**
+   *
+   * 每笔账在发生时就按当时的单价(含按上下文分的档位价)算过并存了快照。
+   * 走 `queryCostRows` 的话框架会拿今天的 `model_prices` 重算,于是同一笔钱
+   * 在会话页和趋势页显示两个数字 —— 设计里「不按新价重算」正是这条。
+   *
+   * priced / unpriced 的划分要能让 `costStateOf` 推出 full / partial / none:
+   * 出得来费用的(priced / partial)进 priced,其余(unpriced / unknown /
+   * pending)进 unpriced。**不能把没定价的当成 $0**,那会谎报「全部已定价」。
+   */
+  queryPricedRows(db, from, to, granularity) {
+    const state = `json_extract(json_extract(m.raw_json, '$.content'), '$.costState')`;
+    const tokens =
+      `(${callField("$.usage.noCache")} + ${callField("$.usage.cacheRead")}` +
+      ` + ${callField("$.usage.cacheWrite")} + ${callField("$.usage.output")})`;
+    return db
+      .prepare(
+        `SELECT ${bucketExpr(granularity, "m.created_at")} AS bucket_key,
+                COALESCE(SUM(${callField("$.costUsd")}), 0) AS cost_usd,
+                COALESCE(SUM(CASE WHEN ${state} IN ('priced','partial')
+                                  THEN ${tokens} ELSE 0 END), 0) AS priced_tokens,
+                COALESCE(SUM(CASE WHEN ${state} IN ('priced','partial')
+                                  THEN 0 ELSE ${tokens} END), 0) AS unpriced_tokens
+           ${CALL_ROWS_IN_WINDOW}
+          GROUP BY bucket_key
+          ORDER BY bucket_key ASC`
+      )
+      .all(from.toISOString(), from.toISOString(), to.toISOString()) as PricedBucketRow[];
+  },
+};
+
 /** 注册表。**顺序 = 前端柱子的堆叠顺序,也是 `TOKEN_SOURCES` 的顺序。** */
 export const ADAPTERS: Record<TokenSourceKey, TokenSourceAdapter> = {
   claude: claudeAdapter,
@@ -631,4 +805,5 @@ export const ADAPTERS: Record<TokenSourceKey, TokenSourceAdapter> = {
   minimax: minimaxAdapter,
   kimi: kimiAdapter,
   opencode: opencodeAdapter,
+  "ai2nao-chat": ai2naoChatAdapter,
 };

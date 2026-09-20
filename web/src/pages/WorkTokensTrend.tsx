@@ -37,7 +37,7 @@ type Coverage = "full" | "partial" | "unknown";
  * ⚠️ web/ 与 src/ 是两套 tsconfig,前端不 import 后端类型 —— 也就是说
  * **两个 typecheck 都抓不到这里与后端 DTO 的漂移**。改后端形状时必须手动同步这里。
  */
-const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi", "opencode"] as const;
+const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi", "opencode", "ai2nao-chat"] as const;
 type TokenSourceKey = (typeof TOKEN_SOURCES)[number];
 
 /** 展示名与柱色。柱色是既有的,**不许改** —— 用户认这个颜色。 */
@@ -52,6 +52,9 @@ const SOURCE_META: Record<TokenSourceKey, { label: string; color: string }> = {
   // minimax 的紫,所以换 opencode,并且 /agent-messages 一起换成青,
   // 维持「用户在两个页面上认同一个颜色」。
   opencode: { label: "opencode", color: "#0d9488" },
+  // 粉。避开已占的橙/蓝/紫/绿/青,也避开 amber —— 本页 amber 专用于警示,
+  // 拿它当柱色会让「超预算」那类提示失去唯一含义。
+  "ai2nao-chat": { label: "ai2nao 对话", color: "#db2777" },
 };
 
 /** ok = 查到了(哪怕 0 行);failed = 查询抛了(表坏);absent = 这台机器没这个源。 */

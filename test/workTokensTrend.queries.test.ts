@@ -247,7 +247,8 @@ describe("mergeAndZeroFill", () => {
     ...o,
   });
   const empty = () => new Map<string, SourceBucketRow>();
-  const allOk = { claude: "ok", codex: "ok", minimax: "ok", kimi: "ok", opencode: "ok" } as const;
+  const allOk = { claude: "ok", codex: "ok", minimax: "ok", kimi: "ok", opencode: "ok",
+    "ai2nao-chat": "ok" } as const;
 
   it("某个源缺某个桶时补零,不是丢桶", () => {
     const merged = mergeAndZeroFill(
@@ -258,6 +259,7 @@ describe("mergeAndZeroFill", () => {
         minimax: empty(),
         kimi: empty(),
         opencode: empty(),
+        "ai2nao-chat": empty(),
       },
       allOk
     );
@@ -278,6 +280,7 @@ describe("mergeAndZeroFill", () => {
         minimax: empty(),
         kimi: empty(),
         opencode: empty(),
+        "ai2nao-chat": empty(),
       },
       allOk
     );
@@ -296,7 +299,8 @@ describe("mergeAndZeroFill", () => {
   it("state 逐源带下去 —— failed 不会被补零成 ok", () => {
     const merged = mergeAndZeroFill(
       buckets,
-      { claude: empty(), codex: empty(), minimax: empty(), kimi: empty(), opencode: empty() },
+      { claude: empty(), codex: empty(), minimax: empty(), kimi: empty(), opencode: empty(),
+        "ai2nao-chat": empty() },
       { claude: "ok", codex: "failed", minimax: "absent", kimi: "absent" }
     );
     expect(merged[0]!.sources.claude.state).toBe("ok");
@@ -437,6 +441,7 @@ describe("input/output breakdown (2×3 matrix data)", () => {
           minimax: mk({}),
           kimi: mk({}),
           opencode: mk({}),
+          "ai2nao-chat": mk({}),
         },
       },
     ]);
@@ -474,6 +479,7 @@ describe("computeTotals —— 三态覆盖", () => {
       minimax: emptyUsage("absent"),
       kimi: emptyUsage("absent"),
       opencode: emptyUsage("absent"),
+      "ai2nao-chat": emptyUsage("absent"),
     },
   });
 
@@ -542,6 +548,7 @@ describe("computeTotals —— 三态覆盖", () => {
           minimax: { ...emptyUsage("ok"), sessionCount: 99, coveredSessionCount: 99 },
           kimi: emptyUsage("absent"),
           opencode: emptyUsage("absent"),
+          "ai2nao-chat": emptyUsage("absent"),
         },
       },
     ]);

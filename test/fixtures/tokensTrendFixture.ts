@@ -224,6 +224,78 @@ function seedOpencode(db: Database.Database, r: OpencodeSeed): void {
  * 跨 4 个自然月(月份选择器与 monthRange 都要有东西可选)。
  * 中间刻意留了空桶(08-16 一整天没有任何源的数据)。
  */
+type ChatCallSeed = {
+  session: string;
+  /** 会话最后活动时间。**允许晚于账目时间** —— 见下面「仍在继续用的会话」。 */
+  lastMessageAt: string;
+  calls: {
+    at: string;
+    costState: "priced" | "partial" | "unpriced" | "unknown" | "pending";
+    costUsd: number | null;
+    usage: {
+      noCache: number; cacheRead: number; cacheWrite: number; output: number; reasoning: number;
+    } | null;
+  }[];
+};
+
+/**
+ * ai2nao 自己的对话账目。**一比一复刻生产写入的形状**:
+ * 服务端专有行 `ai2nao:call:<id>`、`role='activity'`、`message_index` 从
+ * `CALL_ROW_INDEX_BASE`(2e6)起,`raw_json` 是消息信封而它的 `content` 是
+ * **字符串化**的 ChatCall。adapter 要解两层 json —— 夹具少套一层就测不到那个坑,
+ * 而少套一层恰恰不会报错,只会让整列静静地恒为 0。
+ */
+function seedAi2naoChat(db: Database.Database, s: ChatCallSeed): void {
+  db.prepare(
+    `INSERT INTO llm_chat_sessions
+       (id, title, created_at, updated_at, last_message_at, message_count)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(s.session, `fx ${s.session}`, s.calls[0]!.at, s.lastMessageAt, s.lastMessageAt, s.calls.length);
+
+  s.calls.forEach((c, i) => {
+    const callId = `${s.session}-c${i}`;
+    const messageId = `ai2nao:call:${callId}`;
+    const call = {
+      v: 1,
+      callId,
+      runId: `${s.session}-r`,
+      fence: 1,
+      purpose: "answer",
+      stepIndex: 0,
+      attempt: 1,
+      status: "done",
+      ownerInstanceId: "fx",
+      model: { modelId: FX_MODEL_PRICED, provider: "fixture", model: FX_MODEL_PRICED, label: "fx" },
+      usage: c.usage,
+      // 单价快照。费用取账目里存的 costUsd,**不按价格表重算**,所以这里留 null 也无妨。
+      price: null,
+      costUsd: c.costUsd,
+      costState: c.costState,
+      startedAt: c.at,
+      endedAt: c.at,
+    };
+    db.prepare(
+      `INSERT INTO llm_chat_messages
+         (id, session_id, message_id, message_index, role, raw_json,
+          plain_text, preview, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'activity', ?, '', '[activity]', 'done', ?, ?)`
+    ).run(
+      `${s.session}:${messageId}`,
+      s.session,
+      messageId,
+      2_000_000 + i,
+      JSON.stringify({
+        id: messageId,
+        role: "activity",
+        activityType: "ai2nao.call",
+        content: JSON.stringify(call),
+      }),
+      c.at,
+      c.at
+    );
+  });
+}
+
 export function buildTokensTrendFixture(): Database.Database {
   const dir = mkdtempSync(join(tmpdir(), "ai2nao-trend-golden-"));
   const db = openDatabase(join(dir, "fixture.db"));
@@ -300,6 +372,34 @@ export function buildTokensTrendFixture(): Database.Database {
   // 已归档:整场排除(与 opencode 自己的列表口径一致)
   seedOpencode(db, { session: "o-archived", updated: "2026-08-15T05:00:00.000Z", fresh: 666666, output: 666666, cacheRead: 0, cacheCreation: 0, archived: true });
   seedOpencode(db, { session: "o-jun", updated: "2026-06-13T06:00:00.000Z", fresh: 180, output: 20, cacheRead: 900, cacheCreation: 100 });
+
+  // ── ai2nao 自己的对话 ───────────────────────────────────────────────────
+  // 账目三态:已定价 / 无价 / 还在进行中。三者在 costStateOf 里分别推出
+  // full / none / none,凑不齐就测不到 partial 与 none 的分界。
+  seedAi2naoChat(db, {
+    session: "chat-s1",
+    lastMessageAt: "2026-08-19T08:00:00.000Z",
+    calls: [
+      { at: "2026-08-19T08:00:00.000Z", costState: "priced", costUsd: 0.0123,
+        usage: { noCache: 1200, cacheRead: 3000, cacheWrite: 500, output: 400, reasoning: 150 } },
+      { at: "2026-08-18T11:00:00.000Z", costState: "unpriced", costUsd: null,
+        usage: { noCache: 800, cacheRead: 0, cacheWrite: 0, output: 200, reasoning: 0 } },
+      // pending:usage 还没回来。双层 json_extract 取到 null,必须当 0 ——
+      // 少一层 COALESCE 这里就会把整桶变成 null。
+      { at: "2026-08-17T13:00:00.000Z", costState: "pending", costUsd: null, usage: null },
+    ],
+  });
+  // **仍在继续用的会话**:账目落在 6 月,最后活动时间却在 8 月。
+  // adapter 第一段若写成 `BETWEEN from AND to`,6 月窗口会把整个会话漏掉。
+  // 这一条就是钉死那个判断的回归样本。
+  seedAi2naoChat(db, {
+    session: "chat-s2",
+    lastMessageAt: "2026-08-19T09:00:00.000Z",
+    calls: [
+      { at: "2026-06-14T07:00:00.000Z", costState: "priced", costUsd: 0.004,
+        usage: { noCache: 300, cacheRead: 900, cacheWrite: 100, output: 90, reasoning: 20 } },
+    ],
+  });
 
   // 2026-08-16 整天没有任何源的数据 —— 空桶分支,zero-fill 必须补出这一格。
   return db;
@@ -381,6 +481,19 @@ export function assertFixtureCoverage(db: Database.Database): CoverageCombo[] {
         UNION SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') FROM kimi_agent_token_usage WHERE missing_since IS NULL
         UNION SELECT DISTINCT strftime('%Y-%m', last_updated_at, 'localtime') FROM opencode_session WHERE archived_at IS NULL
       ) WHERE m IS NOT NULL`),
+    // ai2nao 对话 × 账目三态。它没有 session 三态概念(账目是自己写的,不存在
+    // 「解析失败」),取而代之的是 costState 分档。
+    one("ai2nao-chat/costState=priced", `SELECT COUNT(*) n FROM llm_chat_messages WHERE role='activity' AND message_id LIKE 'ai2nao:call:%' AND json_extract(json_extract(raw_json,'$.content'),'$.costState')='priced'`),
+    one("ai2nao-chat/costState=unpriced", `SELECT COUNT(*) n FROM llm_chat_messages WHERE role='activity' AND message_id LIKE 'ai2nao:call:%' AND json_extract(json_extract(raw_json,'$.content'),'$.costState')='unpriced'`),
+    one("ai2nao-chat/pending 且 usage 为 null", `SELECT COUNT(*) n FROM llm_chat_messages WHERE role='activity' AND message_id LIKE 'ai2nao:call:%' AND json_extract(json_extract(raw_json,'$.content'),'$.costState')='pending' AND json_extract(json_extract(raw_json,'$.content'),'$.usage') IS NULL`),
+    one("ai2nao-chat/cacheWrite 非零", `SELECT COUNT(*) n FROM llm_chat_messages WHERE role='activity' AND message_id LIKE 'ai2nao:call:%' AND json_extract(json_extract(raw_json,'$.content'),'$.usage.cacheWrite') > 0`),
+    // 会话仍在继续用 —— 账目的月份早于会话最后活动的月份。
+    // 第一段过滤若加了上界,这一行会在它自己那个月的窗口里消失。
+    one("ai2nao-chat/账目早于会话最后活动(仍在继续用)", `
+      SELECT COUNT(*) n FROM llm_chat_messages m
+        JOIN llm_chat_sessions s ON s.id = m.session_id
+       WHERE m.role='activity' AND m.message_id LIKE 'ai2nao:call:%'
+         AND strftime('%Y-%m', m.created_at) < strftime('%Y-%m', s.last_message_at)`),
     // 价格表本身
     one("price/model_prices 有行", `SELECT COUNT(*) n FROM model_prices`),
   ];

@@ -169,7 +169,11 @@ export function computeTotals(buckets: WorkTokensTrendBucket[]): WorkTokensTrend
 
 /**
  * 定价。逐源逐 (桶, 模型) 算,没有价格条目的模型**不当成 $0**,
- * 它的 token 进 `unpricedTokens`。没有 `queryCostRows` 的源(MiniMax)全部 unpriced。
+ * 它的 token 进 `unpricedTokens`。
+ *
+ * 三种源,三条路:**自带费用的**(`queryPricedRows`,ai2nao 对话)原样带出不重算;
+ * **交 token 分量的**(`queryCostRows`,claude/codex)由这里按价格表算;
+ * **两个都不实现的**(MiniMax/kimi/opencode)全部 unpriced —— **不是 $0**。
  */
 export function priceCostByBucket(
   db: Database.Database,
@@ -199,6 +203,17 @@ export function priceCostByBucket(
 
   for (const key of TOKEN_SOURCES) {
     const adapter = ADAPTERS[key];
+    // **源自带费用的优先走这条。** 它已经在账目发生时按当时单价(含分段价)算过,
+    // 这里再用当前价格表重算,会让同一笔钱在两个页面显示不同数字。
+    if (adapter.queryPricedRows) {
+      for (const r of adapter.queryPricedRows(db, from, to, granularity)) {
+        const cell = slot(r.bucket_key)[key];
+        cell.costUsd += r.cost_usd;
+        cell.priced += r.priced_tokens;
+        cell.unpriced += r.unpriced_tokens;
+      }
+      continue;
+    }
     if (!adapter.queryCostRows) continue; // 无定价概念 → 由下方 unpriced 兜底
     for (const r of adapter.queryCostRows(db, from, to, granularity)) {
       const tokens = r.fresh + r.cache_hit + r.cache_creation + r.output;

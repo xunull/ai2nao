@@ -215,7 +215,12 @@ export function enumerateAndAggregate(
       const cell = costKey ? cost.byBucket.get(costKey) : undefined;
       for (const key of TOKEN_SOURCES) {
         const u = b.sources[key];
-        if (!ADAPTERS[key].queryCostRows) {
+        const adapter = ADAPTERS[key];
+        // **两种定价方式都算「有定价能力」**:框架按价格表重算(`queryCostRows`),
+        // 或源自己交出已算好的费用(`queryPricedRows`)。只问前一个的话,
+        // 自带费用的源会被误判成「没有定价概念」,token 全进 unpriced、
+        // 费用恒为 0 —— 而 token 数字一切正常,看着像账本是空的。
+        if (!adapter.queryCostRows && !adapter.queryPricedRows) {
           // 该源根本没有定价概念(订阅套餐、价格表没这个模型)——
           // 它的 token 全部算「无定价」,**不是 $0**。
           //

@@ -58,7 +58,9 @@ export type { WindowKey, BucketGranularity, MonthKey };
  * 趋势页认的源。**加一个源 = 这里加一项 + 注册一个 adapter + 前端 SOURCE_META 加一项。**
  * 顺序即前端柱子的堆叠顺序。
  */
-export const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi", "opencode"] as const;
+// **加在末尾。** 这个数组的顺序就是前端柱子的堆叠顺序,插在中间会把既有源
+// 的位置全部挪一遍 —— 用户认的是那个位置。
+export const TOKEN_SOURCES = ["claude", "codex", "minimax", "kimi", "opencode", "ai2nao-chat"] as const;
 export type TokenSourceKey = (typeof TOKEN_SOURCES)[number];
 
 /** 展示用名字。前端的 SOURCE_META 另有配色,名字以这里为准。 */
@@ -68,6 +70,7 @@ export const SOURCE_LABELS: Record<TokenSourceKey, string> = {
   minimax: "MiniMax",
   kimi: "Kimi",
   opencode: "opencode",
+  "ai2nao-chat": "ai2nao 对话",
 };
 
 /**

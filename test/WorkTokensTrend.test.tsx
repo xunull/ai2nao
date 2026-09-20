@@ -73,6 +73,7 @@ const CAPS = {
   minimax: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: null },
   kimi: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: "agent" },
   opencode: { cacheRead: true, cacheCreation: true, reasoningOutput: false, coverageUnit: "session" },
+  "ai2nao-chat": { cacheRead: true, cacheCreation: true, reasoningOutput: true, coverageUnit: null },
 };
 
 const WINDOW_OK = {
@@ -109,6 +110,7 @@ const WINDOW_OK = {
         minimax: usage(),
         kimi: usage({ state: "absent" as const }),
         opencode: usage({ state: "absent" as const }),
+        "ai2nao-chat": usage({ state: "absent" as const }),
       },
     },
   ],
@@ -145,6 +147,7 @@ const WINDOW_OK = {
       minimax: { ...usage({ state: "absent" as const }), share: 0 },
       kimi: { ...usage({ state: "absent" as const }), share: 0 },
       opencode: { ...usage({ state: "absent" as const }), share: 0 },
+      "ai2nao-chat": { ...usage({ state: "absent" as const }), share: 0 },
     },
     costState: {
       claude: "full" as const,
@@ -152,6 +155,7 @@ const WINDOW_OK = {
       minimax: "none" as const,
       kimi: "none" as const,
       opencode: "none" as const,
+      "ai2nao-chat": "none" as const,
     },
     coverageUnit: "session" as const,
     totalCostUsd: 1.2345,
@@ -171,6 +175,7 @@ const WINDOW_OK = {
       minimax: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
       kimi: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
       opencode: { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
+      "ai2nao-chat": { totalTokens: 0, freshInput: 0, cacheReadInput: 0, cacheCreationInput: 0 },
     },
   },
   deltaRatio: 0.5,
@@ -195,6 +200,7 @@ const MONTH_OK = {
       minimax: { ...usage({ state: "absent" as const }), share: 0 },
       kimi: { ...usage({ state: "absent" as const }), share: 0 },
       opencode: { ...usage({ state: "absent" as const }), share: 0 },
+      "ai2nao-chat": { ...usage({ state: "absent" as const }), share: 0 },
     },
     costState: {
       claude: "none" as const,
@@ -202,6 +208,7 @@ const MONTH_OK = {
       minimax: "none" as const,
       kimi: "none" as const,
       opencode: "none" as const,
+      "ai2nao-chat": "none" as const,
     },
     coverageUnit: null,
     totalCostUsd: 0,
@@ -422,6 +429,7 @@ describe("WorkTokensTrend page", () => {
             minimax: { ...usage({ state: "absent" as const }), share: 0 },
             kimi: { ...usage({ state: "absent" as const }), share: 0 },
       opencode: { ...usage({ state: "absent" as const }), share: 0 },
+      "ai2nao-chat": { ...usage({ state: "absent" as const }), share: 0 },
           },
         },
       })

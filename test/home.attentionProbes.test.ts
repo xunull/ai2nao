@@ -32,6 +32,7 @@ function ctxWithTokens(tokens: number, now = NOW): ProbeContext {
       minimax: emptyUsage("ok" as const),
       kimi: emptyUsage("absent" as const),
       opencode: emptyUsage("absent" as const),
+      "ai2nao-chat": emptyUsage("absent" as const),
     },
     codexTokens: 0,
     minimaxTokens: 0,
