@@ -2,6 +2,7 @@ import {
   CopilotChat,
   CopilotChatAssistantMessage,
   CopilotChatInput,
+  CopilotChatReasoningMessage,
   CopilotChatUserMessage,
   CopilotKit,
   useDefaultRenderTool,
@@ -27,6 +28,18 @@ import { assistantModelLabel, resolveChatModel } from "../aiChat/modelPicker";
 import { visionGate } from "../aiChat/visionGate";
 import { ChatImageGrid } from "../aiChat/ChatImageGrid";
 import { imagesFromContent } from "../aiChat/imageGrid";
+import { formatUsd } from "../util/formatDisplay";
+import { AiChatUsageProvider } from "../aiChat/usageContext";
+import { ChatContextBar } from "../aiChat/ChatContextBar";
+import { ChatUsageRow } from "../aiChat/ChatUsageRow";
+import { ChatReasoningHeader } from "../aiChat/ChatReasoningHeader";
+import { compactionActivityRenderer } from "../aiChat/CompactionDivider";
+
+/**
+ * 必须是模块级常量。内联在 JSX 里每次渲染都是新数组 —— CopilotKit 会报
+ * 「renderActivityMessages must be a stable array」(2026-09-18 真实浏览器走查时撞上)。
+ */
+const ACTIVITY_RENDERERS = [compactionActivityRenderer];
 
 function StatusPill({ label, tone }: { label: string; tone: "ok" | "warn" | "idle" }) {
   const cls =
@@ -246,6 +259,12 @@ function truncateOutput(value: string | undefined, maxChars = 1200): string {
   return value.length > maxChars ? `${value.slice(0, maxChars)}\n...` : value;
 }
 
+/*
+ * 间距、边框类带 `!`;按钮与输入框的背景、圆角也带。这张卡片渲染在聊天区里,CopilotKit 的
+ * `[data-copilotkit] *` 重置会把 margin / padding / border 清零,`[data-copilotkit] button`
+ * 还把按钮背景设成透明 —— 「批准」是 bg-neutral-950 + text-white,不加 `!` 就成了白底白字
+ * (2026-09-19 走查实测命令框 padding 为 0;详见 ChatContextBar)。
+ */
 function BashToolCallCard({
   toolCallId,
   command,
@@ -387,7 +406,7 @@ function BashToolCallCard({
           <div style={{ marginTop: "12px", display: "grid", gap: "12px" }}>
             <div>
               <div className="text-[10px] font-medium uppercase text-neutral-500">Arguments</div>
-              <pre className="mt-1.5 max-h-[200px] overflow-auto rounded-md bg-neutral-100 p-2.5 font-mono text-[11px] leading-5 text-neutral-800 whitespace-pre-wrap break-words">
+              <pre className="!mt-1.5 max-h-[200px] overflow-auto rounded-md bg-neutral-100 !p-2.5 font-mono text-[11px] leading-5 text-neutral-800 whitespace-pre-wrap break-words">
                 {JSON.stringify(
                   {
                     command: commandText,
@@ -402,10 +421,10 @@ function BashToolCallCard({
             </div>
 
             {isWaiting && approval ? (
-              <div className="grid gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="grid gap-3 rounded-md !border !border-amber-200 bg-amber-50 !px-3 !py-2">
                 <div className="min-w-0 text-xs text-amber-950">
                   <div className="font-medium">需要确认后才会执行该 Shell 命令。</div>
-                  {approvalError ? <div className="mt-1 truncate">{approvalError}</div> : null}
+                  {approvalError ? <div className="!mt-1 truncate">{approvalError}</div> : null}
                 </div>
                 {suggestedRules.length > 0 ? (
                   <label className="grid gap-1 text-xs text-amber-950">
@@ -413,7 +432,7 @@ function BashToolCallCard({
                     <input
                       value={rememberRuleContent}
                       onChange={(event) => setRememberRuleContent(event.currentTarget.value)}
-                      className="h-8 rounded-md border border-amber-200 bg-white px-2 font-mono text-[11px] text-neutral-800 outline-none focus:border-amber-400"
+                      className="h-8 !rounded-md !border !border-amber-200 !bg-white !px-2 font-mono text-[11px] text-neutral-800 outline-none focus:border-amber-400"
                     />
                   </label>
                 ) : null}
@@ -424,7 +443,7 @@ function BashToolCallCard({
                       event.stopPropagation();
                       void onDecision(approval.id, "deny");
                     }}
-                    className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                    className="h-8 !rounded-md !border !border-neutral-300 !bg-white !px-3 text-xs font-medium text-neutral-700 hover:!bg-neutral-50"
                   >
                     拒绝
                   </button>
@@ -434,7 +453,7 @@ function BashToolCallCard({
                       event.stopPropagation();
                       void onDecision(approval.id, "approve");
                     }}
-                    className="h-8 rounded-md bg-neutral-950 px-3 text-xs font-medium text-white hover:bg-neutral-800"
+                    className="h-8 !rounded-md !bg-neutral-950 !px-3 text-xs font-medium text-white hover:!bg-neutral-800"
                   >
                     本次执行
                   </button>
@@ -448,7 +467,7 @@ function BashToolCallCard({
                           ruleType: rememberRuleContent.trim().endsWith(":*") ? "prefix" : "exact",
                         });
                       }}
-                      className="h-8 rounded-md bg-emerald-700 px-3 text-xs font-medium text-white hover:bg-emerald-800"
+                      className="h-8 !rounded-md !bg-emerald-700 !px-3 text-xs font-medium text-white hover:!bg-emerald-800"
                     >
                       执行并记住
                     </button>
@@ -460,7 +479,7 @@ function BashToolCallCard({
             {debug ? (
               <div>
                 <div className="text-[10px] font-medium uppercase text-neutral-500">Permission Debug</div>
-                <pre className="mt-1.5 max-h-[180px] overflow-auto rounded-md bg-neutral-100 p-2.5 font-mono text-[11px] leading-5 text-neutral-700 whitespace-pre-wrap break-words">
+                <pre className="!mt-1.5 max-h-[180px] overflow-auto rounded-md bg-neutral-100 !p-2.5 font-mono text-[11px] leading-5 text-neutral-700 whitespace-pre-wrap break-words">
                   {JSON.stringify(
                     {
                       mode: debug.mode,
@@ -479,7 +498,7 @@ function BashToolCallCard({
             ) : null}
 
             {parsedResult?.approval?.savedRule ? (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              <div className="rounded-md !border !border-emerald-200 bg-emerald-50 !px-3 !py-2 text-xs text-emerald-900">
                 已保存规则：{parsedResult.approval.savedRule.ruleContent}
                 {parsedResult.approval.savedRule.scopeType === "directory"
                   ? `（目录：${parsedResult.approval.savedRule.scopeValue}）`
@@ -490,19 +509,19 @@ function BashToolCallCard({
             {status === "complete" && parsedResult ? (
               <div>
                 <div className="text-[10px] font-medium uppercase text-neutral-500">Result</div>
-                <div className="mt-1.5 grid gap-2">
+                <div className="!mt-1.5 grid gap-2">
                   {parsedResult.deniedReason ? (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+                    <div className="rounded-md !border !border-red-200 bg-red-50 !px-3 !py-2 text-xs text-red-900">
                       {parsedResult.deniedReason}
                     </div>
                   ) : null}
                   {stdout ? (
-                    <pre className="max-h-48 overflow-auto rounded-md bg-neutral-100 px-3 py-2 font-mono text-xs leading-5 text-neutral-800 whitespace-pre-wrap break-words">
+                    <pre className="max-h-48 overflow-auto rounded-md bg-neutral-100 !px-3 !py-2 font-mono text-xs leading-5 text-neutral-800 whitespace-pre-wrap break-words">
                       {stdout}
                     </pre>
                   ) : null}
                   {stderr ? (
-                    <pre className="max-h-48 overflow-auto rounded-md bg-red-50 px-3 py-2 font-mono text-xs leading-5 text-red-900 whitespace-pre-wrap break-words">
+                    <pre className="max-h-48 overflow-auto rounded-md bg-red-50 !px-3 !py-2 font-mono text-xs leading-5 text-red-900 whitespace-pre-wrap break-words">
                       {stderr}
                     </pre>
                   ) : null}
@@ -642,6 +661,10 @@ export function AiChat() {
   const [sessionErr, setSessionErr] = useState<string | null>(null);
   const [chatErr, setChatErr] = useState<string | null>(null);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  // 压缩/撤销成功后 +1,用来重挂 CopilotChat —— 重挂才会重新 connect、拿到裁剪后的快照。
+  const [chatEpoch, setChatEpoch] = useState(0);
+  // 模型目录真的重拉过就 +1,让用量跟着重取(窗口大小挂在目录上)。
+  const [catalogEpoch, setCatalogEpoch] = useState(0);
   /** 这一轮用哪个模型。null = 用后端的默认项。 */
   const [modelId, setModelId] = useState<string | null>(null);
 
@@ -702,6 +725,30 @@ export function AiChat() {
    * 拿不到,只能用 picker 的当前值兜底。已知边界:流式过程中改 picker,那一条
    * 的标签会跟着变;落库刷新后以快照为准。
    */
+  /**
+   * 思考块标题换成中文 + 真实时长/token。
+   *
+   * **覆写的是 `reasoningMessage` 本体,不是它的 `header` 子插槽。** 库渲染 header 时
+   * 只给 `{isOpen,label,hasContent,isStreaming,onClick}`,**不给 message** —— 光覆写
+   * header 拿不到消息 id,也就查不到 `byReasoningMessage`。顺带把库自带的英文标签
+   * (`Thinking…` / `Thought for …`)换掉,本页是简体中文。
+   */
+  const ReasoningMessageWithUsage = useMemo(() => {
+    function WithUsage(props: React.ComponentProps<typeof CopilotChatReasoningMessage>) {
+      const id = String((props.message as { id?: unknown })?.id ?? "");
+      return (
+        <CopilotChatReasoningMessage
+          {...props}
+          header={(hp: React.ComponentProps<typeof CopilotChatReasoningMessage.Header>) => (
+            <ChatReasoningHeader {...hp} messageId={id} />
+          )}
+        />
+      );
+    }
+    // 同上:插槽类型连带静态子组件(Header / Content / Toggle),不带上会在运行时断。
+    return Object.assign(WithUsage, CopilotChatReasoningMessage);
+  }, []);
+  
   const AssistantMessageWithModel = useMemo(() => {
     function WithModel(
       props: React.ComponentProps<typeof CopilotChatAssistantMessage>
@@ -710,9 +757,14 @@ export function AiChat() {
       return (
         <div>
           {label ? (
-            <div className="mb-0.5 text-[11px] font-medium text-neutral-500">AI · {label}</div>
+            <div className="!mb-0.5 text-[11px] font-medium text-neutral-500">
+              {/* `!mb-0.5`:CopilotKit 对聊天区的元素级重置会清零 margin(详见 ChatContextBar)。 */}
+              AI · {label}
+            </div>
           ) : null}
           <CopilotChatAssistantMessage {...props} />
+          {/* 只在该轮最后一条上渲染;判断在组件内部,靠后端给的 displayMessageId。 */}
+          <ChatUsageRow messageId={String(props.message.id)} />
         </div>
       );
     }
@@ -777,6 +829,17 @@ export function AiChat() {
     return rows;
   }, []);
 
+  /** 一轮结束或失败:刷新左栏(累计花费在会话列表接口里),聊天区不动。 */
+  const handleRunSettled = useCallback(() => {
+    void refreshSessions().catch(() => {});
+  }, [refreshSessions]);
+  
+  /** 压缩或撤销成功:重挂 CopilotChat 拿裁剪后的快照,并刷新左栏。 */
+  const handleCompactionChanged = useCallback(() => {
+    setChatEpoch((n) => n + 1);
+    void refreshSessions().catch(() => {});
+  }, [refreshSessions]);
+  
   const createAndSelect = useCallback(async () => {
     const session = await createAiChatSession();
     setSessions((prev) => [session, ...prev]);
@@ -831,7 +894,10 @@ export function AiChat() {
     // 不阻塞页面,拉不到就维持现状。
     apiGet<{ source?: string }>("/api/llm-chat/model-catalog", { signal: ac.signal })
       .then((c) => {
-        if (c.source === "network") void loadStatus();
+        if (c.source === "network") {
+          void loadStatus();
+          setCatalogEpoch((n) => n + 1);
+        }
       })
       .catch(() => {
         /* 目录拉不到不影响对话,读图能力保持「未知」即可 */
@@ -1008,7 +1074,11 @@ export function AiChat() {
                       data-testid="ai-chat-session"
                     >
                       <div className="truncate text-sm font-medium">{session.title}</div>
-                      <div className={`mt-1 text-xs ${active ? "text-neutral-300" : "text-neutral-500"}`}>
+                      <div className={`mt-1 text-xs tabular-nums ${active ? "text-neutral-300" : "text-neutral-500"}`}>
+                        {/* 累计是后端在写账目的同一个事务里更新的,这里只读。undefined = 还没算过。 */}
+                        {session.usage
+                          ? `${session.usage.atLeast ? "≥" : ""}${formatUsd(session.usage.costUsd)} · `
+                          : ""}
                         {formatSessionTime(session.last_message_at)}
                       </div>
                     </button>
@@ -1032,9 +1102,19 @@ export function AiChat() {
         <main className="flex h-full min-h-0 flex-col">
           <header className="flex flex-col gap-3 border-b border-neutral-200 bg-white/80 px-5 py-4">
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-semibold text-neutral-950">
-                {activeSession?.title ?? "新对话"}
-              </h2>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="min-w-0 truncate text-lg font-semibold text-neutral-950">
+                  {activeSession?.title ?? "新对话"}
+                </h2>
+                {/* 规格:顶栏标题同行右侧显示本会话累计。undefined = 还没算过,不显示 $0.00。
+                    右上角原先被 CopilotKit 检查器压着,已在 <CopilotKit> 上关掉(见 enableInspector)。 */}
+                {activeSession?.usage ? (
+                  <span className="shrink-0 text-[11px] tabular-nums text-neutral-500">
+                    本会话 {activeSession.usage.atLeast ? "≥" : ""}
+                    {formatUsd(activeSession.usage.costUsd)}
+                  </span>
+                ) : null}
+              </div>
               <p className="mt-1 text-sm text-neutral-500">
                 每个历史会话独立保存到本机 SQLite，模型与工具流程由 ai2nao 后端掌控。
               </p>
@@ -1192,12 +1272,25 @@ export function AiChat() {
                   }}
                   onError={handleChatError}
                   showDevConsole={false}
+                  // `showDevConsole` 只管错误横幅;**检查器要单独关**。它在 localhost 下默认开(打包应用
+                  // 也跑在 127.0.0.1),常驻右上角 48×48,还会弹 CopilotKit 的新闻通知 —— 2026-09-18
+                  // 走查实测它盖住顶栏的本会话累计。它是开发工具,不是本产品的界面。
+                  enableInspector={false}
+                  // 分隔线渲染器挂在 Provider 上 —— `useRenderActivityMessage` 是消费钩子,
+                  // 不是注册钩子。没有匹配渲染器的 activity 消息会被渲染成 null。
+                  renderActivityMessages={ACTIVITY_RENDERERS}
                 >
                   <BashToolCallRenderer
                     approvals={bashApprovals}
                     approvalError={bashApprovalErr}
                     onDecision={decideBashApproval}
                   />
+                  <AiChatUsageProvider
+                    sessionId={activeSessionId}
+                    onRunSettled={handleRunSettled}
+                    onCompactionChanged={handleCompactionChanged}
+                    refreshKey={catalogEpoch}
+                  >
                   <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm [&_.copilotKitChat]:h-full">
                     {chatErr ? (
                       <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
@@ -1230,8 +1323,14 @@ export function AiChat() {
                         ) : null}
                       </div>
                     ) : null}
+                    {/* **聊天区只占横幅剩下的高度。** CopilotChat 自己按「父元素 100%」排版,直接放在
+                        这一列里会等于整张卡片高 —— 上面每多一条横幅(出错 / 贴图出错 / 读图能力提示),
+                        底部就溢出同样的高度,被卡片的 overflow-hidden 切掉:输入框少一截、占用条整条消失。
+                        2026-09-19 走查实测溢出 33px(正好一条横幅)。 */}
+                    <div className="min-h-0 flex-1">
                     <CopilotChat
-                      key={activeSessionId}
+                      // 带上 epoch:压缩/撤销后换 key 强制重挂,否则聊天区一直显示折叠前的消息。
+                      key={`${activeSessionId}:${chatEpoch}`}
                       threadId={activeSessionId}
                       attachments={attachmentsConfig}
                       // 探针确认过的插槽链路：chatView → messageView → assistantMessage。
@@ -1240,8 +1339,15 @@ export function AiChat() {
                         messageView: {
                           assistantMessage: AssistantMessageWithModel,
                           userMessage: UserMessageWithImages,
+                          reasoningMessage: ReasoningMessageWithUsage,
                         },
-                        input: { addMenuButton: AddMenuButtonWhenImagesEnabled },
+                        input: {
+                          addMenuButton: AddMenuButtonWhenImagesEnabled,
+                          // **`showDisclaimer` 必须显式传。** `positioning` 默认 "static",
+                          // 而该模式下它默认 false —— 不传的话占用条挂上去也永远不渲染,且不报错。
+                          showDisclaimer: true,
+                          disclaimer: () => <ChatContextBar sessionId={activeSessionId} />,
+                        },
                       }}
                       onError={handleChatError}
                       labels={{
@@ -1250,7 +1356,9 @@ export function AiChat() {
                         chatInputPlaceholder: "输入消息，按 Enter 发送",
                       }}
                     />
+                    </div>
                   </div>
+                  </AiChatUsageProvider>
                 </CopilotKit>
               </AiChatRenderBoundary>
             ) : (

@@ -141,6 +141,12 @@ export type AiChatSessionSummary = {
   updated_at: string;
   last_message_at: string | null;
   message_count: number;
+  /**
+   * 会话累计花费。**后端已经在发**(`listLlmChatSessions` 走 `withParsedUsage`),
+   * 此前前端只是没有声明这个字段。旧会话没有这个键 → undefined,按「还没算过」
+   * 处理,不是「花了 0 元」。
+   */
+  usage?: AiChatUsageTotals;
 };
 
 export type AiChatStoredMessage = {
@@ -159,4 +165,132 @@ export type AiChatStoredMessage = {
 
 export type AiChatSessionDetail = AiChatSessionSummary & {
   messages: AiChatStoredMessage[];
+};
+
+/** 与后端 `UsageTotals` 同形。`atLeast` 为真时界面加 `≥`。 */
+export type AiChatUsageTotals = {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  atLeast: boolean;
+};
+
+export type AiChatCostState = "pending" | "unknown" | "unpriced" | "partial" | "priced";
+
+/** 一笔模型请求。明细表一行一条。 */
+export type AiChatCallView = {
+  callId: string;
+  purpose: string;
+  stepIndex: number;
+  attempt: number;
+  status: string;
+  model: { modelId: string; provider: string; model: string; label: string } | null;
+  usage: {
+    input: number | null;
+    noCache: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    output: number | null;
+    reasoning: number | null;
+  } | null;
+  costUsd: number | null;
+  costState: AiChatCostState;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+/**
+ * 下一轮的上下文占用。**`contextWindow` 为 null 表示「窗口未知」,不是 0** ——
+ * 当成 0 的话占用条会显示「已用 100%」。
+ */
+export type AiChatContextView = {
+  model: { provider: string; model: string; label: string } | null;
+  contextWindow: number | null;
+  outputReserve: number;
+  estimatedInput: number;
+  /** true = 全量估算,数字前加 `≈`;false = 基于真实账目。 */
+  estimateOnly: boolean;
+  breakdown: {
+    system: number;
+    summary: number;
+    recent: number;
+    toolResults: number;
+    images: number;
+  };
+  /**
+   * 分项之和。**与 `estimatedInput` 是两个口径**:`estimateOnly` 为真时两者相等,
+   * 为假时按定义不等(头条数字来自基准账目,分项是全量分解)。所以分项要呈现为
+   * 「构成」,不要在界面上把它们加起来跟头条数字比。
+   */
+  breakdownTotal: number;
+  toolResultsOmitted: boolean;
+  autoCompaction: boolean;
+  /**
+   * 建议的折叠上界(`message_index`);不足以压缩时为 null,按钮置灰。
+   * **由后端给** —— 前端手里只有 AG-UI 消息,没有 `message_index`。
+   */
+  suggestedCompactUpTo: number | null;
+  /** 按建议折叠点压缩的预估花费;没有折叠点或缺价格时为 null,按钮就不写「约 $X」。 */
+  compactCostEstimateUsd: number | null;
+};
+
+export type AiChatCompactionSummary = {
+  decisions: string[];
+  constraints: string[];
+  state: string[];
+  nextSteps: string[];
+};
+
+export type AiChatCompaction = {
+  v: 1;
+  kind: "compaction";
+  id: string;
+  baseId: string | null;
+  trigger: "manual" | "auto";
+  excludedMessageIds: string[];
+  summary: AiChatCompactionSummary;
+  summaryCallIds: string[];
+  /** 压缩让下一轮少发的 token(估算)。字段是后加的,老事件没有 —— 那就不显示。 */
+  freedTokens?: number;
+  createdAt: string;
+};
+
+export type AiChatCompactionEvent =
+  | AiChatCompaction
+  | { v: 1; kind: "revert"; targetId: string; createdAt: string };
+
+export type AiChatSessionUsage = {
+  byRun: Record<
+    string,
+    { displayMessageId: string | null; calls: AiChatCallView[]; totals: AiChatUsageTotals }
+  >;
+  byAssistantMessage: Record<string, { runId: string; callIds: string[] }>;
+  byReasoningMessage: Record<
+    string,
+    { durationMs: number | null; reasoningTokens: number | null; callId: string | null }
+  >;
+  session: AiChatUsageTotals & { costStates: Record<AiChatCostState, number> };
+  /** 未注入或算不出时为 null —— 界面按「窗口未知」处理。 */
+  context: AiChatContextView | null;
+  /** 当前生效的栈(栈顶即生效压缩)与完整事件列表。 */
+  compactions: { stack: AiChatCompaction[]; events: AiChatCompactionEvent[] };
+};
+
+/** 分页原文的一行。**不含 `raw_json`** —— 协议原文不进这条面向界面的接口。 */
+export type AiChatOriginalMessage = {
+  messageId: string;
+  messageIndex: number;
+  role: AiChatStoredMessage["role"];
+  text: string;
+  preview: string;
+  createdAt: string;
+};
+
+export type AiChatOriginalPage = {
+  messages: AiChatOriginalMessage[];
+  /** 下一页游标;为 null 表示没有更多,前端据此停下。 */
+  nextBefore: number | null;
 };

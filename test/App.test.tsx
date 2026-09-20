@@ -24,6 +24,14 @@ vi.mock("@copilotkit/react-core/v2", () => ({
   CopilotChatInput: Object.assign(() => <div data-testid="mock-chat-input" />, {
     AddMenuButton: () => <button type="button" data-testid="mock-add-menu-button" />,
   }),
+  // 用量 context 要订阅「一轮结束」。这里没有真实 provider 上下文,返回没有 agent
+  // 的结果 —— 消费侧一路用可选链兜住,不该因此白屏。
+  // 思考块包装用到它。mock 里缺导出,渲染一碰就报错白屏。
+  CopilotChatReasoningMessage: Object.assign(
+    () => <div data-testid="mock-reasoning-message" />,
+    { Header: () => null, Content: () => null, Toggle: () => null }
+  ),
+  useAgent: () => ({ agent: undefined }),
 }));
 
 function renderApp(initialEntry: string) {
@@ -441,6 +449,22 @@ describe("App routes", () => {
             version: "test",
             agents: { default: { name: "default" } },
             audioFileTranscriptionEnabled: false,
+          });
+        }
+        if (url.includes("/usage")) {
+          return json({
+            usage: {
+              byRun: {},
+              byAssistantMessage: {},
+              byReasoningMessage: {},
+              session: {
+                input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0,
+                costUsd: 0, atLeast: false,
+                costStates: { pending: 0, unknown: 0, unpriced: 0, partial: 0, priced: 0 },
+              },
+              context: null,
+              compactions: { stack: [], events: [] },
+            },
           });
         }
         throw new Error(`Unhandled fetch: ${url}`);

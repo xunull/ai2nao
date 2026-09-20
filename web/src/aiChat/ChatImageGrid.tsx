@@ -8,6 +8,9 @@ import { imageGridLayout, type ChatImage } from "./imageGrid";
  * - 断图显示中性的「图已不在」—— 那是历史事实,不是当前错误,所以不用红色
  *
  * 纯展示,不碰 CopilotKit 的任何状态。
+ *
+ * `!mb-2` / `!border`:它渲染在聊天区里,CopilotKit 对聊天区的元素级重置会把
+ * margin 与 border 清零(详见 ChatContextBar)。
  */
 export function ChatImageGrid({ images }: { images: ChatImage[] }) {
   const layout = imageGridLayout(images.length);
@@ -16,7 +19,7 @@ export function ChatImageGrid({ images }: { images: ChatImage[] }) {
   return (
     <div
       data-testid="chat-image-grid"
-      className="mb-2 grid w-full max-w-[480px] gap-1.5"
+      className="!mb-2 grid w-full max-w-[480px] gap-1.5"
       style={{ gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))` }}
     >
       {shown.map((image, i) => (
@@ -38,7 +41,7 @@ function ImageCell({ image, span, overflow }: { image: ChatImage; span: boolean;
 
   if (broken) {
     return (
-      <div className={`${cell} flex items-center justify-center border border-neutral-200 bg-[#fafafa]`}>
+      <div className={`${cell} flex items-center justify-center !border !border-neutral-200 bg-[#fafafa]`}>
         <span className="text-[11px] text-neutral-400">图已不在</span>
       </div>
     );

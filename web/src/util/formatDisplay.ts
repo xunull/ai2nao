@@ -30,6 +30,24 @@ export function formatFileTimeMs(ms: number): string {
   });
 }
 
+/**
+ * 美元金额。规格:< $1 保留**两位有效数字**,最小显示 `<$0.0001`;≥ $1 保留两位小数。
+ *
+ * 用 `toPrecision(2)` 的**字符串**而不是 `Number(...)` 的结果 —— 后者会把 `0.10`
+ * 变回 `0.1`,于是 $0.10 显示成 $0.1,与同列其它金额对不齐。
+ *
+ * `0` 是真实值(免费模型),显示 `$0.00`;负数与非有限值按「没有数据」走 `—`。
+ */
+export function formatUsd(usd: number | null | undefined): string {
+  if (usd == null || !Number.isFinite(usd) || usd < 0) return "—";
+  if (usd === 0) return "$0.00";
+  // 比最小可显示精度还小的正数:显示下限而不是四舍五入成 $0.0000 ——
+  // 后者会让「花了一点点」看起来像「没花钱」。
+  if (usd < 0.0001) return "<$0.0001";
+  if (usd < 1) return `$${usd.toPrecision(2)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 /** Compact human-readable token count for dashboard metrics. */
 export function formatTokenCount(tokens: number | null | undefined): string {
   if (tokens == null || !Number.isFinite(tokens) || tokens < 0) return "—";
