@@ -17,7 +17,7 @@ import {
   type LlmChatDocument,
   type LlmChatProvider,
   type LlmChatProviderInstance,
-  PROVIDER_ADAPTER_SENDS_IMAGES,
+  PROVIDER_ADAPTER_CAPABILITIES,
 } from "./document.js";
 
 /** 设置页「服务商」下拉的选项。前端不再自己维护清单,只维护 id → 中文标签。 */
@@ -146,7 +146,7 @@ function visionStateOf(
   model: string,
   catalogVision?: (p: LlmChatProvider, m: string) => "yes" | "no" | "unknown"
 ): VisionUiState {
-  if (!PROVIDER_ADAPTER_SENDS_IMAGES[provider]) return "adapter-no";
+  if (!PROVIDER_ADAPTER_CAPABILITIES[provider].sendsImages) return "adapter-no";
   const said = catalogVision?.(provider, model) ?? "unknown";
   if (said === "yes") return "yes";
   if (said === "no") return "catalog-no";

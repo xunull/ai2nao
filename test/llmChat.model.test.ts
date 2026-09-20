@@ -158,6 +158,8 @@ describe("createChatLanguageModel", () => {
       name: "openai-compatible",
       baseURL: "http://127.0.0.1:11434/v1",
       apiKey: "shared-key",
+      // 流式请求要厂商报用量,否则这一家的账全是「未知」(见 model.ts)。
+      includeUsage: true,
     });
     expect(providerMocks.openaiCompatibleChatModelMock).toHaveBeenCalledWith("llama3.2");
   });
@@ -173,6 +175,8 @@ describe("createChatLanguageModel", () => {
       name: "openai-compatible",
       baseURL: "http://127.0.0.1:1234/v1",
       apiKey: "local-no-key",
+      // 流式请求要厂商报用量,否则这一家的账全是「未知」(见 model.ts)。
+      includeUsage: true,
     });
   });
 });

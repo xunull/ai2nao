@@ -137,4 +137,26 @@ describe("ThinkStreamFilter —— 流式剥离，分片切在标签中间也不
   it("多个 think 块交替", () => {
     expect(stream(["<think>甲</think>正", "文<think>乙</think>结尾"])).toBe("正文结尾");
   });
+
+  it("思考文本从旁路取得到，且取走即清空", () => {
+    const f = new ThinkStreamFilter();
+    f.push("<think>甲</think>正文");
+    expect(f.takeThinking()).toBe("甲");
+    // 取走式:第二次拿到空串,调用方直接把每次的结果当增量发,不必自己记偏移。
+    expect(f.takeThinking()).toBe("");
+  });
+
+  it("push 的返回值仍是可见文本 —— 上面 9 条用例依赖的就是这一点", () => {
+    const f = new ThinkStreamFilter();
+    // 分流做成旁路而不是改签名,正是为了不动那 9 条防「思考漏进气泡」的用例。
+    expect(f.push("<think>甲</think>正文")).toBe("正文");
+  });
+
+  it("未闭合就结束：思考留得住，可见文本仍不补吐", () => {
+    const f = new ThinkStreamFilter();
+    expect(f.push("正文<think>没说完")).toBe("正文");
+    expect(f.finish()).toBe("");
+    // 模型被中断时「想到哪儿」也是有价值的,不该跟着可见文本一起丢。
+    expect(f.takeThinking()).toBe("没说完");
+  });
 });

@@ -12,7 +12,7 @@ import {
   LlmChatSessionError,
 } from "../src/llmChat/sessions.js";
 import { agUiMessagesToModelMessages, assertCanSendImages } from "../src/llmChat/copilotRuntime.js";
-import { PROVIDER_ADAPTER_SENDS_IMAGES } from "../src/llmChat/document.js";
+import { PROVIDER_ADAPTER_CAPABILITIES } from "../src/llmChat/document.js";
 import { putBlob } from "../src/blobStore.js";
 
 /**
@@ -253,14 +253,15 @@ describe("后端视觉闸(T4b)", () => {
   // 升到 @ai-sdk/deepseek 2.0.64 后,全部适配器都发得出图(每一格的真相由
   // llmChat.adapterSendsImages.test.ts 按真实请求体核对),闸暂时没有真实的拦截对象。
   // 这里用改表模拟「一家发不出图的适配器」,守的是闸本身的行为。
-  const adapterTable = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
+  const adapterTable = PROVIDER_ADAPTER_CAPABILITIES as Record<string, { sendsImages: boolean }>;
+  // 存标量而不是整格对象:存引用的话,改的和还原的是同一个对象,还原会失效。
   let savedDeepseek: boolean;
   beforeEach(() => {
-    savedDeepseek = adapterTable.deepseek!;
-    adapterTable.deepseek = false;
+    savedDeepseek = adapterTable.deepseek!.sendsImages;
+    adapterTable.deepseek!.sendsImages = false;
   });
   afterEach(() => {
-    adapterTable.deepseek = savedDeepseek;
+    adapterTable.deepseek!.sendsImages = savedDeepseek;
   });
 
   const withImage = () => {
@@ -293,12 +294,19 @@ describe("后端视觉闸(T4b)", () => {
     }
   });
 
-  it("★ 适配器表覆盖全部 provider —— 加一家厂商忘了填,这里会红", () => {
-    // 漏填的话 PROVIDER_ADAPTER_SENDS_IMAGES[新provider] 是 undefined,
-    // 而 undefined 是 falsy → 会被当成「发不出图」而静默拦住所有贴图。
+  it("★ 适配器能力表覆盖全部 provider —— 加一家厂商忘了填,这里会红", () => {
+    // 漏填整格的话 PROVIDER_ADAPTER_CAPABILITIES[新provider] 是 undefined,
+    // `.sendsImages` 取不到 → 被当成「发不出图」而静默拦住所有贴图。
+    // **两个字段都要查**:只查 sendsImages 的话,漏填 reasoningReplay 会静默通过,
+    // 而思考回传恰恰按它分档 —— 漏填等于那家厂商的思考永远不回传,且没人发现。
     // (每一格填得对不对,由 llmChat.adapterSendsImages.test.ts 按真实请求体核对。)
+    const full = PROVIDER_ADAPTER_CAPABILITIES as Record<
+      string,
+      { sendsImages: boolean; reasoningReplay: string }
+    >;
     for (const p of ["alibaba", "deepseek", "minimax", "moonshotai", "openai", "openai-compatible", "volcengine"]) {
-      expect(typeof adapterTable[p], p).toBe("boolean");
+      expect(typeof full[p]?.sendsImages, p).toBe("boolean");
+      expect(["reasoning-part", "protocol-content", "none"], p).toContain(full[p]?.reasoningReplay);
     }
   });
 });

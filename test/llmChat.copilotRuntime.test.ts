@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { EventType, transformChunks, verifyEvents, type BaseEvent } from "@ag-ui/client";
 import { from, lastValueFrom, toArray } from "rxjs";
-import { agUiMessagesToModelMessages, aiSdkStreamToAgUiEvents } from "../src/llmChat/copilotRuntime.js";
+import {
+  GeneratedMessages,
+  agUiMessagesToModelMessages,
+  aiSdkStreamToAgUiEvents,
+} from "../src/llmChat/copilotRuntime.js";
 
 describe("aiSdkStreamToAgUiEvents", () => {
   it("keeps web-search tool streams valid and gives repeated provider text ids unique message ids", async () => {
@@ -232,6 +236,181 @@ describe("aiSdkStreamToAgUiEvents", () => {
     ] as any);
 
     expect(messages).toEqual([{ role: "assistant", content: "先给一个普通回答" }]);
+  });
+});
+
+/**
+ * 中止时该落库的消息:剔掉**没有结果**的工具调用。
+ *
+ * 历史里一旦出现「有调用、没有结果」的一对,下一轮发给厂商会直接报错 ——
+ * 所以取消在工具执行途中时,那条半截调用不能落库。
+ *
+ * 直接打这个方法而不是跑完整回合:要从 HTTP 路由那一侧确定性地触发中止,
+ * 得把 AbortSignal 穿过路由、还要在流跑到「有调用、无结果」的那一刻精确打断,
+ * 写出来是个竞态测试,比没有测试更糟。
+ */
+describe("GeneratedMessages.messagesForAbort", () => {
+  const ev = (e: Record<string, unknown>): BaseEvent => e as BaseEvent;
+  const callIdsOf = (messages: unknown[]): string[] =>
+    messages.flatMap((m) =>
+      ((m as { toolCalls?: Array<{ id: string }> }).toolCalls ?? []).map((c) => c.id)
+    );
+
+  it("有结果的工具调用保留,没有结果的被剔掉", () => {
+    const generated = new GeneratedMessages();
+    generated.apply(
+      ev({ type: EventType.TOOL_CALL_START, toolCallId: "done", toolCallName: "ai2nao_web_search" })
+    );
+    generated.apply(
+      ev({ type: EventType.TOOL_CALL_RESULT, messageId: "r1", toolCallId: "done", content: "{}" })
+    );
+    generated.apply(
+      ev({ type: EventType.TOOL_CALL_START, toolCallId: "dangling", toolCallName: "ai2nao_web_search" })
+    );
+
+    expect(callIdsOf(generated.messagesForAbort())).toEqual(["done"]);
+  });
+
+  it("只摘掉那几项,不整条丢 —— 正文还在的 assistant 不能被半截调用连累", () => {
+    const generated = new GeneratedMessages();
+    generated.apply(ev({ type: EventType.TEXT_MESSAGE_START, messageId: "m1" }));
+    generated.apply(
+      ev({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "我先查一下。" })
+    );
+    // parentMessageId 让这次调用挂到 m1 上 —— m1 已经在 ordered 里,不会被重新 push。
+    // 整条丢的话,用户已经看到的这句正文会跟着消失。
+    generated.apply(
+      ev({
+        type: EventType.TOOL_CALL_START,
+        toolCallId: "c1",
+        toolCallName: "ai2nao_web_search",
+        parentMessageId: "m1",
+      })
+    );
+
+    const kept = generated.messagesForAbort();
+    expect(kept).toHaveLength(1);
+    expect((kept[0] as { content?: string }).content).toBe("我先查一下。");
+    expect(callIdsOf(kept)).toEqual([]);
+  });
+
+  it("非空转:同一组事件下 messages() 会把半截调用原样带出去", () => {
+    const generated = new GeneratedMessages();
+    generated.apply(
+      ev({ type: EventType.TOOL_CALL_START, toolCallId: "dangling", toolCallName: "ai2nao_web_search" })
+    );
+
+    // 正常收尾那一路不做剔除 —— 半截调用只有中止时才需要处理。
+    // 这两行一旦相等,说明 messagesForAbort 退化成了 messages 的同义词。
+    expect(callIdsOf(generated.messages())).toEqual(["dangling"]);
+    expect(generated.messagesForAbort()).toHaveLength(0);
+  });
+});
+
+describe("aiSdkStreamToAgUiEvents —— 思考分流", () => {
+  const THINK_PARTS = [
+    { type: "text-start", id: "t-1" },
+    { type: "text-delta", id: "t-1", text: "<think>想</think>答" },
+    { type: "text-end", id: "t-1" },
+    { type: "finish" },
+  ];
+
+  it("provider 的 reasoning-delta 变成思考事件，正文不受影响", async () => {
+    const events = await collectEvents([
+      { type: "reasoning-start", id: "r-1" },
+      { type: "reasoning-delta", id: "r-1", delta: "先想一下。" },
+      { type: "reasoning-end", id: "r-1" },
+      { type: "text-start", id: "t-1" },
+      { type: "text-delta", id: "t-1", text: "答案。" },
+      { type: "text-end", id: "t-1" },
+      { type: "finish" },
+    ]);
+
+    // 过 AG-UI 官方校验器 —— 序列非法(比如 CONTENT 没配 START)在这里就炸。
+    await expectAgUiSequenceValid(events);
+
+    expect(events.map((event) => event.type)).toEqual([
+      EventType.REASONING_MESSAGE_CHUNK,
+      EventType.TEXT_MESSAGE_CHUNK,
+    ]);
+    // 读的是 `delta` 而不是 `text` —— provider 层这两个字段名不对称。
+    expect(eventRecords(events, EventType.REASONING_MESSAGE_CHUNK)[0].delta).toBe("先想一下。");
+    expect(eventRecords(events, EventType.TEXT_MESSAGE_CHUNK)[0].delta).toBe("答案。");
+  });
+
+  it("MiniMax 的 <think> 走思考通道，气泡里一个字都不漏", async () => {
+    const events = await collectEvents([
+      { type: "text-start", id: "t-1" },
+      { type: "text-delta", id: "t-1", text: "<think>\n用户问" },
+      { type: "text-delta", id: "t-1", text: "的是什么\n</think>\n\n答案在这" },
+      { type: "text-end", id: "t-1" },
+      { type: "finish" },
+    ]);
+
+    await expectAgUiSequenceValid(events);
+
+    const thinking = eventRecords(events, EventType.REASONING_MESSAGE_CHUNK)
+      .map((event) => event.delta)
+      .join("");
+    expect(thinking).toBe("\n用户问的是什么\n");
+
+    const visible = eventRecords(events, EventType.TEXT_MESSAGE_CHUNK)
+      .map((event) => event.delta)
+      .join("");
+    expect(visible).toBe("答案在这");
+    expect(JSON.stringify(events)).not.toContain("<think");
+  });
+
+  it("没有思考时一个思考事件都不发", async () => {
+    // **非空转守卫。** 每步都配一对空事件的话,上面四条完整序列断言会全红 ——
+    // 这条把「只在真有思考时才发」钉死,免得将来有人图省事改成无条件发。
+    const events = await collectEvents([
+      { type: "text-start", id: "t-1" },
+      { type: "text-delta", id: "t-1", text: "直接回答" },
+      { type: "text-end", id: "t-1" },
+      { type: "finish" },
+    ]);
+
+    expect(eventRecords(events, EventType.REASONING_MESSAGE_CHUNK)).toHaveLength(0);
+    expect(events.map((event) => event.type)).toEqual([EventType.TEXT_MESSAGE_CHUNK]);
+  });
+
+  it("有 stepKey 时消息 id 按步派生，没有时回落随机 id", async () => {
+    const withKey = await collectEvents(THINK_PARTS, { stepKey: () => "run-1:answer:0" });
+    expect(eventRecords(withKey, EventType.REASONING_MESSAGE_CHUNK)[0].messageId).toBe(
+      "r:run-1:answer:0"
+    );
+    expect(eventRecords(withKey, EventType.TEXT_MESSAGE_CHUNK)[0].messageId).toBe(
+      "a:run-1:answer:0"
+    );
+
+    // 补答那条路不传 options,必须仍然能跑 —— 这条是它的回归网。
+    const withoutKey = await collectEvents(THINK_PARTS);
+    const reasoningId = eventRecords(withoutKey, EventType.REASONING_MESSAGE_CHUNK)[0]
+      .messageId as string;
+    expect(reasoningId).toBeTruthy();
+    expect(reasoningId.startsWith("r:")).toBe(false);
+  });
+
+  it("流结束时 think 未闭合：思考留得住，气泡仍然干净", async () => {
+    const events = await collectEvents([
+      { type: "text-start", id: "t-1" },
+      { type: "text-delta", id: "t-1", text: "正文<think>没说完" },
+      { type: "text-end", id: "t-1" },
+      { type: "finish" },
+    ]);
+
+    await expectAgUiSequenceValid(events);
+
+    const visible = eventRecords(events, EventType.TEXT_MESSAGE_CHUNK)
+      .map((event) => event.delta)
+      .join("");
+    expect(visible).toBe("正文");
+
+    const thinking = eventRecords(events, EventType.REASONING_MESSAGE_CHUNK)
+      .map((event) => event.delta)
+      .join("");
+    expect(thinking).toBe("没说完");
   });
 });
 

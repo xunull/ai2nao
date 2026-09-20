@@ -3,7 +3,17 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createMoonshotAI } from "@ai-sdk/moonshotai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
+/**
+ * 返回类型要窄到 `LanguageModelV3`,不能用 `ai` 的 `LanguageModel` ——
+ * 后者是 `GlobalProviderModelId | LanguageModelV3 | LanguageModelV2`,**含字符串形态**,
+ * 而 `wrapLanguageModel`(记账中间件要用)只收 `LanguageModelV3` 对象,类型对不上。
+ *
+ * 不直接 import `LanguageModelV3`:它是 `ai` 从 `@ai-sdk/provider` 引进来自用的,
+ * 既不在 `ai` 的导出清单里,`@ai-sdk/provider` 也没有扁平安装到 node_modules 顶层。
+ * 为一个类型标注新增一条直接依赖不划算,所以从已有的 provider 工厂反推 ——
+ * 五家工厂(`chat` / `chatModel`)的返回类型都是 `LanguageModelV3`,取哪个都等价。
+ */
+export type ChatLanguageModel = ReturnType<ReturnType<typeof createDeepSeek>["chat"]>;
 import { resolveApiKeySource } from "./apiKeySource.js";
 import type { LlmChatConfig } from "./config.js";
 import { llmChatLog } from "./log.js";
@@ -14,7 +24,7 @@ function resolveApiKey(cfg: LlmChatConfig) {
   return resolveApiKeySource({ provider: cfg.provider, apiKey: cfg.apiKey });
 }
 
-export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
+export function createChatLanguageModel(cfg: LlmChatConfig): ChatLanguageModel {
   const baseURL = cfg.baseURL.replace(/\/$/, "");
   const { apiKey, source } = resolveApiKey(cfg);
   llmChatLog.debug("create model", {
@@ -51,6 +61,11 @@ export function createChatLanguageModel(cfg: LlmChatConfig): LanguageModel {
       name: cfg.provider,
       baseURL,
       apiKey,
+      // **流式请求必须要用量。** 这个适配器默认不发 `stream_options.include_usage`,
+      // 厂商于是每个分片都回 `usage: null` —— 这三家的每一笔账都只能记成「未知」,
+      // 花了多少钱永远不知道(2026-09-19 真实 MiniMax-M3 实测照出;DeepSeek /
+      // OpenAI 的适配器默认就带)。
+      includeUsage: true,
     });
     return provider.chatModel(cfg.model);
   }

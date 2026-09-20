@@ -6,11 +6,24 @@ import {
   deleteLlmChatSession,
   getLlmChatSession,
   listLlmChatSessions,
+  readSessionCompactionSettings,
+  sessionUsage,
+  setSessionCompactionAuto,
   LlmChatSessionError,
+  type LlmChatMessageRow,
+  type SessionContextView,
 } from "./sessions.js";
 
 export type LlmChatSessionRouteDeps = {
   db?: Database.Database;
+  /**
+   * 上下文占用的计算器,由 `routes.ts` 注入。
+   *
+   * **本文件不认识 `copilotRuntime.ts`** —— 直接 import 会让 sessionRoutes → copilotRuntime
+   * → sessions 这条链多出一个横向依赖,而注入让方向仍然单向。不传时 `context` 为 null,
+   * 界面按「窗口未知」处理。
+   */
+  sessionContext?: (sessionId: string) => SessionContextView | null;
 };
 
 export function registerLlmChatSessionRoutes(
@@ -57,6 +70,97 @@ export function registerLlmChatSessionRoutes(
     }
   });
 
+  app.get("/api/llm-chat/sessions/:id/usage", (c) => {
+    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
+    try {
+      const id = c.req.param("id");
+      // 会话不存在与「会话在但没有任何账目」是两回事:前者 404,后者是合法的空聚合。
+      if (!getLlmChatSession(deps.db, id)) return jsonErr(404, "session not found");
+      // 计算器自己失败不该让整个用量接口 500 —— 那会连账目一起看不到。
+      let context: SessionContextView | null = null;
+      try {
+        context = deps.sessionContext?.(id) ?? null;
+      } catch {
+        context = null;
+      }
+      return c.json({ usage: sessionUsage(deps.db, id, context) });
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  /**
+   * 分页读取原文(含被压缩的轮次),供 Sheet 查看。
+   *
+   * **只返回展示字段。** `raw_json` 里带着 `ai2naoProtocol` 协议原文与账目,
+   * 那些不该进这条给界面看的接口;`ai2nao:` 前缀的服务端专有行整行不返回。
+   *
+   * 游标用 `message_index` 单游标,不学 `agentUserMessages` 的 `before`+`beforeId`
+   * 复合游标 —— 那是因为时间戳会重复才要配对,而 `message_index` 在会话内单调唯一。
+   * 最新在前,`before` 取「上一页最后一条的 message_index」。
+   */
+  app.get("/api/llm-chat/sessions/:id/messages", (c) => {
+    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
+    const beforeRaw = c.req.query("before")?.trim() || undefined;
+    const limitRaw = c.req.query("limit")?.trim();
+    let before: number | undefined;
+    if (beforeRaw !== undefined) {
+      before = Number(beforeRaw);
+      if (!Number.isInteger(before)) {
+        return jsonErr(400, `invalid before parameter: ${JSON.stringify(beforeRaw)}`);
+      }
+    }
+    let limit = 50;
+    if (limitRaw) {
+      const n = Number(limitRaw);
+      if (!Number.isInteger(n) || n <= 0) {
+        return jsonErr(400, `invalid limit parameter: ${JSON.stringify(limitRaw)}`);
+      }
+      limit = Math.min(200, n);
+    }
+    try {
+      const id = c.req.param("id");
+      const detail = getLlmChatSession(deps.db, id);
+      if (!detail) return jsonErr(404, "session not found");
+      const matched = detail.messages
+        .filter((r) => !r.message_id.startsWith("ai2nao:"))
+        .filter((r) => before === undefined || r.message_index < before)
+        .sort((a, b) => b.message_index - a.message_index);
+      // **多取一条来判断有没有下一页。** 用「返回条数 === limit」推断的话,
+      // 总数正好是 limit 的整数倍时会给出一个非 null 游标,前端白跑一页空结果。
+      const rows = matched.slice(0, limit);
+      const hasMore = matched.length > limit;
+      return c.json({
+        messages: rows.map(displayRowOf),
+        nextBefore: hasMore ? rows[rows.length - 1]!.message_index : null,
+      });
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  /**
+   * 会话级自动压缩开关(规格:默认关闭)。
+   *
+   * 放在会话路由这组,而不是 copilotkit 那组:它只写 `metadata_json` 里的一个键,
+   * 不调模型、不占运行位,与会话元数据同类。
+   */
+  app.patch("/api/llm-chat/sessions/:id/compaction-settings", async (c) => {
+    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
+    const body = await safeJson(c);
+    const auto = body && typeof body === "object" ? (body as { auto?: unknown }).auto : undefined;
+    // 只收布尔。字符串 "false" 若被当成真值,就成了一个关不掉的开关 —— 比没有开关更糟。
+    if (typeof auto !== "boolean") return jsonErr(400, "auto must be a boolean");
+    try {
+      const id = c.req.param("id");
+      if (!getLlmChatSession(deps.db, id)) return jsonErr(404, "session not found");
+      setSessionCompactionAuto(deps.db, id, auto);
+      return c.json({ settings: readSessionCompactionSettings(deps.db, id) });
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+  
   app.delete("/api/llm-chat/sessions/:id", (c) => {
     if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
     try {
@@ -67,6 +171,18 @@ export function registerLlmChatSessionRoutes(
       return jsonErr(500, e instanceof Error ? e.message : String(e));
     }
   });
+}
+
+/** 只挑展示字段。**不透出 `raw_json`** —— 协议原文与 `ai2nao*` 字段都在里面。 */
+function displayRowOf(row: LlmChatMessageRow) {
+  return {
+    messageId: row.message_id,
+    messageIndex: row.message_index,
+    role: row.role,
+    text: row.plain_text,
+    preview: row.preview,
+    createdAt: row.created_at,
+  };
 }
 
 function sessionErr(e: unknown) {

@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/serve/app.js";
 import { registerCopilotKitRoutes } from "../src/llmChat/copilotRuntime.js";
-import { getLlmChatSession } from "../src/llmChat/sessions.js";
+import { getLlmChatSession, listChatRuns } from "../src/llmChat/sessions.js";
 import { openDatabase } from "../src/store/open.js";
 
 const { streamTextMock } = vi.hoisted(() => ({
@@ -563,6 +563,384 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
         db.close();
         if (existsSync(dbPath)) unlinkSync(dbPath);
       }
+    }
+  });
+
+  /**
+   * 下面三条钉的是**接线**,不是逻辑。
+   *
+   * `llmChat.chatRun.test.ts` 已经单独测过 claim / fence / 租约 / 终态,但那些是
+   * 直接打库的单测 —— 就算我把 claim 接在一个永远走不到的分支上,它们照样全绿。
+   * 只有真的跑一整轮,才能证明占位行确实长在执行路径上。
+   */
+  it("一轮跑完会留下一条 completed 的占位行,而且它不出现在 SSE 里", async () => {
+    const dbPath = tempPath("copilot-runtime-run-row.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([
+        { type: "text-start", id: "t" },
+        { type: "text-delta", id: "t", text: "答案" },
+        { type: "text-end", id: "t" },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-run-row",
+          runId: "run-run-row",
+          messages: [{ id: "u1", role: "user", content: "问题" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const sse = await res.text();
+
+      const runs = listChatRuns(db, "thread-run-row");
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.status).toBe("completed");
+
+      // 服务端专有行永不发往 CopilotKit —— 漏出去前端会渲染成莫名其妙的
+      // activity 消息,而且会被客户端原样回传。
+      expect(sse).not.toContain("ai2nao:run:");
+      expect(sse).not.toContain("ai2nao.run");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("同一条用户消息重复提交:不再调模型,只回放快照", async () => {
+    const dbPath = tempPath("copilot-runtime-duplicate.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([
+        { type: "text-start", id: "t" },
+        { type: "text-delta", id: "t", text: "只答这一次" },
+        { type: "text-end", id: "t" },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const body = JSON.stringify({
+        threadId: "thread-duplicate",
+        runId: "run-duplicate",
+        messages: [{ id: "u-dup", role: "user", content: "同一条消息" }],
+        tools: [],
+        context: [],
+        state: {},
+        forwardedProps: {},
+      });
+      const headers = { "Content-Type": "application/json" };
+
+      const first = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers,
+        body,
+      });
+      expect(first.status).toBe(200);
+      await first.text();
+
+      const second = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers,
+        body,
+      });
+      expect(second.status).toBe(200);
+      const sse = await second.text();
+
+      // 重发不花钱:模型只被调过一次。
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+      expect(sse).toContain("MESSAGES_SNAPSHOT");
+      expect(sse).toContain("RUN_FINISHED");
+      // 没有开出第二轮。
+      expect(listChatRuns(db, "thread-duplicate")).toHaveLength(1);
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("这一轮失败时占位行落 failed,不是 completed", async () => {
+    const dbPath = tempPath("copilot-runtime-failed-run.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockImplementationOnce(() => {
+      throw new Error("模型炸了");
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-failed-run",
+          runId: "run-failed-run",
+          messages: [{ id: "u1", role: "user", content: "会失败的一轮" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const sse = await res.text();
+      expect(sse).toContain("RUN_ERROR");
+
+      // 失败也必须落终态 —— 不落的话这个会话会被一条永远 running 的行卡住。
+      const runs = listChatRuns(db, "thread-failed-run");
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.status).toBe("failed");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("每步落库:第一步结束时消息已经在库里,不等整轮收尾", async () => {
+    const dbPath = tempPath("copilot-runtime-per-step.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    const midTurn: string[][] = [];
+    /**
+     * 探针放在生成器内部,是因为路由返回的 Response 要等整轮结束才读得完 ——
+     * 从外面根本观察不到「中途」。生成器在 `yield finish-step` 之后恢复,
+     * 意味着消费方已经处理完该事件并 await 过 `onStepFinish`,所以这个恢复点
+     * 必然在「第一步已落库」之后、「第二步还没开始」之前。
+     */
+    async function* twoSteps(): AsyncGenerator<unknown> {
+      yield { type: "text-start", id: "s1" };
+      yield { type: "text-delta", id: "s1", text: "第一步的回答" };
+      yield { type: "text-end", id: "s1" };
+      yield { type: "finish-step" };
+      midTurn.push(
+        (getLlmChatSession(db, "thread-per-step")?.messages ?? [])
+          .filter((m) => !m.message_id.startsWith("ai2nao:"))
+          .map((m) => m.plain_text)
+      );
+      yield { type: "start-step" };
+      yield { type: "text-start", id: "s2" };
+      yield { type: "text-delta", id: "s2", text: "第二步的回答" };
+      yield { type: "text-end", id: "s2" };
+      yield { type: "finish" };
+    }
+    streamTextMock.mockReturnValueOnce({ fullStream: twoSteps() });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-per-step",
+          runId: "run-per-step",
+          messages: [{ id: "u1", role: "user", content: "问题" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+      expect(res.status).toBe(200);
+      await res.text();
+
+      // 单步的 mock 分辨不出「每步落库」和「整轮收尾落库」—— 只有这一条能。
+      expect(midTurn).toHaveLength(1);
+      expect(midTurn[0]).toContain("第一步的回答");
+      expect(midTurn[0]).not.toContain("第二步的回答");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("落库失败重试一次后中止本轮,不再往下跑", async () => {
+    const dbPath = tempPath("copilot-runtime-persist-fail.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    // 真实的失败路径:单行 raw_json 超过 MAX_SYNC_RAW_BYTES(150 万字符)。
+    // 不用 mock 掉 persistGenerated —— 那会连带影响本文件其它用例。
+    const huge = "x".repeat(1_600_000);
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([
+        { type: "text-start", id: "s1" },
+        { type: "text-delta", id: "s1", text: huge },
+        { type: "text-end", id: "s1" },
+        { type: "finish-step" },
+        { type: "start-step" },
+        { type: "text-start", id: "s2" },
+        { type: "text-delta", id: "s2", text: "不该被发出去的第二步" },
+        { type: "text-end", id: "s2" },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-persist-fail",
+          runId: "run-persist-fail",
+          messages: [{ id: "u1", role: "user", content: "问题" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const sse = await res.text();
+      expect(sse).toContain("RUN_ERROR");
+      expect(sse).toContain("保存失败");
+      // 「看得见的回答必须存得下」:存不下就不能继续花钱往下跑。
+      expect(sse).not.toContain("不该被发出去的第二步");
+      expect(listChatRuns(db, "thread-persist-fail")[0]?.status).toBe("failed");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  it("模型快照按步盖:中途报错的轮次,已保存的那一步仍带模型名", async () => {
+    const dbPath = tempPath("copilot-runtime-stamp-per-step.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    streamTextMock.mockReturnValueOnce({
+      fullStream: asyncParts([
+        { type: "text-start", id: "s1" },
+        { type: "text-delta", id: "s1", text: "第一步已保存" },
+        { type: "text-end", id: "s1" },
+        { type: "finish-step" },
+        { type: "error", errorText: "厂商炸了" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-stamp-step",
+          runId: "run-stamp-step",
+          messages: [{ id: "u1", role: "user", content: "问题" }],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("RUN_ERROR");
+
+      // 快照以前盖在整轮收尾那一处,报错的轮次根本跑不到 —— 那些回答就永远
+      // 不知道是哪个模型答的。挪到每步之后,这一条才成立。
+      const rows = (getLlmChatSession(db, "thread-stamp-step")?.messages ?? []).filter(
+        (m) => !m.message_id.startsWith("ai2nao:")
+      );
+      const assistant = rows.find((m) => m.role === "assistant");
+      expect(assistant, "第一步应该已经落库").toBeTruthy();
+      expect(JSON.parse(assistant!.raw_json).ai2naoModel?.model).toBe("test-model");
+      expect(listChatRuns(db, "thread-stamp-step")[0]?.status).toBe("failed");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
     }
   });
 });

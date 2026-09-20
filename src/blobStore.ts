@@ -142,3 +142,45 @@ export function sniffImageMime(bytes: Buffer): string | null {
   ) return "image/webp";
   return null;
 }
+
+/**
+ * 从文件头读出图片宽高(像素)。只认 `sniffImageMime` 白名单里的四种;读不出返回 null。
+ *
+ * 用途是估算图片的 token:厂商按像素计费,2026-09-19 实测 512×512 与 1600×1000 两张图,
+ * DeepSeek V4 flash 约 184 / 962 token,MiniMax-M3 约 326 / 2054 —— 随面积线性增长,
+ * 固定估值在大图上会少估数倍(一张 Retina 截图在 MiniMax 上约 6600 token)。
+ * 只读头部几十个字节,不解码像素。
+ */
+export function imageDimensions(bytes: Buffer): { width: number; height: number } | null {
+  const mime = sniffImageMime(bytes);
+  const ok = (width: number, height: number) =>
+    width > 0 && height > 0 ? { width, height } : null;
+  if (mime === "image/png") {
+    // 签名 8 字节 → IHDR 块:长度 4、类型 4,随后宽、高各 4 字节大端。
+    return bytes.length >= 24 ? ok(bytes.readUInt32BE(16), bytes.readUInt32BE(20)) : null;
+  }
+  if (mime === "image/gif") return ok(bytes.readUInt16LE(6), bytes.readUInt16LE(8));
+  if (mime === "image/jpeg") {
+    // 逐段跳过,直到 SOF(C0–CF,除去 C4 / C8 / CC 这三个非帧头标记)。
+    let at = 2;
+    while (at + 9 < bytes.length) {
+      if (bytes[at] !== 0xff) return null;
+      const marker = bytes[at + 1]!;
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return ok(bytes.readUInt16BE(at + 7), bytes.readUInt16BE(at + 5));
+      }
+      at += 2 + bytes.readUInt16BE(at + 2);
+    }
+    return null;
+  }
+  if (mime === "image/webp" && bytes.length >= 30) {
+    const chunk = bytes.toString("ascii", 12, 16);
+    if (chunk === "VP8X") return ok(1 + bytes.readUIntLE(24, 3), 1 + bytes.readUIntLE(27, 3));
+    if (chunk === "VP8 ") return ok(bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff);
+    if (chunk === "VP8L") {
+      const b1 = bytes[22]!, b2 = bytes[23]!, b3 = bytes[24]!;
+      return ok(1 + (((b1 & 0x3f) << 8) | bytes[21]!), 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)));
+    }
+  }
+  return null;
+}

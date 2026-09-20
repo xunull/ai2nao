@@ -4,7 +4,7 @@ import type { BashApprovalStore, BashPermissionRuleStore, BashToolService } from
 import type { CodeRunnerService } from "../codeRunner/index.js";
 import type { SessionMemoryService } from "../sessionMemory/index.js";
 import type { WebSearchService } from "../webSearch/service.js";
-import { createBashTool } from "./bashTool.js";
+import { createBashTool, type BashExecRecorder } from "./bashTool.js";
 import { parseForwardedToolProps } from "./forwardedProps.js";
 import { createRagEvidenceTool } from "./ragEvidenceTool.js";
 import { createRunCodeTool } from "./runCodeTool.js";
@@ -25,7 +25,9 @@ export type Ai2NaoToolDeps = {
 export function buildAi2NaoServerTools(
   deps: Ai2NaoToolDeps,
   forwardedProps: unknown,
-  options?: { sessionId?: string }
+  // `bashExecRecorder` 放在这里而不是 `deps`:它带 runId 与 fence,
+  // 只在「某一轮」里有意义,而 deps 是整个进程共用的。
+  options?: { sessionId?: string; bashExecRecorder?: BashExecRecorder }
 ) {
   const props = parseForwardedToolProps(forwardedProps);
   const tools: ToolSet = {};
@@ -61,6 +63,7 @@ export function buildAi2NaoServerTools(
       ruleStore: deps.bashPermissionRules,
       permissionMode: props.shellPermissionMode,
       sessionId: options?.sessionId,
+      execRecorder: options?.bashExecRecorder,
     });
   }
 

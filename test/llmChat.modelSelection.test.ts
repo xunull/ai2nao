@@ -5,7 +5,7 @@ import {
   selectModelForTurn,
   type LlmChatDocument,
 } from "../src/llmChat/config.js";
-import { PROVIDER_ADAPTER_SENDS_IMAGES } from "../src/llmChat/document.js";
+import { PROVIDER_ADAPTER_CAPABILITIES } from "../src/llmChat/document.js";
 import { listModelsFromDocument } from "../src/llmChat/views.js";
 import { stampModelSnapshot } from "../src/llmChat/modelStamp.js";
 import { parseForwardedToolProps } from "../src/llmTools/forwardedProps.js";
@@ -233,13 +233,15 @@ describe("vision 四态", () => {
    * 没有真实的 provider,用改表模拟一家发不出的。无论断言成败都还原。
    */
   const withAdapterDroppingImages = (provider: string, fn: () => void) => {
-    const table = PROVIDER_ADAPTER_SENDS_IMAGES as Record<string, boolean>;
-    const saved = table[provider]!;
-    table[provider] = false;
+    const table = PROVIDER_ADAPTER_CAPABILITIES as Record<string, { sendsImages: boolean }>;
+    // **存标量,不存对象引用。** 表的每一格现在是对象:存整个引用的话,
+    // 改的和"还原"的是同一个对象,还原等于没做,会污染后面的用例。
+    const saved = table[provider]!.sendsImages;
+    table[provider]!.sendsImages = false;
     try {
       fn();
     } finally {
-      table[provider] = saved;
+      table[provider]!.sendsImages = saved;
     }
   };
 

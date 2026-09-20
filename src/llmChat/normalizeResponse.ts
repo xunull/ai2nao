@@ -93,6 +93,15 @@ export class ThinkStreamFilter {
   private inside = false;
   private buf = "";
   /**
+   * 剥下来的思考文本,等调用方取走。
+   *
+   * **`push()` 的返回值刻意不动** —— 它返回「吐给前端的可见文本」这一件事,
+   * 有 9 条流式用例直接依赖(`parts.map(p => f.push(p)).join("")`)。改签名就要
+   * 同时改那 9 条,而它们恰恰是防「思考漏进气泡」的那一批,不该为了顺手而动。
+   * 分流因此做成旁路:可见文本照旧走返回值,思考走这里。
+   */
+  private thinking = "";
+  /**
    * 开头以及每个 think 块刚闭合后,把紧跟的空白吞掉。
    *
    * 这不是为了好看,是为了**与非流式口径一致**:`normalizeAssistantText`
@@ -115,11 +124,14 @@ export class ThinkStreamFilter {
       if (this.inside) {
         const close = CLOSE_TAG.exec(this.buf);
         if (!close) {
-          // think 块内的内容一律丢弃,只留可能是闭标签前半截的尾巴。
+          // think 块内的内容不进可见文本,但要留给思考旁路 ——
+          // 扣住的尾巴不算数:它可能是 `</think` 的前半截,还没定性。
           const keep = heldSuffixLength(this.buf, CLOSE_TOKEN);
+          this.thinking += this.buf.slice(0, this.buf.length - keep);
           this.buf = this.buf.slice(this.buf.length - keep);
           return out;
         }
+        this.thinking += this.buf.slice(0, close.index);
         this.buf = this.buf.slice(close.index + close[0].length);
         this.inside = false;
         this.suppressLeadingWs = true;
@@ -138,9 +150,24 @@ export class ThinkStreamFilter {
     }
   }
 
+  /**
+   * 取走并清空已剥下的思考文本。
+   *
+   * 取走式(而不是只读)是为了配合流式发送:每次取到的就是「上次取过之后新增的」,
+   * 调用方直接当增量发出去,不必自己记偏移量。
+   */
+  takeThinking(): string {
+    const out = this.thinking;
+    this.thinking = "";
+    return out;
+  }
+
   /** 流结束。扣住的尾巴若不在 think 块里就补吐出来(它其实是普通文本)。 */
   finish(): string {
     if (this.inside) {
+      // 未闭合就结束:这段**不补吐进可见文本**(宁可少显示,也不能把思考当答案),
+      // 但它确实是思考,照样留给思考旁路 —— 模型被中断时想到哪儿也是有价值的。
+      this.thinking += this.buf;
       this.buf = "";
       return "";
     }

@@ -7,7 +7,7 @@ import {
   type BashPermissionRuleStore,
 } from "../bashTool/index.js";
 import { registerLlmChatChatRoutes } from "./chatRoutes.js";
-import { registerCopilotKitRoutes } from "./copilotRuntime.js";
+import { registerCopilotKitRoutes, sessionContextSnapshot } from "./copilotRuntime.js";
 import { registerLlmChatProviderRoutes } from "./providerRoutes.js";
 import { registerLlmChatSessionRoutes } from "./sessionRoutes.js";
 
@@ -30,5 +30,11 @@ export function registerLlmChatRoutes(app: Hono, deps?: LlmChatRouteDeps): void 
       bashPermissionRules: deps.bashPermissionRules,
     });
   }
-  registerLlmChatSessionRoutes(app, { db: deps?.db });
+  // 占用快照在 copilotRuntime 那一层算(估算件都在那儿),从这里注入 ——
+  // 让 sessionRoutes 保持不认识 copilotRuntime,方向仍然单向。
+  const db = deps?.db;
+  registerLlmChatSessionRoutes(app, {
+    db,
+    sessionContext: db ? (sessionId) => sessionContextSnapshot({ db }, sessionId) : undefined,
+  });
 }

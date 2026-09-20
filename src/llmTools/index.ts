@@ -20,6 +20,7 @@ export type {
   AiEvidenceSource,
   AiEvidenceToolResult,
 } from "./evidence.js";
+export type { BashExecRecorder } from "./bashTool.js";
 export type { ForwardedToolProps } from "./forwardedProps.js";
 export { parseForwardedToolProps } from "./forwardedProps.js";
 export { buildAi2NaoServerTools, type Ai2NaoToolDeps } from "./registry.js";

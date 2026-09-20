@@ -105,7 +105,7 @@ describe("缓存(config.db 的 config_meta,不碰 model_prices)", () => {
 
   it("7 天是新鲜与陈旧的分界", () => {
     const t0 = Date.parse("2026-09-03T00:00:00.000Z");
-    const c = { fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {} };
+    const c = { fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {}, pricing: {} };
     expect(catalogIsStale(c, t0 + CATALOG_MAX_AGE_MS - 1)).toBe(false);
     expect(catalogIsStale(c, t0 + CATALOG_MAX_AGE_MS + 1)).toBe(true);
     // 时间戳解析不出来 → 当陈旧,宁可多拉一次也不要永远用一份坏缓存。
@@ -121,7 +121,7 @@ describe("ensureModelCatalog", () => {
 
   it("缓存新鲜 → 直接用,一个网络请求都不发", async () => {
     let called = 0;
-    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["缓存里的"] }, visionModels: {} });
+    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["缓存里的"] }, visionModels: {}, pricing: {} });
     const r = await ensureModelCatalog({
       providers: WANTED,
       fetchJson: async () => {
@@ -254,10 +254,20 @@ describe("旧格式缓存", () => {
     const t0 = Date.parse("2026-09-03T00:00:00.000Z");
     expect(catalogIsStale({ fetchedAt: "2026-09-03T00:00:00.000Z", providers: {} }, t0 + 1000)).toBe(true);
     expect(
-      catalogIsStale({ fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {} }, t0 + 1000)
+      catalogIsStale({ fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {}, pricing: {} }, t0 + 1000)
     ).toBe(false);
   });
 
+  it("★ 有 visionModels 但没有 pricing 的缓存也算陈旧 —— 窗口与分段价都挂在 pricing 上", () => {
+    // 2026-09-18 真实浏览器走查时撞上:盘上是 0.4.0 写的缓存(有 visionModels、没有 pricing),
+    // 按时间才 4 天,于是被当成新鲜 —— 占用条对所有模型都显示「窗口未知」。
+    const t0 = Date.parse("2026-09-03T00:00:00.000Z");
+    const noPricing = { fetchedAt: "2026-09-03T00:00:00.000Z", providers: {}, visionModels: {} };
+    expect(catalogIsStale(noPricing, t0 + 1000)).toBe(true);
+    // 空对象是「拉过了,这些厂商没有分段价」,与「旧格式没这个键」不同 —— 不能判陈旧。
+    expect(catalogIsStale({ ...noPricing, pricing: {} }, t0 + 1000)).toBe(false);
+  });
+  
   it("★ ensureModelCatalog 遇到旧格式会真去拉,并换成新格式落盘", async () => {
     writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: { deepseek: ["旧的"] } });
     let called = 0;

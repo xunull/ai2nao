@@ -61,14 +61,37 @@ export const LLM_CHAT_PROVIDERS = Object.keys(
  * 目前全部为 true,`adapter-no` 暂时没有真实 provider;保留它是给下一个发不出图的
  * 适配器用的(相关测试用改表模拟)。
  */
-export const PROVIDER_ADAPTER_SENDS_IMAGES: Record<LlmChatProvider, boolean> = {
-  alibaba: true,
-  deepseek: true,
-  minimax: true,
-  moonshotai: true,
-  openai: true,
-  "openai-compatible": true,
-  volcengine: true,
+export const PROVIDER_ADAPTER_CAPABILITIES: Record<
+  LlmChatProvider,
+  {
+    /** 我们装的这版适配器发不发得出图。见上面那段历史:这是依赖版本的属性。 */
+    sendsImages: boolean;
+    /**
+     * 思考怎么回传给**产生它的同一家**厂商:
+     * - `reasoning-part`   思考行还原成 assistant 消息的 reasoning part(适配器转成 `reasoning_content`)
+     * - `protocol-content` 历史 assistant 一律用 `ai2naoProtocol` 的原文当 content,不从展示文本重拼
+     * - `none`             不回传
+     *
+     * **这一档是 provider 级,但 deepseek 那一档的生效范围是 model 级。**
+     * `@ai-sdk/deepseek` 2.0.64 的 `isDeepSeekV4Model` 只认 `deepseek-v4*` /
+     * `deepseek-flash*` / `deepseek-pro*`;非 V4 模型会把「最后一条 user 之前的
+     * assistant」上的 `reasoning_content` 整个裁掉。这不是适配器的缺陷 ——
+     * DeepSeek 协议本身只让 V4 接收历史思考。所以填 `reasoning-part` 对 deepseek
+     * **全系都安全**:V4 回传、非 V4 由适配器自动裁,不会报错。
+     * (实测见 `llmChat.adapterSendsImages.test.ts` 里 V4 与非 V4 两条对照用例。)
+     */
+    reasoningReplay: "reasoning-part" | "protocol-content" | "none";
+  }
+> = {
+  alibaba: { sendsImages: true, reasoningReplay: "none" },
+  deepseek: { sendsImages: true, reasoningReplay: "reasoning-part" },
+  // minimax 走的是 openai-compatible 适配器,但它自己有 provider id,而且思考写在正文里,
+  // 所以它是 `protocol-content`;而 `openai-compatible` 本身不知道对面是谁,只能 `none`。
+  minimax: { sendsImages: true, reasoningReplay: "protocol-content" },
+  moonshotai: { sendsImages: true, reasoningReplay: "none" },
+  openai: { sendsImages: true, reasoningReplay: "none" },
+  "openai-compatible": { sendsImages: true, reasoningReplay: "none" },
+  volcengine: { sendsImages: true, reasoningReplay: "none" },
 };
 
 /** 运行期真正交给 AI SDK 的那一份。6 个后台消费者拿到的也是它。 */
@@ -286,7 +309,7 @@ function migrateFlat(data: Record<string, unknown>): LlmChatDocument {
   for (const rawEntry of Array.isArray(data.models) ? data.models : []) {
     const e = parseFlatEntry(rawEntry);
     if (!e) continue;
-    const groupKey = `${e.keyRef} ${e.baseURL}`;
+    const groupKey = `${e.keyRef}\u0000${e.baseURL}`;
     let id = groupToId.get(groupKey);
     if (!id) {
       id = sanitizeInstanceId(e.keyRef, taken);
@@ -315,7 +338,7 @@ function migrateFlat(data: Record<string, unknown>): LlmChatDocument {
   // 孤儿 key:没有任何模型引用它。provider 猜不出来时落 openai-compatible ——
   // 界面上会显示成一个待修的实例,但密钥一把都不丢。
   for (const [keyRef, secret] of Object.entries(keys)) {
-    const referenced = [...groupToId.keys()].some((g) => g.split(" ")[0] === keyRef);
+    const referenced = [...groupToId.keys()].some((g) => g.split("\u0000")[0] === keyRef);
     if (referenced) continue;
     const provider: LlmChatProvider = isLlmChatProvider(keyRef) ? keyRef : "openai-compatible";
     const id = sanitizeInstanceId(keyRef, taken);

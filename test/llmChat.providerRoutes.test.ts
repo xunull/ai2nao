@@ -229,6 +229,8 @@ describe("GET /api/llm-chat/model-catalog", () => {
       fetchedAt: new Date().toISOString(),
       providers: { deepseek: ["deepseek-chat"] },
       visionModels: {},
+      // 缺 pricing 的旧格式缓存会被当成陈旧而重拉(见 catalogIsStale),新鲜缓存必须带上它。
+      pricing: {},
     });
     const res = await app.request("http://x/api/llm-chat/model-catalog");
     expect(res.status).toBe(200);
@@ -238,7 +240,7 @@ describe("GET /api/llm-chat/model-catalog", () => {
   });
 
   it("★ 火山带一条提示 —— 它的对话标识是接入点 id(ep-…),目录选不出来", async () => {
-    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: {}, visionModels: {} });
+    writeCachedCatalog({ fetchedAt: new Date().toISOString(), providers: {}, visionModels: {}, pricing: {} });
     const res = await app.request("http://x/api/llm-chat/model-catalog");
     const body = (await res.json()) as { notes: Record<string, string> };
     expect(body.notes.volcengine).toContain("接入点");

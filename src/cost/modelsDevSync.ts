@@ -18,7 +18,13 @@ import { replaceProviderPrices, type ModelPriceRow } from "./priceStore.js";
 const DEFAULT_URL = "https://models.dev/api.json";
 const DEFAULT_PROVIDERS = ["anthropic", "openai"];
 const DEFAULT_TIMEOUT_MS = 8_000;
-const PER_MILLION = 1_000_000;
+/**
+ * models.dev 的单价是「每百万 token 美元」,库里与目录缓存存的都是「每 token 美元」。
+ *
+ * **导出是为了让换算口径只有一处真相源。** `modelCatalog` 解析分段价时也要除它;
+ * 两边各写一个同值常量迟早分叉,而分叉出来的后果是单价差一百万倍、还不报错。
+ */
+export const PER_MILLION = 1_000_000;
 
 export type ModelsDevSyncOptions = {
   url?: string;
