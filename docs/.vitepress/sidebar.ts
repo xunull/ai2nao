@@ -31,7 +31,9 @@ interface Item {
 export function buildSidebar(): DefaultTheme.SidebarItem[] {
   const files = fg.sync('**/*.md', {
     cwd: DOCS_ROOT,
-    ignore: ['index.md', '.vitepress/**'], // index.md 是首页，不进侧边栏
+    // index.md 是首页，不进侧边栏；agents/ 已被 config.mts 的 srcExclude 排除，
+    // 不同步忽略的话这里会生成指向不存在页面的链接。
+    ignore: ['index.md', '.vitepress/**', 'agents/**'],
   })
 
   const groups: Record<string, Item[]> = {}

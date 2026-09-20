@@ -107,3 +107,17 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Agent skills
+
+### Issue tracker
+
+Issues 记在这个仓库的 GitHub Issues 里，用 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+用五个默认标签：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文布局 —— 根目录一份 `CONTEXT.md`，ADR 放 `docs/adr/`（两者目前都还没有，按需惰性创建）。详见 `docs/agents/domain.md`。

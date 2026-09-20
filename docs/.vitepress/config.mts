@@ -11,6 +11,10 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
+  // agents/ 是给 AI 编码助手读的仓库约定（issue tracker、triage 标签、领域文档口径），
+  // 不是设计笔记，不发布到站点。sidebar.ts 的 glob 也要同步排除，否则侧边栏会链到不存在的页。
+  srcExclude: ['agents/**'],
+
   themeConfig: {
     nav: [
       { text: '首页', link: '/' },
