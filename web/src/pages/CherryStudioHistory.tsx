@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiGet } from "../api";
 import { MessageText } from "../components/MessageText";
+import { RenderedMarkdown } from "../components/RenderedMarkdown";
 import { formatFileTimeMs } from "../util/formatDisplay";
 
 const PAGE_SIZE = 50;
@@ -16,15 +17,9 @@ type Diagnostic = {
 type Status = {
   platform: string;
   cherryRoot: string;
-  agentsDbPath: string;
-  indexedDbPath: string;
-  exportRoot?: string;
-  indexedDbAvailable: boolean;
-  indexedDbMissing: boolean;
-  indexedDbTopicCount: number | null;
-  agentDbMissing: boolean;
-  exportRootMissing: boolean;
-  envCherryStudioExportRoot: boolean;
+  dbPath: string;
+  dbMissing: boolean;
+  topicCount: number | null;
   warnings?: string[];
 };
 
@@ -43,10 +38,8 @@ type SessionSummary = {
 type SessionsResponse = {
   ok: true;
   cherryRoot: string;
-  agentsDbPath: string;
-  indexedDbPath: string;
-  indexedDbTopicCount: number;
-  exportRoot?: string;
+  dbPath: string;
+  topicCount: number;
   diagnostics: Diagnostic[];
   scannedCount: number;
   truncated: boolean;
@@ -74,6 +67,9 @@ type ApiMessage = {
   role: string;
   content: string;
   timestamp: string;
+  /** Cherry 的 reasoning part。后端 sessionToJson 已经在下发,见 cursorHistory/json.ts。 */
+  thinking?: string | null;
+  model?: string | null;
 };
 
 type SessionDetail = {
@@ -125,28 +121,25 @@ export function CherryStudioHistory() {
   const [searchParams, setSearchParams] = useSearchParams();
   const routeSessionId = routeParams.sessionId ?? "";
   const cherryRoot = searchParams.get("cherryRoot") ?? "";
-  const exportRoot = searchParams.get("exportRoot") ?? "";
   const q = searchParams.get("q") ?? "";
   const page = asPage(searchParams.get("page"));
   const offset = (page - 1) * PAGE_SIZE;
   const selectedSessionId = routeSessionId || searchParams.get("sessionId") || "";
   const [draftCherryRoot, setDraftCherryRoot] = useState(cherryRoot);
-  const [draftExportRoot, setDraftExportRoot] = useState(exportRoot);
   const [draftQ, setDraftQ] = useState(q);
   const [infoOpen, setInfoOpen] = useState(false);
 
   useEffect(() => setDraftCherryRoot(cherryRoot), [cherryRoot]);
-  useEffect(() => setDraftExportRoot(exportRoot), [exportRoot]);
   useEffect(() => setDraftQ(q), [q]);
 
-  const sourceSuffix = useMemo(() => qs({ cherryRoot, exportRoot }), [cherryRoot, exportRoot]);
+  const sourceSuffix = useMemo(() => qs({ cherryRoot }), [cherryRoot]);
   const listSuffix = useMemo(
-    () => qs({ cherryRoot, exportRoot, limit: PAGE_SIZE, offset }),
-    [cherryRoot, exportRoot, offset]
+    () => qs({ cherryRoot, limit: PAGE_SIZE, offset }),
+    [cherryRoot, offset]
   );
   const searchSuffix = useMemo(
-    () => qs({ cherryRoot, exportRoot, q }),
-    [cherryRoot, exportRoot, q]
+    () => qs({ cherryRoot, q }),
+    [cherryRoot, q]
   );
 
   const status = useQuery({
@@ -167,7 +160,7 @@ export function CherryStudioHistory() {
     enabled: q.trim().length > 0,
   });
 
-  const detailSuffix = useMemo(() => qs({ cherryRoot, exportRoot }), [cherryRoot, exportRoot]);
+  const detailSuffix = useMemo(() => qs({ cherryRoot }), [cherryRoot]);
   const session = useQuery({
     queryKey: ["cherry-studio-history-session", selectedSessionId, detailSuffix],
     queryFn: () =>
@@ -177,12 +170,7 @@ export function CherryStudioHistory() {
     enabled: selectedSessionId.length > 0,
   });
 
-  const visibleDiagnostics = useMemo(() => {
-    const configuredExportRoot = exportRoot.trim().length > 0 || status.data?.envCherryStudioExportRoot === true;
-    return (sessions.data?.diagnostics ?? []).filter(
-      (d) => d.kind !== "exportRootMissing" || configuredExportRoot
-    );
-  }, [exportRoot, sessions.data?.diagnostics, status.data?.envCherryStudioExportRoot]);
+  const visibleDiagnostics = sessions.data?.diagnostics ?? [];
 
   useEffect(() => {
     if (selectedSessionId) return;
@@ -208,7 +196,6 @@ export function CherryStudioHistory() {
     e.preventDefault();
     const next = new URLSearchParams();
     if (draftCherryRoot.trim()) next.set("cherryRoot", draftCherryRoot.trim());
-    if (draftExportRoot.trim()) next.set("exportRoot", draftExportRoot.trim());
     if (draftQ.trim()) next.set("q", draftQ.trim());
     next.set("page", "1");
     setSearchParams(next, { replace: true });
@@ -340,10 +327,8 @@ export function CherryStudioHistory() {
           currentSession={session.data?.session}
           diagnostics={visibleDiagnostics}
           draftCherryRoot={draftCherryRoot}
-          draftExportRoot={draftExportRoot}
           draftQ={draftQ}
           onCherryRootChange={setDraftCherryRoot}
-          onExportRootChange={setDraftExportRoot}
           onQChange={setDraftQ}
           onApply={applyFilters}
           onRefresh={refreshAll}
@@ -360,10 +345,8 @@ function CherryInfoModal({
   currentSession,
   diagnostics,
   draftCherryRoot,
-  draftExportRoot,
   draftQ,
   onCherryRootChange,
-  onExportRootChange,
   onQChange,
   onApply,
   onRefresh,
@@ -374,10 +357,8 @@ function CherryInfoModal({
   currentSession?: SessionDetail;
   diagnostics: Diagnostic[];
   draftCherryRoot: string;
-  draftExportRoot: string;
   draftQ: string;
   onCherryRootChange: (value: string) => void;
-  onExportRootChange: (value: string) => void;
   onQChange: (value: string) => void;
   onApply: (event: FormEvent) => void;
   onRefresh: () => void;
@@ -405,12 +386,13 @@ function CherryInfoModal({
             <span
               className={[
                 "rounded-full border px-2.5 py-1 font-medium",
-                status?.indexedDbAvailable
+                status && !status.dbMissing
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                   : "border-amber-200 bg-amber-50 text-amber-900",
               ].join(" ")}
+              title={status?.dbPath}
             >
-              IndexedDB {status?.indexedDbTopicCount ?? sessions?.indexedDbTopicCount ?? 0} topics
+              {status?.topicCount ?? sessions?.topicCount ?? 0} 个话题
             </span>
             {sessions && (
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 font-medium text-neutral-600">
@@ -432,9 +414,9 @@ function CherryInfoModal({
             </div>
           )}
 
-          {status?.indexedDbMissing && (
+          {status?.dbMissing && (
             <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
-              未找到 Cherry Studio IndexedDB，会继续尝试 Agent 与 Markdown 导出来源。
+              {status.warnings?.[0] ?? "未找到 Cherry Studio 的数据库。"}
             </p>
           )}
 
@@ -461,12 +443,6 @@ function CherryInfoModal({
               value={draftCherryRoot}
               onChange={(e) => onCherryRootChange(e.target.value)}
               placeholder="Cherry root"
-            />
-            <input
-              className={`${inputClass} font-mono text-xs`}
-              value={draftExportRoot}
-              onChange={(e) => onExportRootChange(e.target.value)}
-              placeholder="Markdown export root（可选）"
             />
             <div className="flex justify-between gap-3 pt-1">
               <button type="button" className={btnGhost} onClick={onRefresh}>
@@ -625,6 +601,19 @@ function Transcript({ session, warnings }: { session: SessionDetail; warnings: s
                       {formatFileTimeMs(new Date(message.timestamp).getTime())}
                     </span>
                   </header>
+                  {/* Cherry 的 reasoning part。与 claude / cursor / opencode 三个详情页
+                      同一个折叠块 —— 它不进 content,也不进搜索正文(Cherry 自己的
+                      searchable_text 就排除了思考过程)。 */}
+                  {message.thinking != null && message.thinking.trim() !== "" && (
+                    <details className="mb-3 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/60">
+                      <summary className="cursor-pointer select-none px-4 py-2 text-xs font-medium text-amber-950 hover:bg-amber-50">
+                        推理 / thinking
+                      </summary>
+                      <div className="border-t border-amber-200/60 px-4 py-3">
+                        <RenderedMarkdown text={message.thinking} />
+                      </div>
+                    </details>
+                  )}
                   <MessageText role={message.role} text={message.content} />
                 </article>
               );

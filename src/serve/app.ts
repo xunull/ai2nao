@@ -102,7 +102,6 @@ import {
   getCherryStudioStatus,
   listCherryStudioSessions,
   loadCherryStudioSession,
-  resolveCherryStudioExportRoot,
   resolveCherryStudioRoot,
   searchCherryStudioSessions,
 } from "../cherryStudioHistory/index.js";
@@ -201,11 +200,6 @@ function codexHistoryRoot(raw: string | undefined): string {
 function cherryStudioHistoryRoot(raw: string | undefined): string {
   const t = (raw ?? "").trim();
   return resolveCherryStudioRoot(t.length > 0 ? t : undefined);
-}
-
-function cherryStudioExportRoot(raw: string | undefined): string | undefined {
-  const t = (raw ?? "").trim();
-  return resolveCherryStudioExportRoot(t.length > 0 ? t : undefined);
 }
 
 function boolQuery(raw: string | undefined): boolean | undefined {
@@ -1038,8 +1032,7 @@ export function createApp(opts: ServeOptions): Hono {
   app.get("/api/cherry-studio-history/status", async (c) => {
     try {
       const cherryRoot = cherryStudioHistoryRoot(c.req.query("cherryRoot"));
-      const exportRoot = cherryStudioExportRoot(c.req.query("exportRoot"));
-      return c.json(await getCherryStudioStatus(cherryRoot, exportRoot));
+      return c.json(await getCherryStudioStatus(cherryRoot));
     } catch (e) {
       return jsonErr(500, String(e));
     }
@@ -1048,11 +1041,10 @@ export function createApp(opts: ServeOptions): Hono {
   app.get("/api/cherry-studio-history/sessions", async (c) => {
     try {
       const cherryRoot = cherryStudioHistoryRoot(c.req.query("cherryRoot"));
-      const exportRoot = cherryStudioExportRoot(c.req.query("exportRoot"));
       const limit = Math.min(200, Math.max(1, intQuery(c.req.query("limit"), 50)));
       const parsedOffset = parseInt(c.req.query("offset") ?? "0", 10);
       const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
-      const result = await listCherryStudioSessions(cherryRoot, exportRoot, { limit, offset });
+      const result = await listCherryStudioSessions(cherryRoot, { limit, offset });
       return c.json({
         ...result,
         sessions: result.sessions.map(sessionSummaryToJson),
@@ -1065,9 +1057,8 @@ export function createApp(opts: ServeOptions): Hono {
   app.get("/api/cherry-studio-history/sessions/:sessionId", async (c) => {
     try {
       const cherryRoot = cherryStudioHistoryRoot(c.req.query("cherryRoot"));
-      const exportRoot = cherryStudioExportRoot(c.req.query("exportRoot"));
       const sessionId = decodeURIComponent(c.req.param("sessionId"));
-      const detail = await loadCherryStudioSession(sessionId, cherryRoot, exportRoot);
+      const detail = await loadCherryStudioSession(sessionId, cherryRoot);
       if (!detail.session) {
         return jsonErr(404, "session not found");
       }
@@ -1089,10 +1080,8 @@ export function createApp(opts: ServeOptions): Hono {
         return jsonErr(400, "query too long");
       }
       const cherryRoot = cherryStudioHistoryRoot(c.req.query("cherryRoot"));
-      const exportRoot = cherryStudioExportRoot(c.req.query("exportRoot"));
       const results = await searchCherryStudioSessions(q, {
         root: cherryRoot,
-        exportRoot,
         limit: Math.min(200, Math.max(1, intQuery(c.req.query("limit"), 30))),
         contextChars: Math.min(500, Math.max(20, intQuery(c.req.query("context"), 120))),
       });

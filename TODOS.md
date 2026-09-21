@@ -2249,3 +2249,28 @@ Priority: Phase 3
 因为设计文档会归档，而这是那一轮里唯一「先决条件已具备、只差界面」的产品想法。
 
 **Depends on / blocked by:** 该设计的 T6（发送视图指纹）与 T7（压缩）先落地。
+
+## Cherry Studio 的用量账与 agent 会话（新库里还没接的两张表）
+
+2026-09-21 把 Cherry 的读取切到 `Data/cherrystudio.sqlite`（ADR-0003）时发现，那个库里
+还有两块 ai2nao 目前一行都没读：
+
+**`ai_usage_record` —— 777 行，2026-02-14 到 07-24。** 逐请求的用量账：`provider_name` /
+`model_name` / `request_count` / `modality`，还带 `api_key_label` 与 `api_key_attribution`
+（哪把 key 付的钱）。本仓库已经有 Token 趋势与费用那一整套（六个来源），Cherry 是第七个
+现成的来源，而且它比另外几家更完整 —— 它自己就记了 key 归属，不用我们去猜。
+
+**`agent_session` / `agent_session_message` —— 4 行 / 0 行。** Cherry 的 agent 侧。
+切库时特意没接：两边正文都是 0 条，接了只会多出几条点进去什么都没有的空壳会话。
+等它真有正文了再做，那时才知道 `agent_session_message` 的格式长什么样。
+
+**Why:** 用量账那块是「已经躺在那里、白拿」的数据。Cherry 的对话正文停在 07-24
+（之后没再用普通对话），所以这条的价值取决于你还会不会回去用 Cherry —— 不急，
+但值得在动 Token 趋势的时候顺手看一眼。
+
+**Cons:**
+- 第七个来源意味着趋势页、排行页、覆盖面说明全都要跟着改一遍，不是只加一个 adapter
+- `ai_usage_record` 的时间停在 07-24，接进来会在图上留一段死数据
+- agent 那侧的格式现在**无法验证** —— 没有真实数据，写出来的解析只是在验证自己的想象
+
+**Context:** 表结构与行数见 `docs/adr/0003-cherry-studio-sqlite.md` 的调查过程。

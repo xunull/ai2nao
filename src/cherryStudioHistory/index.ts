@@ -1,54 +1,46 @@
 import { existsSync } from "node:fs";
+import type { ChatSession, ChatSessionSummary, SearchResult } from "../cursorHistory/types.js";
 import {
-  cherryStudioAgentsDbPath,
-  cherryStudioIndexedDbPath,
-  resolveCherryStudioExportRoot,
+  CHERRY_STUDIO_MIN_VERSION,
+  countTopics,
+  listTopics,
+  loadTopic,
+  openCherryStudioDb,
+  searchMessages,
+} from "./db.js";
+import {
+  cherryStudioDbPath,
   resolveCherryStudioRoot,
 } from "./paths.js";
-import { listCherryAgentSessions, loadCherryAgentSession } from "./agentsDb.js";
-import {
-  countCherryIndexedDbTopics,
-  listCherryIndexedDbSessions,
-  loadCherryIndexedDbSession,
-} from "./indexedDb.js";
-import {
-  listCherryMarkdownSessions,
-  loadCherryMarkdownSession,
-} from "./markdownExport.js";
-import type { ChatSessionSummary, SearchResult, SearchSnippet } from "../cursorHistory/types.js";
 
-export {
-  resolveCherryStudioRoot,
-  resolveCherryStudioExportRoot,
-  cherryStudioAgentsDbPath,
-  cherryStudioIndexedDbPath,
-};
+export { resolveCherryStudioRoot, cherryStudioDbPath };
+
+/**
+ * Cherry Studio 的读取入口。**只认 `Data/cherrystudio.sqlite`**(2.0.14 起)。
+ *
+ * 2.0.14 之前数据散在 IndexedDB 的 leveldb、`Data/agents.db` 与可选的 Markdown
+ * 导出目录里,曾经三条路径各有一个 id 前缀。那三条已经删干净 ——
+ * 见 docs/adr/0003-cherry-studio-sqlite.md。
+ *
+ * 会话 id 就是 topic id,不带前缀:只剩一条源之后,前缀除了误导没有别的作用
+ * (它指的还是一个已经不存在的存储)。
+ */
 
 export type CherryStudioHistoryStatus = {
   platform: NodeJS.Platform;
   cherryRoot: string;
-  agentsDbPath: string;
-  indexedDbPath: string;
-  exportRoot?: string;
-  indexedDbAvailable: boolean;
-  indexedDbMissing: boolean;
-  indexedDbTopicCount: number | null;
-  agentDbMissing: boolean;
-  exportRootMissing: boolean;
-  envCherryStudioExportRoot: boolean;
+  dbPath: string;
+  dbMissing: boolean;
+  topicCount: number | null;
   warnings?: string[];
 };
 
 export type CherryStudioListResult = {
   ok: true;
   cherryRoot: string;
-  agentsDbPath: string;
-  indexedDbPath: string;
-  indexedDbTopicCount: number;
-  exportRoot?: string;
+  dbPath: string;
+  topicCount: number;
   diagnostics: Array<{ kind: string; message: string; path?: string }>;
-  scannedCount: number;
-  truncated: boolean;
   total: number;
   limit: number;
   offset: number;
@@ -60,157 +52,111 @@ export type CherryStudioListOptions = {
   offset?: number;
 };
 
-export async function getCherryStudioStatus(root?: string, exportRoot?: string): Promise<CherryStudioHistoryStatus> {
+/** 库不在时的说法。要点名版本 —— 否则用户只会看到一个空列表,不知道为什么。 */
+const MISSING_MESSAGE =
+  `未找到 Cherry Studio 的数据库。需要 Cherry Studio ${CHERRY_STUDIO_MIN_VERSION} 或更新版本` +
+  `（更早的版本把对话存在 IndexedDB 里，本程序已不再读取那种格式）。`;
+
+export async function getCherryStudioStatus(root?: string): Promise<CherryStudioHistoryStatus> {
   const cherryRoot = resolveCherryStudioRoot(root);
-  const resolvedExportRoot = resolveCherryStudioExportRoot(exportRoot);
-  const agentsDbPath = cherryStudioAgentsDbPath(cherryRoot);
-  const indexedDbPath = cherryStudioIndexedDbPath(cherryRoot);
-  const indexedDbMissing = !existsPath(indexedDbPath);
-  let indexedDbTopicCount: number | null = null;
-  let warnings: string[] = [];
-  if (!indexedDbMissing) {
-    const counted = await countCherryIndexedDbTopics(cherryRoot);
-    indexedDbTopicCount = counted.count;
-    warnings = counted.warnings;
+  const dbPath = cherryStudioDbPath(cherryRoot);
+  const dbMissing = !existsSync(dbPath);
+  if (dbMissing) {
+    return {
+      platform: process.platform,
+      cherryRoot,
+      dbPath,
+      dbMissing: true,
+      topicCount: null,
+      warnings: [MISSING_MESSAGE],
+    };
   }
-  return {
-    platform: process.platform,
-    cherryRoot,
-    agentsDbPath,
-    indexedDbPath,
-    exportRoot: resolvedExportRoot,
-    indexedDbAvailable: !indexedDbMissing && indexedDbTopicCount !== null && warnings.length === 0,
-    indexedDbMissing,
-    indexedDbTopicCount,
-    agentDbMissing: !existsPath(agentsDbPath),
-    exportRootMissing: !resolvedExportRoot || !existsPath(resolvedExportRoot),
-    envCherryStudioExportRoot: Boolean(process.env.CHERRY_STUDIO_EXPORT_ROOT),
-    warnings: warnings.length > 0 ? warnings : undefined,
-  };
+  const db = openCherryStudioDb(dbPath);
+  try {
+    return {
+      platform: process.platform,
+      cherryRoot,
+      dbPath,
+      dbMissing: false,
+      topicCount: countTopics(db),
+    };
+  } finally {
+    db.close();
+  }
 }
 
 export async function listCherryStudioSessions(
   root?: string,
-  exportRoot?: string,
   options: CherryStudioListOptions = {}
 ): Promise<CherryStudioListResult> {
-  const status = await getCherryStudioStatus(root, exportRoot);
-  const diagnostics: CherryStudioListResult["diagnostics"] = [];
-  const indexed = await listCherryIndexedDbSessions(status.cherryRoot);
-  for (const warning of indexed.warnings) {
-    diagnostics.push({ kind: "indexedDbWarning", message: warning, path: status.indexedDbPath });
+  const cherryRoot = resolveCherryStudioRoot(root);
+  const dbPath = cherryStudioDbPath(cherryRoot);
+  if (!existsSync(dbPath)) {
+    return {
+      ok: true,
+      cherryRoot,
+      dbPath,
+      topicCount: 0,
+      diagnostics: [{ kind: "dbMissing", message: MISSING_MESSAGE, path: dbPath }],
+      total: 0,
+      limit: 0,
+      offset: 0,
+      sessions: [],
+    };
   }
-  const agent = listCherryAgentSessions(status.agentsDbPath);
-  for (const warning of agent.warnings) {
-    diagnostics.push({ kind: "agentDbMissing", message: warning, path: status.agentsDbPath });
+
+  const db = openCherryStudioDb(dbPath);
+  try {
+    const sessions = listTopics(db);
+    const total = sessions.length;
+    const limit = normalizeLimit(options.limit, total);
+    const offset = normalizeOffset(options.offset);
+    return {
+      ok: true,
+      cherryRoot,
+      dbPath,
+      topicCount: total,
+      diagnostics: [],
+      total,
+      limit,
+      offset,
+      sessions: options.limit == null ? sessions : sessions.slice(offset, offset + limit),
+    };
+  } finally {
+    db.close();
   }
-  const exported = await listCherryMarkdownSessions(status.exportRoot);
-  for (const warning of exported.warnings) {
-    diagnostics.push({
-      kind: warning.includes("not configured") ? "exportRootMissing" : "exportWarning",
-      message: warning,
-      path: status.exportRoot,
-    });
-  }
-  const sessions = [...indexed.sessions, ...agent.sessions, ...exported.sessions].sort(
-    (a, b) =>
-      b.lastUpdatedAt.getTime() - a.lastUpdatedAt.getTime() ||
-      a.id.localeCompare(b.id)
-  );
-  sessions.forEach((session, index) => {
-    session.index = index + 1;
-  });
-  const total = sessions.length;
-  const limit = normalizeLimit(options.limit, total);
-  const offset = normalizeOffset(options.offset);
-  const page = options.limit == null ? sessions : sessions.slice(offset, offset + limit);
-  return {
-    ok: true,
-    cherryRoot: status.cherryRoot,
-    agentsDbPath: status.agentsDbPath,
-    indexedDbPath: status.indexedDbPath,
-    indexedDbTopicCount: indexed.topicCount,
-    exportRoot: status.exportRoot,
-    diagnostics,
-    scannedCount: indexed.topicCount + agent.sessions.length + exported.scannedCount,
-    truncated: exported.truncated,
-    total,
-    limit,
-    offset,
-    sessions: page,
-  };
 }
 
 export async function loadCherryStudioSession(
   sessionId: string,
-  root?: string,
-  exportRoot?: string
-) {
-  const status = await getCherryStudioStatus(root, exportRoot);
-  if (sessionId.startsWith("indexeddb:")) {
-    return loadCherryIndexedDbSession(status.cherryRoot, sessionId);
+  root?: string
+): Promise<{ session: ChatSession | null; warnings: string[] }> {
+  const dbPath = cherryStudioDbPath(resolveCherryStudioRoot(root));
+  if (!existsSync(dbPath)) return { session: null, warnings: [MISSING_MESSAGE] };
+  const db = openCherryStudioDb(dbPath);
+  try {
+    return { session: loadTopic(db, sessionId), warnings: [] };
+  } finally {
+    db.close();
   }
-  if (sessionId.startsWith("agent:")) {
-    return {
-      session: loadCherryAgentSession(status.agentsDbPath, sessionId.slice("agent:".length)),
-      warnings: [] as string[],
-    };
-  }
-  if (sessionId.startsWith("export:") && status.exportRoot) {
-    return loadCherryMarkdownSession(status.exportRoot, sessionId);
-  }
-  return { session: null, warnings: [] as string[] };
 }
 
 export async function searchCherryStudioSessions(
   query: string,
-  options: { limit?: number; contextChars?: number; root?: string; exportRoot?: string } = {}
+  options: { limit?: number; contextChars?: number; root?: string } = {}
 ): Promise<SearchResult[]> {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const list = await listCherryStudioSessions(options.root, options.exportRoot);
-  const limit = Math.max(1, Math.min(200, options.limit ?? 30));
-  const contextChars = Math.max(20, Math.min(500, options.contextChars ?? 120));
-  const results: SearchResult[] = [];
-
-  for (const summary of list.sessions) {
-    const detail = await loadCherryStudioSession(summary.id, options.root, options.exportRoot).catch(() => null);
-    const session = detail?.session;
-    if (!session) continue;
-    const snippets: SearchSnippet[] = [];
-    for (const message of session.messages) {
-      const lower = message.content.toLowerCase();
-      const idx = lower.indexOf(q);
-      if (idx < 0) continue;
-      snippets.push({
-        messageRole: message.role,
-        text: snippetAround(message.content, idx, query.length, contextChars),
-        matchPositions: [[Math.max(0, idx), idx + query.length]],
-      });
-      if (snippets.length >= 3) break;
-    }
-    if (snippets.length === 0) continue;
-    results.push({
-      sessionId: summary.id,
-      index: summary.index,
-      workspacePath: summary.workspacePath,
-      createdAt: summary.createdAt,
-      matchCount: snippets.length,
-      snippets,
+  if (!query.trim()) return [];
+  const dbPath = cherryStudioDbPath(resolveCherryStudioRoot(options.root));
+  if (!existsSync(dbPath)) return [];
+  const db = openCherryStudioDb(dbPath);
+  try {
+    return searchMessages(db, query, {
+      limit: Math.max(1, Math.min(200, options.limit ?? 30)),
+      contextChars: Math.max(20, Math.min(500, options.contextChars ?? 120)),
     });
-    if (results.length >= limit) break;
+  } finally {
+    db.close();
   }
-  return results;
-}
-
-function snippetAround(text: string, idx: number, queryLength: number, contextChars: number): string {
-  const start = Math.max(0, idx - contextChars);
-  const end = Math.min(text.length, idx + queryLength + contextChars);
-  return `${start > 0 ? "..." : ""}${text.slice(start, end).replace(/\s+/g, " ").trim()}${end < text.length ? "..." : ""}`;
-}
-
-function existsPath(path: string): boolean {
-  return Boolean(path) && existsSync(path);
 }
 
 function normalizeLimit(raw: number | undefined, total: number): number {
