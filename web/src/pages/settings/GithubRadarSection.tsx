@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Folder } from "lucide-react";
 import { apiPatch } from "../../api";
+import { canPickDirectory, pickDirectory } from "../../lib/pickDirectory";
 
 type Setting = {
   set: boolean;
@@ -23,6 +24,9 @@ function shortErr(e: unknown): string {
  *
  * 留空是合法的:那样只用 star 库的信号,重算结果里会带一条说明。
  * 填错(不存在、不是目录、相对路径)在保存时就会被拒绝,不会等到任务跑起来才发现。
+ *
+ * 「选择目录」走系统对话框(Electron 外壳注入)。普通浏览器里拿不到真实路径,
+ * 那种情况下按钮不渲染,文本框照旧可以手打。
  */
 export function GithubRadarSection({
   setting,
@@ -33,6 +37,11 @@ export function GithubRadarSection({
 }) {
   const stored = String((setting.values as { cwd?: unknown } | null)?.cwd ?? "");
   const [cwd, setCwd] = useState(stored);
+
+  async function choose() {
+    const picked = await pickDirectory();
+    if (picked) setCwd(picked); // 取消返回 null —— 不要把输入框清空
+  }
 
   const save = useMutation({
     mutationFn: () => apiPatch<unknown>("/api/settings/setting/github-radar", { cwd: cwd.trim() }),
@@ -52,14 +61,25 @@ export function GithubRadarSection({
       <label className="block">
         <span className="mb-1 flex items-center gap-1.5 text-xs font-medium text-neutral-700">
           <Folder className="h-3.5 w-3.5" aria-hidden="true" />
-          目录绝对路径
+          目录
         </span>
-        <input
-          value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
-          placeholder="留空 = 不扫当前工作"
-          className="h-9 w-full rounded-lg border border-neutral-200 bg-white px-3 font-mono text-xs"
-        />
+        <div className="flex gap-2">
+          <input
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="留空 = 不扫当前工作"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 font-mono text-xs"
+          />
+          {canPickDirectory() && (
+            <button
+              type="button"
+              onClick={() => void choose()}
+              className="h-9 shrink-0 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm transition hover:border-blue-200 hover:bg-slate-50"
+            >
+              选择目录…
+            </button>
+          )}
+        </div>
       </label>
 
       <div className="mt-3 flex items-center gap-3">

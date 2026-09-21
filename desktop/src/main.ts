@@ -1,13 +1,17 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   globalShortcut,
+  ipcMain,
   Menu,
   nativeImage,
   Notification,
   shell,
   Tray,
 } from "electron";
+import { fileURLToPath } from "node:url";
+import { dirname, join as joinPath } from "node:path";
 import { probeDaemon, type ProbeResult } from "../../dist/serve/probeDaemon.js";
 import {
   emptyNotifyState,
@@ -175,8 +179,9 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // No preload: the shell has nothing to say to the page. Adding one later
-      // means deciding what to expose — keep the surface at zero until then.
+      // 暴露面只有一个方法:弹系统目录选择器。理由与边界写在 preload.ts 顶部 ——
+      // 简短版:浏览器拿不到真实路径,而这个应用有三处要用户给出绝对目录。
+      preload: joinPath(dirname(fileURLToPath(import.meta.url)), "preload.js"),
     },
   });
   win.once("ready-to-show", () => win.show());
@@ -492,9 +497,32 @@ function createTray(): void {
 /* ------------------------------------------------------------------ *
  * Lifecycle
  * ------------------------------------------------------------------ */
+/**
+ * 目录选择器。页面通过 preload 暴露的唯一方法调到这里。
+ *
+ * 用 `fromWebContents` 认发起的窗口:macOS 上对话框因此是挂在那个窗口上的 sheet,
+ * 而不是一个可能飘到窗口后面的独立面板 —— 守护进程自己用 osascript 弹就是后者,
+ * 这也是当初没走那条路的原因。
+ */
+function registerDialogHandlers(): void {
+  ipcMain.handle("dialog:pickDirectory", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      properties: ["openDirectory" as const, "createDirectory" as const],
+      // 不设 defaultPath:系统会记住上次的位置,比每次都回到 home 好用。
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
 
+  registerDialogHandlers();
   createTray();
 
   if (!globalShortcut.register(SHORTCUT, toggleWindow)) {

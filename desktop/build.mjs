@@ -77,6 +77,21 @@ await build({
   logLevel: "info",
 });
 
+// ---- preload ----
+// 必须是 CJS:`sandbox: true` 下的 preload 不支持 ESM,而壳本身是 esm。
+// 它能拿到的 Node 也只有 electron 的一小撮模块,所以这里只 bundle 自己的代码。
+await build({
+  entryPoints: [join(HERE, "src/preload.ts")],
+  outfile: join(OUT, "preload.js"),
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  external: ["electron"],
+  sourcemap: true,
+  logLevel: "info",
+});
+
 // ---- daemon ----
 await build({
   entryPoints: [join(REPO, "src/cli.ts")],
