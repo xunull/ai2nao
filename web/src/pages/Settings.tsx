@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Bell, BookOpen, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPatch } from "../api";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
+import { GithubRadarSection } from "./settings/GithubRadarSection";
 import { RagCorpusSection } from "./settings/RagCorpusSection";
 // 与 /ai-chat 共用同一份 status 契约 —— 两处各抄一份就会悄悄漂开。
 import type { LlmChatStatus } from "../aiChat/types";
@@ -37,7 +38,7 @@ type SettingsRes = {
   replayGapMinutes: number;
   github: { set: boolean; source: CredSource };
   credentials: Record<CredName, Credential>;
-  settings: { "rag-corpus": Setting };
+  settings: { "rag-corpus": Setting; "github-radar": Setting };
 };
 
 function shortErr(e: unknown): string {
@@ -154,6 +155,11 @@ export function Settings() {
             {active === "sources" && (
               <>
                 <GithubTokenSection cred={q.data.credentials.github} onChanged={refresh} />
+                {/* 与 token 同一栏:配 GitHub 的人在同一个地方把雷达的目录也配了。 */}
+                <GithubRadarSection
+                  setting={q.data.settings["github-radar"]}
+                  onChanged={refresh}
+                />
                 <WebSearchSection cred={q.data.credentials["web-search"]} onChanged={refresh} />
                 {/* Footnotes, not forms: these credentials are edited elsewhere,
                     and a full card each would push this category past one screen. */}

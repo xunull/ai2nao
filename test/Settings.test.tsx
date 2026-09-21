@@ -58,6 +58,13 @@ function settingsPayload(over: Record<string, Partial<Cred>> = {}) {
     },
     settings: {
       "rag-corpus": { set: false, source: null, label: "RAG 语料", values: null },
+      // 真实接口按 SETTING_NAMES 全量返回,夹具要跟着;少一个会让对应分区拿到 undefined。
+      "github-radar": {
+        set: false,
+        source: null,
+        label: "开源雷达 · 当前工作目录",
+        values: null,
+      },
     },
   };
 }

@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { expandUserPath } from "../path/expandUserPath.js";
+import { parseGithubRadarSettingJson } from "../github/config.js";
 import { parseRagCorpusJson, readRagFileCorpus } from "../rag/config.js";
 import { CredentialPatchError, mergePatch } from "./credentialApi.js";
 import type { SettingSpec } from "./schema.js";
@@ -103,7 +104,39 @@ export const SETTING_SPECS: Record<SettingName, SettingSpec> = {
       return corpusOnly;
     },
   },
+  "github-radar": {
+    label: "开源雷达 · 当前工作目录",
+    parse: parseGithubRadarSettingJson,
+    // 没有回退文件 —— 这个设置是新的,不存在需要迁移的历史 JSON。
+    fileFallback: null,
+    validate: (merged) => ({ cwd: validateRadarCwd(merged.cwd) }),
+  },
 };
+
+/**
+ * 雷达目录:绝对路径 + 存在 + 是目录。空串合法,表示「不扫当前工作」。
+ *
+ * **不要求是 git 仓库**:当前工作扫描除了 git 还有 TODO 与文档两类来源,
+ * 一个非 git 的笔记目录仍然有用;git 那一路在运行时给 warning 就够。
+ *
+ * 与 corpusRoots 同口径:保存时就校验存在性。这个设置的唯一作用就是让 git 命令
+ * 在那儿跑,路径错了它就是个纯粹的配置错误,越早说越好。
+ */
+function validateRadarCwd(raw: unknown): string {
+  if (raw == null) return "";
+  if (typeof raw !== "string") throw new CredentialPatchError("cwd must be a string");
+  const trimmed = raw.trim();
+  if (trimmed === "") return "";
+  const p = expandUserPath(trimmed);
+  if (!isAbsolute(p)) throw new CredentialPatchError(`${trimmed}: not an absolute path`);
+  try {
+    if (!statSync(p).isDirectory()) throw new CredentialPatchError(`${trimmed}: not a directory`);
+  } catch (e) {
+    if (e instanceof CredentialPatchError) throw e;
+    throw new CredentialPatchError(`${trimmed}: does not exist`);
+  }
+  return p;
+}
 
 /** Where the config in effect actually comes from: db setting → 该设置的回退文件。 */
 export function settingDto(name: SettingName): SettingDto {

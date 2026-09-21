@@ -23,6 +23,9 @@ import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "../agentUserMessages/kimiIngest.js";
 import { ingestHermesUserMessages } from "../agentUserMessages/hermesIngest.js";
+import { loadGithubToken } from "../github/config.js";
+import { syncGithub } from "../github/sync.js";
+import { refreshRadarInsights } from "../github/radarInsights/snapshot.js";
 import { refreshKimiTokenUsage } from "../kimiTokenUsage/refresh.js";
 import { refreshCosmos } from "../workCosmos/refresh.js";
 import { refreshWorkDuration } from "../workDuration/refresh.js";
@@ -694,6 +697,74 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
             watermarkMs: r.watermarkMs,
           },
           errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // GitHub 镜像。**默认增量**:全量要把 283 个仓库的 commit count 全部重取,
+      // 实测 127 秒,而增量 5 秒。增量本身已经会补缺、并重取 7 天以上没查过的
+      // commit count,所以「陈旧数据慢慢补上」这件事不需要定期全量来兜。
+      // 想全量就在调度页把 config 的 full 改成 true 跑一轮再改回去。
+      key: "github.sync",
+      label: "GitHub 镜像同步",
+      description:
+        "增量同步自己的仓库与 star 到本地镜像,供 /github 概览、标签透视与开源雷达使用。需要先配置 GitHub token。",
+      category: "model_cache",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      defaultConfig: { full: false },
+      run: async (ctx) => {
+        const loaded = loadGithubToken();
+        if (!loaded) {
+          // 与 minimax.tokens.sync 同口径:任务是用户主动打开的,没凭据就永远干不了活 ——
+          // 报 failed 让它在调度页上是红的,而不是一个会被忽略的灰色「跳过」。
+          return {
+            status: "failed",
+            summary: { reason: "no github token" },
+            errorSummary: "没有配置 GitHub token（设置页或 GITHUB_TOKEN 环境变量）",
+          };
+        }
+        const mode = ctx.config.full === true ? "full" : "incremental";
+        const result = await syncGithub(ctx.db, { token: loaded.token, mode });
+        const failures = result.errors.length + result.commitCountFailures;
+        return {
+          // 部分失败照 kimi 的口径:个别仓库取不到 commit count 不该把整轮判死,
+          // 其余仓库与 star 已经入库了。
+          status: failures > 0 ? "partial" : "success",
+          summary: { ...result },
+          errorSummary: result.errors[0] ?? null,
+        };
+      },
+    },
+    {
+      // 纯本地重算,不联网 —— 与上面那个同步是两种节奏:star 库变得慢,
+      // 而「你当前在做什么」变得快,所以它该独立跑,失败原因也完全不同。
+      key: "github.radar.insights.refresh",
+      label: "开源雷达洞察重算",
+      description:
+        "用本地 star 镜像与「当前工作目录」重算开源雷达的推荐快照。不联网。目录在设置页配置,留空则只用 star 信号。",
+      category: "derived",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const result = refreshRadarInsights(ctx.db);
+        if (!result.ok) {
+          // refresh_in_progress 不是故障:有人正在页面上点刷新,下一轮再来。
+          const inProgress = result.status === "refresh_in_progress";
+          return {
+            status: inProgress ? "skipped" : "failed",
+            summary: { reason: result.status },
+            errorSummary: inProgress ? null : result.error,
+          };
+        }
+        return {
+          status: result.warnings.length > 0 ? "partial" : "success",
+          summary: {
+            status: result.status,
+            insights: result.snapshot?.insights.length ?? 0,
+            warnings: result.warnings.map((w) => w.code),
+          },
+          errorSummary: null,
         };
       },
     },

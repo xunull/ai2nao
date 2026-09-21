@@ -53,9 +53,9 @@ export const CREDENTIAL_NAMES: readonly CredentialName[] = [
  * called `credential`. (Renaming `credential` itself was rejected — config.db
  * has no migration runner, so a rename would orphan every stored key.)
  */
-export type SettingName = "rag-corpus";
+export type SettingName = "rag-corpus" | "github-radar";
 
-export const SETTING_NAMES: readonly SettingName[] = ["rag-corpus"] as const;
+export const SETTING_NAMES: readonly SettingName[] = ["rag-corpus", "github-radar"] as const;
 
 /** The two entry tables, keyed by a closed enum — never an interpolated string. */
 const ENTRY_TABLE = { credential: "credential", setting: "setting" } as const;

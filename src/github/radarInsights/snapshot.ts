@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { buildEvidenceForRepo, listRadarCandidates } from "./evidence.js";
-import { scanCurrentGitContext, sha1 } from "./currentWork.js";
+import { scanCurrentGitContext, sha1, type CurrentWorkSource } from "./currentWork.js";
+import { readGithubRadarCwd } from "../config.js";
 import { listIndexedProjectSources } from "./projectContext.js";
 import {
   applyFeedbackEffects,
@@ -116,7 +117,23 @@ export function refreshRadarInsights(
     }
 
     const projectContext = listIndexedProjectSources(db);
-    const gitContext = scanCurrentGitContext({ cwd: args.cwd });
+    // `args.cwd` 只给测试和调用方覆盖用;生产走设置。**留空不回退到进程 cwd** ——
+    // 打包的桌面版守护进程 cwd 是 `/`,扫出来必然是空,回退等于白 fork 几个 git 进程
+    // 去确认一件已知的事,而且界面上看不出「这批洞察没有当前工作上下文」。
+    const radarCwd = args.cwd ?? readGithubRadarCwd();
+    const gitContext = radarCwd
+      ? scanCurrentGitContext({ cwd: radarCwd })
+      : {
+          sources: [] as CurrentWorkSource[],
+          warnings: [
+            {
+              code: "no_current_work_dir" as const,
+              message:
+                "没有配置「开源雷达 · 当前工作目录」，这批洞察只用了 star 库的信号，没有当前工作上下文。",
+            },
+          ],
+          git_context_hash: null,
+        };
     const sources = [...projectContext.sources, ...gitContext.sources];
     const warnings = [...projectContext.warnings, ...gitContext.warnings];
     const candidates = listRadarCandidates(db, args.candidateLimit ?? 200);

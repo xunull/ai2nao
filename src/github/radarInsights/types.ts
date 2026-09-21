@@ -53,7 +53,7 @@ export type RadarInsightRefreshError =
   (typeof RADAR_INSIGHT_REFRESH_ERRORS)[number];
 
 export type RadarInsightWarning = {
-  code: RadarInsightRefreshError | "docs_skipped";
+  code: RadarInsightRefreshError | "docs_skipped" | "no_current_work_dir";
   message: string;
 };
 

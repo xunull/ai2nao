@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { defaultGithubConfigPath } from "../config.js";
-import { getCredentialRaw } from "../settings/store.js";
+import { getCredentialRaw, getSettingRaw } from "../settings/store.js";
 
 /**
  * On-disk shape of `~/.ai2nao/github.json`. Only `token` is required; the
@@ -223,6 +223,38 @@ export function githubTokenStatus(): GithubTokenStatus {
       insecureFilePermissions: insecure,
     };
   }
+}
+
+/**
+ * 开源雷达的「当前工作目录」。
+ *
+ * 洞察重算要靠 git 分支、提交和 TODO 文档回答「你现在在做什么」,而那些只能从一个
+ * 具体目录里扫出来(`radarInsights/currentWork.ts` 用 execGitSync)。原来它用的是
+ * **进程 cwd**,而打包的桌面版守护进程 cwd 是 `/` —— 扫出来必然是空,于是那批
+ * 「现在可能用得上」的推荐实际上退化成了静态排序,界面上还看不出来。
+ *
+ * 所以把它做成一个显式设置。留空时**不回退到进程 cwd**:回退保持的是一个已知无效的
+ * 行为,还要白白 fork 几个 git 进程去确认。留空就跳过当前工作扫描,并在结果里说明。
+ */
+export type GithubRadarSetting = { cwd: string };
+
+export function parseGithubRadarSettingJson(raw: string): GithubRadarSetting | null {
+  try {
+    const data = JSON.parse(raw) as { cwd?: unknown };
+    const cwd = typeof data.cwd === "string" ? data.cwd.trim() : "";
+    return { cwd };
+  } catch {
+    return null;
+  }
+}
+
+/** 设置里的目录;没配或空串时返回 null(调用方据此跳过当前工作扫描)。 */
+export function readGithubRadarCwd(): string | null {
+  const stored = getSettingRaw("github-radar");
+  if (!stored) return null;
+  const parsed = parseGithubRadarSettingJson(stored);
+  const cwd = parsed?.cwd ?? "";
+  return cwd.length > 0 ? cwd : null;
 }
 
 export { configPathFromEnv as _githubConfigPathForTest };
