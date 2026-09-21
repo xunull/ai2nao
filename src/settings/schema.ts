@@ -259,3 +259,31 @@ export const CREDENTIAL_SPECS: Record<CredentialName, CredentialSpec> = {
     label: "Kimi Code · 额度查询",
   },
 };
+
+// ---------- Settings（非机密,与凭据同一套存储,但 DTO 不做脱敏）----------
+
+/**
+ * 一个设置的规格。与上面的 `CREDENTIAL_SPECS` 同构 —— 这里放「怎么解析、
+ * 从哪回退、怎么校验」,`settingApi.ts` 只负责按名分派。
+ *
+ * 原来 `settingApi.ts` 是照着「只有 rag-corpus 一个成员」直接写死的,
+ * 文件头当时明确写了「不值得为一个成员建注册表」。第二个设置出现之后那个前提没了,
+ * 但注册表的形状不是新发明的 —— 凭据那边一直是这么做的。
+ *
+ * **只有类型在这里,注册表本体在 `settingApi.ts`**:每个 spec 的 `validate` 要抛
+ * `CredentialPatchError`,而那个类住在 `credentialApi.ts`,后者已经 import 本文件 ——
+ * 注册表放这儿会成环。`CREDENTIAL_SPECS` 没这个问题是因为它不抛那个错。
+ */
+export type SettingSpec = {
+  /** 设置页上的名字。 */
+  label: string;
+  /** 解析库里存的 JSON;形状不对返回 null(当作没存)。 */
+  parse: (raw: string) => unknown | null;
+  /** 库里没有时的回退来源(rag 是 rag.json)。没有回退就是 null。 */
+  fileFallback: (() => unknown | null) | null;
+  /**
+   * 校验 PATCH 合并之后的整体值,返回**要落库的**那一份。
+   * 拒绝时抛 `CredentialPatchError`。
+   */
+  validate: (merged: Record<string, unknown>) => unknown;
+};
