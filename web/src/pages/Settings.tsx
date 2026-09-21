@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Bell, BookOpen, Bot, Database, Folder, Layers, Plus, Sliders, X } from "lucide-react";
+import { Bell, BookOpen, Bot, Database, Folder, FolderOpen, Layers, Plus, Sliders, X } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPatch } from "../api";
+import { canPickDirectory, pickDirectory } from "../lib/pickDirectory";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
 import { GithubRadarSection } from "./settings/GithubRadarSection";
 import { RagCorpusSection } from "./settings/RagCorpusSection";
@@ -1265,10 +1266,18 @@ function ScanRootsSection({
     onSuccess: () => onChanged(),
   });
 
-  function add() {
-    const p = draft.trim();
-    if (!p) return;
-    save.mutate([...roots, p]);
+  function addPath(p: string) {
+    const clean = p.trim();
+    if (!clean || roots.includes(clean)) return;
+    save.mutate([...roots, clean]);
+  }
+
+  const add = () => addPath(draft);
+
+  /** 系统对话框选完直接入列并保存 —— 与手打后点「添加」同一条路径。 */
+  async function choose() {
+    const picked = await pickDirectory();
+    if (picked) addPath(picked);
   }
 
   return (
@@ -1322,6 +1331,17 @@ function ScanRootsSection({
           <Plus aria-hidden="true" className="h-4 w-4" />
           添加
         </button>
+        {canPickDirectory() && (
+          <button
+            type="button"
+            onClick={() => void choose()}
+            disabled={save.isPending}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium text-[var(--fg)] outline-none transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)] disabled:opacity-50"
+          >
+            <FolderOpen aria-hidden="true" className="h-4 w-4" />
+            选择
+          </button>
+        )}
       </div>
       {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
 

@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { Folder, Plus, X } from "lucide-react";
+import { Folder, FolderOpen, Plus, X } from "lucide-react";
 import { apiDelete, apiPatch } from "../../api";
+import { canPickDirectory, pickDirectory } from "../../lib/pickDirectory";
 
 type Setting = {
   set: boolean;
@@ -64,11 +65,19 @@ export function RagCorpusSection({
   });
   const [confirmClear, setConfirmClear] = useState(false);
 
-  function addRoot() {
-    const p = draft.trim();
-    if (!p) return;
-    setRoots([...roots, p]);
+  function addRootPath(p: string) {
+    const clean = p.trim();
+    if (!clean || roots.includes(clean)) return;
+    setRoots([...roots, clean]);
     setDraft("");
+  }
+
+  const addRoot = () => addRootPath(draft);
+
+  /** 系统对话框选完直接入列 —— 那个对话框本身就是「确认」那一步。 */
+  async function chooseRoot() {
+    const picked = await pickDirectory();
+    if (picked) addRootPath(picked);
   }
 
   return (
@@ -133,6 +142,16 @@ export function RagCorpusSection({
           <Plus aria-hidden="true" className="h-4 w-4" />
           添加
         </button>
+        {canPickDirectory() && (
+          <button
+            type="button"
+            onClick={() => void chooseRoot()}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium outline-none transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          >
+            <FolderOpen aria-hidden="true" className="h-4 w-4" />
+            选择
+          </button>
+        )}
       </div>
 
       <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">

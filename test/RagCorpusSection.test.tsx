@@ -88,3 +88,44 @@ describe("RagCorpusSection", () => {
     expect(screen.getByRole("button", { name: "接管配置" })).toBeEnabled();
   });
 });
+
+/**
+ * 目录选择器只在 Electron 外壳里有(preload 注入 window.ai2nao),
+ * 普通浏览器拿不到真实路径,所以按钮**不渲染**而不是点了才发现没用。
+ */
+describe("RagCorpusSection 的目录选择器", () => {
+  afterEach(() => {
+    cleanup();
+    delete (globalThis as { ai2nao?: unknown }).ai2nao;
+  });
+
+  const setting: Setting = {
+    set: true,
+    source: "db",
+    label: "RAG 语料",
+    values: { corpusRoots: ["/已有/根"] },
+  };
+
+  it("没有外壳时不渲染「选择」按钮", () => {
+    renderSection(setting, vi.fn());
+    expect(screen.queryByRole("button", { name: /选择/ })).toBeNull();
+  });
+
+  it("有外壳时点「选择」把选中的目录直接入列", async () => {
+    vi.stubGlobal("ai2nao", { pickDirectory: () => Promise.resolve("/选来的/目录") });
+    renderSection(setting, vi.fn());
+
+    await userEvent.click(screen.getByRole("button", { name: /选择/ }));
+    expect(await screen.findByTitle("/选来的/目录")).toBeInTheDocument();
+    // 原有的根不能被顶掉
+    expect(screen.getByTitle("/已有/根")).toBeInTheDocument();
+  });
+
+  it("用户取消(返回 null)时什么都不加", async () => {
+    vi.stubGlobal("ai2nao", { pickDirectory: () => Promise.resolve(null) });
+    renderSection(setting, vi.fn());
+
+    await userEvent.click(screen.getByRole("button", { name: /选择/ }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  });
+});
