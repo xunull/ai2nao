@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Folder } from "lucide-react";
 import { apiPatch } from "../../api";
 import { canPickDirectory, pickDirectory } from "../../lib/pickDirectory";
+import { SaveHint } from "../../components/SaveHint";
+import { useSaveStatus } from "../../lib/useSaveStatus";
 
 type Setting = {
   set: boolean;
@@ -47,6 +49,7 @@ export function GithubRadarSection({
     mutationFn: () => apiPatch<unknown>("/api/settings/setting/github-radar", { cwd: cwd.trim() }),
     onSuccess: onChanged,
   });
+  const saveStatus = useSaveStatus(save);
 
   return (
     <section className="rounded-lg border border-[var(--border)] bg-white p-4">
@@ -98,11 +101,13 @@ export function GithubRadarSection({
         )}
       </div>
 
-      {save.isError && (
-        <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-          {shortErr(save.error)}
-        </p>
-      )}
+      <p className="mt-2 empty:mt-0">
+        <SaveHint
+          status={saveStatus}
+          errorText={shortErr(save.error)}
+          note="下次洞察重算时生效"
+        />
+      </p>
     </section>
   );
 }

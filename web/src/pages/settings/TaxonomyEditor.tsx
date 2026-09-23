@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { apiGet, apiPatch } from "../../api";
+import { SaveHint } from "../../components/SaveHint";
+import { useSaveStatus } from "../../lib/useSaveStatus";
 
 type RuleKind = "domainSuffix" | "hostPrefix" | "titleKeyword";
 type Rule = { kind: RuleKind; value: string };
@@ -85,6 +87,7 @@ export function TaxonomyEditor() {
       qc.invalidateQueries({ queryKey: ["topics"] });
     },
   });
+  const saveStatus = useSaveStatus(save);
 
   function update(next: Category[]) {
     setDraft(next);
@@ -321,12 +324,16 @@ export function TaxonomyEditor() {
         </button>
       </div>
 
-      {save.isError && <p className="mt-2 text-xs text-red-700">{shortErr(save.error)}</p>}
-      {save.isSuccess && !dirty && (
-        <p className="mt-2 text-xs text-emerald-700">
-          已保存 · 主题河流会提示「需要重建」，跑一次 <code>ai2nao topics rebuild</code> 生效。
-        </p>
-      )}
+      {/* 原来这里是 `isSuccess && !dirty`:那招只在「有明确 dirty 的显式表单」上成立,
+          而设置页另外七处是 onBlur / 增删即存。统一走 useSaveStatus 之后三秒自动消失,
+          两类保存同一套规则。 */}
+      <p className="mt-2 empty:mt-0">
+        <SaveHint
+          status={saveStatus}
+          errorText={shortErr(save.error)}
+          note="主题河流会提示「需要重建」，跑一次 ai2nao topics rebuild 生效"
+        />
+      </p>
     </div>
   );
 }

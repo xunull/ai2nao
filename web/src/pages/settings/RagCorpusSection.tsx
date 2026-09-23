@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Folder, FolderOpen, Plus, X } from "lucide-react";
 import { apiDelete, apiPatch } from "../../api";
 import { canPickDirectory, pickDirectory } from "../../lib/pickDirectory";
+import { SaveHint } from "../../components/SaveHint";
+import { useSaveStatus } from "../../lib/useSaveStatus";
 
 type Setting = {
   set: boolean;
@@ -64,6 +66,8 @@ export function RagCorpusSection({
     onSuccess: onChanged,
   });
   const [confirmClear, setConfirmClear] = useState(false);
+  const saveStatus = useSaveStatus(save);
+  const clearStatus = useSaveStatus(clear);
 
   function addRootPath(p: string) {
     const clean = p.trim();
@@ -203,7 +207,16 @@ export function RagCorpusSection({
           </button>
         )}
       </div>
-      {save.isError && <p className="mt-2 text-xs text-red-700">{shortErr(save.error)}</p>}
+      <p className="mt-2 empty:mt-0">
+        <SaveHint
+          status={saveStatus}
+          errorText={shortErr(save.error)}
+          note="跑一次 ai2nao rag ingest 生效"
+        />
+      </p>
+      <p className="mt-2 empty:mt-0">
+        <SaveHint status={clearStatus} errorText={shortErr(clear.error)} savedLabel="已清除" />
+      </p>
     </section>
   );
 }

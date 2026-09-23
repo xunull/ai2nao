@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Bell, BookOpen, Bot, Database, Folder, FolderOpen, Layers, Plus, Sliders, X } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPatch } from "../api";
+import { SaveHint } from "../components/SaveHint";
+import { useSaveStatus } from "../lib/useSaveStatus";
 import { canPickDirectory, pickDirectory } from "../lib/pickDirectory";
 import { TaxonomyEditor } from "./settings/TaxonomyEditor";
 import { GithubRadarSection } from "./settings/GithubRadarSection";
@@ -272,27 +274,43 @@ function useClearCredential(name: CredName, onChanged: () => void) {
   });
 }
 
+/**
+ * 五个凭据分区共用。`save` / `clear` 收整个 mutation 而不是拆开的
+ * `saving`/`error`:成功提示要认「从 pending 落下来」那个瞬间,只有 isPending
+ * 和 isError 不够(见 useSaveStatus 的注释)。
+ *
+ * `savedNote` 给保存完**不会立刻生效**的凭据用 —— 目前只有 GitHub token。
+ */
 function CredentialActions({
   cred,
   disabled,
   onSave,
   onClear,
-  saving,
-  error,
+  save,
+  clear,
+  savedNote,
 }: {
   cred: Credential;
   disabled?: boolean;
   onSave: () => void;
   onClear: () => void;
-  saving: boolean;
-  error: unknown;
+  save: { isPending: boolean; isSuccess: boolean; isError: boolean; error: unknown };
+  clear?: { isPending: boolean; isSuccess: boolean; isError: boolean; error: unknown };
+  savedNote?: string;
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
+  const saveStatus = useSaveStatus(save);
+  const clearStatus = useSaveStatus(clear ?? IDLE_MUTATION);
   return (
     <>
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={onSave} disabled={disabled || saving} className={btnCls}>
-          {saving ? "保存中…" : "保存"}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={disabled || save.isPending}
+          className={btnCls}
+        >
+          {save.isPending ? "保存中…" : "保存"}
         </button>
         {cred.set && cred.source === "db" && (
           <button
@@ -304,10 +322,23 @@ function CredentialActions({
           </button>
         )}
       </div>
-      {Boolean(error) && <p className="mt-2 text-xs text-red-700">{shortErr(error)}</p>}
+      {/* 保存与清除各自一行 —— 两者可能先后发生,共用一行会互相顶掉。 */}
+      <p className="mt-2 empty:mt-0">
+        <SaveHint status={saveStatus} errorText={shortErr(save.error)} note={savedNote} />
+      </p>
+      <p className="mt-2 empty:mt-0">
+        <SaveHint
+          status={clearStatus}
+          errorText={clear ? shortErr(clear.error) : undefined}
+          savedLabel="已清除"
+        />
+      </p>
     </>
   );
 }
+
+/** 没传 clear 时喂给 hook 的空状态 —— hook 要求形状固定,不能条件调用。 */
+const IDLE_MUTATION = { isPending: false, isSuccess: false, isError: false, error: null };
 
 /**
  * **只是 id → 中文标签。清单本身由后端给**(`availableProviders`)。
@@ -891,8 +922,8 @@ function LlmChatSection({ cred, onChanged }: { cred: Credential; onChanged: () =
       <CredentialActions
         cred={cred}
         disabled={incomplete || (drafts.length === 0 && deleted.length === 0)}
-        saving={save.isPending}
-        error={save.error}
+        save={save}
+        clear={clear}
         onSave={onSave}
         onClear={() => clear.mutate()}
       />
@@ -925,10 +956,11 @@ function GithubTokenSection({ cred, onChanged }: { cred: Credential; onChanged: 
       <CredentialActions
         cred={cred}
         disabled={envManaged || !token.trim()}
-        saving={save.isPending}
-        error={save.error}
+        save={save}
+        clear={clear}
         onSave={() => save.mutate({ token: token.trim() })}
         onClear={() => clear.mutate()}
+        savedNote="下次同步时生效"
       />
     </Section>
   );
@@ -959,8 +991,8 @@ function WebSearchSection({ cred, onChanged }: { cred: Credential; onChanged: ()
       <CredentialActions
         cred={cred}
         disabled={envManaged || !apiKey.trim()}
-        saving={save.isPending}
-        error={save.error}
+        save={save}
+        clear={clear}
         onSave={() => save.mutate({ provider: "brave", apiKey: apiKey.trim() })}
         onClear={() => clear.mutate()}
       />
@@ -1017,8 +1049,8 @@ function RagEmbeddingSection({ cred, onChanged }: { cred: Credential; onChanged:
       <CredentialActions
         cred={cred}
         disabled={!model.trim() || !baseURL.trim()}
-        saving={save.isPending}
-        error={save.error}
+        save={save}
+        clear={clear}
         onSave={() =>
           save.mutate({
             enabled: true,
@@ -1147,8 +1179,8 @@ function FeishuSection({ cred, onChanged }: { cred: Credential; onChanged: () =>
         cred={cred}
         // The webhook URL is the one thing this credential cannot exist without.
         disabled={!cred.set && !webhookUrl.trim()}
-        saving={save.isPending}
-        error={save.error}
+        save={save}
+        clear={clear}
         onSave={() =>
           save.mutate({
             feishu: {
@@ -1189,6 +1221,7 @@ function ReplayGapSection({
     mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { replayGapMinutes: n }),
     onSuccess: () => onChanged(),
   });
+  const gapStatus = useSaveStatus(save);
 
   return (
     <Section
@@ -1216,7 +1249,7 @@ function ReplayGapSection({
         <span className="text-xs text-[var(--muted)]">
           分钟（默认 120 · 调小切得更碎，调大合并成整块）。
         </span>
-        {save.isError && <span className="text-xs text-red-600">{shortErr(save.error)}</span>}
+        <SaveHint status={gapStatus} errorText={shortErr(save.error)} />
       </div>
     </Section>
   );
@@ -1265,6 +1298,11 @@ function ScanRootsSection({
     mutationFn: (n: number) => apiPatch<SettingsRes>("/api/settings", { scanConcurrency: n }),
     onSuccess: () => onChanged(),
   });
+
+  const depthStatus = useSaveStatus(saveDepth);
+  const docsStatus = useSaveStatus(saveDocs);
+  const concStatus = useSaveStatus(saveConc);
+  const rootsStatus = useSaveStatus(save);
 
   function addPath(p: string) {
     const clean = p.trim();
@@ -1344,6 +1382,12 @@ function ScanRootsSection({
         )}
       </div>
       {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+      {/* 增删即存,没有按钮 —— 不给一行提示的话整个动作是零信号的。 */}
+      {!err && (
+        <p className="mt-2 empty:mt-0">
+          <SaveHint status={rootsStatus} note="下次扫描时生效" />
+        </p>
+      )}
 
       <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3">
         <div className="flex items-center gap-2">
@@ -1368,9 +1412,7 @@ function ScanRootsSection({
             className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
           />
           <span className="text-xs text-[var(--muted)]">层（防止扫穿大目录，如 home）。</span>
-          {saveDepth.isError && (
-            <span className="text-xs text-red-600">{shortErr(saveDepth.error)}</span>
-          )}
+          <SaveHint status={depthStatus} errorText={shortErr(saveDepth.error)} />
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="scan-docs" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
@@ -1393,9 +1435,7 @@ function ScanRootsSection({
           <span className="text-xs text-[var(--muted)]">
             篇（docs/ 下 markdown，超出按设计跳过，不算错误）。
           </span>
-          {saveDocs.isError && (
-            <span className="text-xs text-red-600">{shortErr(saveDocs.error)}</span>
-          )}
+          <SaveHint status={docsStatus} errorText={shortErr(saveDocs.error)} />
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="scan-conc" className="w-24 shrink-0 text-xs font-medium text-[var(--fg)]">
@@ -1416,9 +1456,7 @@ function ScanRootsSection({
             className="h-8 w-16 rounded-lg border border-[var(--border)] bg-white px-2 text-sm tabular-nums text-[var(--fg)] outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
           />
           <span className="text-xs text-[var(--muted)]">并行 I/O 上限（多根/目录/文件并行扫描）。</span>
-          {saveConc.isError && (
-            <span className="text-xs text-red-600">{shortErr(saveConc.error)}</span>
-          )}
+          <SaveHint status={concStatus} errorText={shortErr(saveConc.error)} />
         </div>
       </div>
     </Section>
