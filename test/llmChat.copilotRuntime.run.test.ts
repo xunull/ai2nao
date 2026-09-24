@@ -1008,6 +1008,95 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
   });
 
   /**
+   * **重新生成必须真的再调一次模型。**
+   *
+   * 重新生成按定义就是把同一条提问再问一次,而 `claimChatRun` 的重复提交判定
+   * (「同一条 user 消息已经答完就不再调模型」)正好挡住它 —— 表现是点了没反应:
+   * 没有新回答,也没有报错,因为那条路径直接回放快照就收场了。
+   *
+   * 放行的依据在树上:重新生成之前 `applyBranchAction` 已经把激活叶子退回到提问
+   * 本身;而真正的重复提交(双击、两个进程抢同一轮)时,叶子是那条已有的回答。
+   */
+  it("重新生成:同一条提问再答一次,两个回答成兄弟", async () => {
+    const dbPath = tempPath("copilot-runtime-regenerate.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    const answer = (id: string, text: string) => ({
+      fullStream: asyncParts([
+        { type: "text-start", id },
+        { type: "text-delta", id, text },
+        { type: "text-end", id },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const thread = "thread-regenerate";
+      const ask = async (runId: string) => {
+        const res = await app.request("/api/copilotkit/agent/default/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: thread,
+            runId,
+            // 重新生成那一轮客户端带的就是这条原提问(connect 刚把列表换成激活路径)。
+            messages: [{ id: "u1", role: "user", content: "第一问" }],
+            tools: [],
+            context: [],
+            state: {},
+            forwardedProps: {},
+          }),
+        });
+        return await res.text();
+      };
+
+      streamTextMock.mockReturnValueOnce(answer("t1", "第一个答案"));
+      expect(await ask("run-1")).toContain("第一个答案");
+
+      // 点「重新生成」:激活叶子退回到 u1。
+      const first = activePathIds(db, thread);
+      expect(first).toHaveLength(2);
+      applyBranchAction(db, thread, "regenerate", first[1]!);
+      expect(activePathIds(db, thread)).toEqual(["u1"]);
+
+      streamTextMock.mockReturnValueOnce(answer("t2", "第二个答案"));
+      const sse = await ask("run-2");
+      // 这一条是重点:真的又调了一次模型,而不是回放快照收场。
+      expect(streamTextMock).toHaveBeenCalledTimes(2);
+      expect(sse).toContain("第二个答案");
+
+      // 两个回答是同一条提问的兄弟,旧的那个没被删。
+      const kids = siblingIds(db, thread, "u1");
+      expect(kids).toHaveLength(2);
+      expect(kids[0]).toBe(first[1]);
+      expect(activePathIds(db, thread)).toEqual(["u1", kids[1]]);
+
+      // 切回旧答案仍然读得到。
+      applyBranchAction(db, thread, "switch", kids[1]!, 0);
+      const back = (getLlmChatSession(db, thread)?.messages ?? []).map((m) => m.plain_text ?? "");
+      expect(back.join("\n")).toContain("第一个答案");
+      expect(back.join("\n")).not.toContain("第二个答案");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  /**
    * **编辑重发的端到端承诺:新提问是原提问的兄弟,原来那一问一答都还在。**
    *
    * 分支语义本身在 llmChat.branchRoutes / llmChat.messageTree 里逐条测过了;

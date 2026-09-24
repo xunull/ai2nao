@@ -18,6 +18,7 @@ import {
   isChatRunCurrent,
   listChatCalls,
   listChatRuns,
+  setActiveLeaf,
   renewChatRunLease,
   replaceLlmChatSessionMessages,
 } from "../src/llmChat/sessions.js";
@@ -26,6 +27,21 @@ function freshDb() {
   return openDatabase(
     join(tmpdir(), `ai2nao-chat-run-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
   );
+}
+
+/** 直接写一个树节点。这里只需要树的形状,不必走整轮覆盖写。 */
+function addNode(
+  db: ReturnType<typeof openDatabase>,
+  sid: string,
+  o: { id: string; parent: string | null; index: number; role?: string }
+): void {
+  const now = "2026-09-24T00:00:00.000Z";
+  db.prepare(
+    `INSERT INTO llm_chat_messages
+       (id, session_id, message_id, message_index, role, raw_json, plain_text, preview,
+        created_at, updated_at, parent_id, branch_index)
+     VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, 0)`
+  ).run(`${sid}:${o.id}`, sid, o.id, o.index, o.role ?? "user", o.id, o.id, now, now, o.parent);
 }
 
 function userMessage(id: string, text: string) {
@@ -115,6 +131,37 @@ describe("轮级占位行", () => {
       // 若没有续期,这一刻(75 秒)已经过期了。
       vi.setSystemTime(new Date("2026-09-16T00:01:15.000Z"));
       expect(claimChatRun(db, session.id, "u2")).toEqual({ ok: false, reason: "running" });
+    } finally {
+      db.close();
+    }
+  });
+
+  /**
+   * 重复提交判定与重新生成的分界。**两者送进来的是同一条 user 消息 id**,
+   * 区别只在树上:重复提交时那条提问的回答还挂在激活路径上(叶子是那个回答);
+   * 重新生成时 applyBranchAction 已经把叶子退回到提问本身。
+   *
+   * 判反了的后果各一半:不放行 → 点重新生成没反应还不报错;
+   * 一刀切放行 → 双击发送会真的花两次钱。
+   */
+  it("激活叶子退回到那条提问时放行 —— 那是重新生成,不是重复提交", () => {
+    const db = freshDb();
+    try {
+      const session = createLlmChatSession(db);
+      const first = claimChatRun(db, session.id, "u1");
+      if (!first.ok) throw new Error("first claim should succeed");
+      completeChatRun(db, session.id, first.run.runId, "completed");
+
+      // 叶子停在回答上 = 双击发送,照旧拦下
+      addNode(db, session.id, { id: "u1", parent: null, index: 0 });
+      addNode(db, session.id, { id: "a1", parent: "u1", index: 1, role: "assistant" });
+      setActiveLeaf(db, session.id, "a1");
+      expect(claimChatRun(db, session.id, "u1")).toMatchObject({ ok: false, reason: "duplicate" });
+
+      // 叶子退回到提问 = 重新生成,放行
+      setActiveLeaf(db, session.id, "u1");
+      const again = claimChatRun(db, session.id, "u1");
+      expect(again.ok).toBe(true);
     } finally {
       db.close();
     }

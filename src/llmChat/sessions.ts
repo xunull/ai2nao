@@ -254,7 +254,15 @@ export function claimChatRun(
 
     // 重复提交按**轮级**判定,不看请求级的账目 —— 一次失败的尝试、或一次只做了
     // 压缩的运行,都满足「有终态记录」,用那个判会把没答完的轮次误判成已完成。
-    if (userMessageId) {
+    //
+    // **但重新生成不算重复提交。** 它按定义就是把同一条提问再问一次,一刀切地
+    // 拦下来的话就是「点了没反应」,而且不报错(直接回放快照收场)。
+    // 区分信号在树上,不需要客户端告诉我们:
+    //  - 重复提交(双击、两个进程抢同一轮):那条提问的回答还挂在激活路径上,
+    //    叶子是那个回答
+    //  - 重新生成:applyBranchAction 已经把激活叶子**退回到提问本身**
+    // 所以叶子就是这条 user 消息时,这一轮是要重新答,放行。
+    if (userMessageId && getActiveLeafId(db, sessionId) !== userMessageId) {
       const done = runs.find(
         (r) => r.userMessageId === userMessageId && r.status === "completed"
       );
