@@ -93,17 +93,18 @@ describe("分支路由", () => {
     db.close();
   });
 
-  it("switch 带 branchIndex:按序号切到那条 user 的第 N 个回答", async () => {
+  it("switch 带 branchIndex:切到**这条消息的**第 N 个兄弟", async () => {
     const { db, app } = setup();
     const sid = twoAnswers(db); // u1 →(a1 | a2),当前 a2
-    // 界面只知道「切到第 0 个」,不知道 a1 这个 id —— 由服务端解析
+    // 导航挂在 assistant 上,数的是它自己的兄弟(同一个问题的几个回答)。
+    // 界面只知道「切到第 0 个」,不知道 a1 这个 id —— 由服务端解析。
     const body = (await (
-      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 0 })
+      await post(app, sid, { action: "switch", messageId: "a2", branchIndex: 0 })
     ).json()) as { activePathIds: string[] };
     expect(body.activePathIds).toEqual(["u1", "a1"]);
 
     const back = (await (
-      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 1 })
+      await post(app, sid, { action: "switch", messageId: "a1", branchIndex: 1 })
     ).json()) as { activePathIds: string[] };
     expect(back.activePathIds).toEqual(["u1", "a2"]);
     db.close();
@@ -113,9 +114,41 @@ describe("分支路由", () => {
     const { db, app } = setup();
     const sid = twoAnswers(db);
     const body = (await (
-      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 99 })
+      await post(app, sid, { action: "switch", messageId: "a1", branchIndex: 99 })
     ).json()) as { activePathIds: string[] };
-    expect(body.activePathIds[0]).toBe("u1");
+    expect(body.activePathIds).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  /**
+   * **编辑重发之后,原版提问必须还能切回去。**
+   *
+   * 这一条是这次导航改造的由来:原先 user 消息上那个 ‹1/2› 有回答时改口去数回答,
+   * 于是编辑过的问题一旦收到新答案,原版就再也没有入口 —— 数据还在,界面上找不到。
+   */
+  it("问题的几个版本挂在 user 上,切得回去", async () => {
+    const { db, app } = setup();
+    const sid = "s3";
+    ensureLlmChatSession(db, sid, "测试");
+    // u1 → a1(原版) 与 u2 → a2(编辑重发出来的),当前在 u2 这一支
+    addNode(db, sid, { id: "u1", parent: null, index: 0 });
+    addNode(db, sid, { id: "a1", parent: "u1", index: 1, role: "assistant" });
+    addNode(db, sid, { id: "u2", parent: null, index: 2, branch: 1 });
+    addNode(db, sid, { id: "a2", parent: "u2", index: 3, role: "assistant" });
+    setActiveLeaf(db, sid, "a2");
+
+    const body = (await (await app.request(`/api/llm-chat/sessions/${sid}/branches`)).json()) as {
+      questions: Record<string, { branchIndex: number; numberOfBranches: number }>;
+      answers: Record<string, unknown>;
+    };
+    // 问题的版本挂在当前这条 user 上;两个回答各只有一个兄弟,不下发。
+    expect(body.questions.u2).toEqual({ branchIndex: 1, numberOfBranches: 2 });
+    expect(body.answers).toEqual({});
+
+    const back = (await (
+      await post(app, sid, { action: "switch", messageId: "u2", branchIndex: 0 })
+    ).json()) as { activePathIds: string[] };
+    expect(back.activePathIds).toEqual(["u1", "a1"]);
     db.close();
   });
 
@@ -139,20 +172,23 @@ describe("分支路由", () => {
     db.close();
   });
 
-  it("branches 接口给出 ‹1/2›,挂在那条 user 上", async () => {
+  it("branches 接口:回答的 ‹1/2› 挂在 assistant 上,不挂在提问上", async () => {
     const { db, app } = setup();
     const sid = twoAnswers(db);
-    const body = (await (await app.request(`/api/llm-chat/sessions/${sid}/branches`)).json()) as {
-      branches: Record<string, { branchIndex: number; numberOfBranches: number }>;
-    };
-    // 当前激活 a2(第二个答案)
-    expect(body.branches.u1).toEqual({ branchIndex: 1, numberOfBranches: 2 });
+    const read = async () =>
+      (await (await app.request(`/api/llm-chat/sessions/${sid}/branches`)).json()) as {
+        questions: Record<string, unknown>;
+        answers: Record<string, { branchIndex: number; numberOfBranches: number }>;
+      };
+
+    // 当前激活 a2(第二个答案)。提问只有一个版本,questions 里没有它。
+    const body = await read();
+    expect(body.answers.a2).toEqual({ branchIndex: 1, numberOfBranches: 2 });
+    expect(body.questions).toEqual({});
 
     await post(app, sid, { action: "switch", messageId: "a1" });
-    const after = (await (await app.request(`/api/llm-chat/sessions/${sid}/branches`)).json()) as {
-      branches: Record<string, { branchIndex: number }>;
-    };
-    expect(after.branches.u1!.branchIndex).toBe(0);
+    const after = await read();
+    expect(after.answers.a1!.branchIndex).toBe(0);
     db.close();
   });
 
@@ -163,9 +199,11 @@ describe("分支路由", () => {
     addNode(db, "s2", { id: "a1", parent: "u1", index: 1, role: "assistant" });
     setActiveLeaf(db, "s2", "a1");
     const body = (await (await app.request("/api/llm-chat/sessions/s2/branches")).json()) as {
-      branches: Record<string, unknown>;
+      questions: Record<string, unknown>;
+      answers: Record<string, unknown>;
     };
-    expect(Object.keys(body.branches)).toEqual([]);
+    expect(Object.keys(body.questions)).toEqual([]);
+    expect(Object.keys(body.answers)).toEqual([]);
     db.close();
   });
 });

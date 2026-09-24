@@ -12,7 +12,6 @@ import {
   sessionUsage,
   setSessionCompactionAuto,
   LlmChatSessionError,
-  siblingIds,
   type BranchAction,
   type LlmChatMessageRow,
   type SessionContextView,
@@ -217,28 +216,22 @@ export function registerLlmChatSessionRoutes(
       const id = c.req.param("id");
       const detail = getLlmChatSession(deps.db, id);
       if (!detail) return jsonErr(404, "session not found");
+      // **一条消息的导航数的永远是它自己的兄弟。** 两张表只是按角色分开放:
+      //  - questions:挂在 user 消息上,数这个问题的几个版本(编辑重发出来的)
+      //  - answers:挂在 assistant 消息上,数同一个问题的几个回答(重新生成出来的)
+      // 分成两张表是因为界面上它们是两个控件 —— 合在一条消息上的话,一个 ‹1/2›
+      // 要同时表示两种意思,编辑过的问题一旦有了回答就再也切不回原版。
       const path = detail.messages.filter((m) => m.message_index < 1_000_000);
-      const out: Record<string, { branchIndex: number; numberOfBranches: number }> = {};
-      for (let i = 0; i < path.length; i += 1) {
-        const row = path[i]!;
-        if (row.role !== "user") continue;
-        // 这条 user 的孩子里,当前激活的是路径上的下一条。
-        const activeChild = path[i + 1]?.message_id;
-        if (!activeChild) {
-          // 末尾的提问还没有回答 —— 但它自己可能有兄弟(编辑重发过)。
-          const self = branchPosition(deps.db, id, row.message_id);
-          if (self.numberOfBranches > 1) out[row.message_id] = self;
-          continue;
-        }
-        const kids = siblingIds(deps.db, id, row.message_id);
-        if (kids.length > 1) {
-          out[row.message_id] = {
-            branchIndex: Math.max(0, kids.indexOf(activeChild)),
-            numberOfBranches: kids.length,
-          };
-        }
+      const questions: Record<string, { branchIndex: number; numberOfBranches: number }> = {};
+      const answers: typeof questions = {};
+      for (const row of path) {
+        if (row.role !== "user" && row.role !== "assistant") continue;
+        const pos = branchPosition(deps.db, id, row.message_id);
+        // 只有一个兄弟就不下发 —— 界面据此不渲染导航。
+        if (pos.numberOfBranches <= 1) continue;
+        (row.role === "user" ? questions : answers)[row.message_id] = pos;
       }
-      return c.json({ branches: out });
+      return c.json({ questions, answers });
     } catch (e) {
       return jsonErr(500, e instanceof Error ? e.message : String(e));
     }

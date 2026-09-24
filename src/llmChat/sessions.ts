@@ -2597,13 +2597,17 @@ export function applyBranchAction(
 
   let leaf: string | null;
   if (action === "switch") {
-    // 带 branchIndex 时:切到 `messageId` 的**第 N 个孩子**那一支。
-    // 界面上的 ‹1/2› 挂在 user 消息上、数的是它的回答,所以客户端只知道序号,
-    // 不知道孩子的 id —— 由服务端解析,免得把树的知识泄到前端。
+    // 带 branchIndex 时:切到 `messageId` 的**第 N 个兄弟**那一支。
+    //
+    // 一条规则管两种导航,因为两种导航数的都是「这条消息的兄弟」:
+    //  - user 消息上的 ‹1/2› 数的是这个问题的几个版本(编辑重发出来的)
+    //  - assistant 消息上的 ‹1/2› 数的是同一个问题的几个回答(重新生成出来的)
+    // 客户端只知道序号,不知道兄弟的 id —— 由服务端解析,树的形状不外泄。
     const target =
       branchIndex == null
         ? messageId
-        : (siblingIds(db, sessionId, messageId)[branchIndex] ?? messageId);
+        : (siblingIds(db, sessionId, parentOf(db, sessionId, messageId))[branchIndex] ??
+          messageId);
     leaf = deepestLeafFrom(db, sessionId, target);
   } else {
     // 退到父亲。父亲是 null 表示它本身就是首问 —— 那么新分支挂在根下,

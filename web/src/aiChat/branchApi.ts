@@ -16,15 +16,25 @@ export type BranchResult = {
   needsRun: boolean;
 };
 
-/** 每条 user 消息的分支位置。没有兄弟的消息不在这张表里 —— 界面据此不渲染导航。 */
+/** 消息 id → 它在兄弟里的位置。没有兄弟的消息不在表里 —— 界面据此不渲染导航。 */
 export type BranchMap = Record<string, { branchIndex: number; numberOfBranches: number }>;
+
+/**
+ * 两种导航,两张表。
+ *  - `questions` 挂在 user 消息上:这个问题的几个版本(编辑重发出来的)
+ *  - `answers` 挂在 assistant 消息上:同一个问题的几个回答(重新生成出来的)
+ *
+ * 合成一张的话,一个 ‹1/2› 要同时表示两种意思 —— 编辑过的问题一旦有了回答,
+ * 那个控件就改口去数回答,原版提问再也切不回来(数据还在,界面上没有入口)。
+ */
+export type BranchMaps = { questions: BranchMap; answers: BranchMap };
 
 export async function applyBranch(
   sessionId: string,
   action: BranchAction,
   messageId: string,
-  /** switch 专用:切到 `messageId` 的第 N 个孩子。由服务端解析成具体的兄弟 id —— 
-      界面只知道序号(‹1/2› 挂在 user 上、数的是它的回答),不该知道树的形状。 */
+  /** switch 专用:切到 `messageId` 的第 N 个**兄弟**。由服务端解析成具体的 id ——
+      界面只知道序号,不该知道树的形状。user 与 assistant 两种导航同一条规则。 */
   branchIndex?: number
 ): Promise<BranchResult> {
   return apiPost<BranchResult>(`/api/llm-chat/sessions/${encodeURIComponent(sessionId)}/branch`, {
@@ -34,11 +44,11 @@ export async function applyBranch(
   });
 }
 
-export async function fetchBranches(sessionId: string): Promise<BranchMap> {
-  const res = await apiGet<{ branches: BranchMap }>(
+export async function fetchBranches(sessionId: string): Promise<BranchMaps> {
+  const res = await apiGet<Partial<BranchMaps>>(
     `/api/llm-chat/sessions/${encodeURIComponent(sessionId)}/branches`
   );
-  return res.branches ?? {};
+  return { questions: res.questions ?? {}, answers: res.answers ?? {} };
 }
 
 /**

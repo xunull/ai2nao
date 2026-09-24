@@ -37,7 +37,7 @@ import {
   applyBranch,
   fetchBranches,
   textOfMessageContent,
-  type BranchMap,
+  type BranchMaps,
 } from "../aiChat/branchApi";
 import { ChatUsageRow } from "../aiChat/ChatUsageRow";
 import { ChatReasoningHeader } from "../aiChat/ChatReasoningHeader";
@@ -673,7 +673,7 @@ export function AiChat() {
   // 切换分支走同一条路:服务端的消息集合变了,客户端必须重新取。
   const [chatEpoch, setChatEpoch] = useState(0);
   /** 每条 user 消息的 ‹1/2›。没有兄弟的不在表里,界面据此不渲染导航。 */
-  const [branches, setBranches] = useState<BranchMap>({});
+  const [branches, setBranches] = useState<BranchMaps>({ questions: {}, answers: {} });
   /** 正在编辑的那条提问的原文 —— 非空时输入框上方显示一条横幅。 */
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   /** 移完叶子之后要不要真的跑一轮(重新生成 / 编辑重发)。重挂后由子组件消费。 */
@@ -767,7 +767,7 @@ export function AiChat() {
   /** 会话切换或重挂之后重新拉一次 ‹1/2›。 */
   useEffect(() => {
     if (!activeSessionId) {
-      setBranches({});
+      setBranches({ questions: {}, answers: {} });
       return;
     }
     let alive = true;
@@ -777,7 +777,7 @@ export function AiChat() {
       })
       .catch(() => {
         // 拉不到就不渲染导航 —— 分支功能不可用好过整页崩掉。
-        if (alive) setBranches({});
+        if (alive) setBranches({ questions: {}, answers: {} });
       });
     return () => {
       alive = false;
@@ -830,11 +830,12 @@ export function AiChat() {
 
   const handleSwitchToBranch = useCallback(
     (props: { message: { id?: unknown }; branchIndex: number }) => {
-      const userId = String(props?.message?.id ?? "");
-      if (!branches[userId]) return;
-      // 传「那条 user 的 id + 目标序号」,由服务端解析成具体的兄弟 —— 
+      const id = String(props?.message?.id ?? "");
+      // 两种导航共用这一个回调 —— 问题版本与回答分支都是「切到这条消息的第 N 个兄弟」。
+      if (!branches.questions[id] && !branches.answers[id]) return;
+      // 传「这条消息的 id + 目标序号」,由服务端解析成具体的兄弟 ——
       // 界面不持有树的形状。
-      void applyBranch(activeSessionId ?? "", "switch", userId, props.branchIndex)
+      void applyBranch(activeSessionId ?? "", "switch", id, props.branchIndex)
         .then(() => setChatEpoch((n) => n + 1))
         .catch((e: unknown) => setChatErr(e instanceof Error ? e.message : String(e)));
     },
@@ -843,6 +844,8 @@ export function AiChat() {
 
   const AssistantMessageWithModel = useMemo(() => {
     const onRegenerate = handleRegenerate;
+    const answersRef = branches.answers;
+    const onSwitch = handleSwitchToBranch;
     function WithModel(
       props: React.ComponentProps<typeof CopilotChatAssistantMessage>
     ) {
@@ -857,18 +860,43 @@ export function AiChat() {
           ) : null}
           {/* 挂上 onRegenerate 按钮才出现(CopilotKit 的约定:有监听才渲染)。
               语义全在我们这边 —— 它只发事件。 */}
-          <CopilotChatAssistantMessage {...props} onRegenerate={onRegenerate} />
+          <CopilotChatAssistantMessage
+            {...props}
+            onRegenerate={onRegenerate}
+            additionalToolbarItems={answerNav(props.message)}
+          />
           {/* 只在该轮最后一条上渲染;判断在组件内部,靠后端给的 displayMessageId。 */}
           <ChatUsageRow messageId={String(props.message.id)} />
         </div>
+      );
+    }
+    /**
+     * 回答的 ‹1/2›(重新生成出来的那几个)。
+     *
+     * CopilotKit 的 assistant 消息没有内建分支导航,只留了 `additionalToolbarItems`;
+     * 而 user 消息那边的 `BranchNavigation` 是个纯展示组件 —— `message` 只原样回传
+     * 给回调,按钮用的还正是 `assistantMessageToolbarButton` 这个 variant。所以直接
+     * 借过来,免得自己再画一套形状对不齐的箭头。类型上它标的是 UserMessage,这里
+     * 断言过去:这个 prop 不参与渲染,只是穿过去让回调拿到 id。
+     */
+    function answerNav(message: { id: string }): React.ReactNode {
+      const pos = answersRef[String(message.id)];
+      if (!pos) return null;
+      return (
+        <CopilotChatUserMessage.BranchNavigation
+          message={message as React.ComponentProps<typeof CopilotChatUserMessage>["message"]}
+          currentBranch={pos.branchIndex}
+          numberOfBranches={pos.numberOfBranches}
+          onSwitchToBranch={onSwitch}
+        />
       );
     }
     // 这个插槽的类型是 `typeof CopilotChatAssistantMessage` —— 它连带一串静态
     // 子组件(MarkdownRenderer / Toolbar / CopyButton …)。不把它们带上,用到那些
     // 静态成员的地方会在运行时断,而不是编译期。
     return Object.assign(WithModel, CopilotChatAssistantMessage);
-    // 只在标签变化时换组件标识,避免每次 render 都把消息子树重挂一遍。
-  }, [fallbackLabel, handleRegenerate]);
+    // 分支表变了要换组件标识,否则 ‹1/2› 的计数不会跟着刷新。
+  }, [branches.answers, fallbackLabel, handleRegenerate, handleSwitchToBranch]);
 
   /**
    * 用户消息里的图换成自己的网格,文字与工具栏仍用 CopilotKit 的。
@@ -879,14 +907,15 @@ export function AiChat() {
    * 免得与其余消息对不齐。没有图的消息原样走默认实现。纯展示。
    */
   const UserMessageWithImages = useMemo(() => {
-    const branchesRef = branches;
+    const questionsRef = branches.questions;
     const onEdit = handleEditMessage;
     const onSwitch = handleSwitchToBranch;
     function WithImages(props: React.ComponentProps<typeof CopilotChatUserMessage>) {
       const images = imagesFromContent((props.message as { content?: unknown }).content);
       // 编辑按钮与 ‹1/2› 都是「挂了才出现」。分支信息来自后端的 /branches ——
       // 没有兄弟的消息不在表里,于是 numberOfBranches 为 undefined,导航自然不渲染。
-      const pos = branchesRef[String(props.message.id)];
+      // **这里数的是问题的版本**(编辑重发出来的);回答的分支挂在 assistant 那边。
+      const pos = questionsRef[String(props.message.id)];
       const branchProps = {
         onEditMessage: onEdit,
         ...(pos
@@ -918,7 +947,7 @@ export function AiChat() {
     // 同 AssistantMessageWithModel:插槽类型连带静态子组件,不带上会在运行时断。
     return Object.assign(WithImages, CopilotChatUserMessage);
     // 分支表变了要换组件标识,否则 ‹1/2› 的计数不会跟着刷新。
-  }, [branches, handleEditMessage, handleSwitchToBranch]);
+  }, [branches.questions, handleEditMessage, handleSwitchToBranch]);
 
   /**
    * 贴图关着时把「+」整个拿掉。
