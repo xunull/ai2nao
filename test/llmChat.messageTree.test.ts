@@ -255,6 +255,51 @@ describe("覆盖写与分支共存", () => {
     db.close();
   });
 
+  it("空会话第一条消息的兄弟序号是 0 —— 不能把同一批的行数成自己的兄弟", () => {
+    // 覆盖写是「先 INSERT 再挂树」。INSERT 完这一批的 parent_id 还是默认的 NULL,
+    // 照库里现算兄弟序号的话,数组第一条会把同批其余的行全数成自己的根级兄弟 ——
+    // 序号从 1 起跳,而且每轮再涨一格。值只是难看,但下一个假定「序号就是位置」
+    // 的读者会照着它算错。
+    const db = freshDb();
+    ensureLlmChatSession(db, "s1", "测试");
+    replaceLlmChatSessionMessages(db, "s1", {
+      messages: [
+        msg("u1", "user", "第一问"),
+        msg("a1", "assistant", "第一答"),
+        msg("u2", "user", "第二问"),
+      ] as never[],
+    });
+    const rows = db
+      .prepare(
+        `SELECT message_id, branch_index FROM llm_chat_messages
+         WHERE session_id = 's1' ORDER BY message_index`
+      )
+      .all() as { message_id: string; branch_index: number }[];
+    expect(rows.map((r) => `${r.message_id}:${r.branch_index}`)).toEqual(["u1:0", "a1:0", "u2:0"]);
+    db.close();
+  });
+
+  it("已有行的兄弟序号不被覆盖写清零 —— 那会和旁边的兄弟撞成同一个值", () => {
+    const db = freshDb();
+    const sid = straight(db); // u1 → a1
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    setActiveLeaf(db, sid, "a2");
+    // 客户端带着激活路径 [u1, a2] 接着说一句
+    replaceLlmChatSessionMessages(db, sid, {
+      messages: [
+        msg("u1", "user", "第一问"),
+        msg("a2", "assistant", "新答案"),
+        msg("u3", "user", "第二问"),
+      ] as never[],
+    });
+    const a2 = db
+      .prepare("SELECT branch_index FROM llm_chat_messages WHERE session_id = ? AND message_id = 'a2'")
+      .get(sid) as { branch_index: number };
+    expect(a2.branch_index).toBe(1); // 还是第二个兄弟,没被挪到第一个
+    expect(siblingIds(db, sid, "u1")).toEqual(["a1", "a2"]);
+    db.close();
+  });
+
   it("已有行的父子关系不被客户端覆盖 —— 覆盖就等于把树压平", () => {
     const db = freshDb();
     const sid = straight(db);

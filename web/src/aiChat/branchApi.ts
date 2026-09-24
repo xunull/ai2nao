@@ -42,10 +42,10 @@ export async function fetchBranches(sessionId: string): Promise<BranchMap> {
 }
 
 /**
- * 从 CopilotKit 的消息内容里取纯文本,供「编辑重发」填回输入框。
+ * 从 CopilotKit 的消息内容里取纯文本,交给 `EditResendBar` 当编辑的初始内容。
  *
  * content 有两种形状:字符串,或 `{type:"text"|"image_url"}` 的数组(带图的消息)。
- * 图不填回输入框 —— 那需要把 data URL 还原成粘贴态,而编辑的意图是改**字**。
+ * 图不带进编辑框 —— 那需要把 data URL 还原成粘贴态,而编辑的意图是改**字**。
  */
 export function textOfMessageContent(content: unknown): string {
   if (typeof content === "string") return content;

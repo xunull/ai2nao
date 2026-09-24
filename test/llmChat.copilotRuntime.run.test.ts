@@ -5,7 +5,13 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/serve/app.js";
 import { registerCopilotKitRoutes } from "../src/llmChat/copilotRuntime.js";
-import { getLlmChatSession, listChatRuns } from "../src/llmChat/sessions.js";
+import {
+  activePathIds,
+  applyBranchAction,
+  getLlmChatSession,
+  listChatRuns,
+  siblingIds,
+} from "../src/llmChat/sessions.js";
 import { openDatabase } from "../src/store/open.js";
 
 const { streamTextMock } = vi.hoisted(() => ({
@@ -937,6 +943,162 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
       expect(assistant, "第一步应该已经落库").toBeTruthy();
       expect(JSON.parse(assistant!.raw_json).ai2naoModel?.model).toBe("test-model");
       expect(listChatRuns(db, "thread-stamp-step")[0]?.status).toBe("failed");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  /**
+   * **空提示词不许发出去。**
+   *
+   * 「编辑重发」点下去的瞬间,服务端把激活叶子退回到那条提问的父节点 ——
+   * 此时激活路径可以是空的。如果客户端这一轮又没带任何消息(刚重挂、还没拿到快照),
+   * 合并结果就是空数组;交给 AI SDK 换来的是 provider 的
+   * `Invalid prompt: messages must not be empty`,一条看不出所以然的报错。
+   *
+   * 正确的收场是回放快照、不调模型 —— 不花钱,界面上什么都不变。
+   */
+  it("空的消息列表不调模型,也不报 RUN_ERROR", async () => {
+    const dbPath = tempPath("copilot-runtime-empty-prompt.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const res = await app.request("/api/copilotkit/agent/default/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-empty-prompt",
+          runId: "run-empty-prompt",
+          messages: [],
+          tools: [],
+          context: [],
+          state: {},
+          forwardedProps: {},
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const sse = await res.text();
+      expect(sse).toContain("RUN_FINISHED");
+      expect(sse).not.toContain("RUN_ERROR");
+      // 这一条是重点:一分钱都没花。
+      expect(streamTextMock).not.toHaveBeenCalled();
+      // 也没有留下一行卡住会话的 running。
+      expect(listChatRuns(db, "thread-empty-prompt")[0]?.status).not.toBe("running");
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  /**
+   * **编辑重发的端到端承诺:新提问是原提问的兄弟,原来那一问一答都还在。**
+   *
+   * 分支语义本身在 llmChat.branchRoutes / llmChat.messageTree 里逐条测过了;
+   * 这一条测的是它们与运行时接起来之后的结果 —— 界面上用户看到的就是这个。
+   * 会退化的形状有两种,都不报错:新提问接在原提问**后面**(那是追问,不是编辑),
+   * 或者覆盖写把原来那条答案删掉(花过钱的内容没了)。
+   */
+  it("编辑重发:新提问成为兄弟,原来那一问一答都还在", async () => {
+    const dbPath = tempPath("copilot-runtime-edit-resend.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    const answer = (id: string, text: string) => ({
+      fullStream: asyncParts([
+        { type: "text-start", id },
+        { type: "text-delta", id, text },
+        { type: "text-end", id },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const thread = "thread-edit-resend";
+      // **必须把 body 读完。** SSE 是惰性的 —— 只看 status 的话生成器还停在半路,
+      // 落库和叶子推进都没发生,后面所有断言测的都是一个中间态。
+      const run = async (runId: string, messages: unknown[]) => {
+        const res = await app.request("/api/copilotkit/agent/default/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: thread,
+            runId,
+            messages,
+            tools: [],
+            context: [],
+            state: {},
+            forwardedProps: {},
+          }),
+        });
+        return { status: res.status, sse: await res.text() };
+      };
+
+      streamTextMock.mockReturnValueOnce(answer("t1", "第一个答案"));
+      const first = await run("run-1", [{ id: "u1", role: "user", content: "第一问" }]);
+      expect(first.status).toBe(200);
+      expect(first.sse).toContain("第一个答案");
+
+      // 点「编辑」:激活叶子退到 u1 的父节点(首问 → null),此刻激活路径为空。
+      const moved = applyBranchAction(db, thread, "edit", "u1");
+      expect(moved.needsRun).toBe(true);
+      expect(activePathIds(db, thread)).toEqual([]);
+
+      // 改完发送:客户端此时只持有这一条新消息(刚重挂,快照是空的)。
+      streamTextMock.mockReturnValueOnce(answer("t2", "第二个答案"));
+      const second = await run("run-2", [{ id: "u2", role: "user", content: "改过的第一问" }]);
+      expect(second.status).toBe(200);
+      expect(second.sse).toContain("第二个答案");
+
+      // 新提问挂在**根**下,和 u1 平级 —— 不是接在 u1 后面。
+      expect(siblingIds(db, thread, null)).toEqual(["u1", "u2"]);
+      const path = activePathIds(db, thread);
+      expect(path[0]).toBe("u2");
+      expect(path).toHaveLength(2);
+
+      // 激活路径上看不见旧分支是对的(会话详情只回激活路径),但它必须还在库里。
+      const stored = db
+        .prepare(
+          `SELECT message_id, plain_text, parent_id FROM llm_chat_messages
+           WHERE session_id = ? AND message_index < 1000000`
+        )
+        .all(thread) as { message_id: string; plain_text: string | null; parent_id: string | null }[];
+      expect(stored.map((r) => r.plain_text ?? "").join("\n")).toContain("第一个答案");
+
+      // 而且切回去就能看到 —— 花过钱的那个回答不是只躺在库里,是真的还能读。
+      const oldAnswer = stored.find((r) => r.parent_id === "u1")!;
+      applyBranchAction(db, thread, "switch", "u1", 0);
+      expect(activePathIds(db, thread)).toEqual(["u1", oldAnswer.message_id]);
+      const backTexts = (getLlmChatSession(db, thread)?.messages ?? []).map((m) => m.plain_text ?? "");
+      expect(backTexts.join("\n")).toContain("第一个答案");
     } finally {
       db.close();
       if (existsSync(dbPath)) unlinkSync(dbPath);

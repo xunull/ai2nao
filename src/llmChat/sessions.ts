@@ -1899,16 +1899,31 @@ export function replaceLlmChatSessionMessages(
     // **客户端传来的这一串就是它主张的激活路径**,所以数组里每一条的 parent
     // 都按数组更新 —— 包括已经在库里的(它可能被重排了,老契约允许)。
     // 不在数组里的行**一律不动**:那些是其他分支,客户端根本没见过它们。
-    const setTree = db.prepare(
+    const setTreeNew = db.prepare(
       `UPDATE llm_chat_messages SET parent_id = ?, branch_index = ?
        WHERE session_id = ? AND message_id = ?`
     );
+    // **已有行只改 parent,不碰 branch_index。** 那是它在兄弟里的位置,客户端不知道
+    // 这回事;照 0 写回去等于把它挪到第一个,还会和旁边的兄弟撞成同一个值。
+    const setTreeExisting = db.prepare(
+      `UPDATE llm_chat_messages SET parent_id = ? WHERE session_id = ? AND message_id = ?`
+    );
+    // **新行的兄弟序号只数这一批之外的行。** 上面的 INSERT 已经把这一批落进表里了,
+    // 而它们的 parent_id 还是默认的 NULL —— 照库里现算的话,数组第一条会把同批其余
+    // 的行全数成自己的根级兄弟,序号从 1 起跳,而且每轮再涨一格。
+    const incoming = new Set(normalized.map((m) => m.message_id));
+    const outsideBatch = treeNodes(db, sessionId).filter((n) => !incoming.has(n.messageId));
+    const nextBranchAmong = (parentId: string | null): number =>
+      outsideBatch
+        .filter((n) => n.parentId === parentId)
+        .reduce((max, n) => Math.max(max, n.branchIndex), -1) + 1;
     let prevId: string | null = null;
     for (const msg of normalized) {
-      const isNew = !indexByMessageId.has(msg.message_id);
-      // 已有行沿用自己的兄弟序号;新行排在该父亲已有孩子的最后。
-      const branch = isNew ? nextBranchIndexIn(db, sessionId, prevId) : 0;
-      setTree.run(prevId, branch, sessionId, msg.message_id);
+      if (indexByMessageId.has(msg.message_id)) {
+        setTreeExisting.run(prevId, sessionId, msg.message_id);
+      } else {
+        setTreeNew.run(prevId, nextBranchAmong(prevId), sessionId, msg.message_id);
+      }
       prevId = msg.message_id;
     }
     if (prevId !== null) {

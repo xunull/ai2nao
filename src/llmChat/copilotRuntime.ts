@@ -1893,6 +1893,25 @@ async function* runAi2NaoTurnEvents(
     // 概念编码到两处,而 `protocol ?? text` 决定了它是**逐条**的,推不出来。
     const viewEntries: SendViewEntry[] = [];
     let modelMessages = agUiMessagesToModelMessages(mergedMessages, cfg.provider, viewEntries);
+    // **空提示词不许发出去。**
+    //
+    // 「编辑重发」点下去的瞬间,服务端把激活叶子退回到那条提问的父节点 —— 激活路径
+    // 这时可以是空的。客户端若同时也没带消息(刚重挂、还没拿到快照),这一轮就真的
+    // 无话可说。交给 AI SDK 换来的是 provider 的 `messages must not be empty`,
+    // 一条看不出所以然的报错。这里直接回放快照收场:不调模型、不花钱、界面不变。
+    //
+    // **判的必须是 `modelMessages`,不是 `mergedMessages`。** 后者含 activity 行
+    // (run 占位就是刚才 claimChatRun 自己插的),永远不空 —— 照它判等于没判。
+    // `systemPrompt` 另走 `system` 参数,不算一条消息。
+    if (modelMessages.length === 0) {
+      llmChatLog.info("empty prompt; skipping model call", { threadId: input.threadId });
+      yield {
+        type: EventType.MESSAGES_SNAPSHOT,
+        messages: threadSnapshot(deps, input.threadId),
+      } as BaseEvent;
+      yield { type: EventType.RUN_FINISHED, threadId: input.threadId, runId } as BaseEvent;
+      return;
+    }
     const outputReserve = outputReserveFor(selection.snapshot);
     // **带图但发不出去的,一个字节都不发。** 前端的置灰是第一道,这是第二道 ——
     // 前端的值不可信(与 modelId 同一条铁律),而 picker 与库里的配置有一瞬不同步时,

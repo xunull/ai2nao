@@ -32,6 +32,7 @@ import { formatUsd } from "../util/formatDisplay";
 import { AiChatUsageProvider } from "../aiChat/usageContext";
 import { ChatContextBar } from "../aiChat/ChatContextBar";
 import { RegenerateRunner } from "../aiChat/RegenerateRunner";
+import { EditResendBar } from "../aiChat/EditResendBar";
 import {
   applyBranch,
   fetchBranches,
@@ -811,10 +812,11 @@ export function AiChat() {
   );
 
   /**
-   * 编辑重发:原文填回**底部输入框**,你改完正常发送。
+   * 编辑重发:把原文交给 `EditResendBar`(它自己就是编辑器),同时让服务端把激活叶子
+   * 退回到这条提问的父节点 —— 发送出去的新提问于是成为原提问的兄弟,而不是接在它后面。
    *
-   * 不做行内编辑器 —— 那个输入框是 CopilotKit 的,它带着贴图、快捷键、IME 处理
-   * 一整套,自己再实现一遍不值。代价是视觉上不够明显,所以上方加一条横幅说明。
+   * 本来想复用 CopilotKit 底部那个输入框(贴图/快捷键/IME 一整套都现成),
+   * 但 `onEditMessage` 只发事件,CopilotKit 没有给外部写入输入框内容的入口。
    */
   const handleEditMessage = useCallback(
     (props: { message: { id?: unknown; content?: unknown } }) => {
@@ -1433,30 +1435,25 @@ export function AiChat() {
                         ) : null}
                       </div>
                     ) : null}
-                    {/* 编辑重发的横幅。原文填回底部输入框是 CopilotKit 的输入框 ——
-                        它带着贴图、快捷键、IME 处理一整套,自己再做一个行内编辑器不值。
-                        代价是视觉上不够明显,所以这条横幅必须在。 */}
+                    {/* 两个都必须在 <CopilotKit> 内部才拿得到 agent。RegenerateRunner 不渲染东西。
+                        编辑横幅必须是卡片的直接子元素,和上面几条横幅同一层 —— 放进下面那个
+                        flex-1 里的话,聊天区会照样按父元素 100% 排版,底部被切掉一条横幅的高度。 */}
+                    <RegenerateRunner trigger={pendingRun} />
                     {editingDraft !== null ? (
-                      <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                        <span className="min-w-0 flex-1 truncate">
-                          正在编辑上一条提问：{editingDraft || "（空）"}
-                        </span>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-800 hover:bg-blue-50"
-                          onClick={() => setEditingDraft(null)}
-                        >
-                          取消
-                        </button>
-                      </div>
+                      <EditResendBar
+                        draft={editingDraft}
+                        onCancel={() => setEditingDraft(null)}
+                        onSent={() => {
+                          setEditingDraft(null);
+                          setChatEpoch((n) => n + 1);
+                        }}
+                      />
                     ) : null}
                     {/* **聊天区只占横幅剩下的高度。** CopilotChat 自己按「父元素 100%」排版,直接放在
                         这一列里会等于整张卡片高 —— 上面每多一条横幅(出错 / 贴图出错 / 读图能力提示),
                         底部就溢出同样的高度,被卡片的 overflow-hidden 切掉:输入框少一截、占用条整条消失。
                         2026-09-19 走查实测溢出 33px(正好一条横幅)。 */}
                     <div className="min-h-0 flex-1">
-                    {/* 重新生成之后真的跑一轮。必须在 <CopilotKit> 内部才拿得到 agent。 */}
-                    <RegenerateRunner trigger={pendingRun} />
                     <CopilotChat
                       // 带上 epoch:压缩/撤销后换 key 强制重挂,否则聊天区一直显示折叠前的消息。
                       key={`${activeSessionId}:${chatEpoch}`}
