@@ -93,6 +93,32 @@ describe("分支路由", () => {
     db.close();
   });
 
+  it("switch 带 branchIndex:按序号切到那条 user 的第 N 个回答", async () => {
+    const { db, app } = setup();
+    const sid = twoAnswers(db); // u1 →(a1 | a2),当前 a2
+    // 界面只知道「切到第 0 个」,不知道 a1 这个 id —— 由服务端解析
+    const body = (await (
+      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 0 })
+    ).json()) as { activePathIds: string[] };
+    expect(body.activePathIds).toEqual(["u1", "a1"]);
+
+    const back = (await (
+      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 1 })
+    ).json()) as { activePathIds: string[] };
+    expect(back.activePathIds).toEqual(["u1", "a2"]);
+    db.close();
+  });
+
+  it("序号越界时退回那条消息自己,不炸", async () => {
+    const { db, app } = setup();
+    const sid = twoAnswers(db);
+    const body = (await (
+      await post(app, sid, { action: "switch", messageId: "u1", branchIndex: 99 })
+    ).json()) as { activePathIds: string[] };
+    expect(body.activePathIds[0]).toBe("u1");
+    db.close();
+  });
+
   it("切换是纯指针操作 —— 一条消息都没少", async () => {
     const { db, app } = setup();
     const sid = twoAnswers(db);

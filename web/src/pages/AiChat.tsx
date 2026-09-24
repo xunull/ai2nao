@@ -31,6 +31,13 @@ import { imagesFromContent } from "../aiChat/imageGrid";
 import { formatUsd } from "../util/formatDisplay";
 import { AiChatUsageProvider } from "../aiChat/usageContext";
 import { ChatContextBar } from "../aiChat/ChatContextBar";
+import { RegenerateRunner } from "../aiChat/RegenerateRunner";
+import {
+  applyBranch,
+  fetchBranches,
+  textOfMessageContent,
+  type BranchMap,
+} from "../aiChat/branchApi";
 import { ChatUsageRow } from "../aiChat/ChatUsageRow";
 import { ChatReasoningHeader } from "../aiChat/ChatReasoningHeader";
 import { compactionActivityRenderer } from "../aiChat/CompactionDivider";
@@ -662,7 +669,14 @@ export function AiChat() {
   const [chatErr, setChatErr] = useState<string | null>(null);
   const [loadingSessions, setLoadingSessions] = useState(true);
   // 压缩/撤销成功后 +1,用来重挂 CopilotChat —— 重挂才会重新 connect、拿到裁剪后的快照。
+  // 切换分支走同一条路:服务端的消息集合变了,客户端必须重新取。
   const [chatEpoch, setChatEpoch] = useState(0);
+  /** 每条 user 消息的 ‹1/2›。没有兄弟的不在表里,界面据此不渲染导航。 */
+  const [branches, setBranches] = useState<BranchMap>({});
+  /** 正在编辑的那条提问的原文 —— 非空时输入框上方显示一条横幅。 */
+  const [editingDraft, setEditingDraft] = useState<string | null>(null);
+  /** 移完叶子之后要不要真的跑一轮(重新生成 / 编辑重发)。重挂后由子组件消费。 */
+  const [pendingRun, setPendingRun] = useState(0);
   // 模型目录真的重拉过就 +1,让用量跟着重取(窗口大小挂在目录上)。
   const [catalogEpoch, setCatalogEpoch] = useState(0);
   /** 这一轮用哪个模型。null = 用后端的默认项。 */
@@ -749,7 +763,84 @@ export function AiChat() {
     return Object.assign(WithUsage, CopilotChatReasoningMessage);
   }, []);
   
+  /** 会话切换或重挂之后重新拉一次 ‹1/2›。 */
+  useEffect(() => {
+    if (!activeSessionId) {
+      setBranches({});
+      return;
+    }
+    let alive = true;
+    fetchBranches(activeSessionId)
+      .then((b) => {
+        if (alive) setBranches(b);
+      })
+      .catch(() => {
+        // 拉不到就不渲染导航 —— 分支功能不可用好过整页崩掉。
+        if (alive) setBranches({});
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeSessionId, chatEpoch]);
+
+  /**
+   * 三种分支动作共用这一条:服务端移叶子,客户端重挂,需要的话再跑一轮。
+   *
+   * 重挂是必须的 —— 服务端的消息集合变了,CopilotKit 只在 connect 时取快照
+   * (压缩/撤销走的是同一条路)。
+   */
+  const runBranchAction = useCallback(
+    async (action: "switch" | "regenerate" | "edit", messageId: string) => {
+      if (!activeSessionId) return;
+      try {
+        const res = await applyBranch(activeSessionId, action, messageId);
+        setChatEpoch((n) => n + 1);
+        if (res.needsRun && action === "regenerate") setPendingRun((n) => n + 1);
+      } catch (e) {
+        setChatErr(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [activeSessionId]
+  );
+
+  const handleRegenerate = useCallback(
+    (message: { id?: unknown }) => {
+      void runBranchAction("regenerate", String(message?.id ?? ""));
+    },
+    [runBranchAction]
+  );
+
+  /**
+   * 编辑重发:原文填回**底部输入框**,你改完正常发送。
+   *
+   * 不做行内编辑器 —— 那个输入框是 CopilotKit 的,它带着贴图、快捷键、IME 处理
+   * 一整套,自己再实现一遍不值。代价是视觉上不够明显,所以上方加一条横幅说明。
+   */
+  const handleEditMessage = useCallback(
+    (props: { message: { id?: unknown; content?: unknown } }) => {
+      const id = String(props?.message?.id ?? "");
+      if (!id) return;
+      setEditingDraft(textOfMessageContent(props?.message?.content));
+      void runBranchAction("edit", id);
+    },
+    [runBranchAction]
+  );
+
+  const handleSwitchToBranch = useCallback(
+    (props: { message: { id?: unknown }; branchIndex: number }) => {
+      const userId = String(props?.message?.id ?? "");
+      if (!branches[userId]) return;
+      // 传「那条 user 的 id + 目标序号」,由服务端解析成具体的兄弟 —— 
+      // 界面不持有树的形状。
+      void applyBranch(activeSessionId ?? "", "switch", userId, props.branchIndex)
+        .then(() => setChatEpoch((n) => n + 1))
+        .catch((e: unknown) => setChatErr(e instanceof Error ? e.message : String(e)));
+    },
+    [activeSessionId, branches]
+  );
+
   const AssistantMessageWithModel = useMemo(() => {
+    const onRegenerate = handleRegenerate;
     function WithModel(
       props: React.ComponentProps<typeof CopilotChatAssistantMessage>
     ) {
@@ -762,7 +853,9 @@ export function AiChat() {
               AI · {label}
             </div>
           ) : null}
-          <CopilotChatAssistantMessage {...props} />
+          {/* 挂上 onRegenerate 按钮才出现(CopilotKit 的约定:有监听才渲染)。
+              语义全在我们这边 —— 它只发事件。 */}
+          <CopilotChatAssistantMessage {...props} onRegenerate={onRegenerate} />
           {/* 只在该轮最后一条上渲染;判断在组件内部,靠后端给的 displayMessageId。 */}
           <ChatUsageRow messageId={String(props.message.id)} />
         </div>
@@ -773,7 +866,7 @@ export function AiChat() {
     // 静态成员的地方会在运行时断,而不是编译期。
     return Object.assign(WithModel, CopilotChatAssistantMessage);
     // 只在标签变化时换组件标识,避免每次 render 都把消息子树重挂一遍。
-  }, [fallbackLabel]);
+  }, [fallbackLabel, handleRegenerate]);
 
   /**
    * 用户消息里的图换成自己的网格,文字与工具栏仍用 CopilotKit 的。
@@ -784,11 +877,27 @@ export function AiChat() {
    * 免得与其余消息对不齐。没有图的消息原样走默认实现。纯展示。
    */
   const UserMessageWithImages = useMemo(() => {
+    const branchesRef = branches;
+    const onEdit = handleEditMessage;
+    const onSwitch = handleSwitchToBranch;
     function WithImages(props: React.ComponentProps<typeof CopilotChatUserMessage>) {
       const images = imagesFromContent((props.message as { content?: unknown }).content);
-      if (images.length === 0) return <CopilotChatUserMessage {...props} />;
+      // 编辑按钮与 ‹1/2› 都是「挂了才出现」。分支信息来自后端的 /branches ——
+      // 没有兄弟的消息不在表里,于是 numberOfBranches 为 undefined,导航自然不渲染。
+      const pos = branchesRef[String(props.message.id)];
+      const branchProps = {
+        onEditMessage: onEdit,
+        ...(pos
+          ? {
+              onSwitchToBranch: onSwitch,
+              branchIndex: pos.branchIndex,
+              numberOfBranches: pos.numberOfBranches,
+            }
+          : {}),
+      };
+      if (images.length === 0) return <CopilotChatUserMessage {...props} {...branchProps} />;
       return (
-        <CopilotChatUserMessage {...props}>
+        <CopilotChatUserMessage {...props} {...branchProps}>
           {({ messageRenderer, toolbar }) => (
             <div
               data-copilotkit
@@ -806,7 +915,8 @@ export function AiChat() {
     }
     // 同 AssistantMessageWithModel:插槽类型连带静态子组件,不带上会在运行时断。
     return Object.assign(WithImages, CopilotChatUserMessage);
-  }, []);
+    // 分支表变了要换组件标识,否则 ‹1/2› 的计数不会跟着刷新。
+  }, [branches, handleEditMessage, handleSwitchToBranch]);
 
   /**
    * 贴图关着时把「+」整个拿掉。
@@ -1323,11 +1433,30 @@ export function AiChat() {
                         ) : null}
                       </div>
                     ) : null}
+                    {/* 编辑重发的横幅。原文填回底部输入框是 CopilotKit 的输入框 ——
+                        它带着贴图、快捷键、IME 处理一整套,自己再做一个行内编辑器不值。
+                        代价是视觉上不够明显,所以这条横幅必须在。 */}
+                    {editingDraft !== null ? (
+                      <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                        <span className="min-w-0 flex-1 truncate">
+                          正在编辑上一条提问：{editingDraft || "（空）"}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-800 hover:bg-blue-50"
+                          onClick={() => setEditingDraft(null)}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : null}
                     {/* **聊天区只占横幅剩下的高度。** CopilotChat 自己按「父元素 100%」排版,直接放在
                         这一列里会等于整张卡片高 —— 上面每多一条横幅(出错 / 贴图出错 / 读图能力提示),
                         底部就溢出同样的高度,被卡片的 overflow-hidden 切掉:输入框少一截、占用条整条消失。
                         2026-09-19 走查实测溢出 33px(正好一条横幅)。 */}
                     <div className="min-h-0 flex-1">
+                    {/* 重新生成之后真的跑一轮。必须在 <CopilotKit> 内部才拿得到 agent。 */}
+                    <RegenerateRunner trigger={pendingRun} />
                     <CopilotChat
                       // 带上 epoch:压缩/撤销后换 key 强制重挂,否则聊天区一直显示折叠前的消息。
                       key={`${activeSessionId}:${chatEpoch}`}

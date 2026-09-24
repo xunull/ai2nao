@@ -2572,7 +2572,8 @@ export function applyBranchAction(
   db: Database.Database,
   sessionId: string,
   action: BranchAction,
-  messageId: string
+  messageId: string,
+  branchIndex?: number | null
 ): BranchResult {
   const exists = db
     .prepare("SELECT 1 FROM llm_chat_sessions WHERE id = ?")
@@ -2581,7 +2582,14 @@ export function applyBranchAction(
 
   let leaf: string | null;
   if (action === "switch") {
-    leaf = deepestLeafFrom(db, sessionId, messageId);
+    // 带 branchIndex 时:切到 `messageId` 的**第 N 个孩子**那一支。
+    // 界面上的 ‹1/2› 挂在 user 消息上、数的是它的回答,所以客户端只知道序号,
+    // 不知道孩子的 id —— 由服务端解析,免得把树的知识泄到前端。
+    const target =
+      branchIndex == null
+        ? messageId
+        : (siblingIds(db, sessionId, messageId)[branchIndex] ?? messageId);
+    leaf = deepestLeafFrom(db, sessionId, target);
   } else {
     // 退到父亲。父亲是 null 表示它本身就是首问 —— 那么新分支挂在根下,
     // 激活叶子暂时清空,下一轮的第一条消息会成为新的根级兄弟。

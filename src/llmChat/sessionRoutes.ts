@@ -185,12 +185,18 @@ export function registerLlmChatSessionRoutes(
     if (typeof messageId !== "string" || !messageId.trim()) {
       return jsonErr(400, "messageId is required");
     }
+    const rawIndex = (body as { branchIndex?: unknown })?.branchIndex;
+    const branchIndex =
+      typeof rawIndex === "number" && Number.isInteger(rawIndex) && rawIndex >= 0
+        ? rawIndex
+        : null;
     try {
       const result = applyBranchAction(
         deps.db,
         c.req.param("id"),
         action as BranchAction,
-        messageId
+        messageId,
+        branchIndex
       );
       return c.json(result);
     } catch (e) {
