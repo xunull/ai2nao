@@ -2403,13 +2403,15 @@ export type ChatTreeNode = {
   parentId: string | null;
   branchIndex: number;
   messageIndex: number;
+  /** 「一轮」的边界靠它判 —— 见 `turnAnchorOf`。 */
+  role: string;
 };
 
 function treeNodes(db: Database.Database, sessionId: string): ChatTreeNode[] {
   return db
     .prepare(
       `SELECT message_id AS messageId, parent_id AS parentId,
-              branch_index AS branchIndex, message_index AS messageIndex
+              branch_index AS branchIndex, message_index AS messageIndex, role
        FROM llm_chat_messages
        WHERE session_id = ? AND message_index < ?
        ORDER BY message_index ASC`
@@ -2465,18 +2467,55 @@ export function activePathIds(db: Database.Database, sessionId: string): string[
  * 但它要数的是「这个问题有几个回答」——所以调用方传的是那条 user 的**孩子**里
  * 当前激活的那个。语义掰这一下是有意的,见设计讨论 Q4。
  */
+/**
+ * 这条消息所在「一轮」在兄弟里的锚点。
+ *
+ * **真实的一轮不是两条消息。** 带思考的模型会写成 `user → reasoning → assistant`,
+ * 带工具的更长。所以「这个回答的第几个版本」数的**不是 assistant 自己的兄弟**
+ * (那一层往往只有它一个),而是它所属那一轮的根在**提问的孩子**里的位置。
+ *
+ * 一轮 = 一条 user 消息 + 它后面直到下一条 user 之前的所有行。
+ *
+ * - `branchParent`:兄弟们共同的父亲(对回答来说就是那条提问)
+ * - `turnRootId`:这一轮挂在 `branchParent` 下面的那条行(带思考的一轮就是 reasoning 行)
+ *
+ * user 消息自己是一轮的根,所以它的兄弟就是「这个问题的几个版本」。
+ */
+function turnAnchorOf(
+  db: Database.Database,
+  sessionId: string,
+  messageId: string
+): { branchParent: string | null; turnRootId: string } {
+  const byId = new Map(treeNodes(db, sessionId).map((n) => [n.messageId, n]));
+  const self = byId.get(messageId);
+  if (!self) throw new LlmChatSessionError(404, "message not found");
+  if (self.role === "user") return { branchParent: self.parentId, turnRootId: self.messageId };
+
+  let cur = self;
+  const seen = new Set<string>([self.messageId]);
+  while (cur.parentId) {
+    const parent = byId.get(cur.parentId);
+    if (!parent || seen.has(parent.messageId)) break; // 防环:树是我们自己写的,但别挂住请求
+    seen.add(parent.messageId);
+    if (parent.role === "user") return { branchParent: parent.messageId, turnRootId: cur.messageId };
+    cur = parent;
+  }
+  // 没有 user 祖先(老库、或首轮就是 assistant):退化成它自己那一层,行为与改造前一致。
+  return { branchParent: cur.parentId, turnRootId: cur.messageId };
+}
+
 export function branchPosition(
   db: Database.Database,
   sessionId: string,
   messageId: string
 ): { branchIndex: number; numberOfBranches: number } {
   const nodes = treeNodes(db, sessionId);
-  const self = nodes.find((n) => n.messageId === messageId);
-  if (!self) return { branchIndex: 0, numberOfBranches: 1 };
+  if (!nodes.some((n) => n.messageId === messageId)) return { branchIndex: 0, numberOfBranches: 1 };
+  const { branchParent, turnRootId } = turnAnchorOf(db, sessionId, messageId);
   const siblings = nodes
-    .filter((n) => n.parentId === self.parentId)
+    .filter((n) => n.parentId === branchParent)
     .sort((a, b) => a.branchIndex - b.branchIndex || a.messageIndex - b.messageIndex);
-  const idx = siblings.findIndex((n) => n.messageId === messageId);
+  const idx = siblings.findIndex((n) => n.messageId === turnRootId);
   return { branchIndex: idx < 0 ? 0 : idx, numberOfBranches: siblings.length };
 }
 
@@ -2605,21 +2644,27 @@ export function applyBranchAction(
 
   let leaf: string | null;
   if (action === "switch") {
-    // 带 branchIndex 时:切到 `messageId` 的**第 N 个兄弟**那一支。
+    // 带 branchIndex 时:切到**这一轮的第 N 个兄弟**那一支(见 `turnAnchorOf`)。
     //
-    // 一条规则管两种导航,因为两种导航数的都是「这条消息的兄弟」:
+    // 一条规则管两种导航,因为两种导航数的都是「这一轮在兄弟里的位置」:
     //  - user 消息上的 ‹1/2› 数的是这个问题的几个版本(编辑重发出来的)
-    //  - assistant 消息上的 ‹1/2› 数的是同一个问题的几个回答(重新生成出来的)
+    //  - assistant 消息上的 ‹1/2› 数的是这个问题的几轮回答(重新生成出来的)
     // 客户端只知道序号,不知道兄弟的 id —— 由服务端解析,树的形状不外泄。
     const target =
       branchIndex == null
         ? messageId
-        : (siblingIds(db, sessionId, parentOf(db, sessionId, messageId))[branchIndex] ??
-          messageId);
+        : (siblingIds(db, sessionId, turnAnchorOf(db, sessionId, messageId).branchParent)[
+            branchIndex
+          ] ?? messageId);
     leaf = deepestLeafFrom(db, sessionId, target);
+  } else if (action === "regenerate") {
+    // **退到那条提问,不是退到父亲。** 父亲往往是同一轮里的 reasoning 行(带思考的
+    // 模型每轮都会写一条),退错一层的话激活叶子不是 user 消息,重复提交判定就会把
+    // 接下来那一轮拦下 —— 表现是点了没反应,而且不报错。
+    leaf = turnAnchorOf(db, sessionId, messageId).branchParent;
   } else {
-    // 退到父亲。父亲是 null 表示它本身就是首问 —— 那么新分支挂在根下,
-    // 激活叶子暂时清空,下一轮的第一条消息会成为新的根级兄弟。
+    // 编辑:退到这条提问的父亲。父亲是 null 表示它本身就是首问 —— 那么新分支挂在
+    // 根下,激活叶子暂时清空,下一轮的第一条消息会成为新的根级兄弟。
     leaf = parentOf(db, sessionId, messageId);
   }
 

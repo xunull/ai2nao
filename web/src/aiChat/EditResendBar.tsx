@@ -72,6 +72,7 @@ export function EditResendBar({
       </div>
       <textarea
         ref={ref}
+        data-testid="edit-resend-input"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

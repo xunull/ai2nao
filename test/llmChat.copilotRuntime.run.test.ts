@@ -1097,6 +1097,91 @@ describe("CopilotKit-compatible LLM chat runtime", () => {
   });
 
   /**
+   * **真实的一轮不是两条消息,是三条:user → reasoning → assistant。**
+   *
+   * 所以点在 assistant 上的「重新生成」必须退回到**那条提问**,而不是退回到
+   * `parentOf(assistant)` —— 后者是 reasoning 行。退错一层的后果:
+   * 激活叶子不是 user 消息,重复提交判定照样把这一轮拦下,点了没反应还不报错。
+   *
+   * 这条用带 reasoning 的流复现。之前的测试都是 user → assistant 两层,
+   * 正好绕过了这一点 —— 这就是为什么单测全绿而真机上一直不行。
+   */
+  it("重新生成:一轮里有 reasoning 行时也要真的再答一次", async () => {
+    const dbPath = tempPath("copilot-runtime-regen-reasoning.db");
+    const db = openDatabase(dbPath);
+    const configPath = tempPath("llm-chat-config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        provider: "openai-compatible",
+        baseURL: "http://127.0.0.1:11434/v1",
+        model: "test-model",
+        apiKey: "test-key",
+      })
+    );
+    process.env.AI2NAO_LLM_CHAT_CONFIG = configPath;
+
+    /** 带思考的一轮:先 reasoning,再正文。与真机上的形状一致。 */
+    const thinkingAnswer = (id: string, text: string) => ({
+      fullStream: asyncParts([
+        { type: "reasoning-start", id: `${id}-r` },
+        { type: "reasoning-delta", id: `${id}-r`, text: "先想一下" },
+        { type: "reasoning-end", id: `${id}-r` },
+        { type: "text-start", id },
+        { type: "text-delta", id, text },
+        { type: "text-end", id },
+        { type: "finish" },
+      ]),
+    });
+
+    try {
+      const app = new Hono();
+      registerCopilotKitRoutes(app, { db });
+      const thread = "thread-regen-reasoning";
+      const ask = async (runId: string) => {
+        const res = await app.request("/api/copilotkit/agent/default/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: thread,
+            runId,
+            messages: [{ id: "u1", role: "user", content: "第一问" }],
+            tools: [],
+            context: [],
+            state: {},
+            forwardedProps: {},
+          }),
+        });
+        return await res.text();
+      };
+
+      streamTextMock.mockReturnValueOnce(thinkingAnswer("t1", "第一个答案"));
+      expect(await ask("run-1")).toContain("第一个答案");
+
+      // 真机上的形状:提问、思考、正文三条,思考在中间。
+      const path = activePathIds(db, thread);
+      expect(path.length, `一轮应该有三条,实际 ${JSON.stringify(path)}`).toBe(3);
+      const answerId = path[2]!;
+
+      // 点「重新生成」——叶子必须退到**提问**,不是退到中间那条 reasoning。
+      applyBranchAction(db, thread, "regenerate", answerId);
+      expect(activePathIds(db, thread)).toEqual(["u1"]);
+
+      streamTextMock.mockReturnValueOnce(thinkingAnswer("t2", "第二个答案"));
+      const sse = await ask("run-2");
+      expect(streamTextMock).toHaveBeenCalledTimes(2);
+      expect(sse).toContain("第二个答案");
+
+      // 两轮各自成一支,挂在同一条提问下面。
+      expect(siblingIds(db, thread, "u1")).toHaveLength(2);
+    } finally {
+      db.close();
+      if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(configPath)) unlinkSync(configPath);
+    }
+  });
+
+  /**
    * **编辑重发的端到端承诺:新提问是原提问的兄弟,原来那一问一答都还在。**
    *
    * 分支语义本身在 llmChat.branchRoutes / llmChat.messageTree 里逐条测过了;
