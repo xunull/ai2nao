@@ -23,6 +23,7 @@ import { ingestClaudeUserMessages } from "../agentUserMessages/claudeIngest.js";
 import { ingestCodexUserMessages } from "../agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "../agentUserMessages/kimiIngest.js";
 import { ingestHermesUserMessages } from "../agentUserMessages/hermesIngest.js";
+import { ingestCherryUserMessages } from "../agentUserMessages/cherryIngest.js";
 import { loadGithubToken } from "../github/config.js";
 import { syncGithub } from "../github/sync.js";
 import { refreshRadarInsights } from "../github/radarInsights/snapshot.js";
@@ -693,6 +694,32 @@ export function createDefaultScheduledTaskDefinitions(): ScheduledTaskDefinition
           status: r.status,
           summary: {
             scannedSessions: r.scannedSessions,
+            upserted: r.upserted,
+            watermarkMs: r.watermarkMs,
+          },
+          errorSummary: r.error ?? null,
+        };
+      },
+    },
+    {
+      // Cherry Studio 的对话。**它是唯一的通用聊天来源** —— 另外五家全是编码会话,
+      // 所以它也是唯一进了话题聚类而没进工作看板的源(没有工作目录概念)。
+      //
+      // 间隔照另外五家 1 小时,而不是按「它的正文停在 2026-07-24、两个月没新数据」
+      // 来放长:那是个会变的事实,而这个任务读一个 1558 条的本地 sqlite,代价可以忽略。
+      key: "agent_user_messages.cherry.sync",
+      label: "Cherry Studio 对话入库",
+      description:
+        "把 Cherry Studio 的提问与 AI 回答写入 agent_user_messages（取激活路径，思考过程只进载荷）。需要 Cherry Studio 2.0.14+。",
+      category: "local_inventory",
+      defaultIntervalSeconds: oneHour,
+      sensitivity: "low",
+      run: async (ctx) => {
+        const r = ingestCherryUserMessages(ctx.db);
+        return {
+          status: r.status,
+          summary: {
+            scannedTopics: r.scannedTopics,
             upserted: r.upserted,
             watermarkMs: r.watermarkMs,
           },

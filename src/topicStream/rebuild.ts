@@ -33,7 +33,7 @@ const GIT_TOP_N = 12;
  * 现在两处都从 CONVERSATION_SOURCE_SQL 生成,「两条 SQL 的源集合相同」
  * **不可能再漂**。加源只改这一行(然后 bump CONVERSATION_RULE_VERSION)。
  */
-export const CONVERSATION_SOURCES = ["claude", "codex", "opencode", "kimi"] as const;
+export const CONVERSATION_SOURCES = ["claude", "codex", "opencode", "kimi", "cherry"] as const;
 
 /**
  * 上面那个数组的 SQL `IN (...)` 内容。来源是本文件的硬编码字面量数组,
@@ -56,8 +56,11 @@ export const CONVERSATION_PROFILE = "-";
  *
  * v2 = 加入 kimi(第四个源) + 重算质心。v1 的质心是拿 311 个样本算的,
  *      而它已经在服务 475 个(+53%),且 12 个簇里 4 个都叫「附件分析」。
+ * v3 = 加入 cherry(第五个源)。它是唯一的**通用聊天**来源 —— 另外四家全是编码会话,
+ *      626 场里有「Scrum是什么」「Chrome Helper作用」这类纯知识性提问,
+ *      正是聚类最有价值的输入,也意味着旧质心对它没有代表性,必须重算。
  */
-export const CONVERSATION_RULE_VERSION = "cluster-v2";
+export const CONVERSATION_RULE_VERSION = "cluster-v3";
 
 export type TopicStreamEvent = {
   sourceRef: string;

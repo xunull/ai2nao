@@ -159,6 +159,8 @@ export function sessionDetailPath(sourceRef: string): string | null {
   // 加源到话题河时**必须一起加这里**,否则新源的会话在河里点不进去(静默:
   // 返回 null 只是不给链接,不会报错)。清单见 docs/agent-source-checklist.md。
   if (chatSource === "kimi") return `/kimi-history/s/${encodeURIComponent(sid)}`;
+  // cherry 的详情不是独立路由,是查询参数 —— 与另外几家不同,别照抄成 /s/<id>。
+  if (chatSource === "cherry") return `/cherry-studio-history?sessionId=${encodeURIComponent(sid)}`;
   if (chatSource === "claude") {
     const cidx = sid.indexOf(":");
     if (cidx < 0) return null;

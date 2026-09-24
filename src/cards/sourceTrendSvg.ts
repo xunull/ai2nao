@@ -24,7 +24,7 @@ const FONT =
  * legend 文本里出现该源。加源清单见 docs/agent-source-checklist.md 第 11 项。
  */
 export const SERIES: {
-  key: "claude" | "codex" | "opencode" | "kimi" | "hermes";
+  key: "claude" | "codex" | "opencode" | "kimi" | "hermes" | "cherry";
   label: string;
   color: string;
 }[] = [
@@ -34,6 +34,8 @@ export const SERIES: {
   { key: "kimi", label: "Kimi", color: "#bf3989" },
   // hermes 这条只含**人发起**的会话,cron 定时任务不计(后端 HERMES_COUNTED)。
   { key: "hermes", label: "Hermes", color: "#bc4c00" },
+  // Cherry 是唯一的「通用聊天」来源 —— 另外五家全是编码会话。
+  { key: "cherry", label: "Cherry", color: "#e11d48" },
 ];
 
 /** 图例横排步长。SERIES 变长时画布宽度按它反算,见 renderSourceTrendSvg。 */

@@ -27,6 +27,7 @@ const SOURCES = new Set<AgentUserMessageSource>([
   "opencode",
   "kimi",
   "hermes",
+  "cherry",
 ]);
 const ROLE_FILTERS = new Set<string>(["user", "assistant", "all"]);
 

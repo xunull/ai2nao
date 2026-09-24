@@ -90,15 +90,21 @@ describe("userMessageTimeline — 每个源都要计进桶,新源不许静默消
    * 现在 SourceCounts 是 Record<AgentUserMessageSource, number>,漏键 tsc 会报;
    * 这条测试守住运行时那一半(累加与求和真的覆盖了每一个源)。
    */
-  it("每个已知源各来一条:五个源都进桶,且 total == 各源之和", () => {
+  it("每个已知源各来一条:全部进桶,且 total == 各源之和", () => {
     const db = freshDb();
-    const sources: AgentUserMessageSource[] = [
-      "claude",
-      "codex",
-      "opencode",
-      "kimi",
-      "hermes",
-    ];
+    // **靠 Record 穷尽,不写数组字面量。** 这条测试原来是硬编码五个源的数组,
+    // 于是 cherry 入库时它照样绿 —— 而那次真的漏了:桶的散列字段展开处少了一行,
+    // cherry 从图上消失,total 还因为遍历 Record 求和而对得上,更难发现。
+    // 现在往 AgentUserMessageSource 加成员不补这里 → tsc 报缺键。
+    const ALL: Record<AgentUserMessageSource, true> = {
+      claude: true,
+      codex: true,
+      opencode: true,
+      kimi: true,
+      hermes: true,
+      cherry: true,
+    };
+    const sources = Object.keys(ALL) as AgentUserMessageSource[];
     upsertUserMessagesBatch(
       db,
       sources.map((s) => row(s, `来自 ${s}`, "2026-07-01T04:00:00Z")),

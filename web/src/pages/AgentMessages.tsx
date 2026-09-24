@@ -45,6 +45,7 @@ const SOURCES = [
   { value: "codex", label: "Codex" },
   { value: "kimi", label: "kimi" },
   { value: "hermes", label: "Hermes" },
+  { value: "cherry", label: "Cherry" },
 ] as const;
 
 type RoleFilter = "user" | "assistant" | "all";
@@ -67,6 +68,8 @@ const SOURCE_META: Record<string, { label: string; color: string }> = {
   opencode: { label: "opencode", color: "#0d9488" },
   kimi: { label: "kimi", color: "#16a34a" },
   hermes: { label: "Hermes", color: "#c026d3" },
+  // 樱桃红。唯一的通用聊天来源,另外五家全是编码会话。
+  cherry: { label: "Cherry", color: "#e11d48" },
 };
 
 /** 日期分隔条(按本地日分组);行内只留时分秒,不重复日期。 */
@@ -211,6 +214,11 @@ type TimelineBucket = {
   codex: number;
   opencode: number;
   kimi: number;
+  // hermes 与 cherry 后端一直下发(queries.ts 的 UserMessageTimelineBucket),
+  // 这里漏了字段 → 下面 data 里没有这一项 → `<Bar dataKey="hermes">` 画的是 undefined,
+  // 柱子恒为空而没人发现。清单第 8 项踩过的坑,这次两个一起补。
+  hermes: number;
+  cherry: number;
   total: number;
 };
 type Timeline = {
@@ -268,6 +276,8 @@ function AnalyticsStrip({
     codex: b.codex,
     opencode: b.opencode,
     kimi: b.kimi,
+    hermes: b.hermes,
+    cherry: b.cherry,
   }));
   const delta = timeline.deltaRatio;
 
@@ -327,6 +337,7 @@ function AnalyticsStrip({
             <Bar dataKey="claude" stackId="s" fill={SOURCE_META.claude.color} />
             <Bar dataKey="codex" stackId="s" fill={SOURCE_META.codex.color} />
             <Bar dataKey="kimi" stackId="s" fill={SOURCE_META.kimi.color} />
+            <Bar dataKey="cherry" stackId="s" fill={SOURCE_META.cherry!.color} />
           </BarChart>
         </ResponsiveContainer>
       </div>

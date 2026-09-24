@@ -13,7 +13,13 @@
  * 教训来自 kimi:它早在本 union 里,却至今缺席 agentUserMessages/routes.ts 的筛选器、
  * topicStream/conversation.ts 的话题流和 AiRhythm.tsx 的图例,tsc 从没报过。
  */
-export type AgentUserMessageSource = "claude" | "codex" | "opencode" | "kimi" | "hermes";
+export type AgentUserMessageSource =
+  | "claude"
+  | "codex"
+  | "opencode"
+  | "kimi"
+  | "hermes"
+  | "cherry";
 
 /** 消息角色。V53 起这张表也装 assistant 行(AI 正文入库)。 */
 export type AgentMessageRole = "user" | "assistant";

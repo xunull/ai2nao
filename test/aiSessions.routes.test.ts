@@ -44,8 +44,9 @@ describe("GET /api/ai-sessions", () => {
     // 这条断言**钉死整个列表**是有意的:往 agent_user_messages 加源不会让 tsc 报到
     // 这里(AgentUserMessageSource 是协变位置),所以这条测试是唯一会红的东西。
     // 加源时它红了 → 说明你还没把新源写进覆盖面声明,不是测试过时了。
-    expect(body.coverage.sources).toEqual(["claude", "codex", "kimi", "opencode", "hermes"]);
-    expect(body.coverage.note).toMatch(/cursor|cherry/);
+    expect(body.coverage.sources).toEqual(["claude", "codex", "kimi", "opencode", "hermes", "cherry"]);
+    // cherry 已入库,覆盖面里还没进来的只剩 cursor
+    expect(body.coverage.note).toMatch(/cursor/);
     expect(body.coverage.note).toMatch(/minimax/);
     expect(body.coverage.note).toMatch(/hermes/);
     db.close();

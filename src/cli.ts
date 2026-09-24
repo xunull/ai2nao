@@ -76,6 +76,7 @@ import { ingestCodexUserMessages } from "./agentUserMessages/codexIngest.js";
 import { ingestKimiUserMessages } from "./agentUserMessages/kimiIngest.js";
 import { ingestOpencodeUserMessages } from "./agentUserMessages/opencodeIngest.js";
 import { ingestHermesUserMessages } from "./agentUserMessages/hermesIngest.js";
+import { ingestCherryUserMessages } from "./agentUserMessages/cherryIngest.js";
 import { setSyncState, getSyncState } from "./agentUserMessages/store.js";
 import { CARD_REGISTRY } from "./cards/registry.js";
 import { generateCardBundle } from "./cards/bundle.js";
@@ -2179,8 +2180,8 @@ const agentMessagesCmd = program
 
 // 这是 AgentUserMessageSource 的一份**手抄副本** —— 两处不同步时 tsc 不会报。
 // 加源清单见 docs/agent-source-checklist.md。
-type AumSourceName = "claude" | "codex" | "opencode" | "kimi" | "hermes";
-const AUM_SOURCES: AumSourceName[] = ["claude", "codex", "opencode", "kimi", "hermes"];
+type AumSourceName = "claude" | "codex" | "opencode" | "kimi" | "hermes" | "cherry";
+const AUM_SOURCES: AumSourceName[] = ["claude", "codex", "opencode", "kimi", "hermes", "cherry"];
 
 agentMessagesCmd
   .command("resync")
@@ -2190,7 +2191,7 @@ agentMessagesCmd
   .option("--db <path>", "SQLite database path", defaultDbPath())
   .option(
     "--source <name>",
-    "claude | codex | opencode | kimi | all",
+    "claude | codex | opencode | kimi | hermes | cherry | all",
     "all"
   )
   .option("--full", "reset watermarks to 0 (re-scan everything)", false)
@@ -2244,6 +2245,7 @@ agentMessagesCmd
           else if (src === "opencode") results[src] = ingestOpencodeUserMessages(db);
           else if (src === "kimi") results[src] = ingestKimiUserMessages(db);
           else if (src === "hermes") results[src] = ingestHermesUserMessages(db);
+          else if (src === "cherry") results[src] = ingestCherryUserMessages(db);
           else results[src] = { status: "skipped", reason: `unknown source: ${String(src)}` };
         }
 

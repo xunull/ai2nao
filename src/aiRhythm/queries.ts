@@ -237,6 +237,8 @@ export type WeekMix = {
   kimi: number;
   /** 只含**人发起**的 hermes 会话,cron 定时任务不计 —— 见 HERMES_COUNTED。 */
   hermes: number;
+  /** 唯一的「通用聊天」来源,另外五家全是编码会话。 */
+  cherry: number;
   /** 各分列之和(**不是** COUNT(*))—— 见 weeklySourceMix 的注释。 */
   total: number;
 };
@@ -262,7 +264,7 @@ const HERMES_COUNTED =
  * 原来 total 是 COUNT(*)(全源)而分列只有三个,kimi 从入库起就没被画进去,
  * W34 那周漏 124/422 = 29%,而绝对值堆叠图上不会出现空洞,只是矮一截。
  */
-const WEEK_COUNTED = `(source IN ('claude','codex','opencode','kimi') OR (${HERMES_COUNTED}))`;
+const WEEK_COUNTED = `(source IN ('claude','codex','opencode','kimi','cherry') OR (${HERMES_COUNTED}))`;
 
 /**
  * 使用迁移周趋势:按本地周分桶,统计各源的 is_human 消息数。
@@ -287,6 +289,7 @@ export function weeklySourceMix(
               SUM(source = 'opencode') AS opencode,
               SUM(source = 'kimi')     AS kimi,
               SUM(${HERMES_COUNTED})   AS hermes,
+              SUM(source = 'cherry')   AS cherry,
               SUM(${WEEK_COUNTED})     AS total
        FROM agent_user_messages
        WHERE is_human = 1

@@ -257,6 +257,7 @@ const ZERO_COUNTS: SourceCounts = {
   opencode: 0,
   kimi: 0,
   hermes: 0,
+  cherry: 0,
 };
 
 export type UserMessageTimelineBucket = {
@@ -267,6 +268,7 @@ export type UserMessageTimelineBucket = {
   opencode: number;
   kimi: number;
   hermes: number;
+  cherry: number;
   total: number;
 };
 
@@ -366,6 +368,10 @@ export function userMessageTimeline(
       opencode: e.opencode,
       kimi: e.kimi,
       hermes: e.hermes,
+      cherry: e.cherry,
+      // ⚠️ total 遍历 Record 算(漏源也不会少算),但**这里是散列字段逐个展开** ——
+      // 加源时漏一行,该源就从图上消失而 total 照样对得上,tsc 不报。
+      // cherry 入库时真的漏了一次,靠真机验收才发现(清单第 7 项的同一个坑)。
       total,
     };
   });
