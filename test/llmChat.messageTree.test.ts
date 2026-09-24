@@ -66,13 +66,24 @@ describe("激活路径", () => {
     db.close();
   });
 
-  it("没有 active_leaf 时回退到按 message_index 平铺 —— 那正是 V61 之前的行为", () => {
+  it("没有树也没有 active_leaf 时回退到平铺 —— V61 之前的老库", () => {
+    const db = freshDb();
+    ensureLlmChatSession(db, "s1", "测试");
+    addNode(db, "s1", { id: "u1", parent: null, index: 0 });
+    addNode(db, "s1", { id: "a1", parent: null, index: 1, role: "assistant" });
+    expect(getActiveLeafId(db, "s1")).toBeNull();
+    expect(activePathIds(db, "s1")).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  it("有树但叶子为空 → 空路径,不是把所有分支平铺出来", () => {
+    // 编辑首问时会短暂处于这个状态:叶子退到 null,等新提问落地。
+    // 这里平铺的话,其他分支会整批冒出来当成当前对话。
     const db = freshDb();
     ensureLlmChatSession(db, "s1", "测试");
     addNode(db, "s1", { id: "u1", parent: null, index: 0 });
     addNode(db, "s1", { id: "a1", parent: "u1", index: 1, role: "assistant" });
-    expect(getActiveLeafId(db, "s1")).toBeNull();
-    expect(activePathIds(db, "s1")).toEqual(["u1", "a1"]);
+    expect(activePathIds(db, "s1")).toEqual([]);
     db.close();
   });
 

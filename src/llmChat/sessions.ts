@@ -2414,7 +2414,12 @@ export function activePathIds(db: Database.Database, sessionId: string): string[
   const nodes = treeNodes(db, sessionId);
   if (nodes.length === 0) return [];
   const leaf = getActiveLeafId(db, sessionId);
-  if (!leaf) return nodes.map((n) => n.messageId);
+  if (!leaf) {
+    // 回退到平铺**只对没有树的老会话**成立(V61 之前的库,或迁移时一条消息都没有)。
+    // 一旦有任何一条行挂了 parent,这棵树就是成立的,而「叶子为空」就真的是空路径 ——
+    // 编辑首问时会短暂处于这个状态。此时平铺会把**所有分支**一起返回,那是错的。
+    return nodes.some((n) => n.parentId !== null) ? [] : nodes.map((n) => n.messageId);
+  }
   const byId = new Map(nodes.map((n) => [n.messageId, n]));
   const path: string[] = [];
   const seen = new Set<string>();
@@ -2529,4 +2534,66 @@ export function nextBranchIndex(
     )
     .get(sessionId, TREE_INDEX_CEILING, parentId, parentId) as { next: number };
   return row.next;
+}
+
+/** 一次分支操作的三种意图。三者的区别只有一个:把激活叶子移到哪。 */
+export type BranchAction = "switch" | "regenerate" | "edit";
+
+export type BranchResult = {
+  activeLeafMessageId: string;
+  activePathIds: string[];
+  /** 移动之后是否需要客户端重新发起一轮(重新生成 / 编辑重发都要)。 */
+  needsRun: boolean;
+};
+
+function parentOf(db: Database.Database, sessionId: string, messageId: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT parent_id AS parentId FROM llm_chat_messages
+       WHERE session_id = ? AND message_id = ?`
+    )
+    .get(sessionId, messageId) as { parentId: string | null } | undefined;
+  if (!row) throw new LlmChatSessionError(404, "message not found");
+  return row.parentId;
+}
+
+/**
+ * 分支操作。**服务端拥有树的语义,客户端只说意图。**
+ *
+ *   switch     切到某条兄弟 → 沿它往下走到底,那条路径成为激活路径
+ *   regenerate 重新生成某条回答 → 叶子退回它的**父亲**(那条提问),再跑一轮就长出兄弟
+ *   edit       编辑某条提问 → 叶子退回它的父亲,新提问就成了同一层的兄弟
+ *
+ * 后两者都不在这里发起模型调用 —— 移动叶子之后由客户端正常发一轮,
+ * 新消息自然挂在新叶子下面(persistGenerated 就是这么接的)。
+ * 这样重新生成与编辑重发**复用了完全相同的那条发送路径**,没有第二套运行时。
+ */
+export function applyBranchAction(
+  db: Database.Database,
+  sessionId: string,
+  action: BranchAction,
+  messageId: string
+): BranchResult {
+  const exists = db
+    .prepare("SELECT 1 FROM llm_chat_sessions WHERE id = ?")
+    .get(sessionId);
+  if (!exists) throw new LlmChatSessionError(404, "session not found");
+
+  let leaf: string | null;
+  if (action === "switch") {
+    leaf = deepestLeafFrom(db, sessionId, messageId);
+  } else {
+    // 退到父亲。父亲是 null 表示它本身就是首问 —— 那么新分支挂在根下,
+    // 激活叶子暂时清空,下一轮的第一条消息会成为新的根级兄弟。
+    leaf = parentOf(db, sessionId, messageId);
+  }
+
+  if (leaf) setActiveLeaf(db, sessionId, leaf);
+  else db.prepare("UPDATE llm_chat_sessions SET active_leaf_message_id = NULL WHERE id = ?").run(sessionId);
+
+  return {
+    activeLeafMessageId: leaf ?? "",
+    activePathIds: activePathIds(db, sessionId),
+    needsRun: action !== "switch",
+  };
 }

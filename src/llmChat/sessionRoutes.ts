@@ -2,6 +2,8 @@ import type Database from "better-sqlite3";
 import type { Hono } from "hono";
 import { jsonErr, safeJson } from "./http.js";
 import {
+  applyBranchAction,
+  branchPosition,
   createLlmChatSession,
   deleteLlmChatSession,
   getLlmChatSession,
@@ -10,9 +12,13 @@ import {
   sessionUsage,
   setSessionCompactionAuto,
   LlmChatSessionError,
+  siblingIds,
+  type BranchAction,
   type LlmChatMessageRow,
   type SessionContextView,
 } from "./sessions.js";
+
+const BRANCH_ACTIONS = new Set<string>(["switch", "regenerate", "edit"]);
 
 export type LlmChatSessionRouteDeps = {
   db?: Database.Database;
@@ -161,6 +167,77 @@ export function registerLlmChatSessionRoutes(
     }
   });
   
+  /**
+   * 分支操作。三种意图的区别只有一个:把激活叶子移到哪 ——
+   * 语义在服务端(applyBranchAction),客户端只说意图。
+   *
+   * 重新生成与编辑重发**不在这里发起模型调用**:移动叶子之后由客户端正常发一轮,
+   * 新消息自然挂在新叶子下面。两者因此复用了完全相同的那条发送路径。
+   */
+  app.post("/api/llm-chat/sessions/:id/branch", async (c) => {
+    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
+    const body = await safeJson(c);
+    const action = (body as { action?: unknown })?.action;
+    const messageId = (body as { messageId?: unknown })?.messageId;
+    if (typeof action !== "string" || !BRANCH_ACTIONS.has(action)) {
+      return jsonErr(400, "action must be one of switch | regenerate | edit");
+    }
+    if (typeof messageId !== "string" || !messageId.trim()) {
+      return jsonErr(400, "messageId is required");
+    }
+    try {
+      const result = applyBranchAction(
+        deps.db,
+        c.req.param("id"),
+        action as BranchAction,
+        messageId
+      );
+      return c.json(result);
+    } catch (e) {
+      if (e instanceof LlmChatSessionError) return jsonErr(e.status, e.message);
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  /**
+   * 激活路径上每条消息的分支位置,供界面渲染 `‹ 1/2 ›`。
+   *
+   * 导航挂在 **user** 消息上(CopilotKit 的分支导航只有 UserMessage 有),
+   * 但数的是**它的孩子**里当前激活的那个 —— 也就是「这个问题有几个回答」。
+   */
+  app.get("/api/llm-chat/sessions/:id/branches", (c) => {
+    if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
+    try {
+      const id = c.req.param("id");
+      const detail = getLlmChatSession(deps.db, id);
+      if (!detail) return jsonErr(404, "session not found");
+      const path = detail.messages.filter((m) => m.message_index < 1_000_000);
+      const out: Record<string, { branchIndex: number; numberOfBranches: number }> = {};
+      for (let i = 0; i < path.length; i += 1) {
+        const row = path[i]!;
+        if (row.role !== "user") continue;
+        // 这条 user 的孩子里,当前激活的是路径上的下一条。
+        const activeChild = path[i + 1]?.message_id;
+        if (!activeChild) {
+          // 末尾的提问还没有回答 —— 但它自己可能有兄弟(编辑重发过)。
+          const self = branchPosition(deps.db, id, row.message_id);
+          if (self.numberOfBranches > 1) out[row.message_id] = self;
+          continue;
+        }
+        const kids = siblingIds(deps.db, id, row.message_id);
+        if (kids.length > 1) {
+          out[row.message_id] = {
+            branchIndex: Math.max(0, kids.indexOf(activeChild)),
+            numberOfBranches: kids.length,
+          };
+        }
+      }
+      return c.json({ branches: out });
+    } catch (e) {
+      return jsonErr(500, e instanceof Error ? e.message : String(e));
+    }
+  });
+
   app.delete("/api/llm-chat/sessions/:id", (c) => {
     if (!deps?.db) return jsonErr(503, "LLM chat session storage is unavailable");
     try {
