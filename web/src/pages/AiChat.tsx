@@ -764,39 +764,45 @@ export function AiChat() {
     return Object.assign(WithUsage, CopilotChatReasoningMessage);
   }, []);
   
-  /** 会话切换或重挂之后重新拉一次 ‹1/2›。 */
-  useEffect(() => {
-    if (!activeSessionId) {
+  /** 重新拉一次 ‹1/2›。拉不到就不渲染导航 —— 分支功能不可用好过整页崩掉。 */
+  const refreshBranches = useCallback(async (sessionId: string | null) => {
+    if (!sessionId) {
       setBranches({ questions: {}, answers: {} });
       return;
     }
-    let alive = true;
-    fetchBranches(activeSessionId)
-      .then((b) => {
-        if (alive) setBranches(b);
-      })
-      .catch(() => {
-        // 拉不到就不渲染导航 —— 分支功能不可用好过整页崩掉。
-        if (alive) setBranches({ questions: {}, answers: {} });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [activeSessionId, chatEpoch]);
+    try {
+      setBranches(await fetchBranches(sessionId));
+    } catch {
+      setBranches({ questions: {}, answers: {} });
+    }
+  }, []);
+
+  /** 会话切换或重挂之后重新拉一次。 */
+  useEffect(() => {
+    void refreshBranches(activeSessionId);
+  }, [activeSessionId, chatEpoch, refreshBranches]);
 
   /**
-   * 三种分支动作共用这一条:服务端移叶子,客户端重挂,需要的话再跑一轮。
+   * 三种分支动作共用这一条:服务端移叶子,客户端再去对齐。
    *
-   * 重挂是必须的 —— 服务端的消息集合变了,CopilotKit 只在 connect 时取快照
-   * (压缩/撤销走的是同一条路)。
+   * 对齐的办法有两种,都是「让 CopilotKit 重新取一次服务端快照」:
+   *  - 切换 / 编辑:重挂聊天区(换 key),CopilotKit 在 connect 时取快照
+   *  - 重新生成:不重挂,由 RegenerateRunner 自己 connect 完再跑那一轮 ——
+   *    两件事都做的话,重挂的 connect 会与那一轮的流式输出撞在一起
    */
   const runBranchAction = useCallback(
     async (action: "switch" | "regenerate" | "edit", messageId: string) => {
       if (!activeSessionId) return;
       try {
         const res = await applyBranch(activeSessionId, action, messageId);
-        setChatEpoch((n) => n + 1);
-        if (res.needsRun && action === "regenerate") setPendingRun((n) => n + 1);
+        if (res.needsRun && action === "regenerate") {
+          // **重新生成不重挂聊天区。** 刷新交给 RegenerateRunner 里的 connect ——
+          // 它拿服务端的激活路径替换客户端的列表,然后才跑。两件事都做的话,
+          // 重挂的 connect 与那一轮的流式输出会撞在一起。
+          setPendingRun((n) => n + 1);
+        } else {
+          setChatEpoch((n) => n + 1);
+        }
       } catch (e) {
         setChatErr(e instanceof Error ? e.message : String(e));
       }
@@ -970,10 +976,16 @@ export function AiChat() {
     return rows;
   }, []);
 
-  /** 一轮结束或失败:刷新左栏(累计花费在会话列表接口里),聊天区不动。 */
+  /**
+   * 一轮结束或失败:刷新左栏(累计花费在会话列表接口里),聊天区不动。
+   *
+   * 分支表也在这里刷 —— 重新生成出来的新回答是原回答的兄弟,那条 ‹1/2› 要当场
+   * 出现;而重新生成不重挂聊天区,靠不上 chatEpoch 那个触发。
+   */
   const handleRunSettled = useCallback(() => {
     void refreshSessions().catch(() => {});
-  }, [refreshSessions]);
+    void refreshBranches(activeSessionId);
+  }, [activeSessionId, refreshBranches, refreshSessions]);
   
   /** 压缩或撤销成功:重挂 CopilotChat 拿裁剪后的快照,并刷新左栏。 */
   const handleCompactionChanged = useCallback(() => {
@@ -1467,9 +1479,10 @@ export function AiChat() {
                     {/* 两个都必须在 <CopilotKit> 内部才拿得到 agent。RegenerateRunner 不渲染东西。
                         编辑横幅必须是卡片的直接子元素,和上面几条横幅同一层 —— 放进下面那个
                         flex-1 里的话,聊天区会照样按父元素 100% 排版,底部被切掉一条横幅的高度。 */}
-                    <RegenerateRunner trigger={pendingRun} />
+                    <RegenerateRunner sessionId={activeSessionId} trigger={pendingRun} />
                     {editingDraft !== null ? (
                       <EditResendBar
+                        sessionId={activeSessionId}
                         draft={editingDraft}
                         onCancel={() => setEditingDraft(null)}
                         onSent={() => {

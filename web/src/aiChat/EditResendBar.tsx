@@ -11,18 +11,24 @@ import { useAgent, useCopilotKit } from "@copilotkit/react-core/v2";
  * 发送走 `agent.addMessage` + `runAgent` —— 与普通发送同一条运行时路径,
  * 新消息挂在服务端刚移好的叶子下面,自然成为原提问的兄弟。
  *
+ * **`threadId` 必须显式传**(与 `RegenerateRunner` 同一个理由):这个组件在
+ * `<CopilotChat>` 外面,拿不到它内部那个 configuration provider 的 threadId 回退,
+ * 不传就会拿到共享的 registry agent,发出去的那一轮落进一个凭空新建的会话。
+ *
  * 必须放在 `<CopilotKit>` 内部才拿得到 agent。
  */
 export function EditResendBar({
+  sessionId,
   draft,
   onCancel,
   onSent,
 }: {
+  sessionId: string;
   draft: string;
   onCancel: () => void;
   onSent: () => void;
 }) {
-  const { agent } = useAgent({ agentId: "default" });
+  const { agent } = useAgent({ agentId: "default", threadId: sessionId });
   const { copilotkit } = useCopilotKit();
   const [text, setText] = useState(draft);
   const [busy, setBusy] = useState(false);
