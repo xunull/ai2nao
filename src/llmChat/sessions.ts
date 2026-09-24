@@ -1723,7 +1723,7 @@ export function getLlmChatSession(
   if (!row) return null;
   // 列表与详情**必须走同一条解析**:只改一处的话,左栏有累计而详情页没有。
   const session = withParsedUsage(row);
-  const messages = db
+  const all = db
     .prepare(
       `SELECT id, session_id, message_id, message_index, role, raw_json,
               plain_text, preview, status, created_at, updated_at
@@ -1732,7 +1732,21 @@ export function getLlmChatSession(
        ORDER BY message_index ASC`
     )
     .all(id) as LlmChatMessageRow[];
-  return { ...session, messages };
+
+  // **顺序由 parent 链决定,不是 message_index(V61)。** 后者退化成全局插入序,
+  // 只用来保证唯一;有了分支之后它不可能再表达顺序 —— 其他分支的行也占着号。
+  //
+  // 只保留激活路径上的树节点。切走的分支对「发给模型的上下文」「界面看到的对话」
+  // 「压缩的作用域」三者都不存在。activity 行(run/账目/工具执行/压缩)不在树上,
+  // 按 message_index 照旧全给。
+  const path = activePathIds(db, id);
+  if (path.length === 0) return { ...session, messages: all };
+  const order = new Map(path.map((mid, i) => [mid, i]));
+  const tree = all
+    .filter((m) => order.has(m.message_id))
+    .sort((a, b) => order.get(a.message_id)! - order.get(b.message_id)!);
+  const activity = all.filter((m) => m.message_index >= RUN_ROW_INDEX_BASE);
+  return { ...session, messages: [...tree, ...activity] };
 }
 
 export function ensureLlmChatSession(
@@ -1803,21 +1817,46 @@ export function replaceLlmChatSessionMessages(
     const del = db.prepare(
       "DELETE FROM llm_chat_messages WHERE session_id = ? AND message_id = ?"
     );
-    // **服务端专有行不参与「不在本次集合里就删」。** 占位行从来不在客户端的
-    // 消息集合里,按老规则每轮结束都会被删掉 —— 那样重复提交判定和崩溃恢复
-    // 就永远查不到任何记录。
+    // **两类行不参与「不在本次集合里就删」:**
+    //
+    // 1. 服务端专有行(ai2nao:*)。占位行从来不在客户端的消息集合里,按老规则每轮
+    //    结束都会被删掉 —— 那样重复提交判定和崩溃恢复就永远查不到任何记录。
+    // 2. **不在激活路径上的行(V61)。** 客户端只认识激活路径,其他分支它根本没见过;
+    //    照老规则下一轮对话就会把它们全删光 —— 你点「重新生成」保住的那个旧答案,
+    //    再说一句话就没了。
+    const onPath = new Set(activePathIds(db, sessionId));
     for (const msg of existing) {
       if (isServerOnlyMessageId(msg.message_id)) continue;
+      if (onPath.size > 0 && !onPath.has(msg.message_id)) continue;
       if (!incomingIds.has(msg.message_id)) del.run(sessionId, msg.message_id);
     }
 
-    // 同理,重排也跳过它们:它们在 RUN_ROW_INDEX_BASE 之上的保留区,
-    // 被取负一次就再也回不到保留区了。
-    db.prepare(
-      `UPDATE llm_chat_messages
-       SET message_index = -1000000 - message_index
-       WHERE session_id = ? AND message_id NOT LIKE ?`
-    ).run(sessionId, `${SERVER_ONLY_MESSAGE_PREFIX}%`);
+    // **message_index 不再是客户端数组的下标,而是全局插入序(V61)。**
+    //
+    // 老做法是「先把所有行取负腾空,再按下标 0..N-1 重排」。有了分支之后它会撞车:
+    // 其他分支的行还占着 0..N-1 里的某些号(它们曾经在激活路径上),
+    // 而取负只腾得空激活路径那些 —— 插入时必然 UNIQUE(session_id, message_index) 冲突。
+    //
+    // 现在:已经在库里的沿用它自己的号,新来的取 max+1。路径顺序照样成立 ——
+    // 孩子永远比父亲后插入,所以一条链上的号天然递增。
+    const indexByMessageId = new Map(
+      (
+        db
+          .prepare(
+            `SELECT message_id, message_index FROM llm_chat_messages
+             WHERE session_id = ? AND message_index < ?`
+          )
+          .all(sessionId, RUN_ROW_INDEX_BASE) as {
+          message_id: string;
+          message_index: number;
+        }[]
+      ).map((r) => [r.message_id, r.message_index])
+    );
+    let nextIndex = Math.max(-1, ...indexByMessageId.values()) + 1;
+    for (const msg of normalized) {
+      const known = indexByMessageId.get(msg.message_id);
+      msg.message_index = known ?? nextIndex++;
+    }
 
     const upsert = db.prepare(
       `INSERT INTO llm_chat_messages (
@@ -1849,6 +1888,33 @@ export function replaceLlmChatSessionMessages(
         msg.status,
         now,
         now
+      );
+    }
+
+    // 树结构(V61)。客户端传来的这一串**就是**激活路径,所以:
+    //  - 每条消息的父亲是它前面那条,第一条挂在根下
+    //  - 只给**新行**写 parent —— 已有行的父子关系是分支结构本身,客户端不知道它,
+    //    覆盖它就等于把树压平回一条线
+    //  - 激活叶子指向最后一条
+    // **客户端传来的这一串就是它主张的激活路径**,所以数组里每一条的 parent
+    // 都按数组更新 —— 包括已经在库里的(它可能被重排了,老契约允许)。
+    // 不在数组里的行**一律不动**:那些是其他分支,客户端根本没见过它们。
+    const setTree = db.prepare(
+      `UPDATE llm_chat_messages SET parent_id = ?, branch_index = ?
+       WHERE session_id = ? AND message_id = ?`
+    );
+    let prevId: string | null = null;
+    for (const msg of normalized) {
+      const isNew = !indexByMessageId.has(msg.message_id);
+      // 已有行沿用自己的兄弟序号;新行排在该父亲已有孩子的最后。
+      const branch = isNew ? nextBranchIndexIn(db, sessionId, prevId) : 0;
+      setTree.run(prevId, branch, sessionId, msg.message_id);
+      prevId = msg.message_id;
+    }
+    if (prevId !== null) {
+      db.prepare("UPDATE llm_chat_sessions SET active_leaf_message_id = ? WHERE id = ?").run(
+        prevId,
+        sessionId
       );
     }
   });
@@ -1926,6 +1992,30 @@ export function persistGenerated(
         msg.status,
         now,
         now
+      );
+    }
+
+    // 树结构(V61):服务端产出的这一批接在**当前激活叶子**后面,并把叶子推过去。
+    // 不做这件事,新写的 assistant 行没有 parent,会被激活路径直接过滤掉 ——
+    // 消息落库了却不显示,而且是静默的。
+    const setTree = db.prepare(
+      `UPDATE llm_chat_messages SET parent_id = ?, branch_index = ?
+       WHERE session_id = ? AND message_id = ? AND parent_id IS NULL`
+    );
+    let leaf = getActiveLeafId(db, sessionId);
+    for (const msg of normalized) {
+      if (existing.has(msg.message_id)) {
+        // 已有行(同一轮里被反复 upsert)不重挂父亲,但它仍然是新的叶子。
+        leaf = msg.message_id;
+        continue;
+      }
+      setTree.run(leaf, nextBranchIndexIn(db, sessionId, leaf), sessionId, msg.message_id);
+      leaf = msg.message_id;
+    }
+    if (leaf) {
+      db.prepare("UPDATE llm_chat_sessions SET active_leaf_message_id = ? WHERE id = ?").run(
+        leaf,
+        sessionId
       );
     }
 
@@ -2407,6 +2497,22 @@ export function setActiveLeaf(db: Database.Database, sessionId: string, messageI
     .prepare("UPDATE llm_chat_sessions SET active_leaf_message_id = ? WHERE id = ?")
     .run(messageId, sessionId);
   if (info.changes === 0) throw new LlmChatSessionError(404, "session not found");
+}
+
+/** 事务内用的轻量版,与 nextBranchIndex 同义。 */
+function nextBranchIndexIn(
+  db: Database.Database,
+  sessionId: string,
+  parentId: string | null
+): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(MAX(branch_index), -1) + 1 AS next FROM llm_chat_messages
+       WHERE session_id = ? AND message_index < ?
+         AND (parent_id IS ? OR parent_id = ?)`
+    )
+    .get(sessionId, TREE_INDEX_CEILING, parentId, parentId) as { next: number };
+  return row.next;
 }
 
 /** 下一个兄弟序号。新分支永远排在最后。 */

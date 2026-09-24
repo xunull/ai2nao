@@ -198,8 +198,12 @@ describe("LLM chat session storage", () => {
         ],
       });
 
+      // 顺序按客户端传来的那一串 —— V61 起它由 parent 链表达。
       expect(updated.messages.map((m) => m.message_id)).toEqual(["u1", "u3", "a1"]);
-      expect(updated.messages.map((m) => m.message_index)).toEqual([0, 1, 2]);
+      // 而 message_index 是**全局插入序**,不再连续也不再表达顺序:u2 被删后腾出 2,
+      // 新来的 u3 拿到它,a1 的号原地不动。有了分支之后它不可能再等于数组下标 ——
+      // 其他分支的行也占着号,照下标重排必然 UNIQUE 冲突。
+      expect(updated.messages.map((m) => m.message_index)).toEqual([0, 2, 1]);
       expect(updated.messages[0].plain_text).toBe("First edited");
       expect(updated.messages.find((m) => m.message_id === "u2")).toBeUndefined();
     } finally {

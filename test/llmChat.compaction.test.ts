@@ -7,6 +7,7 @@ import {
   activateChatCompaction,
   activeCompaction,
   ensureLlmChatSession,
+  getLlmChatSession,
   readChatCompactionEvents,
   replaceLlmChatSessionMessages,
   replayCompactionStack,
@@ -225,11 +226,14 @@ describe("压缩事件的落库与读回", () => {
         messages: [{ id: "x0", role: "user", content: "插队" } as Message, ...before],
       });
 
-      const a1 = db
-        .prepare("SELECT message_index FROM llm_chat_messages WHERE session_id = ? AND message_id = ?")
-        .get("s1", "a1") as { message_index: number } | undefined;
-      expect(a1?.message_index).toBe(2); // 下标确实动了(原来是 1)
-      // 而排除集合按 id 存,指向的还是同一批消息。
+      // V61 起 message_index 是**全局插入序**,不再表达顺序 —— 插队的 x0 拿的是新号,
+      // a1 的号原地不动。顺序改由 parent 链表达,所以「下标会移动」这个旧演示不成立了。
+      // 但这条测试要证明的事更强了:顺序变了(x0 现在排第一),而排除集合按 id 存,
+      // 指向的还是同一批消息。
+      const order = getLlmChatSession(db, "s1")!.messages
+        .filter((m) => m.message_index < 1_000_000)
+        .map((m) => m.message_id);
+      expect(order).toEqual(["x0", "u1", "a1", "u2", "a2"]);
       expect(activeCompaction(db, "s1")?.excludedMessageIds).toEqual(["u1", "a1"]);
     });
   });

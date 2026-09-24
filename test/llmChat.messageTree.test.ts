@@ -10,6 +10,7 @@ import {
   ensureLlmChatSession,
   getActiveLeafId,
   nextBranchIndex,
+  replaceLlmChatSessionMessages,
   setActiveLeaf,
   siblingIds,
 } from "../src/llmChat/sessions.js";
@@ -176,6 +177,85 @@ describe("deepestLeafFrom", () => {
     const db = freshDb();
     const sid = straight(db);
     expect(deepestLeafFrom(db, sid, "a1")).toBe("a1");
+    db.close();
+  });
+});
+
+/**
+ * **整轮覆盖写不许毁掉其他分支。**
+ *
+ * `replaceLlmChatSessionMessages` 的老规则是「不在客户端集合里就删、其余全部重排」。
+ * 客户端只认识激活路径 —— 照老规则,你点「重新生成」保住的那个旧答案,
+ * 再说一句话就没了;而且重排会把它的 message_index 取负之后永久停在负数区。
+ *
+ * 这一组是这个功能里最该有的回归测试。
+ */
+describe("覆盖写与分支共存", () => {
+  const msg = (id: string, role: "user" | "assistant", text: string) => ({
+    id,
+    role,
+    content: text,
+  });
+
+  it("下一轮对话不会删掉其他分支,也不会把它的索引弄负", () => {
+    const db = freshDb();
+    const sid = straight(db); // u1 → a1
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    setActiveLeaf(db, sid, "a2");
+
+    // 客户端接着说了一句:它传的是激活路径 [u1, a2] 加新的 u2
+    replaceLlmChatSessionMessages(db, sid, {
+      messages: [
+        msg("u1", "user", "第一问"),
+        msg("a2", "assistant", "新答案"),
+        msg("u2", "user", "第二问"),
+      ] as never[],
+    });
+
+    const all = db
+      .prepare(
+        `SELECT message_id, message_index FROM llm_chat_messages
+         WHERE session_id = ? AND message_index < 1000000 ORDER BY message_index`
+      )
+      .all(sid) as { message_id: string; message_index: number }[];
+
+    // a1 还在
+    expect(all.map((r) => r.message_id).sort()).toEqual(["a1", "a2", "u1", "u2"]);
+    // 没有任何行掉进负数区
+    expect(all.every((r) => r.message_index >= 0)).toBe(true);
+    // 切回去仍然拿得到旧答案
+    setActiveLeaf(db, sid, "a1");
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  it("新消息挂在前一条下面,激活叶子跟着走", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    replaceLlmChatSessionMessages(db, sid, {
+      messages: [
+        msg("u1", "user", "第一问"),
+        msg("a1", "assistant", "第一答"),
+        msg("u2", "user", "第二问"),
+      ] as never[],
+    });
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1", "u2"]);
+    expect(getActiveLeafId(db, sid)).toBe("u2");
+    db.close();
+  });
+
+  it("已有行的父子关系不被客户端覆盖 —— 覆盖就等于把树压平", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    setActiveLeaf(db, sid, "a2");
+    replaceLlmChatSessionMessages(db, sid, {
+      messages: [msg("u1", "user", "第一问"), msg("a2", "assistant", "新答案")] as never[],
+    });
+    const a1 = db
+      .prepare("SELECT parent_id FROM llm_chat_messages WHERE session_id = ? AND message_id = 'a1'")
+      .get(sid) as { parent_id: string | null };
+    expect(a1.parent_id).toBe("u1"); // 没被压平成别的
     db.close();
   });
 });
