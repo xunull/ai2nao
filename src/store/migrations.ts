@@ -6,7 +6,7 @@ import { chromeVisitContentKey } from "../chromeHistory/contentKey.js";
  * can report what a client should expect, and so `probeDaemon` can spot a daemon
  * that is mid-migration or built from different code.
  */
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 61;
 const CURRENT_VERSION = SCHEMA_VERSION;
 
 export function migrate(db: Database.Database): void {
@@ -77,6 +77,7 @@ export function migrate(db: Database.Database): void {
     applyV58(db);
     applyV59(db);
     applyV60(db);
+    applyV61(db);
     return;
   }
   const row = db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as
@@ -143,6 +144,7 @@ export function migrate(db: Database.Database): void {
   if (v < 58) applyV58(db);
   if (v < 59) applyV59(db);
   if (v < 60) applyV60(db);
+  if (v < 61) applyV61(db);
   const vAfter = (
     db.prepare("SELECT version FROM meta_schema WHERE id = 1").get() as {
       version: number;
@@ -3194,5 +3196,81 @@ function applyV59(db: Database.Database): void {
       ALTER TABLE work_duration_state_new RENAME TO work_duration_state;
     `);
     db.exec("UPDATE meta_schema SET version = 59 WHERE id = 1;");
+  })();
+}
+
+/**
+ * AI 对话的消息从**线性**变成**树**:重新生成 / 编辑重发 / 分支切换。
+ *
+ * 为什么不是加一张表:`llm_chat_messages` 已经是这三件事的载体,分支是**主干结构**
+ * 而不是旁挂的元数据(记账能挤进 `message_index >= 1e6` 的保留行段,正是因为它是旁挂的)。
+ *
+ * `UNIQUE(session_id, message_index)` **保留不动** —— 它仍然是全局插入序,
+ * 只是不再等于「对话顺序」。对话顺序现在由 parent_id 链决定。
+ *
+ * `activity` 行(run / 账目 / 工具执行 / 压缩,index >= 1e6)`parent_id` 恒为 null,
+ * **不进树**:它们是旁挂在会话上的事件,不是对话的一部分。
+ *
+ * 升级现有数据:每场会话按 message_index 把普通消息串成一条链,
+ * `active_leaf_message_id` 指向最后一条 —— 也就是「现在这条唯一的路径就是激活路径」。
+ */
+function applyV61(db: Database.Database): void {
+  // 三种状态要分开(与 applyV60 同一条教训):
+  //   表不存在 → 合成旧库 / 裁剪过的库(测试里就有),没有可改的东西,只推版本
+  //   已有 parent_id → 本迁移跑过了,早退
+  //   否则 → 正常升级路径
+  const hasTable = Boolean(
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get("llm_chat_messages")
+  );
+  if (!hasTable) {
+    db.exec("UPDATE meta_schema SET version = 61 WHERE id = 1;");
+    return;
+  }
+  const cols = db.prepare("PRAGMA table_info(llm_chat_messages)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "parent_id")) {
+    db.exec("UPDATE meta_schema SET version = 61 WHERE id = 1;");
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      ALTER TABLE llm_chat_messages ADD COLUMN parent_id TEXT;
+      -- 同一 parent 下的兄弟序号,0 起。界面上的 ‹1/2› 用它排序。
+      ALTER TABLE llm_chat_messages ADD COLUMN branch_index INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE llm_chat_sessions ADD COLUMN active_leaf_message_id TEXT;
+      CREATE INDEX idx_llm_chat_messages_parent
+        ON llm_chat_messages(session_id, parent_id, branch_index);
+    `);
+
+    // 现有消息串成一条链。只串普通消息 —— activity 行留 null。
+    const rows = db
+      .prepare(
+        `SELECT session_id, message_id FROM llm_chat_messages
+         WHERE message_index < 1000000
+         ORDER BY session_id, message_index`
+      )
+      .all() as { session_id: string; message_id: string }[];
+    const setParent = db.prepare(
+      `UPDATE llm_chat_messages SET parent_id = ? WHERE session_id = ? AND message_id = ?`
+    );
+    const setLeaf = db.prepare(
+      `UPDATE llm_chat_sessions SET active_leaf_message_id = ? WHERE id = ?`
+    );
+    let prevSession: string | null = null;
+    let prevId: string | null = null;
+    for (const r of rows) {
+      if (r.session_id !== prevSession) {
+        if (prevSession !== null && prevId !== null) setLeaf.run(prevId, prevSession);
+        prevSession = r.session_id;
+        prevId = null;
+      }
+      if (prevId !== null) setParent.run(prevId, r.session_id, r.message_id);
+      prevId = r.message_id;
+    }
+    if (prevSession !== null && prevId !== null) setLeaf.run(prevId, prevSession);
+
+    db.exec("UPDATE meta_schema SET version = 61 WHERE id = 1;");
   })();
 }

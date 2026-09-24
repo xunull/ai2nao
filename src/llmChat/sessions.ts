@@ -2268,3 +2268,159 @@ function extractStatus(raw: unknown): string | null {
   }
   return null;
 }
+
+// ---------- 消息树:重新生成 / 编辑重发 / 分支切换(V61)----------
+
+/**
+ * 消息从线性变成树之后,「这场会话有哪些消息」这个问题有了两个答案:
+ * 库里的**全部**节点,和当前**激活路径**上的那些。
+ *
+ * 发给模型的上下文、界面上看到的对话、压缩的作用域,**三者都只认激活路径** ——
+ * 模型看不见你切走的那条分支,界面也不该显示它。
+ *
+ * `activity` 行(index >= 1e6:run / 账目 / 工具执行 / 压缩)不在树上,
+ * 它们旁挂在会话上,`parent_id` 恒为 null。
+ */
+
+/** 普通消息与 activity 行的分界。与 sessions.ts 顶部那几个保留段常量同源。 */
+const TREE_INDEX_CEILING = RUN_ROW_INDEX_BASE;
+
+export type ChatTreeNode = {
+  messageId: string;
+  parentId: string | null;
+  branchIndex: number;
+  messageIndex: number;
+};
+
+function treeNodes(db: Database.Database, sessionId: string): ChatTreeNode[] {
+  return db
+    .prepare(
+      `SELECT message_id AS messageId, parent_id AS parentId,
+              branch_index AS branchIndex, message_index AS messageIndex
+       FROM llm_chat_messages
+       WHERE session_id = ? AND message_index < ?
+       ORDER BY message_index ASC`
+    )
+    .all(sessionId, TREE_INDEX_CEILING) as ChatTreeNode[];
+}
+
+export function getActiveLeafId(db: Database.Database, sessionId: string): string | null {
+  const row = db
+    .prepare("SELECT active_leaf_message_id AS leaf FROM llm_chat_sessions WHERE id = ?")
+    .get(sessionId) as { leaf: string | null } | undefined;
+  return row?.leaf ?? null;
+}
+
+/**
+ * 从激活叶子回溯到根,返回**时序**的 message_id。
+ *
+ * 防环:同一个仓库的 cherryStudioHistory/db.ts 里有同样一条 —— 树是我们自己写的,
+ * 不该产生环,但一个坏 parent 指针就能让这里挂住整个请求。见过的节点直接停。
+ *
+ * 没有 active_leaf(老会话刚迁移完、或一条消息都没有)时回退到**按 message_index 平铺**:
+ * 那正是 V61 之前的行为,也是「只有一条路径」时的正确答案。
+ */
+export function activePathIds(db: Database.Database, sessionId: string): string[] {
+  const nodes = treeNodes(db, sessionId);
+  if (nodes.length === 0) return [];
+  const leaf = getActiveLeafId(db, sessionId);
+  if (!leaf) return nodes.map((n) => n.messageId);
+  const byId = new Map(nodes.map((n) => [n.messageId, n]));
+  const path: string[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = leaf;
+  while (cursor) {
+    if (seen.has(cursor)) break;
+    seen.add(cursor);
+    const node = byId.get(cursor);
+    if (!node) break;
+    path.push(node.messageId);
+    cursor = node.parentId;
+  }
+  return path.reverse();
+}
+
+/**
+ * 某条消息在它那一组兄弟里的位置。
+ *
+ * 界面上的 `‹ 1/2 ›` 挂在 **user** 消息上(CopilotKit 的分支导航只有 UserMessage 有),
+ * 但它要数的是「这个问题有几个回答」——所以调用方传的是那条 user 的**孩子**里
+ * 当前激活的那个。语义掰这一下是有意的,见设计讨论 Q4。
+ */
+export function branchPosition(
+  db: Database.Database,
+  sessionId: string,
+  messageId: string
+): { branchIndex: number; numberOfBranches: number } {
+  const nodes = treeNodes(db, sessionId);
+  const self = nodes.find((n) => n.messageId === messageId);
+  if (!self) return { branchIndex: 0, numberOfBranches: 1 };
+  const siblings = nodes
+    .filter((n) => n.parentId === self.parentId)
+    .sort((a, b) => a.branchIndex - b.branchIndex || a.messageIndex - b.messageIndex);
+  const idx = siblings.findIndex((n) => n.messageId === messageId);
+  return { branchIndex: idx < 0 ? 0 : idx, numberOfBranches: siblings.length };
+}
+
+/** 同一 parent 下的兄弟,按 branch_index 排序。切换分支时按序号取。 */
+export function siblingIds(
+  db: Database.Database,
+  sessionId: string,
+  parentId: string | null
+): string[] {
+  return treeNodes(db, sessionId)
+    .filter((n) => n.parentId === parentId)
+    .sort((a, b) => a.branchIndex - b.branchIndex || a.messageIndex - b.messageIndex)
+    .map((n) => n.messageId);
+}
+
+/** 某个节点往下、沿每组兄弟里**当前激活**那条走到底;没有激活标记时取第一个。 */
+export function deepestLeafFrom(
+  db: Database.Database,
+  sessionId: string,
+  messageId: string
+): string {
+  const nodes = treeNodes(db, sessionId);
+  const byParent = new Map<string | null, ChatTreeNode[]>();
+  for (const n of nodes) {
+    const list = byParent.get(n.parentId) ?? [];
+    list.push(n);
+    byParent.set(n.parentId, list);
+  }
+  const seen = new Set<string>();
+  let cursor = messageId;
+  for (;;) {
+    if (seen.has(cursor)) break;
+    seen.add(cursor);
+    const kids = (byParent.get(cursor) ?? []).sort(
+      (a, b) => a.branchIndex - b.branchIndex || a.messageIndex - b.messageIndex
+    );
+    if (kids.length === 0) break;
+    cursor = kids[kids.length - 1]!.messageId; // 最新的那条兄弟
+  }
+  return cursor;
+}
+
+/** 切换激活路径。只改会话上的一个指针,不动任何消息行。 */
+export function setActiveLeaf(db: Database.Database, sessionId: string, messageId: string): void {
+  const info = db
+    .prepare("UPDATE llm_chat_sessions SET active_leaf_message_id = ? WHERE id = ?")
+    .run(messageId, sessionId);
+  if (info.changes === 0) throw new LlmChatSessionError(404, "session not found");
+}
+
+/** 下一个兄弟序号。新分支永远排在最后。 */
+export function nextBranchIndex(
+  db: Database.Database,
+  sessionId: string,
+  parentId: string | null
+): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(MAX(branch_index), -1) + 1 AS next FROM llm_chat_messages
+       WHERE session_id = ? AND message_index < ?
+         AND (parent_id IS ? OR parent_id = ?)`
+    )
+    .get(sessionId, TREE_INDEX_CEILING, parentId, parentId) as { next: number };
+  return row.next;
+}

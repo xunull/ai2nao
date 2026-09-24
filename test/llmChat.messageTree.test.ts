@@ -1,0 +1,181 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
+import {
+  activePathIds,
+  branchPosition,
+  deepestLeafFrom,
+  ensureLlmChatSession,
+  getActiveLeafId,
+  nextBranchIndex,
+  setActiveLeaf,
+  siblingIds,
+} from "../src/llmChat/sessions.js";
+import { openDatabase } from "../src/store/open.js";
+
+/**
+ * AI 对话的消息树(V61):重新生成 / 编辑重发 / 分支切换。
+ *
+ * 三条最要紧的性质:
+ *  1. **只有激活路径算数** —— 发给模型的上下文、界面看到的对话、压缩的作用域都认它
+ *  2. **activity 行不在树上**(run / 账目 / 工具执行 / 压缩,index >= 1e6),parent 恒 null
+ *  3. **切换分支只动一个指针**,一条消息都不删 —— 原提问和已经花钱生成的回答都留着
+ */
+
+function freshDb(): Database.Database {
+  return openDatabase(join(mkdtempSync(join(tmpdir(), "ai2nao-tree-")), "index.db"));
+}
+
+const NOW = "2026-09-24T00:00:00.000Z";
+
+/** 直接写树节点。绕开整轮覆盖写,这里只测树本身。 */
+function addNode(
+  db: Database.Database,
+  sessionId: string,
+  o: { id: string; parent: string | null; index: number; branch?: number; role?: string }
+): void {
+  db.prepare(
+    `INSERT INTO llm_chat_messages
+       (id, session_id, message_id, message_index, role, raw_json, plain_text, preview,
+        created_at, updated_at, parent_id, branch_index)
+     VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?)`
+  ).run(
+    `${sessionId}:${o.id}`, sessionId, o.id, o.index, o.role ?? "user",
+    o.id, o.id, NOW, NOW, o.parent, o.branch ?? 0
+  );
+}
+
+/** 一问一答的直链:u1 → a1。 */
+function straight(db: Database.Database): string {
+  const sid = "s1";
+  ensureLlmChatSession(db, sid, "测试");
+  addNode(db, sid, { id: "u1", parent: null, index: 0 });
+  addNode(db, sid, { id: "a1", parent: "u1", index: 1, role: "assistant" });
+  setActiveLeaf(db, sid, "a1");
+  return sid;
+}
+
+describe("激活路径", () => {
+  it("从叶子回溯到根,给出时序", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  it("没有 active_leaf 时回退到按 message_index 平铺 —— 那正是 V61 之前的行为", () => {
+    const db = freshDb();
+    ensureLlmChatSession(db, "s1", "测试");
+    addNode(db, "s1", { id: "u1", parent: null, index: 0 });
+    addNode(db, "s1", { id: "a1", parent: "u1", index: 1, role: "assistant" });
+    expect(getActiveLeafId(db, "s1")).toBeNull();
+    expect(activePathIds(db, "s1")).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  it("activity 行不在树上 —— 账目不该出现在对话里", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    addNode(db, sid, { id: "run-1", parent: null, index: 1_000_001, role: "assistant" });
+    addNode(db, sid, { id: "call-1", parent: null, index: 2_000_000, role: "assistant" });
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1"]);
+    db.close();
+  });
+
+  it("parent 指针成环时停下,不挂住请求", () => {
+    const db = freshDb();
+    ensureLlmChatSession(db, "s1", "测试");
+    addNode(db, "s1", { id: "a", parent: "b", index: 0 });
+    addNode(db, "s1", { id: "b", parent: "a", index: 1 });
+    setActiveLeaf(db, "s1", "a");
+    expect(activePathIds(db, "s1")).toEqual(["b", "a"]);
+    db.close();
+  });
+
+  it("空会话给空数组", () => {
+    const db = freshDb();
+    ensureLlmChatSession(db, "s1", "测试");
+    expect(activePathIds(db, "s1")).toEqual([]);
+    db.close();
+  });
+});
+
+describe("重新生成:同一 parent 下长出第二个 assistant", () => {
+  it("切到旧分支后,激活路径变回旧答案 —— 两条都还在", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    setActiveLeaf(db, sid, "a2");
+    expect(activePathIds(db, sid)).toEqual(["u1", "a2"]);
+
+    setActiveLeaf(db, sid, "a1");
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1"]);
+    // 一条都没删
+    expect(siblingIds(db, sid, "u1")).toEqual(["a1", "a2"]);
+    db.close();
+  });
+
+  it("branchPosition 给出 1/2、2/2", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    expect(branchPosition(db, sid, "a1")).toEqual({ branchIndex: 0, numberOfBranches: 2 });
+    expect(branchPosition(db, sid, "a2")).toEqual({ branchIndex: 1, numberOfBranches: 2 });
+    db.close();
+  });
+
+  it("只有一个回答时 numberOfBranches 是 1 —— 界面据此不渲染导航", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    expect(branchPosition(db, sid, "a1").numberOfBranches).toBe(1);
+    db.close();
+  });
+
+  it("nextBranchIndex 让新分支永远排在最后", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    expect(nextBranchIndex(db, sid, "u1")).toBe(1);
+    addNode(db, sid, { id: "a2", parent: "u1", index: 2, branch: 1, role: "assistant" });
+    expect(nextBranchIndex(db, sid, "u1")).toBe(2);
+    // 根一层也要能算(编辑第一条提问时用)
+    expect(nextBranchIndex(db, sid, null)).toBe(1);
+    db.close();
+  });
+});
+
+describe("编辑重发:同一 parent 下长出第二个 user", () => {
+  it("原提问与它下面的回答都留着,可以切回去", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    // 编辑 u1 → 在根下新建 u2,并在它下面答一次
+    addNode(db, sid, { id: "u2", parent: null, index: 2, branch: 1 });
+    addNode(db, sid, { id: "a3", parent: "u2", index: 3, role: "assistant" });
+    setActiveLeaf(db, sid, "a3");
+    expect(activePathIds(db, sid)).toEqual(["u2", "a3"]);
+
+    setActiveLeaf(db, sid, "a1");
+    expect(activePathIds(db, sid)).toEqual(["u1", "a1"]);
+    expect(siblingIds(db, sid, null)).toEqual(["u1", "u2"]);
+    db.close();
+  });
+});
+
+describe("deepestLeafFrom", () => {
+  it("切到某个分支时沿最新的兄弟走到底", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    addNode(db, sid, { id: "u2", parent: "a1", index: 2 });
+    addNode(db, sid, { id: "a2", parent: "u2", index: 3, role: "assistant" });
+    expect(deepestLeafFrom(db, sid, "u1")).toBe("a2");
+    db.close();
+  });
+
+  it("叶子本身返回自己", () => {
+    const db = freshDb();
+    const sid = straight(db);
+    expect(deepestLeafFrom(db, sid, "a1")).toBe("a1");
+    db.close();
+  });
+});
